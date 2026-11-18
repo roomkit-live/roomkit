@@ -1700,7 +1700,7 @@ class TestOpenAIToolTurnReasoning:
             provider._apply_sampling_kwargs(kwargs, context)
             return kwargs.get("reasoning_effort")
 
-    @pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-5.1", "o4-mini"])
+    @pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-5.1", "o3"])
     def test_a_model_before_gpt_5_4_takes_the_effort_with_tools(self, model: str) -> None:
         tools = _context(tools=[self._TOOL])
 

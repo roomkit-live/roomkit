@@ -230,9 +230,15 @@ MIRROR_ONLY: dict[str, str] = {
         "mirror route, not an official model id: 404 on OpenAI's model pages, absent "
         "from its model list and pricing page (official docs, 2026-09-22)"
     ),
-    "openai/o4-mini-high": (
-        "reasoning-effort route; OpenAI's API catalog lists o4-mini and its dated snapshot, "
-        "not a separate -high model id (official model page, 2026-08-05)"
+    "openai/gpt-6.2-astra-pro": (
+        "mirror route, not an official model id: 404 on OpenAI's model page, absent "
+        "from its model list and pricing page, and gpt-6.2-astra's page names no pro "
+        "variant (official docs, 2026-11-18)"
+    ),
+    "openai/gpt-6.2-sol-pro": (
+        "mirror route, not an official model id: 404 on OpenAI's model page, absent "
+        "from its model list and pricing page, and gpt-6.2-sol's page names no pro "
+        "variant (official docs, 2026-11-18)"
     ),
     "openai/gpt-5.6-sol-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
     # The images mirror sells OpenAI's lineup under product slugs of its own;
@@ -384,13 +390,6 @@ PRICE_DELIBERATE: dict[str, str] = {
 # complete charge, or a single rate the mirror gets wrong against the vendor's
 # own price list.
 PRICE_FIELD_DELIBERATE: dict[tuple[str, str, str], str] = {
-    # The mirror quotes cached input at $0.03 where OpenAI's pricing page lists
-    # $0.025 for gpt-4.1-nano (checked 2026-08-29). The catalog keeps the vendor's.
-    (
-        "openai",
-        "gpt-4.1-nano",
-        "input_cache_read",
-    ): "mirror quotes $0.03; OpenAI's pricing page lists cached input at $0.025",
     (
         "openrouter",
         "google/gemini-3.6-flash",

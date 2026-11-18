@@ -34,6 +34,21 @@ discounted rates are the ones stated — and those three need a re-read in
 January, when the increase makes them silently half of what a consumer is
 billed.
 
+The deprecations page (re-read 2026-11-18) routes two ids to a newer model
+without a shutdown date: ``gemini-3.7-flash`` to ``gemini-3.8-flash`` and
+``gemini-3.5-flash`` to ``gemini-3.6-flash``. Neither is on the pricing page
+any more, so their rates are the last ones Google published, and both are
+flagged deprecated, as are ``gemini-2.5-flash`` (routed to
+``gemini-3.5-flash-lite`` from December 1, 2026) and ``gemini-3.1-flash-lite``
+(shut down May 7, 2027).
+
+``gemini-4-hydrogen`` (read 2026-11-18) is billed $1.50/$7.50/$0.075 with no
+long-context tier and no dated change, its caching implicit only. Google's
+thinking page lists it at ``low``/``medium``/``high``/``xhigh``, ``high`` by
+default and no ``minimal``; ``xhigh`` has no tag here, so a turn's ``xhigh``
+effort is sent as ``high`` and only a configured ``thinking_level`` reaches it.
+Its taking a budget of 0 is assumed from Argon's measurement, not probed.
+
 ``gemini-4-argon`` (read 2026-10-13) and ``gemini-4-carbon`` (read 2026-11-11)
 have no long-context tier and a scheduled increase instead of a discount:
 $2.00/$10.00/$0.10 through November 30, 2026, then $4.00/$20.00/$0.20 from
@@ -68,6 +83,21 @@ _LEVELS = [TAKES_LEVELS]
 _LEVELS_MINIMAL = [TAKES_LEVELS, TAKES_MINIMAL]
 
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="gemini-4-hydrogen",
+        display_name="Gemini 4 Hydrogen",
+        context_window=_CTX,
+        supports_vision=True,
+        # No ``minimal`` on Google's thinking page (2026-11-18); its ``xhigh``
+        # is not tagged (module docstring).
+        capabilities=["thinking", "audio", "video", *_LEVELS],
+        pricing=ModelPricing(
+            input_per_million=1.5,
+            output_per_million=7.5,
+            cache_read_per_million=0.075,
+            verified=date(2026, 11, 18),
+        ),
+    ),
     ModelInfo(
         id="gemini-4-carbon",
         display_name="Gemini 4 Carbon",
@@ -114,6 +144,8 @@ MODELS: list[ModelInfo] = [
         display_name="Gemini 3.7 Flash",
         context_window=_CTX,
         supports_vision=True,
+        # Routed to gemini-3.8-flash (deprecations page, 2026-11-18).
+        deprecated=True,
         capabilities=["thinking", "audio", "video", *_LEVELS],
         pricing=ModelPricing(
             input_per_million=0.75,
@@ -140,6 +172,8 @@ MODELS: list[ModelInfo] = [
         display_name="Gemini 3.5 Flash",
         context_window=_CTX,
         supports_vision=True,
+        # Routed to gemini-3.6-flash (deprecations page, 2026-11-18).
+        deprecated=True,
         capabilities=["thinking", "audio", "video", *_LEVELS_MINIMAL],
         pricing=ModelPricing(
             input_per_million=1.5,
@@ -182,6 +216,8 @@ MODELS: list[ModelInfo] = [
         display_name="Gemini 3.1 Flash-Lite",
         context_window=_CTX,
         supports_vision=True,
+        # Shut down May 7, 2027 (deprecations page, 2026-11-18).
+        deprecated=True,
         capabilities=["thinking", "audio", "video", *_LEVELS_MINIMAL],
         pricing=ModelPricing(
             input_per_million=0.25,
@@ -213,6 +249,9 @@ MODELS: list[ModelInfo] = [
         display_name="Gemini 2.5 Flash",
         context_window=_CTX,
         supports_vision=True,
+        # Routed to gemini-3.5-flash-lite from December 1, 2026 (deprecations
+        # page, 2026-11-18).
+        deprecated=True,
         capabilities=["thinking", "audio", "video"],
         pricing=ModelPricing(
             input_per_million=0.3,

@@ -592,7 +592,6 @@ _FLOORS = [
     (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5"), "minimal"),
     (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5-nano"), "minimal"),
     (OpenAIAIProvider, OpenAIConfig(api_key="k", model="o3"), "low"),
-    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="o4-mini"), "low"),
     (CerebrasAIProvider, CerebrasConfig(api_key="k", model="gpt-oss-120b"), "low"),
     (CerebrasAIProvider, CerebrasConfig(api_key="k", model="qwen-3.8-27b"), "none"),
     (MetaAIProvider, MetaConfig(api_key="k"), "minimal"),
@@ -614,6 +613,21 @@ def test_off_sends_the_model_s_floor(
     context = _context(**off, tools=[AITool(name="t", description="d")] if tools else [])
 
     assert _sampled(_provider(cls, config), context)["reasoning_effort"] == floor
+
+
+@pytest.mark.parametrize(
+    "off",
+    [{"thinking_budget": 0}, {"enable_thinking": False}, {"reasoning_effort": "none"}],
+    ids=["budget_0", "enable_thinking_false", "effort_none"],
+)
+@pytest.mark.parametrize("model", ["gpt-6.2-astra", "gpt-6.2-sol"])
+def test_gpt_6_2_off_is_sent_low(model: str, off: dict[str, Any]) -> None:
+    """OpenAI's pages say GPT-6.2 rejects ``none``; its effort starts at
+    ``low``. A turn with tools never reaches Chat Completions for it
+    (``test_request_refusals``), so only a text turn is sampled."""
+    provider = _provider(OpenAIAIProvider, OpenAIConfig(api_key="k", model=model))
+
+    assert _sampled(provider, _context(**off))["reasoning_effort"] == "low"
 
 
 @pytest.mark.parametrize("off", [{"thinking_budget": 0}, {"enable_thinking": False}])

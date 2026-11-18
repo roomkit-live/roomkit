@@ -6,7 +6,8 @@ about what OpenAI currently offers. Call ``OpenAIAIProvider.list_models()``
 for that; it queries the account's ``/v1/models``.
 
 Sourced from the OpenAI models and deprecations docs
-(developers.openai.com/api/docs/models, .../deprecations), verified 2026-08-05.
+(developers.openai.com/api/docs/models, .../deprecations), verified 2026-08-05;
+the deprecations page re-read 2026-11-18.
 
 Scope is the chat/responses-capable text + multimodal models; embeddings,
 audio (whisper/tts), and image-generation models are intentionally omitted.
@@ -17,7 +18,8 @@ id is a 404, and keeping it here only invites one.
 
 The GPT-5.6 tier reaches its "pro" depth through ``reasoning.mode: "pro"`` on
 the base model rather than through a separate id, which is why — unlike 5.4
-and 5.5 — it has no ``-pro`` entries.
+and 5.5 — it has no ``-pro`` entries. Neither has GPT-6.2: its model pages
+name no ``-pro`` id and the pricing page lists none (2026-11-18).
 
 Prices are the standard synchronous rates from OpenAI's pricing page
 (developers.openai.com/api/docs/pricing), read 2026-08-05 — not the Batch
@@ -49,8 +51,8 @@ _CTX_1M = 1_050_000
 # read by ``roomkit.providers.ai.reasoning.reasoning_floor``): ``none`` where
 # the model takes it, else its lowest level. Checked on the wire 2026-10-04:
 # GPT-5.1 and later take ``none``; GPT-5 and its mini and nano answer 400 to
-# it and take ``minimal``; o3 and o4-mini take neither and start at ``low``,
-# with function tools as without. An entry without the tag is sent nothing.
+# it and take ``minimal``; o3 takes neither and starts at ``low``, with
+# function tools as without. An entry without the tag is sent nothing.
 _TOOLS_REASONING_EFFORT_OFF = ["tools_reasoning_effort", "reasoning_floor_none"]
 _TOOLS_REASONING_EFFORT_MINIMAL = ["tools_reasoning_effort", "reasoning_floor_minimal"]
 _TOOLS_REASONING_EFFORT_LOW = ["tools_reasoning_effort", "reasoning_floor_low"]
@@ -62,6 +64,11 @@ _TOOLS_REASONING_NONE = ["tools_reasoning_none", "reasoning_floor_none"]
 # any other is refused with tools); the ``-pro`` models are served by the
 # Responses API only (404 "not a chat model", 2026-10-02).
 _CHAT_TOOLS_REFUSED = ["chat_tools_refused"]
+# GPT-6.2 Astra and Sol, read from OpenAI's pages on 2026-11-18, not checked on
+# the wire: "tool calling requires Responses" (Using GPT-6.2), and the API
+# rejects ``none``, effort ranging from ``low`` to ``max`` (model pages and
+# models page), so a turn that switches reasoning off is sent ``low``.
+_GPT_6_2 = [*_CHAT_TOOLS_REFUSED, "reasoning_floor_low"]
 _RESPONSES_ONLY = ["responses_only"]
 _VERIFIED = date(2026, 8, 5)
 
@@ -79,7 +86,45 @@ _VERIFIED = date(2026, 8, 5)
 # long-context rule. It carries no capability tag: what Chat Completions does
 # with its function tools and its effort is not checked on the wire yet.
 # https://developers.openai.com/api/docs/models/gpt-6.1-terra
+# GPT-6.2 Astra and Sol added 2026-11-18 from their model pages and the pricing
+# page: 1.05M context, 128K output, text and image in, same long-context rule:
+# https://developers.openai.com/api/docs/models/gpt-6.2-astra
+# https://developers.openai.com/api/docs/models/gpt-6.2-sol
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="gpt-6.2-astra",
+        display_name="GPT-6.2 Astra",
+        capabilities=_GPT_6_2,
+        context_window=_CTX_1M,
+        supports_vision=True,
+        pricing=ModelPricing(
+            input_per_million=8.0,
+            output_per_million=40.0,
+            cache_read_per_million=0.4,
+            cache_write_per_million=10.0,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
+            verified=date(2026, 11, 18),
+        ),
+    ),
+    ModelInfo(
+        id="gpt-6.2-sol",
+        display_name="GPT-6.2 Sol",
+        capabilities=_GPT_6_2,
+        context_window=_CTX_1M,
+        supports_vision=True,
+        pricing=ModelPricing(
+            input_per_million=2.0,
+            output_per_million=10.0,
+            cache_read_per_million=0.1,
+            cache_write_per_million=2.5,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
+            verified=date(2026, 11, 18),
+        ),
+    ),
     ModelInfo(
         id="gpt-6.1-sol",
         display_name="GPT-6.1 Sol",
@@ -275,12 +320,16 @@ MODELS: list[ModelInfo] = [
             verified=_VERIFIED,
         ),
     ),
+    # --- Deprecated: OpenAI has announced a shutdown date -----------------
+    # gpt-5.4-nano and gpt-5.1 on 2027-04-01, gpt-4.1, gpt-4.1-mini and gpt-4o
+    # on 2027-01-14 (deprecations page, 2026-11-18).
     ModelInfo(
         id="gpt-5.4-nano",
         display_name="GPT-5.4 nano",
         capabilities=_TOOLS_REASONING_NONE,
         context_window=400_000,
         supports_vision=True,
+        deprecated=True,
         pricing=ModelPricing(
             input_per_million=0.2,
             output_per_million=1.25,
@@ -294,6 +343,7 @@ MODELS: list[ModelInfo] = [
         capabilities=_TOOLS_REASONING_EFFORT_OFF,
         context_window=400_000,
         supports_vision=True,
+        deprecated=True,
         pricing=ModelPricing(
             input_per_million=1.25,
             output_per_million=10.0,
@@ -306,6 +356,7 @@ MODELS: list[ModelInfo] = [
         display_name="GPT-4.1",
         context_window=1_047_576,
         supports_vision=True,
+        deprecated=True,
         pricing=ModelPricing(
             input_per_million=2.0,
             output_per_million=8.0,
@@ -318,6 +369,7 @@ MODELS: list[ModelInfo] = [
         display_name="GPT-4.1 mini",
         context_window=1_047_576,
         supports_vision=True,
+        deprecated=True,
         pricing=ModelPricing(
             input_per_million=0.4,
             output_per_million=1.6,
@@ -326,22 +378,11 @@ MODELS: list[ModelInfo] = [
         ),
     ),
     ModelInfo(
-        id="gpt-4.1-nano",
-        display_name="GPT-4.1 nano",
-        context_window=1_047_576,
-        supports_vision=True,
-        pricing=ModelPricing(
-            input_per_million=0.1,
-            output_per_million=0.4,
-            cache_read_per_million=0.025,
-            verified=_VERIFIED,
-        ),
-    ),
-    ModelInfo(
         id="gpt-4o",
         display_name="GPT-4o",
         context_window=128_000,
         supports_vision=True,
+        deprecated=True,
         pricing=ModelPricing(
             input_per_million=2.5,
             output_per_million=10.0,
@@ -349,7 +390,6 @@ MODELS: list[ModelInfo] = [
             verified=_VERIFIED,
         ),
     ),
-    # --- Deprecated: OpenAI has announced a shutdown date -----------------
     ModelInfo(
         id="gpt-5",
         display_name="GPT-5",
@@ -430,20 +470,6 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=20.0,
             output_per_million=80.0,
-            verified=_VERIFIED,
-        ),
-    ),
-    ModelInfo(
-        id="o4-mini",
-        display_name="o4-mini",
-        capabilities=_TOOLS_REASONING_EFFORT_LOW,
-        context_window=200_000,
-        supports_vision=True,
-        deprecated=True,
-        pricing=ModelPricing(
-            input_per_million=1.1,
-            output_per_million=4.4,
-            cache_read_per_million=0.275,
             verified=_VERIFIED,
         ),
     ),

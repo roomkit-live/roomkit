@@ -46,7 +46,9 @@ def _context(*, tools: bool) -> AIContext:
 
 
 class TestOpenAIModelsChatRefuses:
-    @pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-sol"])
+    @pytest.mark.parametrize(
+        "model", ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.2-astra", "gpt-6.2-sol"]
+    )
     async def test_tools_for_a_model_that_takes_none_fail_before_the_request(
         self, model: str
     ) -> None:
