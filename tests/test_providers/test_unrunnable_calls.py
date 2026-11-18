@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai import tool_arguments
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -53,6 +54,23 @@ _FRAGMENT = '{"path": "/tmp/a", "content": "hel'
 
 
 class TestTheRule:
+    @pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e900", "-1e900"])
+    def test_nonfinite_text_arguments_preserve_the_wire_input_and_never_run(
+        self, number: str
+    ) -> None:
+        raw = f'{{"record": [{{"amount": {number}}}]}}'
+        assert tool_arguments(raw) == {"raw": raw}
+        assert unreadable_arguments(raw)
+        assert call_partial(raw, "stop") and call_garbled(raw, "stop")
+        assert call_cut(raw, "length")
+
+    def test_finite_numbers_and_number_names_in_strings_remain_readable(self) -> None:
+        raw = '{"sample": [1e300, "NaN", "-Infinity"]}'
+        assert tool_arguments(raw) == {"sample": [1e300, "NaN", "-Infinity"]}
+        assert not call_partial(raw, "stop")
+        supplied = {"sdk": float("inf")}
+        assert tool_arguments(supplied) is supplied
+
     def test_arguments_that_do_not_read_as_an_object(self) -> None:
         unreadable = [_FRAGMENT, "[1, 2]", '"text"', "7"]
         readable = ["", "  ", None, "null", '{"a": 1}', {"a": 1}]

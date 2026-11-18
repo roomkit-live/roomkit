@@ -10,6 +10,7 @@ from the others by reading its wire its own way.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 from uuid import uuid4
 
@@ -168,6 +169,19 @@ def unreadable_arguments(raw: Any) -> bool:
     return _read_arguments(raw) is None
 
 
+def _finite_number(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"Non-finite tool argument: {text}")
+    return value
+
+
+def _load_arguments(text: str) -> Any:
+    # JSON names no non-finite numbers. A floating exponent can also exceed
+    # the finite range while it is being decoded.
+    return json.loads(text, parse_float=_finite_number, parse_constant=_finite_number)
+
+
 def _read_arguments(raw: Any) -> dict[str, Any] | None:
     """A call's arguments as a mapping, or ``None`` when they do not read as one."""
     if isinstance(raw, dict):
@@ -177,7 +191,7 @@ def _read_arguments(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, str):
         return None
     try:
-        parsed = json.loads(raw)
+        parsed = _load_arguments(raw)
     except (ValueError, RecursionError):
         return None
     if parsed is None:
@@ -192,7 +206,7 @@ def arguments_cut(raw: Any) -> bool:
     if not isinstance(raw, str) or not raw.strip():
         return False
     try:
-        json.loads(raw)
+        _load_arguments(raw)
     except (ValueError, RecursionError):
         return True
     return False

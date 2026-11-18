@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep raw tool argument text when it contains a non-finite number, including an exponent that overflows. Such calls are marked partial and do not execute.
+
 - Tool calls and stream events converted with `stream_call_of` or `tool_call_of` now own their nested arguments, metadata, and provider-served result.
 
 - Require an unambiguous authority, an ASCII DNS name (Punycode for internationalized domains), and an unscoped IP literal in `validate_public_url`. Malformed and out-of-range ports are rejected before resolution, including offline checks.
