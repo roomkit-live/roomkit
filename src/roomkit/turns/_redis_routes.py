@@ -315,14 +315,32 @@ class Routes:
         if (answer := self._answers.get(envelope.ref)) is not None and not answer.done():
             answer.set_result(envelope.body)
 
+    def receiver(self, sender: str, target: str, channel_id: str) -> TurnExecutor | None:
+        """Resolve a loopback id shared by a served worker and the room owner's executor."""
+        served = self.shared.get(target)
+        if sender == self._node and self.owner is not None:
+            own = self.owner.executor
+            if (
+                own is not None
+                and own is not served
+                and own.executor_id == target
+                and own.hosts_channel(channel_id)
+            ):
+                return own
+        return served
+
     def _request(self, envelope: Envelope) -> None:
         """A request of an owner elsewhere, for an executor of this process,
         answered at once: taken, or refused by an executor that closed."""
-        executor = self.shared.get(envelope.target)
-        if executor is None or executor.closed:
+        served = self.shared.get(envelope.target)
+        if served is None or (envelope.sender != self._node and served.closed):
             self._answer_back(envelope, REFUSED)
             return
         request = TurnRequest.model_validate_json(envelope.body)
+        executor = self.receiver(envelope.sender, envelope.target, request.channel_id)
+        if executor is None or executor.closed:
+            self._answer_back(envelope, REFUSED)
+            return
         link = RedisExecutorLink(
             request,
             envelope.sender,
@@ -342,13 +360,12 @@ class Routes:
     async def _channel(self, envelope: Envelope) -> None:
         """A channel control for an executor here, applied, then answered,
         with what it raised if it did: its owner waits for the answer."""
-        executor = self.shared.get(envelope.target)
-        if executor is not None and executor.closed:
-            # Placed from a view older than its close: placed again elsewhere.
+        served = self.shared.get(envelope.target)
+        if served is not None and envelope.sender != self._node and served.closed:
             self._answer_back(envelope, REFUSED)
             return
         result: ChannelResult | None = ChannelResult()
-        if executor is None:
+        if served is None:
             logger.warning(
                 "A channel control came for executor %s, which no longer serves", envelope.target
             )
@@ -357,6 +374,10 @@ class Routes:
         else:
             try:
                 control = _crossed(envelope.body)
+                executor = self.receiver(envelope.sender, envelope.target, control.channel_id)
+                if executor is None or executor.closed:
+                    self._answer_back(envelope, REFUSED)
+                    return
                 if isinstance(control, ChannelCall) and (task := asyncio.current_task()):
                     # Named for the verb it serves, as the kit's close names
                     # one still running past its cut.

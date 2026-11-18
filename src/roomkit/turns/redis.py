@@ -272,6 +272,7 @@ class RedisTurnBackend(TurnBackend):
             channel_id, room_id = message.channel_id, message.room_id
             needs = RoomNeeds(organization_id=message.organization_id)
             return await self._applied_once(
+                channel_id,
                 raw,
                 lambda refused: self._placement.place(
                     channel_id, room_id, needs, excluded=refused
@@ -282,6 +283,7 @@ class RedisTurnBackend(TurnBackend):
             channel_id, room_id = message.channel_id, message.room_id
             held = RoomNeeds(tuple(message.room_hooks), message.organization_id)
             await self._applied_once(
+                channel_id,
                 raw,
                 lambda refused: self._placement.hold(channel_id, room_id, held, excluded=refused),
             )
@@ -292,7 +294,8 @@ class RedisTurnBackend(TurnBackend):
         for executor in here:
             await executor.control(_crossed(raw))
         results = await asyncio.gather(
-            *(self._apply(executor, raw) for executor in elsewhere), return_exceptions=True
+            *(self._apply(executor, raw, message.channel_id) for executor in elsewhere),
+            return_exceptions=True,
         )
         for executor, result in zip(elsewhere, results, strict=True):
             if isinstance(result, Exception) or result is None:
@@ -306,6 +309,7 @@ class RedisTurnBackend(TurnBackend):
 
     async def _applied_once(
         self,
+        channel_id: str,
         raw: str,
         choose: Callable[[set[str]], Coroutine[Any, Any, TurnExecutor | Elsewhere]],
         call: ChannelCall | None = None,
@@ -318,7 +322,7 @@ class RedisTurnBackend(TurnBackend):
             placed = await choose(refused)
             if call is not None:
                 call.hand_over()
-            result = await self._apply(placed, raw)
+            result = await self._apply(placed, raw, channel_id)
             if result is not None:
                 return result
             if call is not None:
@@ -373,7 +377,9 @@ class RedisTurnBackend(TurnBackend):
             await self._client.aclose()
         return left
 
-    async def _apply(self, placed: TurnExecutor | Elsewhere, raw: str) -> ChannelResult | None:
+    async def _apply(
+        self, placed: TurnExecutor | Elsewhere, raw: str, channel_id: str
+    ) -> ChannelResult | None:
         """Apply a channel control on *placed*, here or across Redis: its
         result once applied, waited for while the executor lives; None when
         a closing process refused it, having applied nothing."""
@@ -383,15 +389,15 @@ class RedisTurnBackend(TurnBackend):
                 return ChannelResult()
             return ChannelResult.model_validate_json(answer.model_dump_json())
         body = await self._routes.ask(
-            placed.node, "channel", raw, placed.executor_id, alive=self._lives(placed)
+            placed.node, "channel", raw, placed.executor_id, alive=self._lives(placed, channel_id)
         )
         return None if body == REFUSED else ChannelResult.model_validate_json(body)
 
-    def _lives(self, placed: Elsewhere) -> Callable[[], bool]:
+    def _lives(self, placed: Elsewhere, channel_id: str) -> Callable[[], bool]:
         """Whether *placed* still lives: by its beat, or (the tests' loop
         back) as an executor of this process."""
         if placed.node == self.node_id:
-            local = self._routes.shared.get(placed.executor_id)
+            local = self._routes.receiver(self.node_id, placed.executor_id, channel_id)
             return lambda: local is not None and not local.closed
         return lambda: self._live.alive(placed.member)
 

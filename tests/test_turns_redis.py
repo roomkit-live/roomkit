@@ -1358,6 +1358,58 @@ async def test_an_executor_served_again_under_its_id_takes_the_turns(
         await second.close()
 
 
+async def test_loopback_preserves_reserved_channels_after_a_same_id_serve(
+    prefix: str, redis_client: Any
+) -> None:
+    from roomkit.turns.wire import ChannelCall
+    from tests.test_turns_backend import ScriptedChannel, _binding, _context, _event
+
+    backend = RedisTurnBackend(
+        os.environ["REDIS_URL"], key_prefix=prefix, timeouts=TIMEOUTS, _loop_back=True
+    )
+
+    class Tagged(ScriptedChannel):
+        async def channel_call(self, room_id: str, verb: str, arguments: dict[str, Any]) -> str:
+            return self.record["worker"]
+
+    def executor(label: str, hosts: Any) -> TurnExecutor:
+        def make(channel_id: str) -> ScriptedChannel:
+            channel = Tagged()
+            channel.channel_id = channel_id
+            channel.record["worker"] = label
+            return channel
+
+        return TurnExecutor(make, hosts=hosts, executor_id="same", timeouts=TIMEOUTS)
+
+    client = TurnClient(backend, executor=executor("owner", lambda name: name == "home"))
+
+    async def run(channel_id: str) -> str:
+        binding = _binding().model_copy(update={"channel_id": channel_id})
+        context = _context().model_copy(update={"bindings": [binding]})
+        output = await client.run(_event(), binding, context)
+        return output.response_metadata["worker"]
+
+    try:
+        assert await run("home") == "owner"
+        for hosts in ({"agent"}, None):
+            await backend.serve(executor("replacement", hosts))
+            peer = _backend(prefix)
+            try:
+                published = [(e.executor_id, e.hosts) for e in await peer.executors()]
+                assert published == ([("same", frozenset({"agent"}))] if hosts else [])
+            finally:
+                await peer.close()
+            assert await run("agent") == "replacement"
+            assert await run("home") == "owner"
+            for name, worker in (("home", "owner"), ("agent", "replacement")):
+                result = await client.control(
+                    ChannelCall(channel_id=name, room_id="room", verb="who")
+                )
+                assert result is not None and result.result == worker
+    finally:
+        await client.close()
+
+
 @pytest.mark.parametrize("predicate", [True, False], ids=["predicate", "undeclared"])
 async def test_a_local_only_replacement_withdraws_only_its_own_declaration(
     prefix: str, redis_client: Any, predicate: bool
