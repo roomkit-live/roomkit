@@ -6,6 +6,12 @@
     "§10.6.1",
     "§23.3"
   ],
+  "requirements": [
+    "RK-10.6.1-003",
+    "RK-10.6.1-009",
+    "RK-10.6.2-008",
+    "RK-10.6.7-004"
+  ],
   "notes": "Python: tests/test_channel_declaration.py test_a_delegation_to_a_declared_worker_runs_on_its_executor.",
   "setup": {
     "channels": [

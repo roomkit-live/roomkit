@@ -7,6 +7,11 @@
     "§23.3",
     "§23.4"
   ],
+  "requirements": [
+    "RK-10.6.5-026",
+    "RK-10.6.5-032",
+    "RK-10.6.5-035"
+  ],
   "notes": "Python: tests/test_turns_host.py::test_delegate_answers_a_task_id_that_wait_task_waits, test_wait_task_answers_none_for_a_task_it_does_not_know, the delegate case of test_a_host_acts_only_for_its_turns_room_and_organization; core/_turn_host.py _delegate, _wait_task, _room_tasks; tasks/status.py room_tasks. The hand-back of a task the turn's host delegated is at the depth of the turn's response (test_a_delegation_through_the_host_keeps_its_turns_chain_depth).",
   "setup": {
     "channels": [

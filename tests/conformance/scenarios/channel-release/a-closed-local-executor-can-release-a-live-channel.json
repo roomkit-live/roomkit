@@ -5,6 +5,10 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-020",
+    "RK-10.6.3-021"
+  ],
   "notes": "Python: tests/test_turns_channel_release.py local registry cases; ChannelStateMixin.release_channel checks registration before backend control. No separately served executor is needed.",
   "setup": {
     "channels": [

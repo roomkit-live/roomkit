@@ -7,6 +7,9 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.6-018"
+  ],
   "notes": "Python: HookEngine.define_room_hook/undefine_room_hook and tests/test_turn_hooks.py. The blocked call still reaches ON_TOOL_CALL.",
   "setup": {
     "channels": [

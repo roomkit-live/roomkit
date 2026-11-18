@@ -5,6 +5,11 @@
   "rules": [
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.8-007",
+    "RK-10.6.8-014",
+    "RK-10.6.8-016"
+  ],
   "notes": "Python: tests/test_turns_redis.py kills a real process; examples/turns_redis.py. Killed while a tool holds the turn, after the first round's text was read.",
   "setup": {
     "kit": {

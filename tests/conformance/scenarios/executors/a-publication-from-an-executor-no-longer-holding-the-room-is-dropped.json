@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-035"
+  ],
   "notes": "Python: tests/test_turns_between.py test_a_publication_from_an_executor_no_longer_holding_the_room_is_dropped.",
   "setup": {
     "channels": [

@@ -5,6 +5,11 @@
   "rules": [
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.2-014",
+    "RK-10.6.7-017",
+    "RK-10.6.7-018"
+  ],
   "notes": "Python: tests/test_channel_declaration.py test_an_agent_its_executor_builds_nothing_for_fails_no_executor. A turn's failure reaches process_inbound as its message.",
   "setup": {
     "channels": [

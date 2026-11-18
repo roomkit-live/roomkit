@@ -7,6 +7,8 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-10.6.5-058",
+    "RK-10.6.5-062",
     "RK-9.3-112"
   ],
   "notes": "Python: tests/test_turns_inputs.py::test_a_rejection_reaches_the_tool_as_a_refusal. A request a human rejected is a refusal (§9.3), the model reading why.",

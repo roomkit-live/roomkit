@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.5"
   ],
+  "requirements": [
+    "RK-10.6.5-026"
+  ],
   "notes": "Python: tests/test_local_host_context.py; core/_turn_host.py KitHost._room_context; turns/host.py TurnHost.room_context. Fresh JSON read through a real local turn; native AI witnesses additionally cover both provider modes and detached nested result ownership.",
   "setup": {
     "channels": [

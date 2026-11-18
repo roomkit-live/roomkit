@@ -6,6 +6,12 @@
     "§10.6.7",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.7-010",
+    "RK-10.6.7-011",
+    "RK-10.6.7-012",
+    "RK-10.6.7-016"
+  ],
   "notes": "Python: tests/test_turns_organizations.py.",
   "setup": {
     "channels": [

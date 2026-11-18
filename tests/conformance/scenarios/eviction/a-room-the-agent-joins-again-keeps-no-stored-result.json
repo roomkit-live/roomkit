@@ -7,6 +7,9 @@
     "§10.6.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-10.6.3-014"
+  ],
   "notes": "Python: red before RMK-1645 (the re-read read the earlier result back), green after. The other states a room's detach lets go of are proven in Python: tests/test_mcp_skills_execution_gate.py test_an_approval_lets_it_run_and_holds_for_the_fingerprint and tests/test_mcp_skills_realtime_door.py test_an_approval_does_not_outlive_the_room_s_binding (approvals to run a served skill's code), tests/test_executor_without_store.py test_a_hook_outside_any_turn_reads_the_executor_s_last_turn_in_the_room (an executor's last context of the room). A room the channel joins starts from nothing an earlier room of the same id left (§6.4), and the results it evicted are per-room state it discards as it lets the room go (§10.6.2): a room created again for another person under the same id read the earlier person's stored result.",
   "setup": {
     "channels": [

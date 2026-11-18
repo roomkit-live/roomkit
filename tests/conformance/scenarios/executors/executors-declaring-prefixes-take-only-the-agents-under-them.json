@@ -5,6 +5,11 @@
   "rules": [
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.3-030",
+    "RK-10.6.7-004",
+    "RK-10.6.7-005"
+  ],
   "notes": "Python: tests/test_turns_redis.py test_an_executor_elsewhere_declaring_a_rule_takes_the_agents_it_covers, tests/test_turns_redis_unit.py test_a_declaration_takes_its_channels_with_every_room_hook_it_defines.",
   "setup": {
     "channels": [

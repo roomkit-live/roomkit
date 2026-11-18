@@ -9,7 +9,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.1-084"
+    "RK-10.1-084",
+    "RK-10.6.4-004"
   ],
   "notes": "One process. `held` is held at `held` in its delivery to `ws`, while the agent `ai`, whose model streams, answers it. The room is deleted. Once `held` is let go, the agent's stream is to be read on a room the store no longer holds: it is closed unread, its model never asked to generate, and `held`'s call, whose event was committed and delivered, returns its result with no error rather than raising (§13.6).",
   "setup": {

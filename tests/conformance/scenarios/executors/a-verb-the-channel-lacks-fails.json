@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-031"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py test_a_verb_the_channel_lacks_raises_on_the_owner. §10.6.3 leaves the error of an unknown verb to the channel; Python's raises ValueError, the suite's invalid_argument.",
   "setup": {
     "channels": [

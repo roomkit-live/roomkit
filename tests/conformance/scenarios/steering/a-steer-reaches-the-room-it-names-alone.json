@@ -7,6 +7,11 @@
     "§10.6.8",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.8-035",
+    "RK-10.6.8-036",
+    "RK-10.6.8-037"
+  ],
   "notes": "Alice and Bob, two members of one organization, each talk to the same agent in a room of their own, and both turns run at once, each held in its tool. A steer always names its room, so the turn that started last, Bob's, is never reached by what is meant for Alice: her next round reads the message, Bob's turn asks nothing more once cut, and Alice's answers.",
   "setup": {
     "channels": [

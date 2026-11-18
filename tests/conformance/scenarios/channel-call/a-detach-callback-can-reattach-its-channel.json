@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-043"
+  ],
   "notes": "Python: tests/test_channel_call_contract.py::test_detach_callback_can_reattach_its_channel.",
   "setup": {
     "channels": [

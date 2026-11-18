@@ -7,6 +7,9 @@
     "§6.7",
     "§10.6.4"
   ],
+  "requirements": [
+    "RK-10.6.4-003"
+  ],
   "notes": "Python: channels/_ai_stream_round.py stream (a non-empty StreamThinkingDelta yields a ThinkingDeltaMarker), core/mixins/_streaming_segments.py, channels/base.py deliver_stream; tests/test_ai_streaming_thinking.py test_thinking_markers_stream_inline_before_text.",
   "setup": {
     "channels": [

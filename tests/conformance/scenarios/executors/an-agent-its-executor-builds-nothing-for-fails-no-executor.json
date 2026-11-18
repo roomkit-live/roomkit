@@ -6,6 +6,10 @@
     "§10.6.2",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.2-014",
+    "RK-10.6.7-017"
+  ],
   "notes": "Python: tests/test_channel_declaration.py test_an_agent_its_executor_builds_nothing_for_fails_no_executor. A turn's failure reaches process_inbound as its message; the reason no_executor is asserted on the channel call.",
   "setup": {
     "channels": [

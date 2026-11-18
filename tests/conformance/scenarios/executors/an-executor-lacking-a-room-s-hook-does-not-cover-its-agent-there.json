@@ -6,6 +6,10 @@
     "§10.6.6",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.7-028",
+    "RK-10.6.7-029"
+  ],
   "notes": "Python: tests/test_agent_presence.py test_an_executor_lacking_a_room_s_hook_does_not_cover_its_agent_there.",
   "setup": {
     "channels": [

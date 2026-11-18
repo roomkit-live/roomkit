@@ -7,6 +7,11 @@
     "§6.4",
     "§10.6.4"
   ],
+  "requirements": [
+    "RK-10.6.4-004",
+    "RK-10.6.4-009",
+    "RK-10.6.4-011"
+  ],
   "notes": "The reader sets the pace: the model's next piece is never read, and the generation is closed. The text the reader was handed is stored as the turn's answer with metadata.cancelled true, and the turn's record says cancelled. The streaming channel, which stopped reading, is not delivered that row; the others are.",
   "setup": {
     "channels": [

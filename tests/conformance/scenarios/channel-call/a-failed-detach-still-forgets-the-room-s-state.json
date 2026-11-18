@@ -6,6 +6,11 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-043",
+    "RK-10.6.3-015",
+    "RK-10.6.3-016"
+  ],
   "notes": "Python: ChannelStateMixin._on_room_detached.",
   "setup": {
     "channels": [

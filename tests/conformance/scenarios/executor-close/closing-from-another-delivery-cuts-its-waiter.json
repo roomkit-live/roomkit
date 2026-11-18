@@ -6,6 +6,10 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.8-028",
+    "RK-10.6.8-034"
+  ],
   "notes": "Python: tests/test_executor_close_contract.py::test_nested_inbound_has_a_separate_turn_scope. A process_inbound in a turn starts another delivery with its own turn scope, not a directly nested backend turn. Closing from that delivery cuts the first turn; cancellation of its waiting call also ends the second delivery.",
   "setup": {
     "channels": [

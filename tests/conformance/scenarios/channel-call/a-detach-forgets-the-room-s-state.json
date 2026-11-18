@@ -6,6 +6,10 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-043",
+    "RK-10.6.3-016"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py::test_detaching_a_channel_forgets_what_the_room_kept_for_it.",
   "setup": {
     "channels": [

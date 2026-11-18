@@ -6,6 +6,10 @@
     "§6.4 The turn's record",
     "§10.6.4"
   ],
+  "requirements": [
+    "RK-10.6.4-005",
+    "RK-10.6.8-020"
+  ],
   "notes": "Python: turns/_codec.py, the usage item is read ahead as a delta (RMK-1333 review): channels/_ai_streaming.py _announce runs ahead of the reader; RFC §9.3.",
   "setup": {
     "channels": [

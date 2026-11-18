@@ -5,6 +5,10 @@
   "rules": [
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.3-032",
+    "RK-10.6.7-025"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py test_a_room_whose_executor_stopped_moves_to_another.",
   "setup": {
     "channels": [

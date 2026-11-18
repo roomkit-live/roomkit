@@ -6,6 +6,10 @@
     "§10.6.3",
     "§10.6.5"
   ],
+  "requirements": [
+    "RK-10.6.3-038",
+    "RK-10.6.5-024"
+  ],
   "notes": "Python: tests/test_turns_between.py test_a_publication_after_the_turn_reaches_the_owner_for_its_room_only.",
   "setup": {
     "channels": [

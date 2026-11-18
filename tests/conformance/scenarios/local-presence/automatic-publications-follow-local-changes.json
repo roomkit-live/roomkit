@@ -5,6 +5,11 @@
   "rules": [
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.7-028",
+    "RK-10.6.7-030",
+    "RK-10.6.7-034"
+  ],
   "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-021"
+  ],
   "notes": "Python: tests/test_turns_channel_release.py.",
   "setup": {
     "channels": [

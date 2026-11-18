@@ -7,7 +7,8 @@
     "§10.1 step 14"
   ],
   "requirements": [
-    "RK-10.1-085"
+    "RK-10.1-085",
+    "RK-10.6.4-004"
   ],
   "notes": "At max_chain_depth 3 the cascade's budget is 30 passes. bot, a transport, answers the message with 16 buffered events, which draw 16. The agent's answer to the message is the trigger's own stream and draws none; its answers to bot's notes are chained streams, read after the trigger's, each drawing one pass as it is read: 14 are read, and the last 2, past the budget, are closed unread, so the model is asked 15 times in all. Each stores an empty MESSAGE from the agent, BLOCKED reentry_loop_cap, at the depth the answer would have had, answering the note.",
   "setup": {

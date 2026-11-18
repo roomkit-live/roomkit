@@ -7,6 +7,10 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.6-019",
+    "RK-10.6.6-020"
+  ],
   "notes": "Python: tests/test_turn_hooks.py::test_a_hook_on_the_kits_executor_fires_for_an_ai_turn and test_a_room_hook_on_the_executor_fires_in_its_room_only; tests/test_turns_wiring.py. Repeated enabling is idempotent.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§10.6.3",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.3-030"
+  ],
   "notes": "Python: tests/test_channel_declaration.py test_a_channel_call_to_a_declared_agent_with_no_executor_fails_at_once.",
   "setup": {
     "channels": [

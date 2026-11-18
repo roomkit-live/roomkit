@@ -6,6 +6,10 @@
     "§10.6.5",
     "§23.3"
   ],
+  "requirements": [
+    "RK-10.6.5-026",
+    "RK-10.6.5-035"
+  ],
   "notes": "Python: turns/host.py TurnHost.wait_task(task_id, timeout): None when the timeout passes first; core/_turn_host.py _wait_task. The worker holds at a gate the scenario opens only once the turn that waited has answered, so the wait's timeout passes first whatever the machine's speed.",
   "setup": {
     "channels": [

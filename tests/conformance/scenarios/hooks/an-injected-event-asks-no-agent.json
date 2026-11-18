@@ -6,6 +6,9 @@
     "§9.4 Injected events",
     "§19.3 rule 6"
   ],
+  "requirements": [
+    "RK-10.6.1-004"
+  ],
   "setup": {
     "channels": [
       {

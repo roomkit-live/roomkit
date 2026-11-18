@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-10.6.8-040"
+  ],
   "notes": "Python: test_discussion_processes.py test_uninstalling_while_a_turn_runs_cuts_it_and_records_nothing, its one-process case; _driver.py stop, _abandon(turn, 'discussion_stopped').",
   "setup": {
     "channels": [

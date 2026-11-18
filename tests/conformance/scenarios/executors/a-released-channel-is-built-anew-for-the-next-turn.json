@@ -5,6 +5,10 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-017",
+    "RK-10.6.3-018"
+  ],
   "notes": "Python: tests/test_turns_channel_release.py test_a_released_channel_is_built_anew_for_the_next_turn_and_closed.",
   "setup": {
     "channels": [

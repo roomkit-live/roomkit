@@ -6,6 +6,9 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.7-025"
+  ],
   "notes": "Python: tests/test_turns_redis.py; examples/turns_redis.py step 4.",
   "setup": {
     "kit": {

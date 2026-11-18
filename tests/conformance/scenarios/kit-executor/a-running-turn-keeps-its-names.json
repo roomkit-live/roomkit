@@ -7,6 +7,9 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.6-016"
+  ],
   "notes": "Python: tests/test_turns_wiring.py::test_a_turn_runs_the_room_hooks_its_request_named_and_a_disable_holds. The generation gate ensures the first request was taken before disabling.",
   "setup": {
     "channels": [

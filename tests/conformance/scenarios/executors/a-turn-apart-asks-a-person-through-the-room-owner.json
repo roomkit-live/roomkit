@@ -6,6 +6,10 @@
     "§10.6.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-10.6.5-058",
+    "RK-10.6.5-062"
+  ],
   "notes": "Python: tests/test_turns_inputs.py test_the_owner_answers_a_turns_request.",
   "setup": {
     "channels": [

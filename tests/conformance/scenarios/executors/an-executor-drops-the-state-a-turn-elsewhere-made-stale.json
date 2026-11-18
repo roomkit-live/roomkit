@@ -6,6 +6,12 @@
     "§10.6.2",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.2-032",
+    "RK-10.6.2-036",
+    "RK-10.6.2-037",
+    "RK-10.6.3-032"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py test_an_executor_drops_a_room_s_state_a_turn_elsewhere_made_stale. Dropping reads as the channel's on_room_detached (§10.6.2). A build that never saw the room lets go of nothing, which is not listed.",
   "setup": {
     "channels": [

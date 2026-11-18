@@ -6,6 +6,10 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-039",
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_turns_channel_call_state.py::test_a_call_reports_restoring_the_state_a_concurrent_call_changed. The restore gate is inside the actual channel verb, after the executor has read its initial state. The intervening setter is awaited through the owner so its state is stored before the restore is released. This checks overlapping state comparisons, not reordered or lost backend replies.",
   "setup": {
     "channels": [

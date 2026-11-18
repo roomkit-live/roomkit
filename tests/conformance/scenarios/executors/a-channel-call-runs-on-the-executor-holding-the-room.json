@@ -6,6 +6,11 @@
     "§10.6.3",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.3-027",
+    "RK-10.6.3-028",
+    "RK-10.6.7-026"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py test_a_channel_call_reaches_the_executor_holding_the_room.",
   "setup": {
     "channels": [

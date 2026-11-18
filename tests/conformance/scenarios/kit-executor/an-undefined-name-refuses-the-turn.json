@@ -7,6 +7,10 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.6-017",
+    "RK-10.6.7-021"
+  ],
   "notes": "Python: tests/test_turns_backend.py::test_an_event_no_executor_takes_names_the_room_hooks_it_needs. A refused turn does not consume model rounds.",
   "setup": {
     "channels": [

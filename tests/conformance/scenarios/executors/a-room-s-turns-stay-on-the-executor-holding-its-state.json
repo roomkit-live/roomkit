@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.7"
   ],
+  "requirements": [
+    "RK-10.6.7-025"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py test_a_room_s_turns_stay_on_the_executor_holding_its_state. The others are served before and after it and paused for the room's first turn: which executor takes a first turn is left open, and a backend that ignored the holder would give the next turn to one of them.",
   "setup": {
     "channels": [

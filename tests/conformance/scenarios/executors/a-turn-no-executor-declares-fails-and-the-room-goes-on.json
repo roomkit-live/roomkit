@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.7-020",
+    "RK-10.6.8-014",
+    "RK-10.6.8-016"
+  ],
   "notes": "Python: tests/test_channel_declaration.py test_with_no_executor_to_build_it_a_declared_agent_s_turn_fails_at_once. A turn's failure reaches process_inbound as its message; the reason no_executor is asserted where a call raises it (a-channel-call-no-executor-takes-fails-no-executor).",
   "setup": {
     "channels": [

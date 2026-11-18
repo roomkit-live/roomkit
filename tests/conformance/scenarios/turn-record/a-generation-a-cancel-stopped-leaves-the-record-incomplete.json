@@ -6,6 +6,9 @@
     "§6.4 The turn's record",
     "§21.3"
   ],
+  "requirements": [
+    "RK-10.6.8-020"
+  ],
   "notes": "Python: channels/_ai_streaming.py _StreamTurnState.count_generation (RMK-1056). roomkit-rs: tool_loop/generation.rs Generation::cut (RMK-1029).",
   "setup": {
     "channels": [

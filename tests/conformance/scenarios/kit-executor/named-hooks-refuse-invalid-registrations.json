@@ -8,6 +8,10 @@
     "§17.2",
     "§19.7"
   ],
+  "requirements": [
+    "RK-10.6.6-005",
+    "RK-10.6.6-021"
+  ],
   "notes": "Python: HookEngine.define_room_hook, tests/test_turn_hooks.py::test_an_executor_refuses_an_owners_trigger_on_every_door and tests/test_hook_rules.py.",
   "setup": {
     "channels": [

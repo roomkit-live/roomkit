@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-031"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py::test_a_verb_the_channel_lacks_raises_on_the_owner.",
   "setup": {
     "channels": [

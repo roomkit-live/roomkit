@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.8-014",
+    "RK-10.6.8-028",
+    "RK-10.6.8-033"
+  ],
   "notes": "Python: TurnExecutor._close cancels running ExecutorTurn tasks; _executor_turn.py::_turn sends End even when work is cancelled.",
   "setup": {
     "channels": [

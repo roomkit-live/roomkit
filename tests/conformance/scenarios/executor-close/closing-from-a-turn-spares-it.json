@@ -6,6 +6,10 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.8-028",
+    "RK-10.6.8-033"
+  ],
   "notes": "Python: TurnExecutor._spare_turns_run_under and ExecutorTurn.spare; public-API regression proof for a close under its own turn.",
   "setup": {
     "channels": [

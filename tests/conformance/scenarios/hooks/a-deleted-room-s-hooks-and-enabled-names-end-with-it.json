@@ -7,6 +7,9 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.6.6-016"
+  ],
   "notes": "The hook is added with no organization, and the name enabled is the kit executor's. Created again, the room holds neither: removing the hook and disabling the name find nothing.",
   "setup": {
     "channels": [

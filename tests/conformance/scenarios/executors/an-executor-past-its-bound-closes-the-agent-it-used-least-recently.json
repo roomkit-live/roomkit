@@ -5,6 +5,10 @@
   "rules": [
     "§10.6.2"
   ],
+  "requirements": [
+    "RK-10.6.2-015",
+    "RK-10.6.2-016"
+  ],
   "notes": "Python: tests/test_turns_channel_release.py test_an_executor_past_its_bound_lets_go_of_the_agent_used_least_recently. The closes run apart from the turns, so the list is matched in any order: which builds and closes it holds shows which agent each build let go.",
   "setup": {
     "channels": [

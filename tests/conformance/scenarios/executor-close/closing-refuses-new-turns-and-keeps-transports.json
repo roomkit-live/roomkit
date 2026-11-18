@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.7-022",
+    "RK-10.6.8-028",
+    "RK-10.6.8-033"
+  ],
   "notes": "Python: tests/test_turns_own_executor.py::test_a_live_agent_s_turn_fails_once_the_kit_s_executor_closed; TurnExecutor.close and declares.",
   "setup": {
     "channels": [

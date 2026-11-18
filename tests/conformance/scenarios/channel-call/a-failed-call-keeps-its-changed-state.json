@@ -6,6 +6,10 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040",
+    "RK-10.6.3-028"
+  ],
   "notes": "Python: ExecutorRooms._call and ChannelStateMixin.channel_call.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-018"
+  ],
   "notes": "Python: tests/test_turns_channel_release.py test_a_turn_running_on_a_released_channel_ends_on_it_before_it_closes.",
   "setup": {
     "channels": [

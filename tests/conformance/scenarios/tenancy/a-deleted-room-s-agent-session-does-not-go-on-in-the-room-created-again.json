@@ -6,6 +6,9 @@
     "§17.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-036"
+  ],
   "notes": "An ACP agent answers acme's message in its room's session; the store deletes the room; globex creates a room under the same id, attaches the same agent, and a message arrives in it. The agent does not prompt the deleted room's session with globex's message: globex's room opens a new one.",
   "setup": {
     "channels": [

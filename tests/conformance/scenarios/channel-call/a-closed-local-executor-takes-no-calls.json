@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.7-022"
+  ],
   "notes": "Python: tests/test_turns_own_executor.py::test_a_live_agent_s_call_and_event_fail_once_the_kit_s_executor_closed.",
   "setup": {
     "channels": [

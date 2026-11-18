@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.7-005",
+    "RK-10.6.7-028",
+    "RK-10.6.7-029"
+  ],
   "notes": "Python: tests/test_agent_presence.py test_a_room_s_agent_presence_names_the_executors_covering_each_agent.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040",
+    "RK-10.6.2-041"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py::test_the_kit_stores_a_channel_call_s_room_state_with_the_room.",
   "setup": {
     "channels": [

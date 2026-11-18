@@ -6,6 +6,9 @@
     "§7.5",
     "§10.6.4"
   ],
+  "requirements": [
+    "RK-10.6.4-004"
+  ],
   "notes": "Python: core/event_router.py (binding.muted: _aclose_stream), orchestration/strategies/supervisor/delegate.py; RFC §7.5, §10.6.4; light review of RMK-1254.",
   "setup": {
     "channels": [

@@ -6,6 +6,11 @@
     "§10.6.5",
     "§21.4"
   ],
+  "requirements": [
+    "RK-10.6.5-028",
+    "RK-10.6.5-030",
+    "RK-10.6.5-052"
+  ],
   "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
   "setup": {
     "channels": [

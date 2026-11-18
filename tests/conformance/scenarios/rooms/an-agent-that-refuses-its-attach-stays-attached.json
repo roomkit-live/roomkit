@@ -6,6 +6,10 @@
     "§6.1",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-014",
+    "RK-10.6.3-015"
+  ],
   "notes": "Translates roomkit tests/test_turns_channel_control.py::test_an_intelligence_channel_s_attach_failure_is_logged_on_its_executor, its kit side.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_turns_channel_control.py::test_a_channel_call_answers_the_room_s_state_when_the_verb_changed_it.",
   "setup": {
     "channels": [

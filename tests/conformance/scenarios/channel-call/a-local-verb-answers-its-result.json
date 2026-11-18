@@ -6,6 +6,9 @@
     "§10.6.2",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.3-028"
+  ],
   "notes": "Python: ChannelStateMixin.channel_call.",
   "setup": {
     "channels": [

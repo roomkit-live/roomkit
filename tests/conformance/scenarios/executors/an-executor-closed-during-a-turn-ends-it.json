@@ -6,6 +6,13 @@
     "§10.6",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.3-032",
+    "RK-10.6.8-014",
+    "RK-10.6.8-016",
+    "RK-10.6.8-022",
+    "RK-10.6.8-028"
+  ],
   "notes": "Python: tests/test_turns_failures.py test_an_executor_closed_while_a_turn_s_end_waits_for_a_verb_ends_the_turn.",
   "setup": {
     "kit": {

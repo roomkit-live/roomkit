@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.6.8-014",
+    "RK-10.6.8-028",
+    "RK-10.6.8-029"
+  ],
   "notes": "Python: tests/test_executor_close_contract.py::test_later_external_close_cuts_a_turn_previously_spared_by_its_own_close. Exemptions apply to each close call, not to the lifetime of a turn.",
   "setup": {
     "channels": [
