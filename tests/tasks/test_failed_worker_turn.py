@@ -348,6 +348,7 @@ async def test_a_worker_that_returns_an_already_wrapped_failure(
     with_end: bool, buffered: bool
 ) -> None:
     original = ProviderError("upstream detail", provider="mock", status_code=503)
+    original.__cause__ = RuntimeError("network")
 
     class WrappedWorker(AILikeChannel):
         async def on_event(
@@ -389,3 +390,5 @@ async def test_a_worker_that_returns_an_already_wrapped_failure(
         cause = result.exception
     assert isinstance(cause, ProviderError)
     assert (cause.provider, cause.status_code, str(cause)) == ("mock", 503, str(original))
+    assert isinstance(cause.__cause__, RuntimeError)
+    assert str(cause.__cause__) == "network"
