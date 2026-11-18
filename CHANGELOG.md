@@ -85,7 +85,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A channel's circuit breaker in recovery no longer refuses every later delivery when its probe met a binding with no recipient (`NoRecipientError`): the probe goes to the next delivery.
 
-- A turn that switches reasoning off on `gpt-6.1-sol` or `gpt-6-astra` is sent effort `low`, where it sent `none`, which OpenAI refuses, and the request failed.
+- A turn that switches reasoning off on `gpt-6.1-sol` or `gpt-6-astra` is sent effort `low`, their floor, where it sent `none`, which both refuse, and the request failed, or no effort, and the model reasoned at its default.
+
+- `OpenAIVisionProvider` works with current OpenAI models: on OpenAI's endpoint it sends the cap as `max_completion_tokens` and leaves the temperature out for the models `OpenAIConfig` profiles (GPT-4.1 and later, the o-series), which refused the `max_tokens` and `temperature=0.3` it always sent.
 
 - A tool call whose argument text holds a non-finite number (`NaN`, `Infinity`, an overflowing exponent) keeps its raw text, is marked partial and does not run.
 
