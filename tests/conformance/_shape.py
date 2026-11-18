@@ -67,7 +67,19 @@ from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._thinking import channel_problems as thinking_problems
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
-TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
+# `rules` and `requirements` cite the RFC for the checker; the runner ignores them.
+TOP = {
+    "$schema",
+    "id",
+    "title",
+    "rules",
+    "requirements",
+    "reentrancy",
+    "notes",
+    "setup",
+    "steps",
+    "expect",
+}
 SETUP = {
     "kit",
     "channels",
