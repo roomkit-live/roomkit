@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from roomkit import ACPChannel, HostChannel, RoomKit
+from roomkit import ACPChannel, AIChannel, HostChannel, RoomKit
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import (
     ChangeRefusedError,
@@ -424,6 +424,22 @@ async def _set_agent_response_policy(
     return await kit.set_agent_response_policy(spec["room_id"], policy, **_org(spec))
 
 
+async def _direct_prompt(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bool:
+    """Call the live AI channel with the kit's wiring and this room's current binding."""
+    channel = kit.get_channel(spec["channel_id"])
+    assert isinstance(channel, AIChannel)
+    kit.turn_executor.wire(channel)
+    room_id = spec["room_id"]
+    context = await kit.turn_executor.wiring.env.context(room_id)
+    binding = context.get_binding(channel.channel_id)
+    assert binding is not None
+    output = await channel.on_event(complete_event(spec["event"], room_id, {}), binding, context)
+    if output.response_stream is not None:
+        async for _ in output.response_stream:
+            pass
+    return output.responded
+
+
 async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     register_channel(kit, harness, spec["channel"])
 
@@ -665,6 +681,7 @@ CALLS: dict[str, Call] = {
     "steer": _steer,
     "acp.cancel": _acp_cancel,
     "acp.close": _acp_close,
+    "agent.direct_prompt": _direct_prompt,
     "agent.extra_tools": read_extra_tools,
     "agent.replace_extra_tool": replace_extra_tool,
 }

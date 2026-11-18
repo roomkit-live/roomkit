@@ -588,6 +588,7 @@ CALLS: dict[str, set[str]] = {
     "steer": {"channel_id", "directive", "room_id"},
     "acp.cancel": {"channel_id", "room_id"},
     "acp.close": {"channel_id"},
+    "agent.direct_prompt": {"room_id", "channel_id", "event"},
     "agent.extra_tools": {"channel_id"},
     "agent.replace_extra_tool": {"channel_id", "index", "definition"},
     "close": set(),
