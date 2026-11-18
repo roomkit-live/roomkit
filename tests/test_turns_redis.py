@@ -228,6 +228,32 @@ async def _redis_now(client: Any) -> datetime:
     return datetime.fromtimestamp(seconds, UTC) + timedelta(microseconds=microseconds)
 
 
+@pytest.mark.usefixtures("redis_client")
+async def test_a_local_host_predicate_belongs_to_its_serving_node(prefix: str) -> None:
+    hosting, elsewhere = _backend(prefix), _backend(prefix)
+    worker = TurnExecutor(
+        lambda _: None,
+        hosts=lambda channel: channel.startswith("agent-"),
+        executor_id="predicate",
+        timeouts=TIMEOUTS,
+    )
+    try:
+        await hosting.serve(worker)
+        [info] = await hosting.executors()
+        assert info.executor_id == "predicate" and info.node == hosting.node_id
+        assert info.hosts is None and info.last_beat is None
+        assert info.covers("agent-one") and not info.covers("stranger")
+        restored = type(info).model_validate_json(info.model_dump_json())
+        assert not restored.covers("agent-one")
+        assert await elsewhere.executors() == []
+        await worker.close()
+        assert await hosting.executors() == []
+    finally:
+        await worker.close()
+        await hosting.close()
+        await elsewhere.close()
+
+
 @pytest.mark.wallclock
 async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_timeout(
     prefix: str, redis_client: Any, database: Path

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import HookExecution, HookRegistration, HookTrigger, RoomKit
+from roomkit import ChannelDeclaration, HookExecution, HookRegistration, HookTrigger, RoomKit
 from tests.test_framework import SimpleChannel
 
 
@@ -81,6 +81,10 @@ async def test_local_executor_queries_follow_registration_and_close() -> None:
     assert executor.organizations == {"*"}
     assert executor.serves(None) and executor.serves("acme")
     assert not executor.declares("agent")
+    kit.register_channel(ChannelDeclaration(channel_id="declared"))
+    assert not executor.hosts_channel("declared")
+    assert not executor.declares("declared")
+    assert not executor.takes("declared")
     kit.register_channel(SimpleChannel("agent"))
     assert executor.hosts_channel("agent") and executor.declares("agent")
     assert executor.takes("agent")
