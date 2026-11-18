@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.1-024",
     "RK-10.4-037",
-    "RK-10.4-041"
+    "RK-10.4-041",
+    "RK-5.7-036"
   ],
   "notes": "Review probe for the RFC's 'a group binding takes either'. Found by the review of RMK-1396.",
   "setup": {

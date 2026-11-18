@@ -8,6 +8,10 @@
     "§17.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-5.1-041",
+    "RK-5.1-042"
+  ],
   "notes": "The rooms have long-overdue timers. Refusal must preserve their entire room record and emit no timer notices. Missing-room calls must not sweep other rooms either. Python: tests/test_room_org_scoping.py and test_room_transitions.py; this combines their scope and transition boundaries.",
   "setup": {
     "rooms": [

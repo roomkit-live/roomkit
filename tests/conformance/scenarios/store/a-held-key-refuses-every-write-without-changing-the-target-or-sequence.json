@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_key_its_channel_holds_refuses_another_event. RMK-1609.",
   "steps": [
     {

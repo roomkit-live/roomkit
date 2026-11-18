@@ -8,7 +8,8 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-10.5-046"
+    "RK-10.5-046",
+    "RK-5.1-001"
   ],
   "notes": "Python: tests/test_commit_event.py::test_a_record_under_a_key_its_channel_holds_is_refused. RMK-1609.",
   "steps": [

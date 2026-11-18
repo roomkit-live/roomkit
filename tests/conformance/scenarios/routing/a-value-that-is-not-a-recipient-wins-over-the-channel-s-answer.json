@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-10.1-013",
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-016",
+    "RK-5.7-020"
   ],
   "notes": "phone_number holds true, reached_at Alice. Found by the review of RMK-1129.",
   "setup": {

@@ -8,6 +8,9 @@
     "§13.5 Delivery lanes across processes",
     "§8.1"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "setup": {
     "channels": [
       {

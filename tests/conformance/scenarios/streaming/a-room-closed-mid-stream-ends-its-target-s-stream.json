@@ -8,6 +8,11 @@
     "§12.2 step 14s"
   ],
   "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-009",
+    "RK-5.1-010",
+    "RK-5.1-011",
     "RK-7.5-014"
   ],
   "notes": "A tool-call hook closes the room while the agent streams to ws. The rows after the close are refused, not stored: the room refuses writes. ws reads the deltas and the rows before the close and nothing after.",

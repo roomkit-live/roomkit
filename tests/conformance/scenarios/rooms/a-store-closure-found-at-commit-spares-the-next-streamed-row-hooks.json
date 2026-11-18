@@ -8,6 +8,14 @@
     "§8.2",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-009",
+    "RK-5.1-010",
+    "RK-5.1-011",
+    "RK-5.1-012"
+  ],
   "notes": "Python: tests/test_stream_room_reads.py::test_a_refusal_the_commit_found_spares_the_next_row_s_hooks. RFC §5.1 MAY cache the pre-hook status read: the tool-result hook may run with that cache or be skipped with a fresh read. Both must refuse that row at commit and skip the later message and its hooks. The observer would mark room metadata if the later message entered its hook; that marker must stay absent. The rows are refused as a closed room refuses a response, `room_refused_event` naming the status `closed`; a room gone, deleted or created again under its id, would name none (§13.5).",
   "setup": {
     "channels": [

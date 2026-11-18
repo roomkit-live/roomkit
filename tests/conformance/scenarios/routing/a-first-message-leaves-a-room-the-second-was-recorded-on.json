@@ -14,7 +14,8 @@
     "RK-10.1-024",
     "RK-10.4-040",
     "RK-10.4-041",
-    "RK-10.4-042"
+    "RK-10.4-042",
+    "RK-5.7-005"
   ],
   "notes": "A router answers one missing id for two senders. Alice's message creates the room and waits in ON_ROOM_CREATED; Bob's finds the room and is recorded on the binding it attaches. Under the lock Alice's is held to the check of any routed room, so she is routed once more, and that second answer not being hers gives her a new room. Inverts zz-race-first-lands-in-second-s-room, found by the review of RMK-1339 and kept on RMK-1396. What an agent reads there is pinned by tests, whose hooks attach it before they wait: a scenario's creation hooks run at once.",
   "setup": {

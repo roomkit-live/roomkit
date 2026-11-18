@@ -7,6 +7,9 @@
     "§9.5.1",
     "§13.5"
   ],
+  "requirements": [
+    "RK-5.2-015"
+  ],
   "notes": "The publication's call is nested under the lock its section holds: its off-lock hook runs under that lock, where a lifecycle change takes the lock again at once rather than wait for the section that runs it.",
   "setup": {
     "channels": [

@@ -11,7 +11,9 @@
     "RK-10.1-024",
     "RK-10.4-038",
     "RK-10.4-041",
-    "RK-10.4-063"
+    "RK-10.4-063",
+    "RK-5.7-007",
+    "RK-5.7-016"
   ],
   "notes": "The hook writes straight to the store, so nothing named the recipient as correspondent. The message with no address commits into no room whose binding names another: routed once more, it opens a closed room. Bob, the recipient, is found and recorded; Carol is not. Found by the light review of RMK-1339; the message's leaving by RMK-1396.",
   "setup": {

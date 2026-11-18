@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.1-019",
     "RK-10.4-027",
-    "RK-10.4-039"
+    "RK-10.4-039",
+    "RK-5.7-016"
   ],
   "notes": "As a channel reading its recipient does: the recipient as routing reads it names the correspondent.",
   "setup": {

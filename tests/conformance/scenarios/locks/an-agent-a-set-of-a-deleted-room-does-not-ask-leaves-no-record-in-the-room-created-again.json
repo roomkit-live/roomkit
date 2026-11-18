@@ -8,6 +8,9 @@
     "§5.1",
     "§8.2"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "notes": "One process, `max_chain_depth` 1: the agent `ai` is not asked for `held`, and its set owes a BLOCKED record of the agent not asked (§8.3). `held` is held at `held` in its delivery to `ws`; the room is deleted and created again under the same id with `sms` and `ws` only. Once `held` is let go, the record finds the room it stands in gone: it is refused as in a room the store no longer holds (`room_refused_event`, a null status, `operation = reentry`), never stored in the new room, whose first message takes index 0. Indexes are read without lifecycle records.",
   "setup": {
     "channels": [

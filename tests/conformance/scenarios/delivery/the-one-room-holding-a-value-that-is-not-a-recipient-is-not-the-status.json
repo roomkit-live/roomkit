@@ -7,7 +7,9 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-045"
+    "RK-10.4-045",
+    "RK-5.7-015",
+    "RK-5.7-020"
   ],
   "notes": "A value that is not a recipient (a boolean, a float, a list, an object) is read as someone else's address (§5.7): no one's status is that room's but the participant's it names, and it names none.",
   "setup": {

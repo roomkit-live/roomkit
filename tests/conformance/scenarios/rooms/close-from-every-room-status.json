@@ -8,6 +8,12 @@
     "§17.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-5.1-013",
+    "RK-5.1-014",
+    "RK-5.1-020",
+    "RK-5.1-021"
+  ],
   "notes": "Python: tests/test_room_transitions.py. Whole-room equality checks timestamps and state on no-op/refusal; specialized store-write assertions are still needed to prove that equal values were not written. Setup reaches each status through public transitions before observation starts.",
   "setup": {
     "rooms": [

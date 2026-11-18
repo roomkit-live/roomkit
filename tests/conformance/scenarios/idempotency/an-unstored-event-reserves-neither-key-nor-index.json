@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "notes": "Python: tests/test_commit_atomicity.py::test_policy_excluded_event_does_not_advance_latest_index; tests/test_latest_index.py. RMK-1609.",
   "steps": [
     {

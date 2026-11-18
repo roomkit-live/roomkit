@@ -7,7 +7,8 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-045"
+    "RK-10.4-045",
+    "RK-5.7-016"
   ],
   "notes": "reached_at holds Carol, the declared key Bob: the channel delivers to Carol. A status for Bob must not be dispatched with that room's context. Found by the review of RMK-1129.",
   "setup": {

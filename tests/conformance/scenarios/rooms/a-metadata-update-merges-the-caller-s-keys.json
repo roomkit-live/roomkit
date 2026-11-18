@@ -6,6 +6,9 @@
     "§5.1 The implementation's metadata keys",
     "§17.2"
   ],
+  "requirements": [
+    "RK-5.1-025"
+  ],
   "notes": "Python: tests/test_framework.py (update_room_metadata merges, and drops the framework's keys), tests/test_room_org_scoping.py (update_room_metadata of another organization's room). A key of the room's private state (author_register) is the framework's too (§14.1).",
   "setup": {
     "rooms": [

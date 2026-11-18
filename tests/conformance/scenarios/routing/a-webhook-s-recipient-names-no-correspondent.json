@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.4-022",
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-014"
   ],
   "notes": "Python: tests/test_transport_recipient.py::test_a_webhook_recipient_names_no_correspondent. The CRM writes as crm-system; the room delivers to the CRM's URL, which names no one.",
   "setup": {

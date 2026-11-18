@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-097",
-    "RK-10.1-123"
+    "RK-10.1-123",
+    "RK-5.13-006"
   ],
   "notes": "Translates roomkit tests/test_delivery_outcomes.py::TestOnlyAFailingSetIsRemembered::test_a_clean_delivery_writes_nothing: the call still reports each delivery, the stored event holds none of them.",
   "setup": {

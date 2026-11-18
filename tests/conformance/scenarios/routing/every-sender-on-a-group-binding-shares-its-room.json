@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.4-025",
-    "RK-10.4-054"
+    "RK-10.4-054",
+    "RK-5.7-020",
+    "RK-5.7-036"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAGroupChannel::test_every_sender_on_a_group_binding_shares_the_room (the key absent, and a float under it), tests/test_transport_recipient.py::test_a_group_binding_records_no_recipient. Its warnings are not compared. The binding is written through the store, the group flag being no attach argument here.",
   "setup": {

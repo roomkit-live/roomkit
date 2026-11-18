@@ -8,6 +8,9 @@
     "§17.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-5.1-042"
+  ],
   "notes": "check_timers is the named-room public check, not check_all_timers. Both rooms are overdue, so a sweeper substituted by a runner would be observable. Python: tests/test_room_timers.py, public check_room_timers.",
   "setup": {
     "rooms": [

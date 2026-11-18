@@ -5,6 +5,10 @@
   "rules": [
     "§5.5"
   ],
+  "requirements": [
+    "RK-5.1-016",
+    "RK-5.5-022"
+  ],
   "notes": "The new name holds a no-break space (U+00A0), a zero-width space (U+200B) and a right-to-left override (U+202E), written raw in this file. The record's body escapes each, so a name cannot hide or reverse what a reader of the record sees; the record's data keeps the name as it was given.",
   "setup": {
     "channels": [

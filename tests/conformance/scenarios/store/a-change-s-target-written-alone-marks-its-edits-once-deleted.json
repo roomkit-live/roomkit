@@ -7,7 +7,8 @@
     "§10.3"
   ],
   "requirements": [
-    "RK-10.3-038"
+    "RK-10.3-038",
+    "RK-5.1-001"
   ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_change_s_target_is_written_alone_with_its_edits_marked. The write the persistence policy makes of a change it keeps out of the timeline (write_change_target).",
   "steps": [

@@ -8,6 +8,9 @@
     "§10.1 step 18",
     "§14.3"
   ],
+  "requirements": [
+    "RK-5.13-006"
+  ],
   "notes": "An injected event has no delivery report (roomkit's _post_plan_effects returns before the root pass's), so its failed delivery is on no stored event.",
   "setup": {
     "channels": [

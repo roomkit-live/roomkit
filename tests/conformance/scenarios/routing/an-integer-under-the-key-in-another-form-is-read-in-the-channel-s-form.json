@@ -10,7 +10,9 @@
   "requirements": [
     "RK-10.1-019",
     "RK-10.4-027",
-    "RK-10.4-039"
+    "RK-10.4-039",
+    "RK-5.7-015",
+    "RK-5.7-016"
   ],
   "notes": "Bob, whose number the channel writes from those digits, is admitted at step 3 and recorded. Found by the review of RMK-1129.",
   "setup": {

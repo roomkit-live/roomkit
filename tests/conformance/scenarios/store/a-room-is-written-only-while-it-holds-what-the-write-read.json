@@ -6,6 +6,9 @@
     "§14.1",
     "§5.1"
   ],
+  "requirements": [
+    "RK-5.1-032"
+  ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_room_is_written_if_it_still_holds_what_the_write_was_computed_from. update_room_if is the compare-and-set a timer transition writes through; the room it writes keeps the counters the store holds, as update_room does.",
   "steps": [
     {

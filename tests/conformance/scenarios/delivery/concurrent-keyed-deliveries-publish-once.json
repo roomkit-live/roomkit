@@ -7,6 +7,9 @@
     "§13.4",
     "§13.5"
   ],
+  "requirements": [
+    "RK-5.2-015"
+  ],
   "notes": "The key is looked up under the room lock within the room, so a concurrent replay waits for the first publication and finds its key. A message's pass holds the lock until the three calls wait for it, so they overlap.",
   "setup": {
     "channels": [

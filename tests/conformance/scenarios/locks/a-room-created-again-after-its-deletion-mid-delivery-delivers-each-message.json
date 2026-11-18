@@ -8,7 +8,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.2-010"
+    "RK-10.2-010",
+    "RK-5.1-001"
   ],
   "notes": "One process. `zero` is delivered; `held` is held at `held` in its delivery while the room is deleted, then let go: its set ends in a room the store no longer holds, whose cursor nothing moves any more. The room is created again under the same id, its bindings attached again, and its indexes start again from the first. Each new message is delivered and moves the new room's cursor: an index the deleted room's `held` took, which a new message takes again, is never read as delivered, nor as skipped by another process. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {

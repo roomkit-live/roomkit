@@ -8,6 +8,7 @@
     "§13.5"
   ],
   "requirements": [
+    "RK-5.2-015",
     "RK-9.5.1-004"
   ],
   "notes": "The publication's section holds the room lock: its call is nested under that lock, takes no admission ticket and runs its off-lock hook under the lock. It never waits behind the ticket of the arrival held in its off-lock check, which commits once released.",

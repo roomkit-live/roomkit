@@ -7,7 +7,8 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-045"
+    "RK-10.4-045",
+    "RK-5.7-028"
   ],
   "notes": "The channel writes its numbers in E.164 by its own normalize_address: the recipients as the provider wrote them name the rooms their bindings name in that form.",
   "setup": {

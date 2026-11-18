@@ -6,6 +6,9 @@
     "§5.5",
     "§17.2"
   ],
+  "requirements": [
+    "RK-5.5-026"
+  ],
   "setup": {
     "identities": [
       {

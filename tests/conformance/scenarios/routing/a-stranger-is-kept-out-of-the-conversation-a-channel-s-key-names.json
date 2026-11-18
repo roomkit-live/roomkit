@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.4-026",
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-007",
+    "RK-5.7-016"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAChannelReadingNoRecipient::test_a_stranger_is_not_admitted_to_the_conversation_of_the_key_s_recipient. The channel declares phone_number and keeps the default recipient_address.",
   "setup": {

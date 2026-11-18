@@ -11,7 +11,9 @@
     "RK-10.1-024",
     "RK-10.4-038",
     "RK-10.4-041",
-    "RK-10.4-063"
+    "RK-10.4-063",
+    "RK-5.7-007",
+    "RK-5.7-016"
   ],
   "notes": "The value is under a key the declaration does not name. The name no sender is is not written over it, and the message with no address opens a closed room. Bob, with two rooms now bound and step 1 not reading that key, gets a room of his own.",
   "setup": {

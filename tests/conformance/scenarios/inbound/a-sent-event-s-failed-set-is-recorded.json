@@ -9,7 +9,8 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-10.5-005"
+    "RK-10.5-005",
+    "RK-5.13-005"
   ],
   "notes": "send_event runs the same root pass as process_inbound (roomkit's plan.emit_processed), so its set with a failure is recorded on the event it committed.",
   "setup": {

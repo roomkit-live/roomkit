@@ -7,7 +7,8 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-020"
+    "RK-10.4-020",
+    "RK-5.7-024"
   ],
   "notes": "Python: tests/test_chat_conversations.py::test_a_post_with_no_author_is_its_chat_s, past its parse of a Telegram channel post, which Python's Telegram provider makes and roomkit-rs does not have: the post reaches the kit with an empty sender.",
   "setup": {

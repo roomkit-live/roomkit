@@ -7,6 +7,11 @@
     "§17.2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-011"
+  ],
   "notes": "A status gate on a greeting only logs: no room_refused_event. A room of the organization is greeted, and a room read with no organization whatever its organization.",
   "setup": {
     "channels": [

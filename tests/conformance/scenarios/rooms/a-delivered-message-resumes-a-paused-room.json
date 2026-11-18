@@ -8,7 +8,9 @@
     "§26.1"
   ],
   "requirements": [
-    "RK-10.1-071"
+    "RK-10.1-071",
+    "RK-5.1-032",
+    "RK-5.1-035"
   ],
   "notes": "The room's inactivity timer is 0 seconds, so it is due again right after the message resumed it; nothing checks it afterwards.",
   "setup": {

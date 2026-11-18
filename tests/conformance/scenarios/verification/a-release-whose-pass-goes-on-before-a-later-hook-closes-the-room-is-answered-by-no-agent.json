@@ -8,6 +8,12 @@
     "§13.6",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-011",
+    "RK-5.1-012"
+  ],
   "notes": "The variant of a-release-from-a-hook-that-closes-the-room-is-answered-by-no-agent where the work under the room's lock yields between the release and the close (the later hook's delay_ms, as an HTTP call would). Python: src/roomkit/core/mixins/lane_execution.py (_execute_plan waits for the end of the room-lock hold the rerun was placed under, DeliveryPlan.under_lock) and src/roomkit/core/locks.py (held_lease: the pass's hold of the lock, not the hook body's), RMK-1660. Rust: crates/roomkit/src/driver/holds.rs (await_place waits for the section's lease).",
   "setup": {
     "kit": {

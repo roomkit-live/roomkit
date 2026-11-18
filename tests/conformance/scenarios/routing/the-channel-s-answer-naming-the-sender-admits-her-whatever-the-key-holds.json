@@ -11,7 +11,8 @@
     "RK-10.1-013",
     "RK-10.1-019",
     "RK-10.4-027",
-    "RK-10.4-039"
+    "RK-10.4-039",
+    "RK-5.7-016"
   ],
   "notes": "phone_number holds Bob, reached_at Alice. Only the router's own read of the channel admits her: step 1 reads the key. Found by the review of RMK-1129.",
   "setup": {

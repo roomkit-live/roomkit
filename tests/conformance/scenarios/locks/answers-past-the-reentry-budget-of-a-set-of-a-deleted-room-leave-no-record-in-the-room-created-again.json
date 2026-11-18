@@ -9,7 +9,8 @@
     "§8.2"
   ],
   "requirements": [
-    "RK-10.1-084"
+    "RK-10.1-084",
+    "RK-5.1-001"
   ],
   "notes": "One process, `max_chain_depth` 2: the reentry budget is 20 passes. `held` is held at `held` in its delivery to `ws`, while the agent `ai` answers it with 21 events. The room is deleted and created again under the same id with `sms` and `ws` only. Once `held` is let go, the first 20 answers re-enter and find the room they were asked in gone; the 21st, past the budget, is not stored BLOCKED in the new room either: each is refused as in a room the store no longer holds. The new room's first message takes index 0. Indexes are read without lifecycle records. The refusals' framework events are left out: 21 alike, an unordered match of them is costly to fail.",
   "setup": {

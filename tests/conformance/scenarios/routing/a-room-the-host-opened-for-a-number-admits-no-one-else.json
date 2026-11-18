@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.1-013",
     "RK-10.4-026",
-    "RK-10.4-054"
+    "RK-10.4-054",
+    "RK-5.7-007"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_opened_for_a_number_admits_no_one_else; tests/test_transport_recipient.py::test_a_room_prepared_for_someone_else_does_not_take_a_stranger.",
   "setup": {

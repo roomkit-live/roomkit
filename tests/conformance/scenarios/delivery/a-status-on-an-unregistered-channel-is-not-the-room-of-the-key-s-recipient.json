@@ -7,7 +7,8 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-046"
+    "RK-10.4-046",
+    "RK-5.7-016"
   ],
   "notes": "With no channel to read the binding's recipient, bob's number, the binding names no one the status names: alice's status reaches no room, as it reaches none on the channel registered (delivery/the-one-room-delivering-to-another-number-is-not-the-status).",
   "setup": {

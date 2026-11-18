@@ -9,6 +9,12 @@
     "§12.2 step 14s"
   ],
   "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-009",
+    "RK-5.1-010",
+    "RK-5.1-011",
+    "RK-5.1-012",
     "RK-7.5-014"
   ],
   "notes": "Python: tests/test_stream_room_reads.py::test_a_close_before_the_first_row_is_read. A generation starts with an open room context; a store write closes it without passing through the kit, and the first row must read that status. The stream is read: ws reads its deltas, then each row is refused as a closed room refuses a response, `room_refused_event` naming the status `closed`. A room gone, deleted or created again under its id, would close the stream unread (§13.5).",

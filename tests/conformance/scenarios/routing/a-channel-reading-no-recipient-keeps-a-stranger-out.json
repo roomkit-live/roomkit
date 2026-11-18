@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.1-013",
     "RK-10.4-015",
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-016"
   ],
   "notes": "The channel declares phone_number and keeps the default recipient_address, which answers none. Bob's number is under the key: step 3 does not take Alice in, and step 1 finds Bob. This inverts the behaviour X8 pinned on Python as routing/a-channel-reading-no-recipient-leaves-the-room-open (RMK-1129).",
   "setup": {

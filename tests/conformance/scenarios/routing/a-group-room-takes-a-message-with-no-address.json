@@ -10,7 +10,8 @@
     "RK-10.1-013",
     "RK-10.1-018",
     "RK-10.1-019",
-    "RK-10.4-037"
+    "RK-10.4-037",
+    "RK-5.7-036"
   ],
   "notes": "The other side of routing/a-message-with-no-address-leaves-a-room-the-host-prepared.",
   "setup": {

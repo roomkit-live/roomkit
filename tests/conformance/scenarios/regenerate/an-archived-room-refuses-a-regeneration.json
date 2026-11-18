@@ -7,6 +7,11 @@
     "§5.1",
     "§8.2"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-012"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateStatusGuard::test_an_archived_room_is_refused_too.",
   "setup": {
     "channels": [

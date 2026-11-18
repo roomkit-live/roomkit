@@ -8,6 +8,7 @@
     "§21.4"
   ],
   "requirements": [
+    "RK-5.3-014",
     "RK-9.3-057"
   ],
   "notes": "Python: tests/test_tool_context.py::TestCurrentToolCall and tests/test_tool_call_structured_copy.py; the handler writes the actual current_tool_call record before the result hook reads it. The object matcher proves a present dictionary here; exact emptiness is checked by native MCP tests in both implementations, not inferred from this patch assertion.",

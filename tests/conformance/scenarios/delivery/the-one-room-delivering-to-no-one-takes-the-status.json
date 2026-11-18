@@ -7,7 +7,9 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-045"
+    "RK-10.4-045",
+    "RK-5.7-015",
+    "RK-5.7-020"
   ],
   "notes": "A blank string is no value: the binding delivers to no one and names no one, so the one room is the status's.",
   "setup": {

@@ -7,7 +7,8 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-10.4-020"
+    "RK-10.4-020",
+    "RK-5.7-024"
   ],
   "notes": "A Telegram channel post has no author. HITL 67dc3147: the chat wins over an empty sender, Python as Rust, as §5.7 says. The name system is another case: routing/a-sender-under-the-framework-s-name-in-a-chat-of-another-name-is-refused.",
   "setup": {

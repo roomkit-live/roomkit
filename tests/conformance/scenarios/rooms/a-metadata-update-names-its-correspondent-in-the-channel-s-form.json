@@ -7,6 +7,11 @@
     "§7.2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-5.1-016",
+    "RK-5.7-007",
+    "RK-5.7-008"
+  ],
   "notes": "As an attach does (rooms/an-attach-names-its-correspondent-in-the-channel-s-form): roomkit's _named_correspondent runs on the merged binding. The other keys of the update are kept as written.",
   "setup": {
     "channels": [

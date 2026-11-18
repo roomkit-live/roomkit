@@ -7,6 +7,11 @@
     "§5.1",
     "§8.2"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-012"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateStatusGuard::test_a_closed_room_with_nothing_to_regenerate_is_still_refused. The framework event keeps its keys, null (RFC §8.2).",
   "setup": {
     "channels": [

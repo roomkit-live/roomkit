@@ -7,6 +7,10 @@
     "§9.3",
     "§5.5"
   ],
+  "requirements": [
+    "RK-5.5-030",
+    "RK-5.5-032"
+  ],
   "notes": "Python: tests/test_human_input.py::test_request_names_the_speaker_through_the_framework (two senders in turn, each named by its own turn's request; here each on the binding it speaks through, no group binding); tools/human_input.py HumanInputToolHandler (actor_id=current_tool_actor_id()); channels/ai.py _make_tool_loop_context (actor_id: None when People.names_another(event)); tools/context.py current_tool_actor_id. The id names the turn without authenticating it (RFC §5.5).",
   "setup": {
     "channels": [

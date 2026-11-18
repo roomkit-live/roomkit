@@ -8,7 +8,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.2-010"
+    "RK-10.2-010",
+    "RK-5.1-001"
   ],
   "notes": "Two processes sharing the store and the lock manager. `zero`, `one` and `two` are sent through `p2`, whose lane holds their sets: `one` is held at `held` in its delivery, `two` queued behind it. The run's own process deletes the room and creates it again under the same id, its bindings attached again: `p2` learns of it only from the store. Once `one` is delivered, `two` takes its turn, and neither moves the new room's cursor: the new room's messages, sent through the run's own process once `two` is over, are each delivered and move it from its start. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {

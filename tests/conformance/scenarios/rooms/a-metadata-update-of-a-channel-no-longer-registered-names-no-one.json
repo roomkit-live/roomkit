@@ -6,6 +6,9 @@
     "§5.7",
     "§7.2"
   ],
+  "requirements": [
+    "RK-5.7-008"
+  ],
   "notes": "roomkit's update_binding_metadata names the correspondent only for a channel it holds: nothing else can write the address in the channel's form.",
   "setup": {
     "channels": [

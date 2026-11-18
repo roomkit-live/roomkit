@@ -10,7 +10,9 @@
   "requirements": [
     "RK-10.1-019",
     "RK-10.4-027",
-    "RK-10.4-039"
+    "RK-10.4-039",
+    "RK-5.7-006",
+    "RK-5.7-016"
   ],
   "notes": "reached_at holds Bob's identity. Bob's address is linked to it, so the one room bound to the channel admits him, and the correspondent is the recipient as the channel reads it. The declared key holds no value, so the record writes his address there (HITL b75a9c93).",
   "setup": {

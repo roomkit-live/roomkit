@@ -8,6 +8,11 @@
     "§12.2 step 14s"
   ],
   "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-009",
+    "RK-5.1-010",
+    "RK-5.1-011",
     "RK-7.5-014"
   ],
   "notes": "Python: tests/test_stream_room_reads.py::test_a_close_during_the_hooks_refuses_the_row and test_a_refusal_the_commit_found_spares_the_next_row_s_hooks. The row whose hook closes the room is not stored; later rows do not enter BEFORE_BROADCAST.",

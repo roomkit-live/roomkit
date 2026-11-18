@@ -6,6 +6,9 @@
     "§5.1",
     "§17.2"
   ],
+  "requirements": [
+    "RK-5.1-023"
+  ],
   "notes": "Python: tests/test_room_status_enforcement.py::TestOpenRoomsAreUnaffected::test_history_stays_readable_after_closing; tests/test_framework_queries.py::TestGetBinding, TestListBindings, TestGetTimeline. Store commits seed a public row without activity; only public read calls are asserted. The reads must not resume a room or emit a lifecycle notice.",
   "setup": {
     "channels": [

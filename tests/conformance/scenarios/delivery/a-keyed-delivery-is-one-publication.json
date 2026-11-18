@@ -6,6 +6,9 @@
     "§22.1",
     "§13.4"
   ],
+  "requirements": [
+    "RK-5.2-015"
+  ],
   "notes": "The publication is stored under its key in the framework's namespace, roomkit:publication:<key> (§5.2). A replay's turn is not its own: turn_complete is false.",
   "setup": {
     "channels": [

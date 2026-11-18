@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.4-015",
-    "RK-10.4-059"
+    "RK-10.4-059",
+    "RK-5.7-007"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestEitherNameFindsTheNewestRoom::test_a_binding_stored_with_a_recipient_alone_names_its_recipient.",
   "setup": {

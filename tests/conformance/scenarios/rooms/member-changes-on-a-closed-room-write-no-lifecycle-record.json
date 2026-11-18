@@ -4,6 +4,11 @@
     "§5.1",
     "§5.5"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-011"
+  ],
   "notes": "Python: tests/test_rfc_write_gates.py::TestLifecycleSystemEventsMeetTheStatusGate::test_member_change_on_closed_room_writes_nothing. Membership state can change; its lifecycle records are refused by the closed timeline.",
   "setup": {
     "channels": [

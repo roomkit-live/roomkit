@@ -6,6 +6,9 @@
     "§5.1 The implementation's metadata keys",
     "§19.2"
   ],
+  "requirements": [
+    "RK-5.1-026"
+  ],
   "notes": "Python: tests/orchestration/test_state.py test_a_state_written_through_the_kit_changes_who_answers_nothing. save_conversation_state writes it through the store. Before: moved asked second, held asked nobody, unread failed every target and the room's router.",
   "setup": {
     "channels": [

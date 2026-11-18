@@ -7,6 +7,9 @@
     "§10.1 step 18",
     "§14.3"
   ],
+  "requirements": [
+    "RK-5.13-005"
+  ],
   "notes": "What a set's record depends on is whether the set ran its aftermath, never the words a target's failure declares: the kit is open, the code is the provider's.",
   "setup": {
     "channels": [

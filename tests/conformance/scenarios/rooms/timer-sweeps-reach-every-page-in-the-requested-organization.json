@@ -6,6 +6,9 @@
     "§5.1",
     "§17.2"
   ],
+  "requirements": [
+    "RK-5.1-042"
+  ],
   "notes": "Python: tests/test_resilience.py::TestRoomTimers::test_check_all_timers_reaches_every_room_past_a_page and test_check_all_timers_paused_to_closed; tests/test_room_org_scoping.py::TestScopedMutations::test_check_all_timers_can_be_limited_to_one_tenant. 101 rooms in each writable status cross the 100-row page boundary. The second sweep changes none.",
   "setup": {
     "rooms": [

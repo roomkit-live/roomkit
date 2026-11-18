@@ -7,7 +7,9 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-10.4-025"
+    "RK-10.4-025",
+    "RK-5.7-020",
+    "RK-5.7-036"
   ],
   "notes": "The fallback on the declared key names no one on a binding declared group: Alice is taken in, and nothing is recorded.",
   "setup": {

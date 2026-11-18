@@ -8,7 +8,11 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.1-055"
+    "RK-10.1-055",
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-011",
+    "RK-5.1-012"
   ],
   "notes": "One process. The `closer` hook closes the room as `Hello` passes it, and allows it with the task `Follow up` and an observation. Read again after the hook, the closed room refuses `Hello` as step 6 would: nothing is stored, the hook's task and observation included, and ON_TASK_CREATED does not fire. Python: core/mixins/inbound_locked.py `_gate_commit` returns `_Refused` before any side effect is kept.",
   "setup": {

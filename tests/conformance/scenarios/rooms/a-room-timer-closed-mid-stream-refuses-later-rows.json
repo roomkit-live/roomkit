@@ -8,6 +8,11 @@
     "§12.2 step 14s"
   ],
   "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-009",
+    "RK-5.1-010",
+    "RK-5.1-011",
     "RK-7.5-014"
   ],
   "notes": "Python: tests/test_stream_room_reads.py::test_every_close_refuses_the_rows_after_it and test_a_timer_due_at_a_row_s_commit_applies_there. The same stream and exact stored rows as the close case, with an archive or timers applied by the next row itself.",

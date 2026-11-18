@@ -8,7 +8,8 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-10.4-063"
+    "RK-10.4-063",
+    "RK-5.7-007"
   ],
   "notes": "Until then the room admits no one and its deliveries are refused. The name system holds no one's place: an update naming a recipient writes the recipient as the correspondent, as on a binding naming no one.",
   "setup": {

@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.4-015",
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-015",
+    "RK-5.7-022"
   ],
   "notes": "A chat id written as an integer: the stranger is kept out, the sender written as its digits is found, and the record leaves the integer as it is.",
   "setup": {

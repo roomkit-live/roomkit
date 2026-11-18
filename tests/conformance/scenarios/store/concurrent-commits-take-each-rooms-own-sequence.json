@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "notes": "Python: tests/test_store_sqlite.py::TestPersistence::test_two_connections_allocate_one_monotonic_sequence (shared scenario supplements the two-connection test). RMK-1609.",
   "steps": [
     {

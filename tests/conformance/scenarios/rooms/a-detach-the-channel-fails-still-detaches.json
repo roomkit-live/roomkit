@@ -7,6 +7,9 @@
     "§7.5",
     "§26.1"
   ],
+  "requirements": [
+    "RK-5.1-016"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach (test_a_failure_reaches_the_caller, test_a_failure_still_tells_the_rooms_observers).",
   "setup": {
     "channels": [

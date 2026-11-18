@@ -7,6 +7,9 @@
     "§7.2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-5.7-008"
+  ],
   "notes": "A group binding is one conversation whoever writes on it, so its recipient names no one.",
   "setup": {
     "channels": [

@@ -16,7 +16,9 @@
     "RK-10.4-024",
     "RK-10.4-026",
     "RK-10.4-054",
-    "RK-10.4-064"
+    "RK-10.4-064",
+    "RK-5.7-005",
+    "RK-5.7-006"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTwoCustomersOnOneNumber::test_each_customer_gets_their_own_room, test_the_agent_answering_bob_reads_nothing_of_alice. An agent joins every room the kit opens; each answer goes to its room's number.",
   "setup": {

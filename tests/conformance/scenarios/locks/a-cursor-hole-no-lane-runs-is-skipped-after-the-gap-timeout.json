@@ -7,6 +7,9 @@
     "§8.2",
     "§5.1"
   ],
+  "requirements": [
+    "RK-5.1-001"
+  ],
   "setup": {
     "kit": {
       "delivery_gap_timeout_ms": 20

@@ -11,7 +11,8 @@
     "RK-10.1-018",
     "RK-10.1-019",
     "RK-10.4-027",
-    "RK-10.4-059"
+    "RK-10.4-059",
+    "RK-5.7-016"
   ],
   "notes": "Bob writes; the router answers the room whose binding delivers to him by the channel's recipient_address, under a key the declaration does not name. The room is his conversation: the record names him, and his reply metadata goes under the declared key.",
   "setup": {

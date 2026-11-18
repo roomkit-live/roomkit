@@ -7,7 +7,8 @@
     "§5.7"
   ],
   "requirements": [
-    "RK-10.4-046"
+    "RK-10.4-046",
+    "RK-5.7-007"
   ],
   "notes": "The attach names the recipient it is given, alice's number, as the binding's correspondent (§5.7): her status is the room's, the channel registered or not.",
   "setup": {

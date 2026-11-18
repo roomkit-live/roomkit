@@ -8,7 +8,8 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-10.4-027"
+    "RK-10.4-027",
+    "RK-5.7-017"
   ],
   "notes": "The attach carries phone_number true and reached_at Alice. RFC 5.7: a value under the key that is not a recipient is read first, whatever the channel answers. Found by the review of RMK-1129.",
   "setup": {

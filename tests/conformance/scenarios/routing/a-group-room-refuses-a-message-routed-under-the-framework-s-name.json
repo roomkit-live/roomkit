@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.1-012",
     "RK-10.4-033",
-    "RK-10.4-034"
+    "RK-10.4-034",
+    "RK-5.7-036"
   ],
   "notes": "The refusal comes before the router and whatever it answers. The same message naming the room is the host's, and enters.",
   "setup": {

@@ -5,6 +5,11 @@
   "rules": [
     "§5.1"
   ],
+  "requirements": [
+    "RK-5.1-028",
+    "RK-5.1-037",
+    "RK-5.1-042"
+  ],
   "notes": "Python: tests/test_resilience.py::TestRoomTimers (inactive thresholds, no timers, close-only timer, terminal room, explicit activity and inert creation defaults). Read calls on an empty room return empty lists.",
   "setup": {
     "rooms": [

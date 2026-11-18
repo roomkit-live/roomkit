@@ -7,6 +7,9 @@
     "§7.2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-5.7-008"
+  ],
   "notes": "The binding names 555-000-0001, stored so by the host: the update's naming writes it +15550000001 and never replaces it by the recipient, which is written in the channel's form too.",
   "setup": {
     "channels": [

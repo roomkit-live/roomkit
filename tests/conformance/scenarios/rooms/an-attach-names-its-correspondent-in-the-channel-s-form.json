@@ -7,6 +7,10 @@
     "§7.2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-5.7-007",
+    "RK-5.7-008"
+  ],
   "notes": "The host's addresses are written as the channel writes an inbound sender (normalize_address), the recipient under the channel's key as recipient_metadata writes it, and a binding that names no one but delivers to an address is that person's conversation. Translates roomkit tests/test_transport_recipient.py::test_a_host_address_is_written_in_e164, its attaches.",
   "setup": {
     "channels": [

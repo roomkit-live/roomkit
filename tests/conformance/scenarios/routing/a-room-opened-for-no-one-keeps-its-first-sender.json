@@ -13,7 +13,10 @@
     "RK-10.1-019",
     "RK-10.4-027",
     "RK-10.4-039",
-    "RK-10.4-054"
+    "RK-10.4-054",
+    "RK-5.7-005",
+    "RK-5.7-015",
+    "RK-5.7-020"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_opened_for_no_one_keeps_its_first_sender, one channel per case. Once two rooms are bound to the number, the first sender is found by her binding.",
   "setup": {

@@ -6,6 +6,10 @@
     "§5.7",
     "§7.2"
   ],
+  "requirements": [
+    "RK-5.1-016",
+    "RK-5.7-008"
+  ],
   "notes": "The binding holds team=blue and names 555-000-0001, stored so by the host. The update repeats team=blue: only the naming changes the binding, which is written, and its channel_updated record committed, as roomkit's update_binding_metadata treats any change of the binding.",
   "setup": {
     "channels": [

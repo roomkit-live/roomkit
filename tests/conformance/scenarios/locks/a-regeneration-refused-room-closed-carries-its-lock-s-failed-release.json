@@ -6,6 +6,11 @@
     "§13.5 A release that fails",
     "§13.6"
   ],
+  "requirements": [
+    "RK-5.1-007",
+    "RK-5.1-008",
+    "RK-5.1-012"
+  ],
   "notes": "Python: src/roomkit/core/mixins/regenerate.py, regenerate_response collects the failed releases of its call and makes the first its result's error when it has none. Found by the light review of RMK-1443's lot 1 (G3).",
   "setup": {
     "kit": {

@@ -8,7 +8,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.1-088"
+    "RK-10.1-088",
+    "RK-5.1-001"
   ],
   "notes": "Two processes sharing the store and the lock manager. `held` is sent through `p2`, whose lane holds its set: it is held at `held` in its delivery to `ws`, which returns the metadata update `stale`; the agent `ai` returns `stale_ai`, the task `Stale` and an observation. The run's own process deletes the room and creates it again under the same id with `sms` and `ws` only: `p2` learns of it only from the store. Once `held` is let go, its set ends in `p2` in a room gone: none of its targets' side effects is written into the new room. The new room's own message, sent through the run's own process, writes its own: `fresh` and the task `Fresh` its `triage` hook gives (scripted hooks run in the run's own process only). Indexes are read without lifecycle records.",
   "setup": {

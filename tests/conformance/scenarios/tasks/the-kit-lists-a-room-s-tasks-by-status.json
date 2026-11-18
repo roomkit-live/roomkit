@@ -7,6 +7,10 @@
     "§14.1",
     "§17.2"
   ],
+  "requirements": [
+    "RK-5.10-001",
+    "RK-5.10-002"
+  ],
   "notes": "Python: core/framework.py list_tasks over the store's list_tasks; tests/test_room_org_scoping.py (list_tasks of another organization's room), tests/test_kit_close.py (list_tasks reads during a close). A task's id is normalized as any id of no timeline.",
   "setup": {
     "rooms": [

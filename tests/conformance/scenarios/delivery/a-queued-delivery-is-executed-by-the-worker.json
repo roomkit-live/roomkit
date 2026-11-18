@@ -7,6 +7,9 @@
     "§22.2",
     "§22.3"
   ],
+  "requirements": [
+    "RK-5.2-015"
+  ],
   "notes": "Enqueue acceptance is not transmission: the queued outcome names no event. The worker runs the item's strategy, the delivery hooks around it.",
   "setup": {
     "kit": {

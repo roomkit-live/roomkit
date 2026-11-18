@@ -4,7 +4,9 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.5-048"
+    "RK-10.5-048",
+    "RK-5.1-029",
+    "RK-5.1-032"
   ],
   "notes": "Python: tests/test_room_timers.py::test_what_is_no_activity_resumes_nothing; tests/test_room_activity.py. The old activity is the earliest instant (@1); each operation must keep it.",
   "setup": {

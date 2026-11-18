@@ -6,7 +6,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.2-010"
+    "RK-10.2-010",
+    "RK-5.1-001"
   ],
   "setup": {
     "channels": [

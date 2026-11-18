@@ -14,7 +14,9 @@
     "RK-10.4-016",
     "RK-10.4-017",
     "RK-10.4-019",
-    "RK-10.4-057"
+    "RK-10.4-057",
+    "RK-5.1-032",
+    "RK-5.1-033"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestEitherNameFindsTheNewestRoom; TestAPausedConversation::test_the_newest_room_wins_whatever_its_status; tests/test_inbound_routing_ambiguity.py::TestDeterminism. Explicit timestamps separate creation age from insertion order. Closed, archived and foreign rooms are newer decoys. Participant status does not change whose conversation it is (RFC §10.4 step 1).",
   "setup": {

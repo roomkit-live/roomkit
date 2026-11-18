@@ -6,6 +6,9 @@
     "§5.1 The implementation's metadata keys",
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-5.1-026"
+  ],
   "notes": "Python: tests/test_framework.py (a key only the framework writes), tests/orchestration/test_discussion_handles.py test_a_discussion_handed_to_the_kit_holds_no_room. The strategy writes these keys through the store, which stays open (HITL 9247da98).",
   "setup": {
     "channels": [
