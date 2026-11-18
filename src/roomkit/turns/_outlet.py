@@ -16,6 +16,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._direct_publication import current_audience
 from roomkit.realtime.base import (
     EphemeralCallback,
     EphemeralEvent,
@@ -119,8 +120,10 @@ class TurnRealtime(RealtimeBackend):
         self,
         fallback: Callable[[], RealtimeBackend | None],
         room_mark: Callable[[str], Awaitable[datetime | None]] | None = None,
+        can_publish_direct: Callable[[str, str, datetime], Awaitable[bool]] | None = None,
     ) -> None:
         self._fallback = fallback
+        self._can_publish_direct = can_publish_direct
         # The creation mark of the room holding an id, which a publication
         # outside a turn carries (RFC §8.4, §17.2); none read without it.
         self._room_mark = room_mark
@@ -129,7 +132,7 @@ class TurnRealtime(RealtimeBackend):
         outlet = current_turn_outlet()
         if outlet is not None and await outlet.publish(channel, event):
             return
-        if (backend := self._outside_a_turn(event, f"on {channel}")) is not None:
+        if (backend := await self._outside_a_turn(channel, event)) is not None:
             await backend.publish(channel, event)
 
     async def publish_to_room(self, room_id: str, event: EphemeralEvent) -> None:
@@ -137,14 +140,14 @@ class TurnRealtime(RealtimeBackend):
         outlet = current_turn_outlet()
         if outlet is not None and await outlet.publish(f"room:{room_id}", event):
             return
-        if (backend := self._outside_a_turn(event, f"in room {room_id}")) is not None:
+        if (backend := await self._outside_a_turn(f"room:{room_id}", event)) is not None:
             if event.room_created_at is None and self._room_mark is not None:
                 # Of the room the kit's last turn of the id ran in, else of the
                 # room that holds it: another room's subscription reads it not.
                 event.room_created_at = await self._room_mark(room_id)
             await backend.publish_to_room(room_id, event)
 
-    def _outside_a_turn(self, event: EphemeralEvent, where: str) -> RealtimeBackend | None:
+    async def _outside_a_turn(self, topic: str, event: EphemeralEvent) -> RealtimeBackend | None:
         """Where *event*, published outside a turn, goes; ``None`` drops it.
 
         An answer's text is published only by a turn's owner, for a turn read
@@ -153,7 +156,24 @@ class TurnRealtime(RealtimeBackend):
         """
         backend = None if event.type == EphemeralEventType.TEXT_DELTA else self._fallback()
         if backend is None:
-            logger.debug("Ephemeral %s %s, outside a turn: dropped", event.type, where)
+            logger.debug("Ephemeral %s on %s, outside a turn: dropped", event.type, topic)
+            return None
+        audience = current_audience.get()
+        if audience is not None:
+            if self._can_publish_direct is None or not audience.accepts(topic, event):
+                return None
+            try:
+                allowed = await self._can_publish_direct(
+                    audience.room_id, audience.channel_id, audience.created_at
+                )
+            except Exception:
+                logger.warning(
+                    "Could not read the audience of a directly wired prompt", exc_info=True
+                )
+                return None
+            if not allowed:
+                return None
+            event.room_created_at = audience.created_at
         return backend
 
     async def subscribe(self, channel: str, callback: EphemeralCallback) -> str:

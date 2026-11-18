@@ -37,6 +37,7 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_thinking import AIThinkingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._author_images import DEFAULT_MAX_AUTHOR_IMAGES, RefusedImages
+from roomkit.channels._direct_publication import scope_direct_prompt
 from roomkit.channels._discussion_turn import discussion_turn
 from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels._served_execution import ServedExecutionGate
@@ -694,6 +695,7 @@ class AIChannel(
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         raise NotImplementedError("AI channel does not accept inbound messages")
 
+    @scope_direct_prompt
     async def on_event(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:

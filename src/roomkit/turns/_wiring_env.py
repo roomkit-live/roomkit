@@ -162,6 +162,16 @@ class WiringEnv(ABC):
     async def message_before(self, room_id: str, index: int) -> int:
         """The index of the room's last message before *index*, -1 for none."""
 
+    async def can_publish_direct(
+        self, room_id: str, channel_id: str, created_at: datetime
+    ) -> bool:
+        """Whether this room incarnation currently grants this channel write access to all.
+
+        Hosts with an authoritative binding reader can opt in. An executor's
+        last turn snapshot cannot establish the current audience.
+        """
+        return False
+
     def realtime(self) -> RealtimeBackend | None:
         """Where a channel's publication made outside a turn goes, ``None``
         for nowhere."""

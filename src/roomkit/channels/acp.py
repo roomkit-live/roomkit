@@ -55,6 +55,7 @@ from roomkit.channels._acp_sessions import (
     _session_setup,
 )
 from roomkit.channels._acp_turn import ACPTurnMixin
+from roomkit.channels._direct_publication import scope_direct_prompt
 from roomkit.channels._discussion_turn import discussion_notes
 from roomkit.channels._instruction import is_standalone, mark_instruction
 from roomkit.channels._mark_copies import compile_mark_patterns
@@ -524,6 +525,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
     ) -> ChannelOutput:
         return ChannelOutput.empty()
 
+    @scope_direct_prompt
     async def on_event(
         self,
         event: RoomEvent,

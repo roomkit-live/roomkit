@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -190,3 +191,74 @@ async def test_a_directly_wired_acp_prompt_publishes_thinking_and_tools_in_order
                 assert ("result" in event.data["tool_calls"][0]) is publish_text
             observed.append(event.type)
         assert observed == expected
+
+
+@pytest.mark.parametrize("access", ["private_trigger", "revoked", "missing", "old_incarnation"])
+async def test_a_direct_prompt_checks_its_room_and_live_binding_on_each_publication(
+    tmp_path: Path, access: str
+) -> None:
+    from roomkit.models.context import RoomContext
+    from roomkit.realtime import EphemeralEventType as Kind
+    from roomkit.turns import TurnExecutor
+    from tests.test_channels.test_acp_session_setup import _request
+
+    channel, _, _ = _channel(tmp_path)
+
+    class Revocable(ObservedRealtime):
+        async def publish_to_room(self, room_id: str, event: EphemeralEvent) -> None:
+            await super().publish_to_room(room_id, event)
+            if access == "revoked" and event.type == Kind.THINKING_DELTA:
+                await kit.set_visibility(room_id, channel.channel_id, "intelligence")
+
+    realtime = Revocable()
+    kit = RoomKit(realtime=realtime)
+    executor = TurnExecutor(lambda _: None)
+    try:
+        room = await kit.create_room(room_id="direct")
+        kit.register_channel(channel.declaration())
+        binding = await kit.attach_channel(room.id, channel.channel_id)
+        if access == "missing":
+            await kit.detach_channel(room.id, channel.channel_id)
+        context = RoomContext(room=room, bindings=[binding])
+        if access == "old_incarnation":
+            from datetime import timedelta
+
+            context.room = room.model_copy(
+                update={"created_at": room.created_at - timedelta(seconds=1)}
+            )
+        event = RoomEvent.model_validate(
+            _request(room.id).model_dump()
+            | {
+                "response_visibility": "intelligence" if access == "private_trigger" else None,
+            }
+        )
+        executor.use_wiring(kit.turn_executor.wiring.env)
+        executor.wire(channel)
+        finished = asyncio.Event()
+
+        @executor.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+        async def reported(event: Any, ctx: RoomContext) -> None:
+            finished.set()
+
+        realtime.published.clear()
+        output = await channel.on_event(event, binding, context)
+        assert output.response_stream is not None
+        async for _ in output.response_stream:
+            pass
+        await asyncio.wait_for(finished.wait(), 2)
+        activity = [
+            (e.type.value, e.data.get("type"))
+            for _, e in realtime.published
+            if e.channel_id == channel.channel_id
+            and e.type.value not in {"presence_offline", "presence_online"}
+        ]
+        expected = (
+            [("custom", "acp_config_options"), ("thinking_start", None), ("thinking_delta", None)]
+            if access == "revoked"
+            else []
+        )
+        assert activity == expected
+    finally:
+        await channel.close()
+        await executor.close()
+        await kit.close()

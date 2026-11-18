@@ -66,6 +66,15 @@ class KitWiringEnv(WiringEnv):
         with self._kit._resource_lease():
             return await read_message_before(self._kit._store, room_id, index)
 
+    async def can_publish_direct(
+        self, room_id: str, channel_id: str, created_at: datetime
+    ) -> bool:
+        binding = await self._kit._store.get_binding(room_id, channel_id)
+        if binding is None or not binding_reaches_room(binding):
+            return False
+        room = await self._kit._store.get_room(room_id)
+        return room is not None and room.created_at == created_at
+
     def realtime(self) -> RealtimeBackend | None:
         return self._kit._realtime
 
