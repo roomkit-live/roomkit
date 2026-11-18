@@ -103,6 +103,39 @@ class TestOpenAIVisionProvider:
         result = await provider.analyze_frame(frame)
         assert result.description == ""
 
+    @pytest.mark.parametrize(
+        ("model", "base_url", "cap", "temperature"),
+        [
+            ("gpt-6.2-sol", "https://api.openai.com/v1", "max_completion_tokens", None),
+            ("o3", "https://api.openai.com/v1", "max_completion_tokens", None),
+            ("gpt-4.1-mini", "https://api.openai.com/v1", "max_completion_tokens", 0.3),
+            ("gpt-4o", "https://api.openai.com/v1", "max_tokens", 0.3),
+            ("gpt-6.2-sol", "http://localhost:11434/v1", "max_tokens", 0.3),
+        ],
+        ids=["gpt-6", "o-series", "gpt-4.1", "gpt-4o", "another-server"],
+    )
+    async def test_the_cap_and_temperature_go_as_openai_takes_them(
+        self, model: str, base_url: str, cap: str, temperature: float | None
+    ) -> None:
+        """OpenAI's endpoint refuses ``max_tokens`` from GPT-4.1 and the
+        o-series, and any temperature but the default from GPT-5, as
+        ``OpenAIConfig`` profiles them; another server gets both as set."""
+        provider = OpenAIVisionProvider(OpenAIVisionConfig(model=model, base_url=base_url))
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = "A desk"
+        client = AsyncMock()
+        client.chat.completions.create = AsyncMock(return_value=response)
+        provider._client = client
+
+        await provider.analyze_frame(_frame())
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        other = "max_tokens" if cap == "max_completion_tokens" else "max_completion_tokens"
+        assert kwargs[cap] == 100
+        assert other not in kwargs
+        assert kwargs.get("temperature") == temperature
+
     async def test_close(self) -> None:
         provider = OpenAIVisionProvider()
         mock_client = AsyncMock()

@@ -12,6 +12,23 @@ _MAX_COMPLETION_TOKEN_MODEL_PREFIXES = ("gpt-4.1", "gpt-5", "gpt-6", "o1", "o3",
 _FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 
 
+def refuses_max_tokens(model: str, base_url: str | None) -> bool:
+    """Whether OpenAI's own endpoint refuses ``max_tokens`` for *model*, which
+    then takes its output cap as ``max_completion_tokens``. Behind another
+    ``base_url`` the server decides, and nothing is known."""
+    return is_vendor_endpoint(base_url, OPENAI_BASE_URL) and model.startswith(
+        _MAX_COMPLETION_TOKEN_MODEL_PREFIXES
+    )
+
+
+def refuses_custom_temperature(model: str, base_url: str | None) -> bool:
+    """Whether OpenAI's own endpoint takes only the default ``temperature``
+    for *model*. Behind another ``base_url`` nothing is known."""
+    return is_vendor_endpoint(base_url, OPENAI_BASE_URL) and model.startswith(
+        _FIXED_TEMPERATURE_MODEL_PREFIXES
+    )
+
+
 class OpenAIConfig(BaseModel):
     """OpenAI AI provider configuration.
 
@@ -148,15 +165,13 @@ class OpenAIConfig(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Apply safe defaults for modern models on OpenAI's own endpoint."""
-        if not is_vendor_endpoint(self.base_url, OPENAI_BASE_URL):
-            return
         if (
-            self.model.startswith(_MAX_COMPLETION_TOKEN_MODEL_PREFIXES)
+            refuses_max_tokens(self.model, self.base_url)
             and "use_max_completion_tokens" not in self.model_fields_set
         ):
             self.use_max_completion_tokens = True
         if (
-            self.model.startswith(_FIXED_TEMPERATURE_MODEL_PREFIXES)
+            refuses_custom_temperature(self.model, self.base_url)
             and "supports_custom_temperature" not in self.model_fields_set
         ):
             self.supports_custom_temperature = False

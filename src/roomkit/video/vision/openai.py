@@ -2,14 +2,14 @@
 
 Works with any OpenAI-compatible API that supports vision:
 
-- **OpenAI** — GPT-4o, GPT-4o-mini
+- **OpenAI** — GPT-6.2 Sol, GPT-6 Luna
 - **Ollama** — qwen3.5, qwen3-vl, llava, llama3.2-vision
 - **vLLM** — Qwen2.5-VL, InternVL, etc.
 
 Usage::
 
     # OpenAI
-    provider = OpenAIVisionProvider(api_key="sk-...", model="gpt-4o")
+    provider = OpenAIVisionProvider(api_key="sk-...", model="gpt-6.2-sol")
 
     # Ollama (local)
     provider = OpenAIVisionProvider(
@@ -39,6 +39,7 @@ from roomkit.providers.ai.openai_dialect import (
     json_schema_format,
 )
 from roomkit.providers.ai.response_schema import check_schema_answer, check_schema_request
+from roomkit.providers.openai.config import refuses_custom_temperature, refuses_max_tokens
 from roomkit.providers.utils import http_timeout, openai_http_client
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import DEFAULT_VISION_PROMPT, VisionProvider, VisionResult
@@ -100,12 +101,13 @@ class OpenAIVisionProvider(VisionProvider):
             OpenAIVisionConfig(model="qwen3-vl:8b")
         )
 
-        # OpenAI GPT-4o
+        # OpenAI GPT-6.2 Sol: its reasoning counts in the cap
         provider = OpenAIVisionProvider(
             OpenAIVisionConfig(
                 api_key="sk-...",
                 base_url="https://api.openai.com/v1",
-                model="gpt-4o",
+                model="gpt-6.2-sol",
+                max_tokens=25000,
             )
         )
 
@@ -155,6 +157,19 @@ class OpenAIVisionProvider(VisionProvider):
         server behind ``base_url`` applies one."""
         return self._config.supports_response_schema
 
+    def _sampling_kwargs(self) -> dict[str, Any]:
+        """The output cap and the temperature, as the endpoint takes them for
+        the model: on OpenAI's own, the cap as ``max_completion_tokens`` where
+        ``max_tokens`` is refused, and no temperature where only the default is
+        taken, as :class:`~roomkit.providers.openai.OpenAIConfig` profiles them.
+        """
+        model, base_url = self._config.model, self._config.base_url
+        cap = "max_completion_tokens" if refuses_max_tokens(model, base_url) else "max_tokens"
+        kwargs: dict[str, Any] = {cap: self._config.max_tokens}
+        if not refuses_custom_temperature(model, base_url):
+            kwargs["temperature"] = self._config.temperature
+        return kwargs
+
     async def analyze_frame(
         self,
         frame: VideoFrame,
@@ -186,8 +201,7 @@ class OpenAIVisionProvider(VisionProvider):
         response = await self._get_client().chat.completions.create(
             model=self._config.model,
             messages=self._messages(frame, prompt or self._config.prompt),
-            max_tokens=self._config.max_tokens,
-            temperature=self._config.temperature,
+            **self._sampling_kwargs(),
             **extra,
         )
 
