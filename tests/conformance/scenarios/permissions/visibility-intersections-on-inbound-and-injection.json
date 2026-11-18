@@ -7,6 +7,7 @@
     "§7.5 rule 8"
   ],
   "requirements": [
+    "RK-10.1-070",
     "RK-10.5-005"
   ],
   "setup": {

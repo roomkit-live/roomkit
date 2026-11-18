@@ -7,6 +7,10 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.1-011",
+    "RK-10.1-015"
+  ],
   "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_a_room_that_does_not_exist_is_created_under_the_caller and test_a_room_a_router_answers_that_does_not_exist_is_created_with_its_id. A new explicit room is bound at creation; an existing explicit room does not record a correspondent.",
   "setup": {
     "channels": [

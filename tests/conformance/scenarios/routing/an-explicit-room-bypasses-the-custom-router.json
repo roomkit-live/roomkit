@@ -7,6 +7,10 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.1-011",
+    "RK-10.1-017"
+  ],
   "notes": "Python: tests/test_inbound_routing.py::TestInboundRoutingIntegration::test_custom_router_used; tests/test_shared_channel_routing.py::TestWhatTheBindingRetains::test_a_message_routed_by_room_id_retains_no_one; tests/test_room_org_scoping.py::TestScopedInbound::test_a_matching_organization_still_auto_attaches_the_channel. The explicit room is deliberately different from the custom answer.",
   "setup": {
     "kit": {

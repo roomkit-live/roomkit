@@ -9,6 +9,10 @@
     "§10.6.1",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-046",
+    "RK-10.1-084"
+  ],
   "notes": "The turn's channel calls no kit: it holds at a gate, a step closes the room, then it answers. So the refusal reads the room as the owner holds it whatever executor ran the turn, one of another process included (§10.6.1), where rooms/a-response-the-room-refuses closes the room from inside the turn.",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§11.7.3",
     "§7.3"
   ],
+  "requirements": [
+    "RK-10.1-041"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_held, _transport_part); tests/test_verification_inbound.py::test_holding_never_widens_what_a_message_reached (RMK-1172).",
   "setup": {
     "kit": {

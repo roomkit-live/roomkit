@@ -6,6 +6,9 @@
     "§9.5.1 Reentrance",
     "§10.1 step 5"
   ],
+  "requirements": [
+    "RK-10.1-097"
+  ],
   "setup": {
     "kit": {
       "identity_resolver": {

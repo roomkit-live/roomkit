@@ -6,6 +6,9 @@
     "§6.4",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-129"
+  ],
   "notes": "Python: core/mixins/lane_execution.py _settle_buffered_replies merges every target's on_event() output in result.outputs, a transport's included (record_buffered_reply: merge_channel_record, then add_turn_entry with reply_turn_entry), core/event_router.py _merged keeping each target's output. watch, a transport, returns t and its end; plain, a transport whose turn returns nothing, has no entry; bot, an agent, returns a and its end.",
   "setup": {
     "channels": [

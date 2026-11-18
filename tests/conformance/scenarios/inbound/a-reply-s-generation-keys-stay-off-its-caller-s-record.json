@@ -6,6 +6,9 @@
     "§6.4 The turn's record",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-129"
+  ],
   "notes": "Python: models/response_metadata.py merge_channel_record, _TURN_RECORD_KEYS (RMK-1056).",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-10.1-047"
+  ],
   "notes": "Python: tests/test_framework.py::TestIdempotencyRace::test_concurrent_duplicate_only_stores_once. RMK-1609.",
   "steps": [
     {

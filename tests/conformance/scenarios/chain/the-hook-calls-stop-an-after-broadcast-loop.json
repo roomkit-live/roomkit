@@ -9,6 +9,7 @@
     "§9.5.1 The room's work outside the lock"
   ],
   "requirements": [
+    "RK-10.1-095",
     "RK-10.5-008",
     "RK-10.5-009"
   ],

@@ -9,6 +9,11 @@
     "§9.4",
     "§8.1"
   ],
+  "requirements": [
+    "RK-10.1-035",
+    "RK-10.1-036",
+    "RK-10.1-037"
+  ],
   "setup": {
     "kit": {
       "identity_resolver": {

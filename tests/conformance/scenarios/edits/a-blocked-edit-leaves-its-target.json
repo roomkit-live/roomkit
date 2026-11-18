@@ -8,6 +8,8 @@
     "§10.3 Mutation triggers"
   ],
   "requirements": [
+    "RK-10.1-058",
+    "RK-10.1-068",
     "RK-10.3-028",
     "RK-10.3-046"
   ],

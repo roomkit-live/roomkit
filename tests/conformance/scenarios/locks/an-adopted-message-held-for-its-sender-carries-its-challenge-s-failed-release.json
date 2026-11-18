@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§11"
   ],
+  "requirements": [
+    "RK-10.1-037",
+    "RK-10.1-128"
+  ],
   "notes": "Python: the held call commits its identity challenge through _inject_off_lock, within its own collecting_release_failures, before it returns (RMK-1516 item 2, the review's probe P6).",
   "setup": {
     "kit": {

@@ -6,6 +6,9 @@
     "§9.4 A `BEFORE_BROADCAST` replacement",
     "§10.1 step 9"
   ],
+  "requirements": [
+    "RK-10.1-053"
+  ],
   "setup": {
     "channels": [
       {

@@ -7,6 +7,10 @@
     "§11.7.4",
     "§11.7.3"
   ],
+  "requirements": [
+    "RK-10.1-039",
+    "RK-10.1-041"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_consume_code: request.room_id != room_id) (RMK-1172).",
   "setup": {
     "kit": {

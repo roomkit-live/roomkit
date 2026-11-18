@@ -7,6 +7,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-012",
     "RK-10.4-033"
   ],
   "notes": "The default router, and a channel with no other room: a room opened for the first message would pass step 3 for Bob, who would be stored there and whose agent's turn would read it.",

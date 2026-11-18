@@ -5,6 +5,9 @@
   "rules": [
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-025"
+  ],
   "notes": "The hook injects an event in the room: stored ahead of the message. A hook of any other name injecting the same would race the message, so it is not asserted here.",
   "setup": {
     "channels": [

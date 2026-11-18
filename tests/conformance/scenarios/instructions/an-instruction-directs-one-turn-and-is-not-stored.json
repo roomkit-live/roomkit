@@ -8,6 +8,18 @@
     "§10.1.1 rule 5",
     "§10.1.1 rule 6"
   ],
+  "requirements": [
+    "RK-10.1-126",
+    "RK-10.1.1-003",
+    "RK-10.1.1-010",
+    "RK-10.1.1-016",
+    "RK-10.1.1-019",
+    "RK-10.1.1-020",
+    "RK-10.1.1-022",
+    "RK-10.1.1-023",
+    "RK-10.1.1-024",
+    "RK-10.1.1-025"
+  ],
   "notes": "`other` is not asked by the instruction, which names `ai`; it is asked by ai's answer, as any agent of the room is under AGENT_CHAIN (§19.3.1), and answers nothing.",
   "setup": {
     "channels": [

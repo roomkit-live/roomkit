@@ -7,6 +7,10 @@
     "§12.2 step 13s",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "notes": "Python: core/mixins/inbound_streaming.py _deliver_segments (deliver_cut once end_cancelled stored the cut text), core/mixins/_streaming_segments.py SegmentWriter.end_cancelled (the row the reader is handed), channels/websocket.py WebSocketChannel.deliver_cut. Room 1: the cut text is stored and handed to the reader by deliver_cut. Room 2: a BEFORE_BROADCAST hook blocks the cut text, so the reader is handed no row (RMK-1756, HITL b5081bcf).",
   "setup": {
     "channels": [

@@ -9,6 +9,9 @@
     "§13.5",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-055"
+  ],
   "reentrancy": [
     "commit@locked"
   ],

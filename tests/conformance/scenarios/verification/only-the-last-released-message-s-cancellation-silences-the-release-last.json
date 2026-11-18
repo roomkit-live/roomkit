@@ -6,6 +6,12 @@
     "§11.7.6",
     "§10.1 Explicit delivery cancellation"
   ],
+  "requirements": [
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-114",
+    "RK-10.1-115"
+  ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_only_the_last_released_messages_cancellation_silences_the_release[last] (RMK-1182).",
   "setup": {
     "kit": {

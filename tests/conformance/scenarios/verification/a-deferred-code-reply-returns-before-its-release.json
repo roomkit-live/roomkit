@@ -7,6 +7,9 @@
     "§11.7.6",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-097"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification, _code_reply, _attempt_code: a deferred reply's attempt started as a decided write of the kit); RMK-913. The agent holds at its gate: the call returned before the answer, which the gate opened lets in.",
   "setup": {
     "kit": {

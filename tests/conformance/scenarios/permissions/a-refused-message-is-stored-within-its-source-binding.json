@@ -6,6 +6,11 @@
     "§7.3 An event's visibility",
     "§7.5 rule 2"
   ],
+  "requirements": [
+    "RK-10.1-058",
+    "RK-10.1-062",
+    "RK-10.1-139"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_a_refused_message, its four cases: room-1 a hook's block, room-2 a read-only source. The source binding is scoped `ws`: the record takes `ws`, what the event would have been delivered with, not the message's own `all`.",
   "setup": {
     "channels": [

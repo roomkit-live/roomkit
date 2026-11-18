@@ -6,6 +6,9 @@
     "§6.7",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-131"
+  ],
   "notes": "Python: core/mixins/lane_execution.py _consume, merge_caller_record; tests/test_response_metadata.py::TestInboundResultResponseMetadata::test_deferred_wait_backfills_writes_made_during_the_stream. The record at the commit is not compared: it MAY be empty (§10.1 step 18).",
   "setup": {
     "channels": [

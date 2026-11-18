@@ -9,6 +9,7 @@
     "§10.5"
   ],
   "requirements": [
+    "RK-10.1-081",
     "RK-10.5-008"
   ],
   "reentrancy": [

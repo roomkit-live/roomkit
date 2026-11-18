@@ -8,6 +8,11 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-10.1-099",
+    "RK-10.1-102",
+    "RK-10.1-110"
+  ],
   "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait and report_cascade, src/roomkit/core/mixins/inbound.py (a call a hook makes, adopted by the cascade whose hook made it, its handle told once that cascade read its streams) (RMK-1322, RMK-1329).",
   "setup": {
     "channels": [

@@ -8,6 +8,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-024",
     "RK-10.4-064"
   ],
   "notes": "Unnamed, the binding would pass step 3 for the next sender until the message is stored. The hook's own fields stay.",

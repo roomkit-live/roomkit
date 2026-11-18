@@ -6,6 +6,10 @@
     "§10.1.1 step 7",
     "§6.4"
   ],
+  "requirements": [
+    "RK-10.1.1-029",
+    "RK-10.1.1-049"
+  ],
   "notes": "Python: channels/_instruction.py kept_instruction. HITL 25b07f2a: a standalone instruction is often a long text (a summary to run again), which would double the history (RMK-1407).",
   "setup": {
     "channels": [

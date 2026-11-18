@@ -7,6 +7,12 @@
     "§10.1 Explicit delivery cancellation",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-114",
+    "RK-10.1-115"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py (_prepare_event_inner: the adopted call is located and named as any call), src/roomkit/core/mixins/verification.py (_name_held); review of RMK-1173/RMK-1182, finding 1a (RMK-1195).",
   "setup": {
     "kit": {

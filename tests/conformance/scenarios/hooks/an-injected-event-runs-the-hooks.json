@@ -6,6 +6,9 @@
     "§9.4 Injected events",
     "§10.1 step 14"
   ],
+  "requirements": [
+    "RK-10.1-083"
+  ],
   "setup": {
     "channels": [
       {

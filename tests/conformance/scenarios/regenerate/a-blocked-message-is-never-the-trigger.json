@@ -6,6 +6,10 @@
     "§13.6",
     "§10.1 step 10"
   ],
+  "requirements": [
+    "RK-10.1-058",
+    "RK-10.1-139"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTarget::test_a_blocked_message_is_never_the_trigger.",
   "setup": {
     "channels": [

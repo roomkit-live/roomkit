@@ -8,6 +8,9 @@
     "§13.6",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.1-084"
+  ],
   "notes": "One process. `held` is held at `held` in its delivery to `ws`, while the agent `ai`, whose model streams, answers it. The room is deleted and created again under the same id with `sms` and `ws` only. Once `held` is let go, the agent's stream is to be read on the room it was asked in, which is gone: it is closed unread, its model never asked to generate, as in a room the store no longer holds, no row of it committed into the new room, and `held`'s call returns its result with no error. The new room's first message takes index 0. Indexes are read without lifecycle records.",
   "setup": {
     "channels": [

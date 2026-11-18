@@ -7,6 +7,10 @@
     "§11.5",
     "§8.2"
   ],
+  "requirements": [
+    "RK-10.1-033",
+    "RK-10.1-036"
+  ],
   "setup": {
     "kit": {
       "identity_resolver": {

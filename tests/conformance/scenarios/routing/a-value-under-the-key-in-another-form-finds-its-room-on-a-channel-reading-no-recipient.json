@@ -8,6 +8,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-013",
     "RK-10.4-015"
   ],
   "notes": "The channel's normalize_address writes 555-0002 as Bob's number and its recipient_address answers none (it reads a key nothing writes). Two rooms are bound, so step 3 cannot save it: the attach named him. Found by the review of RMK-1129.",

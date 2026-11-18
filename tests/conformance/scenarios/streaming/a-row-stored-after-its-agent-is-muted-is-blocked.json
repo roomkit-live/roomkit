@@ -7,6 +7,9 @@
     "§7.5 rule 2",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-10.1-062"
+  ],
   "notes": "The agent is unmuted when its turn starts and muted by a tool-call hook while it streams. Each row reads its source's binding at its own commit, whether a BEFORE_BROADCAST hook runs or not: the rows stored before the mute are delivered, those stored after it are stored BLOCKED and delivered to no one.",
   "setup": {
     "channels": [

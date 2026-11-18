@@ -6,6 +6,9 @@
     "§10.1 step 2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-10.1-025"
+  ],
   "notes": "The greeting's delivery to helper runs inside the session's start, which the message awaits. Waiting there on a gate the greeting itself holds would refuse the message process_timeout. A greeting and what answers it remain inside the bound: a slow enough answer would still expire the message. agent is write-only: it answers nothing.",
   "setup": {
     "kit": {

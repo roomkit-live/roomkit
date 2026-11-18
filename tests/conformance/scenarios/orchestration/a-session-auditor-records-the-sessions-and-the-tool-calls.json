@@ -6,6 +6,9 @@
     "§15.8.2",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-025"
+  ],
   "notes": "Python's SessionAuditor.attach registers ON_SESSION_STARTED among its hooks, and record_tool turns a tool entry into a tool_call entry (orchestration/session_audit.py; tests/orchestration/test_session_audit.py: test_record_tool_adds_to_timeline, test_tool_auditor_bridge_record).",
   "setup": {
     "session_auditor": {

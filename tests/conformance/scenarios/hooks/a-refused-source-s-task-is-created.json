@@ -7,6 +7,10 @@
     "§7.5 rule 3",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-064",
+    "RK-10.1-090"
+  ],
   "setup": {
     "channels": [
       {

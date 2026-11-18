@@ -7,6 +7,8 @@
     "§5.1"
   ],
   "requirements": [
+    "RK-10.1-018",
+    "RK-10.1-024",
     "RK-10.4-042"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_room_due_to_close_is_closed_before_the_check. The router answers Bob's room, paused five minutes ago with a close after one second.",

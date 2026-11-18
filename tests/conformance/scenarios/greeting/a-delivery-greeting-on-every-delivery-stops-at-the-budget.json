@@ -7,6 +7,9 @@
     "§10.1 step 18",
     "§19.1"
   ],
+  "requirements": [
+    "RK-10.1-085"
+  ],
   "notes": "At max_chain_depth 1 the budget is 10 passes. Each greeting's delivery to sms makes the next one; past the budget it is stored BLOCKED reentry_loop_cap, with no delivery to go on from.",
   "setup": {
     "kit": {

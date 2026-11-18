@@ -7,6 +7,9 @@
     "§13.4",
     "§5.2"
   ],
+  "requirements": [
+    "RK-10.1-031"
+  ],
   "notes": "On a channel whose client chooses the key, a sender could otherwise key a message as a publication that would then never be published.",
   "setup": {
     "channels": [

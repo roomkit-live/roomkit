@@ -8,6 +8,9 @@
     "§21.1",
     "§10.1.1"
   ],
+  "requirements": [
+    "RK-10.1.1-030"
+  ],
   "notes": "Python: tests/test_skills_integration.py::test_gated_tools_stay_visible_on_later_turns; channels/_ai_policy.py::_activated_skill_names. RFC §10.1.1: standalone turns do not borrow room activation.",
   "setup": {
     "channels": [

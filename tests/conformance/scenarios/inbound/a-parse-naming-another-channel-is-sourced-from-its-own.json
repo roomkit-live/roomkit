@@ -6,6 +6,9 @@
     "§10.1 step 4",
     "§5.2"
   ],
+  "requirements": [
+    "RK-10.1-028"
+  ],
   "notes": "A parse cannot pass a message off as another channel's: its source is the channel that received it, and it is delivered to the room's other channels, not back to its own. What else the parse wrote of its source stands (its type, the direction of a channel's echo of its own output, §10.3 rule 3).",
   "setup": {
     "channels": [

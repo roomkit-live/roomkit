@@ -8,6 +8,8 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-024",
+    "RK-10.1-025",
     "RK-10.4-041"
   ],
   "notes": "The session starts in the room Alice's message ends in. Bob, routed into a room that exists, starts none.",

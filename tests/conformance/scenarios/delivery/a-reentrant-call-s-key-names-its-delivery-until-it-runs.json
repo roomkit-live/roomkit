@@ -6,6 +6,11 @@
     "§10.1 Explicit delivery cancellation",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-10.1-099",
+    "RK-10.1-111",
+    "RK-10.1-112"
+  ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_reentrant_call_s_key_names_its_delivery_until_it_runs (RMK-1152).",
   "setup": {
     "channels": [

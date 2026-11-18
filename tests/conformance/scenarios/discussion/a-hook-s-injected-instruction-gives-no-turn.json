@@ -6,6 +6,9 @@
     "§19.7.5 rule 8",
     "§9.4 Injected events"
   ],
+  "requirements": [
+    "RK-10.1.1-004"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_edges.py::test_a_hook_s_injected_instruction_gives_no_turn.",
   "setup": {
     "channels": [

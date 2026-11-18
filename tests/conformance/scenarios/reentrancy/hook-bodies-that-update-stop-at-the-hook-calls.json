@@ -8,6 +8,7 @@
     "§10.1 step 16"
   ],
   "requirements": [
+    "RK-10.1-095",
     "RK-10.3-060"
   ],
   "reentrancy": [

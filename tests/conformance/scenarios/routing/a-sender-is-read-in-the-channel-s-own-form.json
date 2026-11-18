@@ -7,6 +7,9 @@
     "§5.7",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.1-010"
+  ],
   "notes": "The channel writes its users' ids lower-case by its own normalize_address, whatever its declared addressing (a WebSocket's, ids as written). The framework reads every inbound sender through it before routing, so the room, its binding and the events name one sender.",
   "setup": {
     "channels": [

@@ -9,6 +9,9 @@
     "§21.1",
     "§10.1.1"
   ],
+  "requirements": [
+    "RK-10.1.1-030"
+  ],
   "notes": "Python: channels/_ai_tools.py::_missing_required_tools and channels/_ai_policy.py::_activated_skill_names. A standalone turn borrows no room activation, but a served activation in that same turn can open a closed prerequisite.",
   "setup": {
     "channels": [

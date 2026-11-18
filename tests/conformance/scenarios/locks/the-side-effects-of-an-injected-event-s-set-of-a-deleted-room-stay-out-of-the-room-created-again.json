@@ -8,6 +8,10 @@
     "§5.1",
     "§9.4"
   ],
+  "requirements": [
+    "RK-10.1-088",
+    "RK-10.1-089"
+  ],
   "notes": "One process. The `triage` hook injects `note` for `ws` when `held` arrives. `note`'s set is held at `held` in its delivery to `ws`, which returns the metadata update `stale`. The room is deleted and created again under the same id with `sms` and `ws`. Once `note` is let go, its set ends in a room gone: its metadata update is not written into the new room. The new room's own message, `again 0`, writes its own, `fresh`. Indexes are read without lifecycle records.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§10.1 step 2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-10.1-025"
+  ],
   "notes": "Both are write-only, so neither reads the other's greeting nor the message. Their hooks run concurrently: the greetings come in either order.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§6.4",
     "§10.1.1"
   ],
+  "requirements": [
+    "RK-10.1.1-030"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_context.py::_collapse_behind_tool_search.",
   "setup": {
     "channels": [

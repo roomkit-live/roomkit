@@ -6,6 +6,9 @@
     "§13.6",
     "§10.1 step 14"
   ],
+  "requirements": [
+    "RK-10.1-085"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_streaming_provider. The trigger is not handed to the transport again: the re-broadcast is scoped to intelligence channels.",
   "setup": {
     "channels": [

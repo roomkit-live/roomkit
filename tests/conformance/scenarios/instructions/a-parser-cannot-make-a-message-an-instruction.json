@@ -6,6 +6,9 @@
     "§10.1.1",
     "§10.1 step 4"
   ],
+  "requirements": [
+    "RK-10.1-030"
+  ],
   "notes": "An instruction is the caller's decision, never the wire's: the event takes the type the caller sent, and is stored and answered as a message. Translates roomkit tests/test_instruction_events.py::test_a_parser_cannot_make_a_message_an_instruction.",
   "setup": {
     "channels": [

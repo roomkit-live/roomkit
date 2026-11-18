@@ -7,6 +7,11 @@
     "§10.1 step 18",
     "§13.5"
   ],
+  "requirements": [
+    "RK-10.1-097",
+    "RK-10.1-110",
+    "RK-10.1-120"
+  ],
   "notes": "Python: src/roomkit/models/delivery.py (DeliveryHandle.cancel), src/roomkit/core/lanes.py (cancel_and_wait: waiter_would_deadlock); tests/test_delivery_cancellation.py::test_cancel_under_room_lock_is_rejected_without_cancelling_turn (RMK-1194).",
   "setup": {
     "channels": [

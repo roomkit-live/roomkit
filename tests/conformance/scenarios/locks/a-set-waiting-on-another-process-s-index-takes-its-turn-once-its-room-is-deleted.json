@@ -7,6 +7,9 @@
     "§10.1.1 rule 5",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.1.1-018"
+  ],
   "notes": "An event is committed straight to the store, as a process that stopped before delivering it: no lane runs its index. `one`, committed next, waits for the cursor to pass that index; the instruction to `agent`, decided once `one` is committed, waits behind `one`. The room is then deleted: its cursor reads -1 for good, and no skip can move it any more. `one`, then the instruction, take their turn rather than waiting forever: `ws` delivers `one`, and `agent`, which answers nothing, takes both as its turns. Indexes are not asserted: the room's lifecycle records, which they are read without, are deleted with it. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {
     "channels": [

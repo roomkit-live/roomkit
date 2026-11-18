@@ -6,6 +6,14 @@
     "§10.1 Explicit delivery cancellation",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-115",
+    "RK-10.1-116",
+    "RK-10.1-117"
+  ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[named-its-organization], [room-read], [room-read-identifying], [read-other-organization], [named-other-organization] (RMK-1152): one, two, three, four and five in that order of cases, each held at its parse or its sender's resolution.",
   "setup": {
     "kit": {

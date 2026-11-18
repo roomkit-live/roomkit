@@ -6,6 +6,10 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py _GenerationsRead, a segment break starts the next (RMK-1333).",
   "setup": {
     "channels": [

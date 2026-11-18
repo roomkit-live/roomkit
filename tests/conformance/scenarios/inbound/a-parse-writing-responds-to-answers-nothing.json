@@ -7,6 +7,9 @@
     "§5.2",
     "§10.1.1"
   ],
+  "requirements": [
+    "RK-10.1-029"
+  ],
   "notes": "responds_to names the instruction a response answers (§10.1.1), which only the runtime writes, on the response it produces: no message a channel parsed is one, whoever wrote the key.",
   "setup": {
     "channels": [

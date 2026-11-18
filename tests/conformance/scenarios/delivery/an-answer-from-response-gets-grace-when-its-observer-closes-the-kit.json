@@ -6,6 +6,9 @@
     "§12.10.4",
     "§10.1 step 13"
   ],
+  "requirements": [
+    "RK-10.1-122"
+  ],
   "notes": "Python: tests/test_kit_close_doors.py::test_an_answer_s_observer_closing_the_kit_finds_the_answer_running. The named close action must actually finish; the complete websocket delivery list is the observable contract.",
   "setup": {
     "channels": [

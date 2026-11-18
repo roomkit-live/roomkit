@@ -6,6 +6,9 @@
     "§10.1 step 2",
     "§9.3"
   ],
+  "requirements": [
+    "RK-10.1-025"
+  ],
   "notes": "_held never passes its gate: its timeout ends it. A session's start that did not wait would emit session_started first, or the message's event_processed.",
   "setup": {
     "channels": [

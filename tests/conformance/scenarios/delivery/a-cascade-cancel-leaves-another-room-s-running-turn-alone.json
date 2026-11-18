@@ -6,6 +6,11 @@
     "§10.1 Explicit delivery cancellation",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-105",
+    "RK-10.1-110"
+  ],
   "notes": "Python: tests/test_delivery_cancellation.py::test_caller_cancellation_drains_tool_and_preserves_other_room. The other room starts before the cut; both bind the same scripted intelligence channel. This does not emulate caller-task cancellation or tool finalizers.",
   "setup": {
     "channels": [

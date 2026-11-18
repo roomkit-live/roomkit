@@ -6,6 +6,9 @@
     "§10.1 step 18",
     "§9.2"
   ],
+  "requirements": [
+    "RK-10.1-127"
+  ],
   "setup": {
     "channels": [
       {

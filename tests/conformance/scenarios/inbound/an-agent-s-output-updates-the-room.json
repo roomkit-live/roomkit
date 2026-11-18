@@ -6,6 +6,9 @@
     "§10.1 step 15",
     "§5.1 The implementation's metadata keys"
   ],
+  "requirements": [
+    "RK-10.1-089"
+  ],
   "setup": {
     "channels": [
       {

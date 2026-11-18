@@ -8,6 +8,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-013",
     "RK-10.4-027"
   ],
   "notes": "roomkit's routed_recipient reads the declared key first: an unreadable value is someone else's address, and the channel's method is not asked. The channel's recipient_address reads none there, the sender still gets a room of her own, the binding as it was. Translates tests/test_shared_channel_routing.py::test_a_room_whose_recipient_is_unreadable_admits_no_one.",

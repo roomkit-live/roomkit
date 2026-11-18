@@ -7,6 +7,9 @@
     "§10.1 step 18",
     "§9.5.1 The room's work outside the lock"
   ],
+  "requirements": [
+    "RK-10.1-097"
+  ],
   "notes": "Nothing waits for an observer of a SYNC trigger, so its call into the room waits for nothing it holds and returns as a caller's does, once its delivery set has run: its delivery results name the channel it reached.",
   "setup": {
     "channels": [

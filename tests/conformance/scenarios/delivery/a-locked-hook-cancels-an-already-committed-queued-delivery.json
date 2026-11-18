@@ -6,6 +6,12 @@
     "§10.1 Explicit delivery cancellation",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-10.1-099",
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-115"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancel_under_the_room_lock_returns_at_once. B has committed behind held A before the locked stop hook cancels it. Joining B must return before A is opened.",
   "setup": {
     "channels": [

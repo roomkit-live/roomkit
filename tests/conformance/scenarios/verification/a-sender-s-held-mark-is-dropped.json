@@ -6,6 +6,9 @@
     "§11.7.3",
     "§10.1 step 4"
   ],
+  "requirements": [
+    "RK-10.1-134"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_RUNTIME_KEYS, _without_runtime_keys); the release that a copied mark would otherwise trigger is lot 4's (RMK-1172, RMK-1173).",
   "setup": {
     "channels": [

@@ -8,6 +8,7 @@
     "§10.1 step 15"
   ],
   "requirements": [
+    "RK-10.1-088",
     "RK-10.2-003"
   ],
   "setup": {

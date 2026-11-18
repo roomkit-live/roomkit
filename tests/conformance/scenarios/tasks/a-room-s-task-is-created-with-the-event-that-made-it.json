@@ -7,6 +7,9 @@
     "§9.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-090"
+  ],
   "notes": "Python: core/mixins/helpers.py _persist_side_effects (RoomEvent(type=TASK_CREATED, source=event.source, content=event.content, status=DELIVERED, visibility=INTERNAL, metadata={task_id, task_title})). The two tasks are persisted together; their hooks' order is left open.",
   "setup": {
     "channels": [

@@ -8,6 +8,9 @@
     "§10.1 step 14",
     "§8.2"
   ],
+  "requirements": [
+    "RK-10.1-084"
+  ],
   "notes": "One process. The agent's model holds its answer at `g`, its stream read on the room as it stood. The room is deleted, then `g` is let go: the stream's one row, the answer's text, finds the room gone and is refused as a response a room gone refuses (`room_refused_event`, a null status, `operation = reentry`), neither dropped without a word nor stored. `web` is delivered no row. Found by the review of lot P5-31.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§10.1 step 4",
     "§6.4"
   ],
+  "requirements": [
+    "RK-10.1-134"
+  ],
   "notes": "Python's _without_runtime_keys, last of the fields an inbound message's parse is completed with: runtime_record says which text the runtime wrote (RFC §6.4), so that its marks are kept where a copy of one is replaced; a sender that could write it would pass its words off as the runtime's (a summary's lines keep their marks). The message's other metadata stands.",
   "setup": {
     "channels": [

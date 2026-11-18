@@ -8,6 +8,9 @@
     "§10.1 step 14",
     "§8.2"
   ],
+  "requirements": [
+    "RK-10.1-084"
+  ],
   "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-created-again-are-refused, the room created again with `web` and `ws` only: in the new room the agent has no binding, which would store each row BLOCKED as if it had left. The rows belong to the deleted room: each is refused as in a room gone (`room_refused_event`, a null status), and the new room's timeline stays empty. Once a row found its room gone, the stream's next row is refused before its hooks: the observer would mark the room's metadata if the answer's text entered its hook, and that marker stays absent. The deleted room's events are matched by their content: its indexes and ids are not read back once it is gone. Found by the review of lot P5-31.",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§6.4",
     "§5.5"
   ],
+  "requirements": [
+    "RK-10.1-069"
+  ],
   "notes": "The room's participant p-alice, reached through sms, is named Alice; the second sender's transport stamps the name ALICE (metadata.sender_name), which reads like Alice.",
   "setup": {
     "channels": [

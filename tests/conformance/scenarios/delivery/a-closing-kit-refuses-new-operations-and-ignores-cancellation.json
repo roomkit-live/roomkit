@@ -6,6 +6,11 @@
     "§12.10.4",
     "§10.1 Explicit delivery cancellation"
   ],
+  "requirements": [
+    "RK-10.1-111",
+    "RK-10.1-115",
+    "RK-10.1-122"
+  ],
   "notes": "Python: tests/test_kit_close.py::test_every_other_call_is_refused_once_the_close_started and ::test_a_teardown_call_returns_doing_nothing_once_the_close_started. The dropped queued delivery proves the close started while the first transport remains held. The key still names that first delivery.",
   "setup": {
     "channels": [

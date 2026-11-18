@@ -8,6 +8,9 @@
     "§10.5",
     "§10.1 step 9a"
   ],
+  "requirements": [
+    "RK-10.1-054"
+  ],
   "reentrancy": [
     "inject@locked"
   ],

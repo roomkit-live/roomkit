@@ -6,6 +6,9 @@
     "§10.1",
     "§14.1"
   ],
+  "requirements": [
+    "RK-10.1-007"
+  ],
   "notes": "Python: tests/test_inbound_rate_limit.py (test_excess_messages_blocked_with_rate_limited_reason, test_per_channel_isolation, test_messages_within_limit_pass); core/mixins/inbound.py process_inbound (the check before the channel is read, InboundResult(blocked=True, reason='rate_limited')), core/rate_limiter.py TokenBucketRateLimiter (a bucket per channel id, full at first, holding at least one token, refilled at the limit's rate). One message a minute: the second within the minute is refused.",
   "setup": {
     "kit": {

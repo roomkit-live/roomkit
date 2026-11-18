@@ -6,6 +6,13 @@
     "§10.1 Explicit delivery cancellation",
     "§10.2"
   ],
+  "requirements": [
+    "RK-10.1-100",
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_cancel_returns_at_once_while_a_transport_still_delivers (RMK-1152), its awaited call cancelled by its key.",
   "setup": {
     "channels": [

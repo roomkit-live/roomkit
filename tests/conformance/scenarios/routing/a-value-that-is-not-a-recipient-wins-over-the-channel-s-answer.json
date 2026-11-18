@@ -8,6 +8,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-013",
     "RK-10.4-027"
   ],
   "notes": "phone_number holds true, reached_at Alice. Found by the review of RMK-1129.",

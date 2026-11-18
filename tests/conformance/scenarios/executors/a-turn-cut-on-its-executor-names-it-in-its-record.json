@@ -5,6 +5,11 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "setup": {
     "channels": [
       {

@@ -6,6 +6,11 @@
     "§10.6.7",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "notes": "Python: TurnExecutor._spare_turns_run_under calls ExecutorTurn.spare; a later owner cancellation lets the owner go but leaves the work running. An independent external executor close still cancels that work. Continuation is observed by a transport-only call from the spared hook; no model generation is promised after owner cancellation.",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§10.1 step 18",
     "§14.3"
   ],
+  "requirements": [
+    "RK-10.1-097"
+  ],
   "notes": "Translates roomkit tests/test_delivery_outcomes.py::TestOnlyAFailingSetIsRemembered: test_a_failure_survives_the_call, test_the_record_keeps_the_successes_too. The live delivery_failed is gone hours later: the stored event answers which channels it never reached.",
   "setup": {
     "channels": [

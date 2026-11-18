@@ -7,6 +7,12 @@
     "§17.2",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-115",
+    "RK-10.1-117"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py (_prepare_event_inner: named.locate once the room is read, the adopted call's too), src/roomkit/core/_delivery_keys.py; review of RMK-1173/RMK-1182, finding 1b (RMK-1195).",
   "setup": {
     "channels": [

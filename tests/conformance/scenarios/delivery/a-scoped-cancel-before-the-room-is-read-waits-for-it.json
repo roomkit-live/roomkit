@@ -7,6 +7,12 @@
     "§17.2",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-115",
+    "RK-10.1-117"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[room-not-read-yet]. This holds the router before the room is read; the context-read-in-progress variant is a separate native proof.",
   "setup": {
     "kit": {

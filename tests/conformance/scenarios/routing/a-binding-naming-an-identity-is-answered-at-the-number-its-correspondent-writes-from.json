@@ -7,6 +7,8 @@
     "§10.1 step 2"
   ],
   "requirements": [
+    "RK-10.1-013",
+    "RK-10.1-019",
     "RK-10.4-015"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestABindingNamingAnIdentity::test_its_correspondent_is_answered_at_the_number_they_write_from (HITL b75a9c93).",

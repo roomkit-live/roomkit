@@ -6,6 +6,9 @@
     "§5.7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-019"
+  ],
   "notes": "A binding the host named by the identity holds no value under the key. Bob is found at step 1, and the room answers him at the address he wrote from (HITL b75a9c93).",
   "setup": {
     "identities": [

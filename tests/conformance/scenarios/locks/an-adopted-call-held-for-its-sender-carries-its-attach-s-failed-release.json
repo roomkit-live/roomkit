@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§11.3"
   ],
+  "requirements": [
+    "RK-10.1-037",
+    "RK-10.1-128"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, the nested process_inbound's _process_inbound_inner makes its own first failed release its result's error when it carries none, a refusal included. Found by the light review of RMK-1443's lot 1 (G2).",
   "setup": {
     "kit": {

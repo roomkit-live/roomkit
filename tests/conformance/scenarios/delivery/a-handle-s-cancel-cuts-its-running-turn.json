@@ -6,6 +6,13 @@
     "§10.1 Explicit delivery cancellation",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-097",
+    "RK-10.1-099",
+    "RK-10.1-102",
+    "RK-10.1-105",
+    "RK-10.1-110"
+  ],
   "notes": "Python: tests/test_delivery_cancellation.py::test_queued_turn_in_same_room_survives_cancelled_cascade and ::test_deferred_cancel_is_terminal_and_releases_all_waiters. B commits while A is held; two waits start before the cut. This checks outcomes after cleanup, not Python finalizer scheduling.",
   "setup": {
     "channels": [

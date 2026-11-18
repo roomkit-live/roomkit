@@ -6,6 +6,10 @@
     "§10.1.1 rule 2",
     "§10.1 step 4"
   ],
+  "requirements": [
+    "RK-10.1-030",
+    "RK-10.1.1-008"
+  ],
   "notes": "A parse's key stands (§10.1 step 4), and an instruction, never stored, takes none: it is refused, nothing stored and no turn run.",
   "setup": {
     "channels": [

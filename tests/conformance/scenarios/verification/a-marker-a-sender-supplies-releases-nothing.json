@@ -6,6 +6,9 @@
     "§11.7.6",
     "§11.7.3"
   ],
+  "requirements": [
+    "RK-10.1-134"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_marker_a_sender_supplies_releases_nothing (RMK-1173). The stranger is not identified: the resolver answers unknown for them.",
   "setup": {
     "kit": {

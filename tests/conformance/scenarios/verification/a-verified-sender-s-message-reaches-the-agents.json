@@ -7,6 +7,10 @@
     "§11.7.3",
     "§11.7.2"
   ],
+  "requirements": [
+    "RK-10.1-040",
+    "RK-10.1-041"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_verified_sender_reaches_the_agent (RMK-1172). The first message, held, was received before the request: its completion releases nothing (§11.7.6).",
   "setup": {
     "kit": {

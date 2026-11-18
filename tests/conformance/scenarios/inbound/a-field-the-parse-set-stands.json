@@ -6,6 +6,10 @@
     "§10.1 step 4",
     "§5.2"
   ],
+  "requirements": [
+    "RK-10.1-027",
+    "RK-10.1-030"
+  ],
   "notes": "A channel reads what it can off its own wire: an SMS with media is an MMS, a provider's message key, its thread, its timestamp. The pipeline applies the caller's fields to the event the parse returned only where the parse left them at their default: no type set apart from an instruction's, a visibility of all, no address, no thread, no key, depth 0, no response scope. The parse's instant is the run's earliest, so it reads @1.",
   "setup": {
     "channels": [

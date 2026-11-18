@@ -6,6 +6,9 @@
     "§10.1 step 5b",
     "§11.7.4"
   ],
+  "requirements": [
+    "RK-10.1-039"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_consume_code): str.isdigit() reads every character Unicode gives a digit value, Arabic-Indic digits among them, and a code is drawn in ASCII digits, so such a reply never matches (RMK-1172, the area's review).",
   "setup": {
     "kit": {

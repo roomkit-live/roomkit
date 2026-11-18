@@ -6,6 +6,11 @@
     "§10.1 Explicit delivery cancellation",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-097",
+    "RK-10.1-101",
+    "RK-10.1-110"
+  ],
   "notes": "Python: src/roomkit/models/delivery.py::DeliveryHandle.cancel, which returns its completed result without cancelling; tests/test_delivery_cancellation.py::test_deferred_cancel_is_terminal_and_releases_all_waiters covers repeat cancellation. This case checks the successful terminal branch.",
   "setup": {
     "channels": [

@@ -7,6 +7,13 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-10.1-047",
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-113",
+    "RK-10.1-115"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn; tests/test_idempotent_redelivery.py. RMK-1609.",
   "steps": [
     {

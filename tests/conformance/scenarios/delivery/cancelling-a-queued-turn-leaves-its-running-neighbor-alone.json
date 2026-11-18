@@ -6,6 +6,13 @@
     "§10.1 Explicit delivery cancellation",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-099",
+    "RK-10.1-100",
+    "RK-10.1-102",
+    "RK-10.1-105",
+    "RK-10.1-110"
+  ],
   "notes": "Python: tests/test_delivery_cancellation.py::test_queued_cancel_does_not_wait_for_unrelated_tool. The scripted turn is held at a gate: cancelling B must return before the gate opens, A answers normally and B never runs.",
   "setup": {
     "channels": [

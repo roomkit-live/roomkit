@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-10.1-047"
+  ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_blank_key_is_no_key; tests/test_idempotent_redelivery.py::TestTheSecondDeliveryAnswersWithTheFirst. RMK-1609.",
   "steps": [
     {

@@ -7,6 +7,9 @@
     "§10.1 step 18",
     "§14.3"
   ],
+  "requirements": [
+    "RK-10.1-127"
+  ],
   "notes": "RMK-1308 point 2, the streaming case: Python's inbound_streaming.py logs and reports it on the stream's reader, after _record_failed_deliveries read the set.",
   "setup": {
     "channels": [

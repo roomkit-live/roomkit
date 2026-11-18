@@ -7,6 +7,10 @@
     "§7.5 rule 2",
     "§8.2"
   ],
+  "requirements": [
+    "RK-10.1-062",
+    "RK-10.1-085"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateBlocked::test_a_muted_agents_regenerated_answer_is_stored_blocked (a BufferedAgent, here a scripted channel that responds).",
   "setup": {
     "channels": [

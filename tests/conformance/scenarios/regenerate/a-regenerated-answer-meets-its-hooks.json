@@ -6,6 +6,9 @@
     "§13.6",
     "§10.1 step 14"
   ],
+  "requirements": [
+    "RK-10.1-085"
+  ],
   "notes": "Python: tests/test_response_commit_gates.py::test_a_regenerated_answer_meets_its_hooks.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§10.1 step 16",
     "§8.3"
   ],
+  "requirements": [
+    "RK-10.1-088",
+    "RK-10.1-093"
+  ],
   "setup": {
     "kit": {
       "max_chain_depth": 1

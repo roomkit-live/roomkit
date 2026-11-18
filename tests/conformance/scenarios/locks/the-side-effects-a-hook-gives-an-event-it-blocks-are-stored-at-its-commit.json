@@ -8,6 +8,9 @@
     "§13.5 Delivery lanes across processes",
     "§9.4"
   ],
+  "requirements": [
+    "RK-10.1-060"
+  ],
   "notes": "One process. When `held` arrives, the `triage` hook injects `spam` then `note`, both for `ws`. It blocks `spam` and gives it the task `Blocked spam` and an observation, stored with its BLOCKED record, under the room's lock, before `note` is committed. `note`'s set is held at `held` in its delivery to `ws`: the call's cascade is not over, and the task and the observation are already stored. The room is deleted and created again under the same id with `sms` and `ws`: they leave with the deleted room. Once `note` is let go and the call ends, the new room holds neither. The task's ON_TASK_CREATED fires once, for `spam`, in the room it was stored in. Python: core/mixins/inbound_locked.py `_store_blocked`.",
   "setup": {
     "channels": [

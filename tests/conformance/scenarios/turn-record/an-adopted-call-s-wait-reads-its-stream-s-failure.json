@@ -6,6 +6,9 @@
     "§6.4",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-131"
+  ],
   "notes": "Python: core/mixins/lane_execution.py _consume, cascade.record_error; RFC §10.1 step 18; light review of RMK-1254.",
   "setup": {
     "channels": [

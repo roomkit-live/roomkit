@@ -6,6 +6,9 @@
     "§10.1 step 5",
     "§11.6"
   ],
+  "requirements": [
+    "RK-10.1-033"
+  ],
   "setup": {
     "kit": {
       "identity_resolver": {

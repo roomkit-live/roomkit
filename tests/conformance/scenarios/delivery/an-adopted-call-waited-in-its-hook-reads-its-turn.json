@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-10.1-097",
+    "RK-10.1-131"
+  ],
   "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait and report_cascade, src/roomkit/core/mixins/inbound.py (a call a hook makes, adopted by the cascade whose hook made it, its handle told once that cascade read its streams) (RMK-1322, RMK-1329).",
   "setup": {
     "channels": [

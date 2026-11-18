@@ -6,6 +6,9 @@
     "§13.6",
     "§10.1 step 14"
   ],
+  "requirements": [
+    "RK-10.1-085"
+  ],
   "notes": "Python: tests/test_regenerate_off_lock.py::test_a_regeneration_repeats_nothing_of_its_triggers_first_pass. The message comes in on sms, so ws, a transport it is delivered to, would show a second delivery.",
   "setup": {
     "channels": [

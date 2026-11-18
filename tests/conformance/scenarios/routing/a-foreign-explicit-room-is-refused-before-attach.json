@@ -7,6 +7,10 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.1-011",
+    "RK-10.1-014"
+  ],
   "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_an_explicit_room_of_another_organization_is_not_found, test_a_router_answering_another_organizations_room_fails_the_message and test_a_deferred_send_to_another_organization_is_refused_synchronously. The foreign room has no source binding, making an accidental auto-attach observable.",
   "setup": {
     "kit": {

@@ -6,6 +6,9 @@
     "§10.1 step 15",
     "§13.5"
   ],
+  "requirements": [
+    "RK-10.1-089"
+  ],
   "notes": "Python: core/mixins/helpers.py _write_metadata_updates writes a set's merged updates with patch_room_metadata inside self._lock_manager.locked(room_id), after the set's tasks and observations; the set runs in the room's lane, off the lock. The second message's before_broadcast hook holds the lock while the first message's set writes: the set waits for it, and writes once the second message's locked region is over, so the hook's own write of the key under the lock comes first.",
   "setup": {
     "channels": [

@@ -8,6 +8,7 @@
     "§10.4"
   ],
   "requirements": [
+    "RK-10.1-024",
     "RK-10.4-041"
   ],
   "notes": "The hook read the sender and named them: nothing changes.",

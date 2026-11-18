@@ -8,6 +8,9 @@
     "§10.1 step 9a",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-056"
+  ],
   "reentrancy": [
     "commit@locked"
   ],

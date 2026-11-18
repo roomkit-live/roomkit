@@ -7,6 +7,13 @@
     "§17.2",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-113",
+    "RK-10.1-115"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn[routing]. Routing is held in a scripted router, not a store binding lookup; context-read cancellation has a separate native proof.",
   "setup": {
     "kit": {

@@ -7,6 +7,12 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-112",
+    "RK-10.1-115",
+    "RK-10.1-130"
+  ],
   "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read, end_stopped and write_owed_record, which finds no MESSAGE and writes on the turn's last row (RMK-1333, RMK-1344, HITL 5f58e3e3).",
   "setup": {
     "channels": [

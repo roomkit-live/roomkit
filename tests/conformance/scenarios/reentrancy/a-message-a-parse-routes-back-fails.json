@@ -7,6 +7,9 @@
     "§9.5.1 Reentrance",
     "§10.1 step 4"
   ],
+  "requirements": [
+    "RK-10.1-016"
+  ],
   "reentrancy": [
     "routed@admitted"
   ],

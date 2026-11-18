@@ -5,6 +5,9 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-10.1-130"
+  ],
   "notes": "Python: turns/_owner_turn.py close_stream, reader_stopped; tests/test_turns_pull.py::test_a_reader_that_stops_after_its_turn_ended_reads_the_turn_s_last_record.",
   "setup": {
     "channels": [

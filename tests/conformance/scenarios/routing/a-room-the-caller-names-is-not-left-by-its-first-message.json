@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.1-011",
+    "RK-10.1-024"
+  ],
   "notes": "room_id is the host's choice, never held to the routed check.",
   "setup": {
     "kit": {

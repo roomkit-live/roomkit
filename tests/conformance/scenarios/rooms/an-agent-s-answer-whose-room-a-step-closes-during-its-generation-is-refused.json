@@ -9,6 +9,10 @@
     "§10.6.1",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.1-046",
+    "RK-10.1-084"
+  ],
   "notes": "The agent's model holds its round at a gate and calls no kit; a step closes the room, then the round answers. Each streamed row's commit reads the room's status (§5.1, §10.2), whatever executor ran the turn, one of another process included (§10.6.1). The framework events are left out: whether a refused streamed row emits room_refused_event is open (RMK-1665).",
   "setup": {
     "channels": [

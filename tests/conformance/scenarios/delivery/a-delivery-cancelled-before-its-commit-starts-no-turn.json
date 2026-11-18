@@ -7,6 +7,13 @@
     "§10.1 step 4",
     "§10.1 step 5"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-111",
+    "RK-10.1-112",
+    "RK-10.1-113",
+    "RK-10.1-115"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn[parsing] and [identity]. Routing is covered separately by a-delivery-cancelled-during-routing-still-delivers; a held context read requires a native store fixture.",
   "setup": {
     "kit": {

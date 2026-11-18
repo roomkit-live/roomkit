@@ -6,6 +6,11 @@
     "§19.7.3",
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-10.1-102",
+    "RK-10.1-112",
+    "RK-10.1-115"
+  ],
   "notes": "Python: core/mixins/_child_execution.py persist_tool_calls (_ToolRowsOnly), orchestration/strategies/supervisor/delegate.py _pass1_answer. A first pass's record is no row's: a turn that keeps its text out of the room hands it on (RMK-1344).",
   "setup": {
     "channels": [

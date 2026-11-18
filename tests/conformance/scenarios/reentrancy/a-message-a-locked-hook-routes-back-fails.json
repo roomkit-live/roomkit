@@ -6,6 +6,9 @@
     "§9.5.1 A message routed back",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.1-016"
+  ],
   "reentrancy": [
     "routed@locked"
   ],

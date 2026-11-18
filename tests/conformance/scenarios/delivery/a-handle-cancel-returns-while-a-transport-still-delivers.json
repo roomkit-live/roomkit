@@ -6,6 +6,11 @@
     "§10.1 Explicit delivery cancellation",
     "§10.2"
   ],
+  "requirements": [
+    "RK-10.1-100",
+    "RK-10.1-102",
+    "RK-10.1-110"
+  ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancel_returns_at_once_while_a_transport_still_delivers, deferred handle path. Both agent and transport are held; cancel returns before the transport is opened.",
   "setup": {
     "channels": [

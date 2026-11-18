@@ -7,6 +7,9 @@
     "§7.5 rule 2",
     "§10.1 step 11"
   ],
+  "requirements": [
+    "RK-10.1-062"
+  ],
   "reentrancy": [
     "commit@admitted"
   ],

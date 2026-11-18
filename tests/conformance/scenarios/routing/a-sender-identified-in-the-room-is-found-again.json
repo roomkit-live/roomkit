@@ -7,6 +7,7 @@
     "§11"
   ],
   "requirements": [
+    "RK-10.1-034",
     "RK-10.4-015"
   ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAnIdentifiedCorrespondent::test_a_sender_identified_in_the_room_is_found_again.",

@@ -7,6 +7,10 @@
     "§13.6",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-10.1-097",
+    "RK-10.1-128"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects the call's failed releases (collecting_release_failures) and makes the first the result's error when none was met, a refusal at the deadline included. Found by the review of RMK-1432 (RMK-1443).",
   "setup": {
     "kit": {

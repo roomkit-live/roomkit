@@ -7,6 +7,9 @@
     "§11.7.3",
     "§11.7.5"
   ],
+  "requirements": [
+    "RK-10.1-041"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_new_link_goes_out_once_the_first_expired_unanswered (RMK-1172). The ended hook holds at its gate until the step opens it: the first request's timer ran by then. The first request is a code, short-lived, the second a link, which lives on past the run.",
   "setup": {
     "kit": {
