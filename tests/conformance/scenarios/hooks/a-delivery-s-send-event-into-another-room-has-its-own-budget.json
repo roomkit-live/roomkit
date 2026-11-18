@@ -7,7 +7,8 @@
     "§9.5.1"
   ],
   "requirements": [
-    "RK-10.5-008"
+    "RK-10.5-008",
+    "RK-9.5.1-048"
   ],
   "notes": "Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_delivery_s_call_into_another_existing_room_has_its_own_budget. Eleven send_event calls originate in one transport delivery; room-2 exists before the delivery starts.",
   "setup": {

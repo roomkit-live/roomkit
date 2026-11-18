@@ -7,6 +7,10 @@
     "§9.5.1",
     "§13.5"
   ],
+  "requirements": [
+    "RK-9.5.1-021",
+    "RK-9.5.1-022"
+  ],
   "notes": "The publication's section holds the room lock from the key's lookup to the publication's commit; what its parse sends into the room is nested in it and commits ahead of the publication, never letting the lock go in between, so the transport's detach queued behind it cannot make the publication unbound.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§9.5.1 Reentrance",
     "§13.6"
   ],
+  "requirements": [
+    "RK-9.5.1-038"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, _prepare_event runs the parse within the call's deadline (asyncio.timeout_at): past it the parse is cancelled, and the call it awaits with it. Found by the review of RMK-1443 item 1's lot.",
   "setup": {
     "kit": {

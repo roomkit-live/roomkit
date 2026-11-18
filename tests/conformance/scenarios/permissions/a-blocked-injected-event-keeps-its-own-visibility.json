@@ -6,6 +6,10 @@
     "§7.3 An event's visibility",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.4-027",
+    "RK-9.4-028"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_an_event_a_hook_injects_keeps_its_own. The notice names sms as its source, whose binding is scoped `sms`: intersected, it would read `none`; an injected event is no channel's, and keeps its targets `ws`.",
   "setup": {
     "channels": [

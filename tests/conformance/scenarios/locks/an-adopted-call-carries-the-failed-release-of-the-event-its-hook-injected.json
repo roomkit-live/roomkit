@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.5.1-027",
+    "RK-9.5.1-029"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, the adopted process_inbound commits what its hooks injected before it returns (_finish_queued, within its own collecting_release_failures), so its answer waits for those commits and their failed release is its result's error, not the event's that adopted it (HITL b779fc14, RMK-1443 F1).",
   "setup": {
     "kit": {

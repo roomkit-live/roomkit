@@ -7,6 +7,9 @@
     "§23.3 step 6",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.4-011"
+  ],
   "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestASharedTransportIsToldTheAnswer::test_the_answer_crosses_the_rooms_hooks; core/mixins/_child_execution.py _deliver_answer, _answer_of: the answer is the last one the room kept of the delegated agent.",
   "setup": {
     "channels": [

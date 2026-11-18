@@ -7,6 +7,9 @@
     "§9.4",
     "§5.12"
   ],
+  "requirements": [
+    "RK-9.4-016"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestAnEmptyAnswerScope::test_a_hook_writing_an_empty_scope_sends_the_answers_nowhere, buffered (room-1) and streamed (room-2). An empty value that reaches an event other than through a door reads as `none`: it restricts rather than opens.",
   "setup": {
     "channels": [

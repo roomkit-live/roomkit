@@ -8,6 +8,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-9.1-004",
     "RK-9.3-002"
   ],
   "notes": "A registration's scope is the kit or one room (§9.1): a room's hooks run for that room's events only.",

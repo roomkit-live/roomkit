@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.5.1-027",
+    "RK-9.5.1-029"
+  ],
   "notes": "Python: a call nested under the adopted call's section queues what its hooks inject on that section (Entry.queued), whose passes the adopted call runs within its _finish_queued and its collecting_release_failures before it returns (RMK-1516 item 1, the review's probe P3).",
   "setup": {
     "kit": {

@@ -9,7 +9,8 @@
     "§9.4"
   ],
   "requirements": [
-    "RK-10.1.1-015"
+    "RK-10.1.1-015",
+    "RK-9.2-032"
   ],
   "notes": "One process. The application sends `summarise the incident` to `a`, an agent of the discussion holding `r1`, as an instruction. The `triage` hook allows it, gives it the task `Instructed` and an observation, and injects `note` for `ws`. The discussion takes the instruction and gives `a` its turn: the instruction has no delivery set to store its hooks' side effects with, so they are stored at its decision, under the room's lock, as a blocked instruction's are. `note` is committed once the instruction's section released the lock, and its set is held at `held` in its delivery to `ws`: the call's cascade is not over, and the task and the observation are already stored. `a`'s answer and `note` reach `ws` in either order: the answer's turn and `note`'s commit run side by side. Python: core/mixins/inbound_locked.py `_write_decision`.",
   "setup": {

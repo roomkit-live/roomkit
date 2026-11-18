@@ -9,6 +9,10 @@
     "§14.3",
     "§13.5"
   ],
+  "requirements": [
+    "RK-9.5.1-022",
+    "RK-9.5.1-030"
+  ],
   "notes": "Python: the publication's section holds the room lock (core/_delivery_targets.py _keyed_publication, core/mixins/deliver.py); the event its locked hook sends commits ahead of the publication, and its delivery set runs in the room's lane, off the lock, where core/mixins/lane_execution.py _record_failed_deliveries takes self._lock_manager.locked(room_id) to record the set with a failure: it waits for the section, and a later hook of the section reads the event as committed. RMK-1522.",
   "setup": {
     "channels": [

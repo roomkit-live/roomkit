@@ -8,6 +8,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-9.2-080",
     "RK-9.3-035"
   ],
   "notes": "Python: tests/tasks/test_cancel_task.py::test_a_task_whose_end_is_being_told_reads_ended_at_once (inline failed and background completed here); tasks/_room_tasks.py RoomTaskRecord.end; core/mixins/delegation.py, a task's end recorded before its hooks run, which are not waited for. The hooks are held at a gate while the agent's turn reads and cancels both tasks, its second round held until the hooks are let go.",

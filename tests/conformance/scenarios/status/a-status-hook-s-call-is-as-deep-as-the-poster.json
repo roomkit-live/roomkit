@@ -7,6 +7,10 @@
     "§8.3",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-078",
+    "RK-9.5.1-054"
+  ],
   "notes": "Python: orchestration/status_bus.py post publishes in a task that copies the poster's context (create_task), and core/hooks.py _start_async_hooks reads the chain floor as the trigger fires: a hook body sends at least as deep as the turn that posted (RMK-1004). The agent answers each event by posting a status from its turn's host; the hook sends 'again' into the room. The turn on the event at depth 4 would answer at depth 5, the limit: it is not asked, its BLOCKED record stored. RMK-1187.",
   "setup": {
     "channels": [

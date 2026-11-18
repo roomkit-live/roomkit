@@ -5,6 +5,9 @@
   "rules": [
     "§9.4 Injected events"
   ],
+  "requirements": [
+    "RK-9.4-020"
+  ],
   "notes": "The process timeout covers the off-lock hook, the room lock and the locked hook's start before it cuts the pre-commit: 500 ms leaves a loaded runner room to reach the locked hook, where a CI runner missed 100 ms.",
   "setup": {
     "channels": [

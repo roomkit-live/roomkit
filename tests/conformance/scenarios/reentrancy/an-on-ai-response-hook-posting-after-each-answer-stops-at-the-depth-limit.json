@@ -6,6 +6,9 @@
     "§8.3",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.5.1-054"
+  ],
   "notes": "The first post waits at 'first' until the inbound call has returned, its turn over; the next are made as each answer comes. Each post is at least as deep as the answer that fired it, so the agent answers one deeper each time and is not asked at the limit. Python: tests/test_reentrance.py::TestACallFromAnAsyncHook::test_a_hook_telling_the_agent_again_from_its_body_ends_at_the_depth_limit. The same code as a framework-event handler: reentrancy/an-ai-response-handler-posting-after-each-answer-stops-at-the-depth-limit.",
   "setup": {
     "channels": [

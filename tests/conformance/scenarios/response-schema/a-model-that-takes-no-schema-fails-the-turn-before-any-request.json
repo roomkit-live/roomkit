@@ -7,6 +7,10 @@
     "Appendix A.9",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_a_provider_without_support_fails_the_turn_before_any_request.",
   "setup": {
     "channels": [

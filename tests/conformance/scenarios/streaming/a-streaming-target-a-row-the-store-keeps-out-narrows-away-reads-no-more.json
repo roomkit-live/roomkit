@@ -8,6 +8,9 @@
     "§9.5",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-9.4-011"
+  ],
   "notes": "The kit stores no message. A BEFORE_BROADCAST hook narrows the agent's first text row to web: unstored, it is still the row the room commits, and ws, the streaming target, is handed nothing more of the stream; the rows after are delivered to it as their plans say.",
   "setup": {
     "channels": [

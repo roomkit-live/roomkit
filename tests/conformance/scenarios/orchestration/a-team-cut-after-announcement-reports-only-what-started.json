@@ -8,7 +8,9 @@
     "§10.1 Explicit delivery cancellation"
   ],
   "requirements": [
-    "RK-10.1-102"
+    "RK-10.1-102",
+    "RK-9.2-079",
+    "RK-9.2-080"
   ],
   "notes": "Python: tests/tasks/test_delegation_ends_failed.py::test_a_task_failing_before_it_is_announced_fires_no_completion; tests/tasks/test_cancelled_delegation.py. A shared transport callback holds child preparation before ON_TASK_DELEGATED, or the worker model holds after it. The caller cancels only after that gate; no timeout orders the cut. The worker run posts its own cancelled entry in either case, but names the task only after announcement. No assertion makes the historical partially prepared child room a completed task.",
   "setup": {

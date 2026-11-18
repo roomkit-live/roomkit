@@ -7,6 +7,7 @@
     "§10.6.5"
   ],
   "requirements": [
+    "RK-9.2-074",
     "RK-9.3-108"
   ],
   "notes": "Python: turns/_wiring.py build_on_user_input_required_hook emits user_input_required from the event the tool asked, not from the chain's result; core/hooks.py run_sync_hooks hands each SYNC hook, then the ASYNC observers, the event as the hook before left it. The request itself is the handler's (tools/human_input.py): a modify changes no answer the tool reads.",

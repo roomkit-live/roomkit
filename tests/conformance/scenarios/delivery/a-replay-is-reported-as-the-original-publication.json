@@ -6,6 +6,9 @@
     "§22.3",
     "§22.1"
   ],
+  "requirements": [
+    "RK-9.2-061"
+  ],
   "setup": {
     "channels": [
       {

@@ -6,6 +6,9 @@
     "§8.3",
     "§19.1"
   ],
+  "requirements": [
+    "RK-9.5.1-054"
+  ],
   "notes": "A greeting is a write of the room's work like any other: at the depth of the work it is made in, one past the hook's event, and on its budget. The top-level call stands at depth 0. The agent that answers is not asked past the limit, so nothing answers the last greeting and the hook stops.",
   "setup": {
     "channels": [

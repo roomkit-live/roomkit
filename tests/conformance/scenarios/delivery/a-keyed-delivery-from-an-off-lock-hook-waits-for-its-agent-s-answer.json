@@ -7,6 +7,10 @@
     "§9.5.1",
     "§13.5"
   ],
+  "requirements": [
+    "RK-9.5.1-022",
+    "RK-9.5.1-031"
+  ],
   "notes": "The publication's call is nested under the lock its section holds, not adopted beside the event whose off-lock hook made it: its cascade's later passes, its agent's answer among them, take the room lock as any section does while that hook still waits for the turn.",
   "setup": {
     "channels": [

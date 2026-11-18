@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-9.2-067"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_decision_reports_the_message_candidates_and_cost.",
   "setup": {
     "channels": [

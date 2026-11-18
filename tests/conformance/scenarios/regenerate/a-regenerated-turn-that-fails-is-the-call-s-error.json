@@ -6,6 +6,9 @@
     "§13.6",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034"
+  ],
   "notes": "Python: tests/test_inbound_stream_error_propagation.py::test_regenerate_surfaces_stream_error and test_regenerate_non_streaming_failure_fires_on_error.",
   "setup": {
     "channels": [

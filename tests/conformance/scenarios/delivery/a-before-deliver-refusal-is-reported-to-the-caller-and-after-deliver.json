@@ -7,6 +7,10 @@
     "§22.1",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-060",
+    "RK-9.2-061"
+  ],
   "notes": "The delivery hooks' payload is an event the framework writes (its source system, visibility internal): BEFORE_DELIVER's PENDING, AFTER_DELIVER's in the outcome's status, its metadata holding the outcome as serialized, the error and the strategy. The key given is the application's.",
   "setup": {
     "channels": [

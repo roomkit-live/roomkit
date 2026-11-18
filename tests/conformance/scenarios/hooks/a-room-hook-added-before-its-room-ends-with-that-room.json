@@ -6,6 +6,10 @@
     "§9.1",
     "§17.2"
   ],
+  "requirements": [
+    "RK-9.1-005",
+    "RK-9.1-011"
+  ],
   "notes": "Each hook fires for the creation of the one room it waited for.",
   "setup": {
     "channels": [

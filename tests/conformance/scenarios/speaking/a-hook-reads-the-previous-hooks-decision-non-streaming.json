@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-064"
+  ],
   "notes": "Python: tests/test_speak_decision_hooks.py::test_each_hook_sees_the_decision_the_previous_one_left. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

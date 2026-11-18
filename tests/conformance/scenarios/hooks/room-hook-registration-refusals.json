@@ -5,6 +5,13 @@
   "rules": [
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-016",
+    "RK-9.1-019",
+    "RK-9.1-020",
+    "RK-9.1-021",
+    "RK-9.1-022"
+  ],
   "notes": "`scan` is the kit's hook and a hook of each room: a name is unique within its scope, the kit's hooks or one room's, so both run, under one name. `offlock` would run after `audit`, a locked hook of room-1 with a lower priority; room-9's hooks are not room-1's, so there it registers. `early`, a kit hook, meets every room's hooks, room-1's `audit` among them.",
   "setup": {
     "channels": [

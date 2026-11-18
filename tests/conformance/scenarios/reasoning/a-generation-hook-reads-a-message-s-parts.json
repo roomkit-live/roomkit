@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-068"
+  ],
   "notes": "Python: tests/conformance _ai_hooks.py generation_record, messages(context): what the context carries. README: `generation`'s messages, as `models` reads them.",
   "setup": {
     "channels": [

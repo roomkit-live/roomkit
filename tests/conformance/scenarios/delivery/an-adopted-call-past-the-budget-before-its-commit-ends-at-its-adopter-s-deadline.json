@@ -7,6 +7,10 @@
     "§13.6",
     "§8.3"
   ],
+  "requirements": [
+    "RK-9.5.1-024",
+    "RK-9.5.1-038"
+  ],
   "notes": "Python: src/roomkit/core/framework.py, _store_entry_past_cap takes the room lock inside the hook's body, which the off-lock check runs within the call's deadline: past it the body is cancelled, and the record's wait for the lock with it. max_chain_depth 2: a reentry budget of 20 passes, and the agent's answer within the depth limit. Found by the review of RMK-1443 item 1's lot.",
   "setup": {
     "kit": {

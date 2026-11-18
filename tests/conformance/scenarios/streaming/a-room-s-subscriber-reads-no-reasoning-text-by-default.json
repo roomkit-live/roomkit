@@ -6,6 +6,9 @@
     "§6.7",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-069"
+  ],
   "notes": "Python: channels/_ai_events.py _publish_thinking_event; tests/test_ai_streaming_thinking.py test_a_subscriber_reads_the_reasoning_text_only_when_opted_in[private-by-default].",
   "setup": {
     "channels": [

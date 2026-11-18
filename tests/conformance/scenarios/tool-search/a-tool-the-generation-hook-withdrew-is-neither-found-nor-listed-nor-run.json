@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-068"
+  ],
   "notes": "Python: tests/test_hook_tool_restrictions.py::test_under_tool_search_a_withdrawn_deferred_tool_is_neither_found_nor_run.",
   "setup": {
     "channels": [

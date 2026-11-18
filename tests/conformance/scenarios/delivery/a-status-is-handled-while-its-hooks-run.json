@@ -8,6 +8,7 @@
   ],
   "requirements": [
     "RK-10.4-049",
+    "RK-9.2-033",
     "RK-9.3-035"
   ],
   "notes": "The hook is held at a gate the scenario opens only once the call returned: a call that waited for its hooks would never return.",

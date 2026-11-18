@@ -6,6 +6,9 @@
     "§13.5 A release that fails",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-9.5.1-029"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, the nested process_inbound's _process_inbound_inner makes its own first failed release its result's error, the result its handle holds (models/delivery.py DeliveryHandle.wait keeps the error it carries). Found by the review of RMK-1443's G2.",
   "setup": {
     "kit": {

@@ -8,6 +8,9 @@
     "§9.5",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-9.4-011"
+  ],
   "notes": "A BEFORE_BROADCAST hook narrows the agent's tool-call start to web. ws, the streaming target, is not handed that row (§7.3), but a tool-call row withdraws no response: ws reads the rest of the stream, its text and its rows, as before.",
   "setup": {
     "channels": [

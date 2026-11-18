@@ -8,6 +8,9 @@
     "§11.7.7",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-028"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_an_expired_request_cannot_be_completed, tests/test_verification_lifecycle.py::test_a_request_left_unanswered_ends_when_it_expires (RMK-1171). The ended hook holds at its gate until the step opens it: the request's timer ran by then.",
   "setup": {
     "kit": {

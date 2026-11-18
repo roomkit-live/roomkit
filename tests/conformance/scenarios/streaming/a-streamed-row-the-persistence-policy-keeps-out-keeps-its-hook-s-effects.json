@@ -7,6 +7,10 @@
     "§9.4",
     "§14.3"
   ],
+  "requirements": [
+    "RK-9.4-019",
+    "RK-9.5.1-071"
+  ],
   "notes": "Python: tests/test_streaming_before_broadcast.py::test_stream_hook_effects_without_persistence_or_source_binding[detached=False] (its [detached=True] case is streaming/a-streamed-row-of-a-detached-agent-keeps-its-hook-s-effects); core/mixins/_streaming_segments.py (a row committed policy-aware), core/mixins/injected_events.py (a hook's injected event committed whatever the policy).",
   "setup": {
     "kit": {

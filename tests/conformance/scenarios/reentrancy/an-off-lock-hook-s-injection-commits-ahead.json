@@ -7,7 +7,10 @@
     "§10.5"
   ],
   "requirements": [
-    "RK-10.5-006"
+    "RK-10.5-006",
+    "RK-9.5.1-018",
+    "RK-9.5.1-021",
+    "RK-9.5.1-022"
   ],
   "reentrancy": [
     "inject@admitted"

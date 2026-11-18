@@ -6,6 +6,10 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-9.2-075",
+    "RK-9.2-076"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_successful_handoff, TestSetupHandoff::test_injects_handoff_tool, test_handoff_tool_call_dispatched, TestHandoffHookFiring::test_on_handoff_fired_on_success, TestOrchestrationInternalFlag::test_send_event_has_internal_flag; tests/orchestration/test_router.py TestRouterInstall::test_install_registers_hook_and_returns_handler, test_install_wires_handoff, test_install_with_phase_map, test_install_passes_aliases, test_install_no_allowed_transitions. orchestration/handoff.py HandoffHandler.handle, handoff_entry, _handoff_line, _fire_hook; router.py install.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§9.5.1 Reentrance",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.5.1-027",
+    "RK-9.5.1-029"
+  ],
   "notes": "Python: _run_injected_pass runs the passes of what an injected event's hooks injected before it returns, all within the adopted call's _finish_queued and its collecting_release_failures (HITL b779fc14, RMK-1443). Written by the review of the lot.",
   "setup": {
     "kit": {

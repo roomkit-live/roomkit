@@ -6,6 +6,10 @@
     "§6.1",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-9.5.1-018",
+    "RK-9.5.1-021"
+  ],
   "notes": "Python awaits on_room_attached and on_room_detached under the room's lock, which its own calls take again (RFC §9.5.1, a call under R's lock). Where the event stands against the attach's lifecycle record is not compared here (RMK-1246). Found by the review of RMK-1219.",
   "setup": {
     "channels": [

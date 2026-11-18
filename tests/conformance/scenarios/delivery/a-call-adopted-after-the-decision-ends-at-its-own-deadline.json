@@ -7,6 +7,10 @@
     "§9.4",
     "§13.6"
   ],
+  "requirements": [
+    "RK-9.5.1-037",
+    "RK-9.5.1-042"
+  ],
   "notes": "Python: every call, adopted or not, has its own deadline from its start (src/roomkit/core/mixins/inbound.py, _process_named_inbound), and reports its own process_timeout (RMK-1472, HITL 35d1efa7).",
   "setup": {
     "kit": {

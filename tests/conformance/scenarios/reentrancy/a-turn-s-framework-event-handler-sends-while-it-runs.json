@@ -12,7 +12,8 @@
     "§10.6.4"
   ],
   "requirements": [
-    "RK-10.5-008"
+    "RK-10.5-008",
+    "RK-9.5.1-055"
   ],
   "notes": "How deep a framework-event handler's send is (§8.3, RMK-1699) is asserted by reentrancy/a-before-ai-generation-handler-sends-as-deep-as-the-turn and its siblings, not here. Python: turns/_owner_turn.py _read_frames hands the turn's framework_event frames to turns/_owner_publish.py publish_later, whose one task per turn runs in a copy of the context of the call waiting on the turn when its first frame came (before_ai_generation, while the delivery set's target awaited the output). The agent hands its stream before its tool loop runs, which runs only as the stream is read, after the trigger's delivery set: by then that call has returned, and the room's lane is free. The agent's tool is held at 'tool-held' after its gate emitted before_tool_use. The handler sends into the turn's room, then into room-2, whose BEFORE_BROADCAST hook holds at 'handled': reached only once the first send returned, while the turn is held.",
   "setup": {

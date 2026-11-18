@@ -6,6 +6,9 @@
     "§17.2",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-010"
+  ],
   "notes": "acme adds a hook to its room; the store deletes the room; globex creates a room under the same id, adds its own hook, and a message arrives in it. acme's hook was the deleted room's and reads nothing of globex's; globex's runs.",
   "setup": {
     "channels": [

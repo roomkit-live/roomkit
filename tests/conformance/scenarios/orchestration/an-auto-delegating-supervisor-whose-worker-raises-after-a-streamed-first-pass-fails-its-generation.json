@@ -10,7 +10,13 @@
   ],
   "requirements": [
     "RK-10.1-097",
-    "RK-10.1-127"
+    "RK-10.1-127",
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-102",
+    "RK-9.2-106",
+    "RK-9.2-107",
+    "RK-9.2-108"
   ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _two_pass_delegate (_run_workers raises within the supervisor's on_event), core/mixins/delegation.py delegate (ChannelNotRegisteredError), core/mixins/lane_execution.py (the root pass's failed delivery, _record_failed_deliveries). RMK-1287.",
   "setup": {

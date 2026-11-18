@@ -6,6 +6,14 @@
     "§19.7.3",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-103",
+    "RK-9.2-106",
+    "RK-9.2-107",
+    "RK-9.2-108"
+  ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _two_pass_delegate (the second pass is the room turn's stream), core/mixins/inbound_streaming.py _report_stream_failure (the stream's correlation id). RMK-1287.",
   "setup": {
     "channels": [

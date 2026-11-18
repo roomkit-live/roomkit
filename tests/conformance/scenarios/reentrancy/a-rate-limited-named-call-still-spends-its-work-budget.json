@@ -10,7 +10,8 @@
   ],
   "requirements": [
     "RK-10.1-006",
-    "RK-10.1-007"
+    "RK-10.1-007",
+    "RK-9.5.1-059"
   ],
   "notes": "RMK-1560. Python core/mixins/inbound.py: _charge_named_room precedes the inbound rate limit. The delivery spends ten passes, or ten calls refused by rate, then asks late. A fresh call outside that work proves the token boundary. No sleeps or refill needed: one token per hour.",
   "setup": {

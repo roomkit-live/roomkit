@@ -8,6 +8,10 @@
     "§8.2",
     "§14.3"
   ],
+  "requirements": [
+    "RK-9.2-021",
+    "RK-9.2-022"
+  ],
   "notes": "Python: core/_timer_transitions.py _announce (the record written through the policy, then the framework event, whatever the record became). As rooms/timers-pause-then-close-in-one-check, under a policy that stores messages only.",
   "setup": {
     "kit": {

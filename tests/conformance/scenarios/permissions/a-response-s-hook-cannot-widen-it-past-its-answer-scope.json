@@ -7,6 +7,9 @@
     "§9.4",
     "§5.12"
   ],
+  "requirements": [
+    "RK-9.4-017"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestAHookOnAnAnswerScope::test_a_response_s_hook_cannot_widen_it_past_the_scope, buffered (room-1) and streamed (room-2). The message scopes its answers to `ws`; the hook's `all` would reach sms too.",
   "setup": {
     "channels": [

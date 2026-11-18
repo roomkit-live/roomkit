@@ -6,6 +6,9 @@
     "§5.1 A transition from a status it does not leave from",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.2-022"
+  ],
   "setup": {
     "channels": [
       {

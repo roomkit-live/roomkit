@@ -8,6 +8,13 @@
     "§6.1",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-103",
+    "RK-9.2-107",
+    "RK-9.2-108"
+  ],
   "notes": "The stored text reaches the streaming channel through the stream, before the failure, and never again through deliver(); the other targets receive it as an ordinary delivery. The failure fires ON_ERROR and is the call's error.",
   "setup": {
     "channels": [

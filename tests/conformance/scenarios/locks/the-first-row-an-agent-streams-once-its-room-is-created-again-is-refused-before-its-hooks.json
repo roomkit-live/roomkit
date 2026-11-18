@@ -8,6 +8,9 @@
     "§8.2",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.5.1-069"
+  ],
   "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-created-again-are-refused, with a BEFORE_BROADCAST hook `watch` that records its calls and, on a tool call's end, would mark the room's metadata. The tool call's end is the first row written once the room is created again: it belongs to the deleted room and is refused before its hooks, as the answer's text after it, so `watch` runs on the incoming message and the two rows written before the deletion only, and the new room's metadata stays unmarked.",
   "setup": {
     "channels": [

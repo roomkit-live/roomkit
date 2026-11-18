@@ -7,6 +7,10 @@
     "§19.4 step 3",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-003",
+    "RK-9.4-018"
+  ],
   "notes": "Both rules hold for an SMS of a billing intent, at the same priority: the first given, zeta, wins over alpha, which an order by id would pick. An SMS of another intent matches alpha's rule alone.",
   "setup": {
     "channels": [

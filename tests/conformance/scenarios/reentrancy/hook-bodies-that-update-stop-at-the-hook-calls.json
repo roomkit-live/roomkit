@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-095",
-    "RK-10.3-060"
+    "RK-10.3-060",
+    "RK-9.5.1-046"
   ],
   "reentrancy": [
     "change@cascade"

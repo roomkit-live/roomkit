@@ -10,6 +10,12 @@
     "§26.1",
     "§5.1 Lifecycle records"
   ],
+  "requirements": [
+    "RK-9.2-016",
+    "RK-9.2-017",
+    "RK-9.2-018",
+    "RK-9.2-019"
+  ],
   "reentrancy": [
     "commit@outside"
   ],

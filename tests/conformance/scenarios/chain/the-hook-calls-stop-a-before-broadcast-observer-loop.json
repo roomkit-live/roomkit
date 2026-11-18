@@ -11,7 +11,9 @@
   "requirements": [
     "RK-10.5-008",
     "RK-10.5-009",
-    "RK-10.5-017"
+    "RK-10.5-017",
+    "RK-9.5.1-045",
+    "RK-9.5.1-046"
   ],
   "notes": "An ASYNC hook of a SYNC trigger observes the event its chain allowed as the cascade's work: a call from its body draws one of the cascade's 10 x max_chain_depth hook calls and is one deeper than the hook's event, as an AFTER_BROADCAST body's does. The calls end in an order the RFC does not fix, so their outcomes are matched in any order; the timeline orders the events.",
   "setup": {

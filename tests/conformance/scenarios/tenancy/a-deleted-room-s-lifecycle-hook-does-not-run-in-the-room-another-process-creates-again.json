@@ -6,6 +6,10 @@
     "§17.2",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-012",
+    "RK-9.1-013"
+  ],
   "notes": "acme adds an ASYNC ON_CHANNEL_ATTACHED hook to its room on the run's kit, which runs it on acme's attach; the store deletes the room; another process creates a room under the same id for globex; globex attaches a channel through the run's kit. The trigger's hooks start apart from the attach (RFC §9.3), and acme's hook, the deleted room's, does not run on globex's attach.",
   "setup": {
     "channels": [

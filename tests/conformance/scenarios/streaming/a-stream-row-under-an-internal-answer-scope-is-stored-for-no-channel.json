@@ -7,6 +7,9 @@
     "§9.4",
     "§12.2 step 11s"
   ],
+  "requirements": [
+    "RK-9.4-016"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_a_stream_row_carrying_it_is_stored_for_no_channel. A hook's modify writing `internal` as a response visibility reads as `none`.",
   "setup": {
     "channels": [

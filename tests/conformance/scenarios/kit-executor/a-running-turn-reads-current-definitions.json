@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.6.6-016",
-    "RK-10.6.6-018"
+    "RK-10.6.6-018",
+    "RK-9.1-017"
   ],
   "notes": "Python: HookEngine._hooks_of_room and _defined_under resolve the requested names when firing; the gate synchronizes replacement before tool use.",
   "setup": {

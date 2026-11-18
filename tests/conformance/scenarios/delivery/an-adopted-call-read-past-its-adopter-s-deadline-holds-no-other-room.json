@@ -6,6 +6,9 @@
     "§9.5.1 Reentrance",
     "§13.6"
   ],
+  "requirements": [
+    "RK-9.5.1-036"
+  ],
   "setup": {
     "channels": [
       {

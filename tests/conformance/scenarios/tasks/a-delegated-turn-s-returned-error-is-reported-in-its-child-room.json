@@ -8,6 +8,14 @@
     "§9.3",
     "§19.8"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-102",
+    "RK-9.2-106",
+    "RK-9.2-107",
+    "RK-9.2-108"
+  ],
   "notes": "Python: tests/test_task_status.py::test_a_failed_task_is_posted_failed_without_its_error_text; tasks/status.py post_task_ended (failed, never the error's text); core/event_router.py react_for (an output's error surfaces as a raised one's, its output going on); core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors, category generation), _buffered_outcome (a responded output's rows kept, its error the turn's failure, handed on as it is: no end named, no narration), _collect_answer (mark_reported); tasks/models.py finished_task_fields (error_reported).",
   "setup": {
     "channels": [

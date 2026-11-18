@@ -9,7 +9,9 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.1-089"
+    "RK-10.1-089",
+    "RK-9.5.1-022",
+    "RK-9.5.1-030"
   ],
   "notes": "Python: the publication's section holds the room lock (core/_delivery_targets.py _keyed_publication, core/mixins/deliver.py); the event its locked hook sends commits ahead of the publication, and its delivery set runs in the room's lane, off the lock, where core/mixins/helpers.py _write_metadata_updates takes self._lock_manager.locked(room_id): it waits for the section, whose later hook writes its key first. RMK-1522, the case RMK-1511's review probed.",
   "setup": {

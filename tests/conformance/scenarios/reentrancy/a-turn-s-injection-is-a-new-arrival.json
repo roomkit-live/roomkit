@@ -10,7 +10,9 @@
   ],
   "requirements": [
     "RK-10.1-081",
-    "RK-10.5-008"
+    "RK-10.5-008",
+    "RK-9.5.1-044",
+    "RK-9.5.1-052"
   ],
   "reentrancy": [
     "inject@cascade"

@@ -6,6 +6,10 @@
     "§9.1",
     "§5.1"
   ],
+  "requirements": [
+    "RK-9.1-004",
+    "RK-9.1-005"
+  ],
   "notes": "The registration reads no room when no organization is named: the hook waits for its room.",
   "setup": {
     "channels": [

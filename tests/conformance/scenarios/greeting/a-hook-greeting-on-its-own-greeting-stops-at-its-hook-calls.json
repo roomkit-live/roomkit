@@ -7,6 +7,10 @@
     "§9.5.1",
     "§19.1"
   ],
+  "requirements": [
+    "RK-9.5.1-045",
+    "RK-9.5.1-046"
+  ],
   "notes": "At max_chain_depth 1 the budget holds 10 hook calls. The hook fires on the greeting's own AFTER_BROADCAST, and each call it makes draws one; past them its greeting is stored BLOCKED reentry_loop_cap, with no AFTER_BROADCAST to go on from. No agent reads the room.",
   "setup": {
     "kit": {

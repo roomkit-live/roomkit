@@ -8,6 +8,15 @@
     "§12.2 step 13s",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-102",
+    "RK-9.2-103",
+    "RK-9.2-106",
+    "RK-9.2-107",
+    "RK-9.2-108"
+  ],
   "notes": "Python: tests/test_turn_end_doors.py::test_a_delegated_turn_s_failure_is_reported_in_the_turn_s_scope[trace], [shared]; tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors), _persist_child_stream (_report_turn_failure) on the trace, _deliver_answer (the room's reader) with a shared transport. worker's and helper's rooms share email, writer's shares nothing. A failure before the turn's record names an end is handed on as it is (_turn_failure): no narration, no loop_end_reason; a turn that raised is not responded and carries no error to the task. ON_ERROR's payload is a RoomEvent of type message, its source inbound (the model's defaults), carrying the stream's correlation_id (_fire_stream_error_hook), none for a turn that raised (_report_intelligence_errors). tasks/models.py finished_task_fields: a failure its turn reported in the child room (mark_reported) is marked error_reported in the result's metadata, so whoever reads the task does not report it again; a raise the delivery set keeps hands the task no failure, so nothing to mark.",
   "setup": {
     "channels": [

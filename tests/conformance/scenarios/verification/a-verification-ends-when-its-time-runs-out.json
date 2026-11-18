@@ -7,6 +7,9 @@
     "§9.2",
     "§8.2"
   ],
+  "requirements": [
+    "RK-9.2-028"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_verification_reads_expired_once_its_time_passed, tests/test_verification_lifecycle.py::test_a_verification_ends_when_it_expires_not_on_the_next_message (RMK-1171).",
   "setup": {
     "kit": {

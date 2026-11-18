@@ -6,6 +6,10 @@
     "§9.5.1 A message routed back",
     "§9.5.1 The room's work outside the lock"
   ],
+  "requirements": [
+    "RK-9.5.1-044",
+    "RK-9.5.1-065"
+  ],
   "reentrancy": [
     "routed@cascade"
   ],

@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.4-045",
-    "RK-10.4-049"
+    "RK-10.4-049",
+    "RK-9.2-033"
   ],
   "notes": "Alice's binding names her as its correspondent, bob's as its recipient under the channel's recipient key. ON_DELIVERY_STATUS fires every hook registered on it in the room, its filters unread: a status is no event (the Python implementation's skip_event_filter).",
   "setup": {

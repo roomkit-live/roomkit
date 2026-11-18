@@ -5,6 +5,13 @@
   "rules": [
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-102",
+    "RK-9.2-106",
+    "RK-9.2-107"
+  ],
   "notes": "Python: orchestration/strategies/loop.py _review_parallel (core/task_utils.py gather_or_cut: the first error cuts the others, then is raised); tests/orchestration/test_loop_strategy.py TestReviewParallel::test_the_first_error_cuts_the_other_reviewers. Decided by the maintainer, HITL 4080f241 (RMK-1279). The raising reviewer is the first: each review still starts, posted pending, before the error answers; the slow reviewer's model holds at a gate never opened, so whether its turn reached the model is not pinned.",
   "setup": {
     "channels": [

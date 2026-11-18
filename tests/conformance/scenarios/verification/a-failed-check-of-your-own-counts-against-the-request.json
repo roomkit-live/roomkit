@@ -7,6 +7,9 @@
     "§11.7.5",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-028"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_failed_check_of_your_own_counts_against_the_request (RMK-1171).",
   "setup": {
     "kit": {

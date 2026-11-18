@@ -6,6 +6,9 @@
     "§19.7.1",
     "§19.6"
   ],
+  "requirements": [
+    "RK-9.2-077"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall (the handler's allowed transitions); orchestration/strategies/pipeline.py _handler, pipeline.py get_allowed_transitions.",
   "setup": {
     "channels": [

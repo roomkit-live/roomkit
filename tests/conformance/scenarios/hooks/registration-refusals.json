@@ -5,6 +5,13 @@
   "rules": [
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-016",
+    "RK-9.1-019",
+    "RK-9.1-020",
+    "RK-9.1-021",
+    "RK-9.1-022"
+  ],
   "notes": "`offlock` would run before `scan` although its priority comes after it: no hook that needs the lock may have a lower priority than one that does not.",
   "setup": {
     "channels": [

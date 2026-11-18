@@ -11,7 +11,9 @@
   "requirements": [
     "RK-10.1-095",
     "RK-10.5-008",
-    "RK-10.5-009"
+    "RK-10.5-009",
+    "RK-9.5.1-045",
+    "RK-9.5.1-046"
   ],
   "notes": "A call from an ASYNC hook's body draws one of the cascade's 10 x max_chain_depth hook calls and is one deeper than the hook's event.",
   "setup": {

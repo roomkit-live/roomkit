@@ -5,6 +5,9 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-9.2-077"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler._refused_while_held. Decided on RMK-1233, answering an automated security finding: releasing a hold is the host's act, by a transition, with no model's tool on its way.",
   "setup": {
     "channels": [

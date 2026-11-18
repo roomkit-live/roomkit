@@ -8,7 +8,8 @@
     "§10.3"
   ],
   "requirements": [
-    "RK-10.3-063"
+    "RK-10.3-063",
+    "RK-9.5.1-046"
   ],
   "notes": "Python: tests/test_reentrance.py::TestACallFromAnAsyncHook::test_a_hook_regenerating_after_each_answer_stops_at_the_depth_limit. Plain room variant; discussion regeneration is tracked separately in RMK-1474. Deleted answer indexes remain spent.",
   "setup": {

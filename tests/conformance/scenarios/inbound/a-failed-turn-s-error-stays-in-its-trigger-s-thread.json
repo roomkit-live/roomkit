@@ -6,6 +6,14 @@
     "§9.2",
     "§9.2 ON_ERROR payload"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-102",
+    "RK-9.2-106",
+    "RK-9.2-107",
+    "RK-9.2-108"
+  ],
   "notes": "Python: core/mixins/helpers.py _fire_error_hook builds a RoomEvent (type message, its source's direction the model's default, inbound) with the trigger's parent_event_id and responds_to the trigger (lane_execution.py _report_intelligence_errors, inbound_streaming.py _fire_stream_error_hook); a turn that raised carries no correlation_id. RMK-1183.",
   "setup": {
     "channels": [

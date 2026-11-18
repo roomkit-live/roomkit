@@ -7,6 +7,9 @@
     "§7.5 rule 2",
     "§13.5"
   ],
+  "requirements": [
+    "RK-9.5.1-044"
+  ],
   "reentrancy": [
     "commit@cascade"
   ],

@@ -5,6 +5,9 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-9.2-077"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_handoff_to_unknown_agent_rejected, TestHandoffHookFiring::test_on_handoff_rejected_fired, TestKnownAgents::test_known_agent_bypasses_binding_check, test_unknown_agent_still_rejected. orchestration/handoff.py HandoffHandler.handle.",
   "setup": {
     "channels": [

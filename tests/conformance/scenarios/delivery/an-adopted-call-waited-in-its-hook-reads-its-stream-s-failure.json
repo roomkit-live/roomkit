@@ -6,6 +6,9 @@
     "§9.5.1 Reentrance",
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-9.5.1-031"
+  ],
   "setup": {
     "channels": [
       {

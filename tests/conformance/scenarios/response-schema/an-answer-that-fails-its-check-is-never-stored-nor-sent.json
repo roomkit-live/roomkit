@@ -7,6 +7,10 @@
     "Appendix A.9",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestStreamedTurnThroughTheRoom::test_an_answer_that_fails_the_check_is_never_stored_nor_sent.",
   "setup": {
     "channels": [

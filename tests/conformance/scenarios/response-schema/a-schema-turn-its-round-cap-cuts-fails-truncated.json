@@ -7,6 +7,10 @@
     "Appendix A.9",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestToolLoopCutShort::test_the_turn_raises_truncated; tests/test_turn_that_did_not_complete.py::test_a_schema_turn_cut_short_reports_nothing_in_either_loop.",
   "setup": {
     "channels": [

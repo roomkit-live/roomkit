@@ -7,6 +7,10 @@
     "§13.5",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-9.5.1-018",
+    "RK-9.5.1-021"
+  ],
   "notes": "Python's install runs under the room's lock, which the calls it makes take again (RFC §13.5: the lock is reentrant within one execution context).",
   "setup": {
     "channels": [

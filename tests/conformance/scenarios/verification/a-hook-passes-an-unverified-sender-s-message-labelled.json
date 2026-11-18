@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-040",
-    "RK-10.1-041"
+    "RK-10.1-041",
+    "RK-9.2-026"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_hook_lets_a_general_question_through_labelled (RMK-1172). Passing is the hook result's metadata roomkit:verification = pass, Python's HookResult.allow_unverified(). The held message's absence from the agent's context follows from its visibility (§7.5 rule 8).",
   "setup": {

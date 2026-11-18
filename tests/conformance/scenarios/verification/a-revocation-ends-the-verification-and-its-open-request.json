@@ -7,6 +7,9 @@
     "§11.7.7",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-028"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_revoking_ends_the_verification_and_its_open_request, tests/test_verification_lifecycle.py::test_a_revocation_fires_the_end_once_and_stops_the_timer (its hook heard once; the timer stopped is in each implementation's own tests) (RMK-1171). The end of a verification names no room as a framework event; its hook is heard in the room of the request that completed it.",
   "setup": {
     "rooms": [

@@ -6,6 +6,9 @@
     "§17.2",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-005"
+  ],
   "notes": "A call naming an organization reads the room with it first: another organization's room is not found, and nothing is registered or removed. A call naming none reads no room.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§17.2",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-012",
+    "RK-9.1-013"
+  ],
   "notes": "acme adds a hook to its room on the run's kit, which runs it on acme's message; the store deletes the room; another process creates a room under the same id for globex and attaches its channels; a message arrives in it through the run's kit. acme's hook was the deleted room's and reads nothing of globex's.",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§13.5",
     "§19.1"
   ],
+  "requirements": [
+    "RK-9.5.1-024"
+  ],
   "notes": "At max_chain_depth 2 the budget is 20 passes. Under the lock a greeting commits ahead of the answer its hook decides on, at depth 0, so the depth limit never stops it. Each greeting and each answer draws one: the answer past the budget is stored BLOCKED reentry_loop_cap, its hooks not run, so nothing greets again.",
   "setup": {
     "kit": {

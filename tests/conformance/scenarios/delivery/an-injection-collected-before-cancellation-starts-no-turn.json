@@ -12,7 +12,8 @@
     "RK-10.1-102",
     "RK-10.1-111",
     "RK-10.1-112",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-9.4-021"
   ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_an_event_injected_by_a_cancelled_delivery_starts_no_turn. B is committed and its hook has collected C before cancel, while a preceding transport holds the lane. C need not be committed at cancellation. Neither B nor C starts a turn.",
   "setup": {

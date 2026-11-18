@@ -9,6 +9,9 @@
     "§9.5",
     "§6.4"
   ],
+  "requirements": [
+    "RK-9.5.1-067"
+  ],
   "notes": "One streaming target per response: the first transport that streams. It is handed every delta, then each row once the store holds it, with its id and its index, the deltas joining to the row's text; it is never delivered a row through deliver(). Every other target receives each row through deliver(), in index order. The final row carries the turn's record when it is stored.",
   "setup": {
     "channels": [

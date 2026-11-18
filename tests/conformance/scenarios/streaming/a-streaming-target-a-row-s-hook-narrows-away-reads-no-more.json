@@ -8,6 +8,9 @@
     "§9.5",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-9.4-011"
+  ],
   "notes": "A BEFORE_BROADCAST hook narrows the agent's first text row to web. ws, the streaming target, was handed the row's text before the hook judged it (the accepted risk of §6.4), but no longer reads the response: it is handed neither the row nor anything more of the stream, and the rows after, which the hook left visible to all, are delivered to it and to web as their plans say.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§10.2 step 3c",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101"
+  ],
   "notes": "Python: tests/tasks/test_delegated_turn_on_error.py::test_a_failed_delegated_reply_fires_on_error_once; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors, before the answer takes the trace's path or the room's). Rooms $r1, $r3 and $r5 share email, $r2, $r4 and $r6 share nothing; tasks/a-delegated-turn-s-returned-error-is-reported-in-its-child-room and tasks/a-delegated-turn-s-failure-is-reported-in-its-child-room pin the payload of each kind.",
   "setup": {
     "channels": [

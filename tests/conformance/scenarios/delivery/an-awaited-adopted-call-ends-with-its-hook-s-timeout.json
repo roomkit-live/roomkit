@@ -8,7 +8,8 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-9.3-005"
+    "RK-9.3-005",
+    "RK-9.5.1-038"
   ],
   "notes": "Python: a call follows its caller. The hook's timeout cancels its body (src/roomkit/core/hooks.py), and the nested process_inbound it awaits with it, before that call's commit. Twin tests: roomkit tests/test_reentrance.py and roomkit-rs tests/reentrancy.rs, a_hook_that_times_out_while_its_entry_works_is_heard_after_it (RMK-1472, HITL 35d1efa7).",
   "setup": {

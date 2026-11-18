@@ -6,6 +6,9 @@
     "§19.7",
     "§9.1"
   ],
+  "requirements": [
+    "RK-9.1-010"
+  ],
   "setup": {
     "strategies": [
       {

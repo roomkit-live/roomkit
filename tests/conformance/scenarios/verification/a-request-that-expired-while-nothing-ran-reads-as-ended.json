@@ -7,6 +7,9 @@
     "§11.7.5",
     "§9.2"
   ],
+  "requirements": [
+    "RK-9.2-028"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_verification_lifecycle.py::test_a_request_that_expired_while_nothing_ran_reads_as_ended (RMK-1171). The records are the store's, as another process left them.",
   "setup": {
     "rooms": [

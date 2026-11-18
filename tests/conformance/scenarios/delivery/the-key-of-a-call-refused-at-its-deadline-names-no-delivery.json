@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.1-111",
     "RK-10.1-112",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-9.5.1-036"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, an adopted call's cascade of its own (_commit_and_await_delivery, self._cascades.new), its completion detached; src/roomkit/core/lanes.py, a call's name released once it returned (call_returned, over). Found by the review of RMK-1432.",
   "setup": {
