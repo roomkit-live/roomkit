@@ -1,0 +1,67 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-video-without-a-mime-type-reads-video-mp4",
+  "title": "A video message whose content names no MIME type is stored as video/mp4",
+  "rules": [
+    "§5.3"
+  ],
+  "requirements": [
+    "RK-5.3-007"
+  ],
+  "notes": "VideoContent's mime_type defaults to video/mp4, as AudioContent's defaults to audio/ogg (§5.3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "video",
+          "url": "https://example.com/clip"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "video",
+            "url": "https://example.com/clip",
+            "mime_type": "video/mp4"
+          }
+        }
+      ]
+    }
+  }
+}

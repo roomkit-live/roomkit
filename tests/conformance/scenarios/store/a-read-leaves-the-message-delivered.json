@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-read-leaves-the-message-delivered",
+  "title": "A message a channel marks read, then marks all read, and that its provider reports read, stays DELIVERED: a read moves the channel's marker, not the event's status",
+  "rules": [
+    "§5.2",
+    "§10.4 A delivery status follows its message",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.2-003"
+  ],
+  "notes": "A read moves the reading channel's marker (§14.1), and a provider's read status reaches ON_DELIVERY_STATUS: neither changes the event's status. Both markers stand at the message, whose index counts any lifecycle record before it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "as": "hello",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "mark_read",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "event_id": "$hello"
+    },
+    {
+      "call": "mark_all_read",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "provider": "mock",
+        "message_id": "m",
+        "status": "read",
+        "recipient": "+15550000002"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": {
+            "$as": "read"
+          },
+          "ws": {
+            "$as": "read"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ws"
+          },
+          "status": "delivered",
+          "content": {
+            "body": "Hello."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-1",
+          "delivery_status": {
+            "status": "read"
+          }
+        }
+      ]
+    }
+  }
+}
