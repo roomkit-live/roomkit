@@ -1794,7 +1794,7 @@ class RoomKit(
                     nested.committing()
                 return await self._store_entry_past_cap(room_id, event)
         if first_post is not None:
-            await first_post.attach()
+            await first_post.attach(event)
         return await self._inject(event, entry, deadline)
 
     async def _inject(self, event: RoomEvent, entry: Entry, deadline: float) -> RoomEvent:

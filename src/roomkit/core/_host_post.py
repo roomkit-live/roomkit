@@ -41,10 +41,12 @@ class FirstPost:
     """A post into a room that does not bind its host channel yet (RFC
     §10.5): its event's source, the host channel's own, and the attach that
     binds the channel once the post has drawn its pass on the budget of the
-    room's work, so that a post past the budget binds nothing (§9.5.1)."""
+    room's work, so that a post past the budget binds nothing (§9.5.1). The
+    attach is handed the post's event, which a room that refuses events
+    reports refused (§5.1)."""
 
     source: EventSource
-    attach: Callable[[], Awaitable[None]]
+    attach: Callable[[RoomEvent], Awaitable[None]]
 
 
 async def post(
@@ -178,7 +180,12 @@ def _detached(room: Room, host_id: str) -> ChannelNotFoundError:
 
 
 async def _attach_on_first_post(
-    kit: RoomKit, room_id: str, host_id: str, organization_id: str | None, deadline: float
+    kit: RoomKit,
+    room_id: str,
+    host_id: str,
+    organization_id: str | None,
+    deadline: float,
+    event: RoomEvent,
 ) -> None:
     """Attach *host_id* to a room that never bound it, in one section under
     the room lock, where every binding change and status change runs (RFC
@@ -202,7 +209,7 @@ async def _attach_on_first_post(
             deadline,
         )
         await run_to_its_end(
-            _attach_locked(kit, room_id, host_id, organization_id),
+            _attach_locked(kit, room_id, host_id, organization_id, event),
             held=kit._decided_writes,
             name=f"roomkit-decided-write-{room_id}",
             expected=(RoomNotFoundError, RoomClosedError, ChannelNotFoundError),
@@ -210,17 +217,21 @@ async def _attach_on_first_post(
 
 
 async def _attach_locked(
-    kit: RoomKit, room_id: str, host_id: str, organization_id: str | None
+    kit: RoomKit, room_id: str, host_id: str, organization_id: str | None, event: RoomEvent
 ) -> None:
     """:func:`_attach_on_first_post`'s section, under the room lock its
     caller holds: the room read with its scope and its due timers applied,
     then its binding. A binding made by then, the integrator's above all, is
-    kept as it is. Nothing is written for a room that refuses events, nor
-    for one the host channel was detached from (§7.5 rule 7), which only an
+    kept as it is. Nothing is written for a room that refuses events, which
+    reports the post's *event* refused as its gate would (RFC §5.1), nor for
+    one the host channel was detached from (§7.5 rule 7), which only an
     explicit attach grants it again."""
     room = await kit.get_room(room_id, organization_id=organization_id)
     room = await kit._room_timers.apply_due(room)
     if room.status in _REFUSING_STATUSES:
+        await kit._refuse_closed_room(
+            room_id, status=room.status, operation="inbound", event=event
+        )
         raise RoomClosedError(f"Room {room_id} does not accept new events")
     if await kit._attach_unbound(room, host_id) is None:
         raise _detached(room, host_id)

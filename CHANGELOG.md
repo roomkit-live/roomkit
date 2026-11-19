@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A post into a closed room that never bound the host channel emits `room_refused_event`, as the refusal of a later post does (RFC §5.1, §10.5).
+
 - PostgreSQL store initialization reads index uniqueness in its own schema, so concurrent DDL in another schema can proceed independently. Index repair also handles quoted names and predicates containing `UNIQUE`.
 
 - Text tool callbacks refresh the room history when a room is recreated or transferred to another organization.
