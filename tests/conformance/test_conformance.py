@@ -89,7 +89,10 @@ def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
 # carry their selection lock's failed release; identity verification, whose requests,
 # verifications and held messages are stored (§11.7); and every scenario with other
 # processes, whose kits share only the store and the lock manager: a discussion keeps
-# its state, queue and lease in its room (§19.7.5 rule 16).
+# its state, queue and lease in its room (§19.7.5 rule 16). A BEFORE_BROADCAST
+# observer's start runs on SQLite too: the in-memory store never suspends a commit,
+# so only a store that does shows an observer started before its event is stored
+# (§10.1 step 13).
 _STORES = ("memory", "sqlite")
 
 _ON_EACH_STORE = (
@@ -107,6 +110,7 @@ _ON_EACH_STORE = (
     "locks/",
     "verification/",
     "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
+    "hooks/a-before-broadcast-observer-reads-its-event-as-stored",
 )
 
 # Of those, the ones that run on PostgreSQL too (tests/conformance/test_postgres.py),

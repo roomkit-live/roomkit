@@ -1,0 +1,290 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/every-path-that-commits-an-event-roots-its-parent",
+  "title": "A direct injection, a record committed outside the pipeline, an event a hook injects, a parent a hook sets and an agent's response each name a reply's thread root when they name the reply",
+  "rules": [
+    "§10.1 step 8",
+    "§10.1 step 9",
+    "§10.5",
+    "§9.4"
+  ],
+  "requirements": [
+    "RK-10.1-138",
+    "RK-10.5-049"
+  ],
+  "notes": "commit_event stores the record with the id the caller gives (§10.5), so root-1 and reply-1 are known before the agent's scripted response names reply-1. Each later event names reply-1 as its parent and is stored under root-1, the thread's root, at index 0.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Ask"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Answer"
+                },
+                "parent_event_id": "reply-1"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Inject"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "Injected"
+                    },
+                    "parent_event_id": "reply-1"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "Relabel"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "parent_event_id": "reply-1"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "id": "root-1",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "Root"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "id": "reply-1",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "Reply"
+        },
+        "parent_event_id": "root-1"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Sent"
+      },
+      "parent_event_id": "reply-1",
+      "expect": {
+        "result": {
+          "parent_event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "Record"
+        },
+        "parent_event_id": "reply-1"
+      },
+      "expect": {
+        "result": {
+          "parent_event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Inject"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Relabel"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "parent_event_id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Ask"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "Root"
+          },
+          "parent_event_id": null
+        },
+        {
+          "id": "room-1#1",
+          "content": {
+            "type": "text",
+            "body": "Reply"
+          },
+          "parent_event_id": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Sent"
+          },
+          "parent_event_id": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Record"
+          },
+          "parent_event_id": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Inject"
+          },
+          "parent_event_id": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Injected"
+          },
+          "parent_event_id": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Relabel"
+          },
+          "parent_event_id": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Ask"
+          },
+          "parent_event_id": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Answer"
+          },
+          "parent_event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}

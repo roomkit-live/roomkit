@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parsed-event-takes-the-framework-s-id",
+  "title": "The event a channel's parse builds takes the framework's id, whatever id the channel gave it: two built with one id, and one built with a stored event's id, are each stored as their own event",
+  "rules": [
+    "§10.1 step 4",
+    "§8.1"
+  ],
+  "requirements": [
+    "RK-10.1-032"
+  ],
+  "notes": "The parse sets the event's id: wire-1 for the first two messages, and for the third the id of the event at index 0, the first message as stored. A kept channel id would make the second and the third collide with the first, and the room would hold an event wire-1: an update naming it finds none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "First"
+            },
+            "parsed": {
+              "id": "wire-1"
+            }
+          },
+          {
+            "when": {
+              "text": "Second"
+            },
+            "parsed": {
+              "id": "wire-1"
+            }
+          },
+          {
+            "when": {
+              "text": "Third"
+            },
+            "parsed": {
+              "id": "room-1#0"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Third"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#2"
+          }
+        }
+      }
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "wire-1",
+      "metadata": {
+        "probe": true
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "First"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#1",
+          "content": {
+            "type": "text",
+            "body": "Second"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#2",
+          "content": {
+            "type": "text",
+            "body": "Third"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "First"
+            }
+          },
+          {
+            "id": "room-1#1",
+            "content": {
+              "type": "text",
+              "body": "Second"
+            }
+          },
+          {
+            "id": "room-1#2",
+            "content": {
+              "type": "text",
+              "body": "Third"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

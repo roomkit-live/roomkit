@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-before-broadcast-observer-reads-its-event-as-stored",
+  "title": "A BEFORE_BROADCAST observer starts once its pass is over, on the event as its SYNC hooks left it: it reads that event committed, still starts for an event its chain allowed that step 11 stored BLOCKED, and never for an event its chain blocked",
+  "rules": [
+    "§10.1 step 13",
+    "§10.1 step 11",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-10.1-079",
+    "RK-9.2-008"
+  ],
+  "notes": "The ASYNC hook reads the room's newest event, BLOCKED records included, as it starts. The first message, which a SYNC hook rewrites, is committed; the second is blocked by that hook, so it starts no observer; the third, from a muted binding, is allowed by the chain and stored BLOCKED at step 11. Each observer reads its own event already stored, as its SYNC hook left it. The steps wait for the kit to go idle between the messages, so an observer's read cannot see a later message. roomkit runs it on SQLite too: its in-memory store never suspends a commit, so only there would an observer started early read the room before it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sms2",
+            "muted": true
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "label",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Allowed"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "Allowed, labelled"
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "Refused"
+            },
+            "result": {
+              "action": "block",
+              "reason": "refused"
+            }
+          }
+        ]
+      },
+      {
+        "name": "watcher",
+        "trigger": "before_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "get_timeline",
+                "room_id": "$room",
+                "include_blocked": true,
+                "newest_first": true,
+                "limit": 1,
+                "as": "seen"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Allowed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Allowed, labelled"
+            },
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Refused"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "status": "blocked"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms2",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Muted"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "status": "blocked",
+            "blocked_by": "source_muted"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "watcher": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Allowed, labelled"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Muted"
+            }
+          }
+        }
+      ]
+    },
+    "actions": {
+      "seen": [
+        {
+          "result": [
+            {
+              "id": "room-1#0",
+              "content": {
+                "type": "text",
+                "body": "Allowed, labelled"
+              },
+              "status": "delivered"
+            }
+          ]
+        },
+        {
+          "result": [
+            {
+              "id": "room-1#2",
+              "content": {
+                "type": "text",
+                "body": "Muted"
+              },
+              "status": "blocked",
+              "blocked_by": "source_muted"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

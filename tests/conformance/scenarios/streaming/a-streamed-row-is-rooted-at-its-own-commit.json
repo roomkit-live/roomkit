@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-is-rooted-at-its-own-commit",
+  "title": "A streamed answer's rows take their trigger's parent and root it as each commits: the thread's root still held, a row names it; hard-deleted while the turn ran, the row is posted at the top level",
+  "rules": [
+    "§10.1 step 8",
+    "§10.3",
+    "§12.2 step 13s"
+  ],
+  "requirements": [
+    "RK-10.1-138"
+  ],
+  "notes": "The root is a record committed outside the pipeline, so the agent never answers it. Both questions reply to it, so the answer to each takes the root as its parent. The first answer commits while the room holds the root: its row names it. The second answer's round is held at a gate once its turn started; the root is hard-deleted meanwhile, its replies kept (cascade_replies false), so the questions and the first answer still name the removed root. The second answer's row takes that parent at its commit, when the room no longer holds it: the row names none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "gate": "hold",
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "Root"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First question"
+        },
+        "parent_event_id": "room-1#0"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second question"
+        },
+        "parent_event_id": "room-1#0"
+      },
+      "background": true,
+      "as": "asking"
+    },
+    {
+      "wait_for": "hold"
+    },
+    {
+      "call": "delete_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "cascade_replies": false,
+      "expect": {
+        "result": [
+          "$e1"
+        ]
+      }
+    },
+    {
+      "open": "hold"
+    },
+    {
+      "await": "asking",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "First question"
+          },
+          "parent_event_id": "$e1"
+        },
+        {
+          "index": 2,
+          "content": {
+            "type": "text",
+            "body": "First answer"
+          },
+          "source": {
+            "channel_id": "agent"
+          },
+          "parent_event_id": "$e1"
+        },
+        {
+          "index": 3,
+          "content": {
+            "type": "text",
+            "body": "Second question"
+          },
+          "parent_event_id": "$e1"
+        },
+        {
+          "index": 4,
+          "content": {
+            "type": "text",
+            "body": "Second answer"
+          },
+          "source": {
+            "channel_id": "agent"
+          },
+          "parent_event_id": null
+        }
+      ]
+    }
+  }
+}

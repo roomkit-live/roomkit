@@ -1,0 +1,498 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/routed-calls-from-a-room-s-deliveries-draw-on-its-cascade-s-budget",
+  "title": "Messages a room's delivery sends that the router routes back into that room each draw one pass on the delivering cascade's budget; past it, one is refused after step 2, nothing of it stored, the attach or the sender's record kept",
+  "rules": [
+    "§8.3",
+    "§9.5.1 The room's work outside the lock",
+    "§9.5.1 Past the cap",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-10.1-022"
+  ],
+  "reentrancy": [
+    "routed@cascade"
+  ],
+  "notes": "max_chain_depth is 1, so the cascade's budget is 10 passes. Every message the loop channel's deliveries send names no room, and the router routes it to room-1, the room the work delivers in: the first ten each draw a pass, their own cascades drawing on the same budget, and are stored; the eleventh delivery sends one from sms2, which room-1 does not bind, and one from sms3, which room-1 binds naming no one. Step 2 attaches sms2 naming its sender and records the sender on sms3's binding, then each message is refused past the budget: nothing of either stored, the attach and the record kept.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1,
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms3",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "loop",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms2",
+                  "sender_id": "+15550000002",
+                  "content": {
+                    "type": "text",
+                    "body": "attached"
+                  }
+                },
+                "as": "refused",
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "reentry_loop_cap",
+                    "event": null
+                  }
+                }
+              },
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms3",
+                  "sender_id": "+15550000003",
+                  "content": {
+                    "type": "text",
+                    "body": "recorded"
+                  }
+                },
+                "as": "refused",
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "reentry_loop_cap",
+                    "event": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "loop"
+          },
+          {
+            "channel_id": "sms3"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "sms2": {
+          "participant_id": "+15550000002"
+        },
+        "sms3": {
+          "participant_id": "+15550000003"
+        }
+      }
+    },
+    "actions": {
+      "routed": [
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        }
+      ],
+      "refused": [
+        {
+          "result": {
+            "blocked": true,
+            "reason": "reentry_loop_cap",
+            "event": null
+          }
+        },
+        {
+          "result": {
+            "blocked": true,
+            "reason": "reentry_loop_cap",
+            "event": null
+          }
+        }
+      ]
+    }
+  }
+}

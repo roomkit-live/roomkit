@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-held-delivery-leaves-the-room-lock-to-the-next-message",
+  "title": "While a message's delivery is held, the next message to the room takes the lock and commits: the lock does not cover delivery",
+  "rules": [
+    "§10.1 step 13",
+    "§10.2",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-10.1-077"
+  ],
+  "notes": "ws holds the first message's delivery at a gate no step opens before the second message returns. The second message, deferring its delivery, returns at its commit: it took the room lock while the first delivery still ran. Its own delivery waits its turn in the room's lane, after the first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "First"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      },
+      "defer_delivery": true,
+      "as": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#1",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "second",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "First"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "First"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Second"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-committed-event-stays-delivered-past-process-timeout",
+  "title": "A message whose delivery is held past process_timeout, and whose delivery to another channel fails, stays committed: its result and the timeline read it delivered",
+  "rules": [
+    "§10.1 step 12",
+    "§13.6"
+  ],
+  "requirements": [
+    "RK-10.1-072"
+  ],
+  "notes": "The message commits well within its 2 s process_timeout; its delivery to ws is then held at a gate, and its delivery to bad fails. A message to room-2, held at a hook gate, is refused at its own 2 s deadline: it starts once the first message's delivery is held, so the first message's deadline has passed when the gate opens. The first message's event is never re-marked: its result reads it delivered, not blocked, and so does the timeline.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 2000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "gate": "late"
+          }
+        ]
+      },
+      {
+        "id": "bad",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "fail": "provider down"
+          }
+        ]
+      },
+      {
+        "id": "slow",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "bad"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "slow"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "clock",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "channel_ids": [
+          "slow"
+        ],
+        "reactions": [
+          {
+            "gate": "clock"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "slow",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "tick"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "late"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "event": {
+            "id": "room-1#0",
+            "status": "delivered",
+            "blocked_by": null
+          }
+        }
+      }
+    },
+    {
+      "open": "clock"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "delivered",
+          "blocked_by": null
+        }
+      ],
+      "room-2": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

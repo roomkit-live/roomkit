@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-call-that-ran-no-response-turn-returns-empty-response-metadata",
+  "title": "A message that runs no response turn, in a room of transports only or refused before its agent's turn, returns an empty response_metadata",
+  "rules": [
+    "§10.1 InboundResult"
+  ],
+  "requirements": [
+    "RK-10.1-132"
+  ],
+  "notes": "An object expectation matches any object holding its members, so {} would match a record with keys: each empty record is named $as empty with the metadata of a binding attached with none, which must equal it. The answered message shows the agent's turn writes a record of its own when it runs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "on_event": [
+          {
+            "repeat": true,
+            "output": {
+              "response_metadata": {
+                "agent": {
+                  "answered": true
+                }
+              }
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Refused"
+            },
+            "result": {
+              "action": "block",
+              "reason": "refused"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "response_metadata": {
+            "$as": "empty"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Question"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "response_metadata": {
+            "agent": {
+              "answered": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Refused"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "response_metadata": {
+            "$as": "empty"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "ws": {
+          "metadata": {
+            "$as": "empty"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Question"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Answer"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Refused"
+          },
+          "status": "blocked"
+        }
+      ]
+    }
+  }
+}
