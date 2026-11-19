@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replacing a Redis worker with a local-only worker withdraws its advertisement. Same-node turns keep the owner's reserved channels when another worker uses the same executor ID.
 
+- A delivery to a binding with no recipient under its channel's recipient key, or with a value that is not a recipient, is refused `no_recipient` before any send for every channel that declares a key, an integrator's own included, not only for the built-in transports (RFC §5.7, §10.2 step 3d).
+
 ## [0.115.0] — 2026-11-18
 
 ### Added

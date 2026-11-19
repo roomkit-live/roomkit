@@ -85,7 +85,10 @@ class TransportChannel(Channel):
                 destination of its own (a webhook's configured URL) passes
                 ``False``: its provider is called without one (RFC §10.2
                 step 3d), and so is a channel whose addressing names no
-                recipient key.
+                recipient key. It counts only where the recipient names no
+                conversation: on a channel that has a :attr:`recipient_key`,
+                the broadcast pipeline refuses a delivery with no recipient
+                before this channel is called, whatever it passes.
 
         Raises:
             ValueError: *country_code* is not one to three digits, the first

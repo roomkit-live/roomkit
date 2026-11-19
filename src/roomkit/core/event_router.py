@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from roomkit.channels.addressing import written_recipient
 from roomkit.channels.base import Channel
 from roomkit.core._changes import for_channels, opens_no_turn
 from roomkit.core._failure_log import log_failure
@@ -451,6 +452,17 @@ def _leaves_no_result(exc: BaseException, binding: ChannelBinding) -> bool:
     return cancels_current_task(exc) or binding.category == ChannelCategory.INTELLIGENCE
 
 
+def _refuse_without_recipient(channel: Channel, binding: ChannelBinding) -> None:
+    """Refuse, before any send, a delivery whose *binding* holds no recipient
+    under *channel*'s recipient key (RFC §5.7, §10.2 step 3d): no value and a
+    value that is not a recipient alike, whoever wrote the channel and
+    whatever its own ``deliver`` does. A channel with no recipient key
+    delivers to a destination of its own and needs none."""
+    key = channel.recipient_key
+    if key is not None and written_recipient(binding.metadata, key) is None:
+        raise NoRecipientError(binding.channel_id, key)
+
+
 class EventRouter:
     """Routes events to target channels with access control and transcoding."""
 
@@ -790,6 +802,7 @@ class EventRouter:
                             await self._rate_limiter.wait(binding.channel_id, binding.rate_limit)
 
                         try:
+                            _refuse_without_recipient(channel, binding)
                             if binding.retry_policy is not None:
                                 delivery_output = await retry_with_backoff(
                                     channel.deliver,
