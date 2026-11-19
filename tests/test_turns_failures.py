@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -16,10 +17,10 @@ from roomkit.channels.agent import Agent
 from roomkit.core.exceptions import RemoteTurnError, TurnLinkError, error_type_name
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory
+from roomkit.models.enums import ChannelCategory, EventType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
-from roomkit.providers.ai.base import AIResponse
+from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.turns import InMemoryTurnBackend, OwnerHost, TurnClient, TurnExecutor, TurnTimeouts
 from roomkit.turns._error_codec import ROOMKIT_ERRORS, error_record
@@ -206,6 +207,46 @@ async def test_an_agent_answers_in_a_room_whose_metadata_json_has_no_form_for() 
     await kit.close()
     assert result.error is None
     assert [e.content.body for e in result.response_events] == ["hello"]
+
+
+async def test_a_tool_blocking_the_loop_past_the_heartbeat_timeout_is_not_lost() -> None:
+    """In memory the executor's CPU is the owner's stall: a tool that blocks
+    the event loop past the heartbeat timeout stalls the owner's count too,
+    so the turn ends as it would have, never lost (RFC §10.6.8)."""
+    backend = InMemoryTurnBackend()
+    backend.timeouts = TurnTimeouts(heartbeat_interval=0.005, heartbeat_timeout=0.025)
+    tool = {"name": "lookup", "description": "Look up.", "parameters": {"type": "object"}}
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="c1", name="lookup", arguments={})],
+            ),
+            AIResponse(content="42", finish_reason="stop"),
+        ]
+    )
+
+    async def lookup(name: str, arguments: dict[str, Any]) -> str:
+        time.sleep(0.06)  # noqa: ASYNC251 - the turn's CPU: the event loop stops
+        return "42"
+
+    kit = RoomKit(turn_backend=backend)
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(Agent("agent", provider=provider, tools=[tool], tool_handler=lookup))
+    await kit.create_room(room_id="room")
+    await kit.attach_channel("room", "sms")
+    await kit.attach_channel("room", "agent", category=ChannelCategory.INTELLIGENCE)
+    message = InboundMessage(
+        channel_id="sms", sender_id="+15550000001", content=TextContent(body="What is it?")
+    )
+
+    result = await kit.process_inbound(message, room_id="room")
+    rows = [e.type for e in await kit.store.list_events("room") if e.source.channel_id == "agent"]
+
+    await kit.close()
+    assert result.error is None
+    assert rows == [EventType.TOOL_CALL_START, EventType.TOOL_CALL_END, EventType.MESSAGE]
 
 
 def _raise_deep() -> None:
