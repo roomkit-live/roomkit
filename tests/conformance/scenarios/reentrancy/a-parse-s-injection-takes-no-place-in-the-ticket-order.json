@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-parse-s-injection-takes-no-place-in-the-ticket-order",
+  "title": "An injection a channel's parse makes into its room commits at once, ahead of an earlier message that still holds its ticket; the parsed message commits after that one",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.5.1 Order",
+    "§10.1 step 4",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-9.5.1-023"
+  ],
+  "reentrancy": [
+    "inject@admitted"
+  ],
+  "notes": "The variant of reentrancy/an-off-lock-hook-s-injection-takes-no-place-in-the-ticket-order where the second message's parse, before it takes a ticket, makes the injection.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "second"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                },
+                "as": "notice"
+              }
+            ],
+            "after_do_gate": "injected"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "gate": "first"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "injected"
+    },
+    {
+      "open": "injected"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "second"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "notice": [
+        {
+          "result": {
+            "id": "room-1#0",
+            "status": "delivered"
+          }
+        }
+      ]
+    }
+  }
+}

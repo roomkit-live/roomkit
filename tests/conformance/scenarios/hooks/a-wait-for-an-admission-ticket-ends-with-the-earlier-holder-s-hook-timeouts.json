@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-wait-for-an-admission-ticket-ends-with-the-earlier-holder-s-hook-timeouts",
+  "title": "A message waiting for its turn waits as long as the earlier message's off-lock and locked hooks run, up to their timeouts, then commits after it",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 Bound",
+    "§9.5.1 Order",
+    "§9.3",
+    "§10.1 step 5a"
+  ],
+  "requirements": [
+    "RK-9.5.1-009"
+  ],
+  "notes": "The first message comes on the slow channel, whose off-lock and locked hooks each hold at a gate no step opens and time out (200 ms, fail-open): the first commits, and the second, whose check ended long before, commits after it. The check hook gives both messages a ticket. That no setting of its own bounds the wait is shown only for a setting shorter than these timeouts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "slow",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "slow"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "needs_lock": false
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 200,
+        "channel_ids": [
+          "slow"
+        ],
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "guard",
+        "trigger": "before_broadcast",
+        "timeout_ms": 200,
+        "channel_ids": [
+          "slow"
+        ],
+        "reactions": [
+          {
+            "gate": "never again"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "slow",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "second"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "second"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "check": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "second"
+            }
+          }
+        }
+      ],
+      "scan": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        }
+      ],
+      "guard": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-message-an-off-lock-hook-blocks-keeps-its-ticket-place",
+  "title": "A message an off-lock hook blocks while an earlier message's check still runs waits for its turn: its BLOCKED record commits after that message",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 Order",
+    "§10.1 step 5a",
+    "§10.1 step 10"
+  ],
+  "requirements": [
+    "RK-9.5.1-005"
+  ],
+  "notes": "The variant of hooks/off-lock-tickets-keep-arrival-order where the second message's check, ended first, blocks it: its record waits for the first message's ticket, so it takes the next index. A blocked first message releasing the next is the blocked path of hooks/an-admission-ticket-is-released-on-every-path.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "gate": "first"
+          },
+          {
+            "when": {
+              "text": "second"
+            },
+            "gate": "second",
+            "result": {
+              "action": "block",
+              "reason": "pii"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "second"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "index": 1,
+            "status": "blocked",
+            "blocked_by": "scan"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "second"
+          },
+          "status": "blocked",
+          "blocked_by": "scan"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

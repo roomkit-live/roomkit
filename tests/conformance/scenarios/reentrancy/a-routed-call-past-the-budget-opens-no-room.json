@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-routed-call-past-the-budget-opens-no-room",
+  "title": "A transport whose every delivery sends a message the router opens a room for stops at its cascade's budget: the message past it is refused before a room is created",
+  "rules": [
+    "§8.3",
+    "§9.5.1",
+    "§9.5.1 The room's work outside the lock",
+    "§9.5.1 Past the cap",
+    "§10.1 step 2",
+    "§10.1 step 18",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-9.5.1-056",
+    "RK-9.5.1-063"
+  ],
+  "notes": "The router answers no room: each message the loop channel's delivery sends opens one, which an ON_ROOM_CREATED hook binds to the loop channel, so the chain goes on there on the budget of room-1's cascade. Each call, into another room than the one whose delivery makes it, waits for the delivery of its message there, which makes the next call: the refused call ends first. Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_transport_opening_a_room_on_every_delivery_stops_at_the_cap[no-room].",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1,
+      "router": {
+        "room_id": null
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "loop",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "open"
+                  }
+                },
+                "as": "open"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "loop"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "loop"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$created": {
+        "$unordered": [
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          },
+          {
+            "status": "active"
+          }
+        ]
+      }
+    },
+    "actions": {
+      "open": [
+        {
+          "result": {
+            "blocked": true,
+            "reason": "reentry_loop_cap",
+            "event": null
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        }
+      ]
+    }
+  }
+}

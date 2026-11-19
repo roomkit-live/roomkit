@@ -1,0 +1,455 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-admission-ticket-is-released-on-every-path",
+  "title": "A message's admission ticket is released whether it commits, is blocked by a hook that blocks, raises or times out, is a duplicate, is refused by a closed room, or meets a failed lock release: the next message still commits",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 Release",
+    "§10.1 step 5a",
+    "§10.1 step 6",
+    "§10.1 step 7",
+    "§9.3",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-9.5.1-006"
+  ],
+  "notes": "Every message takes a ticket. Each message waits for every earlier ticket, so one path that leaked its ticket would hold every message after it. The scan hook, first of the off-lock hooks, fires for each, the duplicate included, which the idempotency gate refuses after its check. It is fail-closed: its failure blocks; so is the slow hook, which runs only for the message of the slow channel and times out. The hold hook, with its default timeout, holds the message the room is closed under. The failed path is a failed lock release, which the message reports as its error; an exception raised after the ticket is taken is reached only through process_timeout. The room is closed while the message's check runs, and reopened after the refusal. A caller that stops waiting and an expired process_timeout are not here: the suite has no step that abandons a call, and process_timeout is in hooks/a-wait-for-an-admission-ticket-counts-against-process-timeout. Python: tests/test_off_lock_check.py::TestOrderAndOverlap::test_blocked_first_message_releases_the_next, tests/test_off_lock_check.py::TestTicketRelease.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "slow",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "slow"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "fail_closed": true,
+        "reactions": [
+          {
+            "when": {
+              "text": "blocked"
+            },
+            "result": {
+              "action": "block",
+              "reason": "pii"
+            }
+          },
+          {
+            "when": {
+              "text": "raises"
+            },
+            "fail": "the scanner is down"
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "fail_closed": true,
+        "timeout_ms": 200,
+        "channel_ids": [
+          "slow"
+        ],
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "closed"
+            },
+            "gate": "closing"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "idempotency_key": "k1"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "blocked"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "index": 1,
+            "blocked_by": "scan"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "raises"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "index": 2,
+            "blocked_by": "scan"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "slow",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "times out"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "index": 3,
+            "blocked_by": "slow"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "idempotency_key": "k1"
+      },
+      "expect": {
+        "result": {
+          "duplicate": true,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "closed"
+        }
+      },
+      "background": true,
+      "as": "closed"
+    },
+    {
+      "wait_for": "closing"
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "open": "closing"
+    },
+    {
+      "await": "closed",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "released badly"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 4
+          },
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "last"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 5
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "blocked"
+          },
+          "status": "blocked"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "raises"
+          },
+          "status": "blocked"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "times out"
+          },
+          "status": "blocked"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "released badly"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "last"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "released badly"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "last"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "scan": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "blocked"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "raises"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "times out"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "closed"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "released badly"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "last"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

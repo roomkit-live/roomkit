@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-admission-ticket-is-released-before-the-message-s-delivery",
+  "title": "A message's admission ticket is released once its locked section is over: a later ticketed message commits while the first one's delivery is still held",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 Release",
+    "§10.1 step 5a",
+    "§10.1 step 13",
+    "§10.1 step 18"
+  ],
+  "requirements": [
+    "RK-9.5.1-007"
+  ],
+  "notes": "The first caller waits for its delivery, which ws holds at a gate. The second message defers its delivery, which waits in the lane behind the first one's: its call returns at its commit, which needs the first message's ticket. That the ticket is not released before the room lock is not observable here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "gate": "delivering"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "delivering"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "defer_delivery": true,
+      "as": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "delivering"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "second"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "second"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "scan": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "second"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

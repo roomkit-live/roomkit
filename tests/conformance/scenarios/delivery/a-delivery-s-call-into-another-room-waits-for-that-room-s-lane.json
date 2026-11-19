@@ -1,0 +1,245 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-s-call-into-another-room-waits-for-that-room-s-lane",
+  "title": "A message a room's delivery sends into another room is not detached: it waits for that room's lane, held by an earlier delivery, and returns with its own delivery results",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 The room's work outside the lock",
+    "§10.1 step 18"
+  ],
+  "requirements": [
+    "RK-9.5.1-056"
+  ],
+  "reentrancy": [
+    "inject@outside"
+  ],
+  "notes": "room-b's lane is held by the delivery of held to wsb. room-a's delivery of ping to wsa sends pong into room-b: it commits there (an ASYNC observer of BEFORE_BROADCAST, which starts once the pass is over, holds at a gate to show it), and its delivery waits behind held's. Released, the call returns with pong's delivery to wsb. Two rooms whose deliveries call into each other are not here: an implementation need not detect that cycle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "wsa",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "ping"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-b",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "pong"
+                  }
+                },
+                "as": "call"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "wsb",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "lane"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-a",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "wsa"
+          }
+        ]
+      },
+      {
+        "id": "room-b",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "wsb"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "committed",
+        "trigger": "before_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "pong"
+            },
+            "gate": "committed"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-b",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      },
+      "background": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "lane"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-a",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "ping"
+        }
+      },
+      "background": true,
+      "as": "ping"
+    },
+    {
+      "wait_for": "committed"
+    },
+    {
+      "open": "committed"
+    },
+    {
+      "open": "lane"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "delivery_results": {
+            "wsb": {
+              "status": "sent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "ping",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "delivery_results": {
+            "wsa": {
+              "status": "sent"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-a": [
+        {
+          "content": {
+            "type": "text",
+            "body": "ping"
+          }
+        }
+      ],
+      "room-b": [
+        {
+          "content": {
+            "type": "text",
+            "body": "held"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "pong"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-a": {
+        "wsa": [
+          {
+            "content": {
+              "type": "text",
+              "body": "ping"
+            }
+          }
+        ]
+      },
+      "room-b": {
+        "wsb": [
+          {
+            "content": {
+              "type": "text",
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "pong"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "call": [
+        {
+          "result": {
+            "blocked": false,
+            "event": {
+              "room_id": "room-b",
+              "index": 1
+            },
+            "delivery_results": {
+              "wsb": {
+                "status": "sent"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

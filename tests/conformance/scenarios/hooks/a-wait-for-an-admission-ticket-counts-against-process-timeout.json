@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-wait-for-an-admission-ticket-counts-against-process-timeout",
+  "title": "A message waiting for an earlier message's ticket spends its own process_timeout meanwhile: refused process_timeout, though it waited most of it, then a third message still commits",
+  "rules": [
+    "§9.5.1",
+    "§9.5.1 Bound",
+    "§9.5.1 Release",
+    "§13.6",
+    "§10.1 step 5a"
+  ],
+  "requirements": [
+    "RK-9.5.1-006",
+    "RK-9.5.1-008"
+  ],
+  "notes": "The first message's check holds at a gate no step opens: its process_timeout (2 s) refuses it and releases its ticket. The second started just after it, so its own deadline falls just after the first one's; its locked hook then holds 1 s at a gate no step opens before it allows. Counted from the call's start, the second's deadline passes during that hook, and it is refused. Counted from its turn, it would have 2 s left: its hook would time out and it would commit. The third message shows the first one's ticket released at its process_timeout. Python: tests/test_off_lock_check.py::TestTicketRelease::test_released_when_process_timeout_expires.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 2000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "guard",
+        "trigger": "before_broadcast",
+        "timeout_ms": 1000,
+        "reactions": [
+          {
+            "when": {
+              "text": "second"
+            },
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "third"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "third"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "third"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
