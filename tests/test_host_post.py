@@ -432,6 +432,11 @@ async def _close_after_a_post(kit: RoomKit) -> None:
     await kit.close_room("r")
 
 
+async def _detach_then_close(kit: RoomKit) -> None:
+    await _detach_after_a_post(kit)
+    await kit.close_room("r")
+
+
 async def _take_host_id(kit: RoomKit) -> None:
     kit.register_channel(SMSChannel("host", provider=MockSMSProvider()))
 
@@ -455,6 +460,8 @@ _REFUSALS: dict[str, tuple[Callable[[RoomKit], Awaitable[None]], dict[str, Any],
     "host taken by another type": (_take_host_id, {}, ValueError),
     "a closed room": (_close, {}, RoomClosedError),
     "a detached host channel": (_detach_after_a_post, {}, ChannelNotFoundError),
+    # The revocation is read before the room's status (RFC §7.5 rule 7).
+    "a detached host channel in a closed room": (_detach_then_close, {}, ChannelNotFoundError),
     # The room's status and binding are read before the key (RFC §10.1).
     "a replay into a room closed since": (
         _close_after_a_post,
