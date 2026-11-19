@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-reader-that-stops-at-a-delta-before-a-call-leaves-the-call-unrun",
+  "title": "A streaming target that stops reading at a text delta before its round's call leaves the call unrun: no row of it, no hook, no later round",
+  "rules": [
+    "§10.6.4",
+    "§12.2 step 13s"
+  ],
+  "requirements": [
+    "RK-10.6.4-004",
+    "RK-10.6.4-005"
+  ],
+  "notes": "Python: turns/_executor_pulls.py PullGate, which never reads past a call's start until a pull its reader sent once it read that item. The reader never asks past the text delta it stops at, so the call's start the executor may have read ahead is dropped and the call never starts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "Let me "
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 3
+              }
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tools",
+        "trigger": "before_tool_use"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Let me "
+          },
+          "metadata": {
+            "cancelled": true,
+            "loop_end_reason": "cancelled"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        }
+      ]
+    },
+    "hooks": {
+      "tools": []
+    }
+  }
+}

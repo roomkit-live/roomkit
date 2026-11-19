@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-release-builds-nothing-on-an-executor-holding-no-build",
+  "title": "Releasing a channel lets go the build of the executor that built it, and builds nothing on one that declares the channel and holds no build",
+  "rules": [
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-10.6.3-019"
+  ],
+  "notes": "Python: turns/_executor_channels.py, a release of a channel no build holds lets nothing go. second starts after the turn, so first takes it (README, executors).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "release_channel",
+      "channel_id": "coder"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "room_id": "r1",
+            "build": 1
+          },
+          {
+            "call": "close",
+            "channel_id": "coder",
+            "build": 1
+          }
+        ]
+      },
+      "second": []
+    }
+  }
+}

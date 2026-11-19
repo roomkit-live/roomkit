@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/work-an-earlier-turn-began-writes-nothing-once-a-later-turn-was-sent",
+  "title": "A verb work an earlier turn began makes after a later turn of its room was sent writes nothing, though the same executor took both turns; the later turn's work is served",
+  "rules": [
+    "§10.6.3",
+    "§10.6.5"
+  ],
+  "requirements": [
+    "RK-10.6.3-036"
+  ],
+  "notes": "Python: tests/test_turns_between.py test_work_of_a_turn_that_is_no_longer_the_room_s_last_is_refused. A.'s work waits at the gate behind a publication, B.'s turn is sent and ends on the same executor, then A.'s room_call is refused and the verb never runs. B.'s, made by the room's last turn, is served.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "text": "A."
+            },
+            "after_turn": [
+              {
+                "call": "channel.publish",
+                "executor": "first",
+                "channel_id": "coder",
+                "room_id": "r1",
+                "kind": "thinking_delta",
+                "data": {
+                  "thinking_length": 5,
+                  "round": 0,
+                  "channel_id": "coder"
+                },
+                "gate": "later"
+              },
+              {
+                "call": "host.call",
+                "verb": "app.later",
+                "as": "stale"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "B."
+            },
+            "after_turn": [
+              {
+                "call": "host.call",
+                "verb": "app.later",
+                "as": "fresh"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.later",
+      "handler": {
+        "returns": "served",
+        "as": "served"
+      },
+      "between_turns": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      }
+    },
+    {
+      "wait_for": "later"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      }
+    },
+    {
+      "open": "later"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "stale": [
+        {
+          "result": {
+            "result": null,
+            "error": {
+              "$present": true
+            }
+          }
+        }
+      ],
+      "fresh": [
+        {
+          "result": {
+            "result": "served",
+            "error": null
+          }
+        }
+      ],
+      "served": [
+        {
+          "result": {
+            "room_id": "r1",
+            "channel_id": "coder"
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,248 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-committed-event-goes-to-the-executor-holding-the-room-s-state",
+  "title": "A discussion's committed message reaches a declared agent's memory through the executor holding the room's state for it, never through another that would take its turns, and a live agent's memory through the kit's own executor",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3",
+    "§19.7.5 rule 3"
+  ],
+  "requirements": [
+    "RK-10.6.3-022"
+  ],
+  "notes": "Python: turns/memory.py and turns/_redis_placement.py, a committed_event placed where the room's state is held. early, paused, declares nothing while holder runs ana's turn, which leaves holder holding the room's state; once resumed, early would take ana's turns too, served before holder, and is handed nothing. bob is live: the kit's own executor hands its memory every message but its own, never pool, which declares bob too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "ana here."
+            }
+          ]
+        },
+        "memory": {}
+      },
+      {
+        "id": "bob",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "bob here."
+            }
+          ]
+        },
+        "memory": {}
+      }
+    ],
+    "executors": [
+      {
+        "id": "early",
+        "hosts": [
+          "ana"
+        ]
+      },
+      {
+        "id": "holder",
+        "hosts": [
+          "ana"
+        ]
+      },
+      {
+        "id": "pool",
+        "hosts": [
+          "bob"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "ana",
+            "bob"
+          ],
+          "addressed_only": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "executor.pause",
+      "executor": "early"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.resume",
+      "executor": "early"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the customer is Acme"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the order is 42"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "ingested": {
+      "r1": {
+        "ana": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana hi"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the customer is Acme"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the order is 42"
+            }
+          }
+        ],
+        "bob": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana hi"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ana"
+            },
+            "content": {
+              "body": "ana here."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the customer is Acme"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the order is 42"
+            }
+          }
+        ]
+      }
+    },
+    "executors": {
+      "early": [],
+      "holder": [
+        {
+          "call": "built",
+          "channel_id": "ana",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "ana",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "pool": []
+    }
+  }
+}

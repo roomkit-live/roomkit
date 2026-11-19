@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-reads-its-room-s-organization",
+  "title": "A turn on an executor apart reads its room's organization in its context's room, and none in a room without one",
+  "rules": [
+    "§10.6.3",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-10.6.3-012"
+  ],
+  "notes": "Python: turns/wire.py TurnRequest.context, the room context the request carries to the executor. The channel control messages carry the organization too, below the public API; their effect is the placement by organization (executors/an-executor-takes-the-turns-of-the-organizations-it-serves-alone).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "For acme."
+            },
+            {
+              "text": "For the room without one."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "every_pool",
+        "hosts": [
+          "support"
+        ],
+        "organizations": [
+          "*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r-acme",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r0",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r-acme",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r0",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "support": [
+        {
+          "room": {
+            "room": {
+              "id": "r-acme",
+              "organization_id": "acme"
+            }
+          }
+        },
+        {
+          "room": {
+            "room": {
+              "id": "r0",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    },
+    "executors": {
+      "every_pool": [
+        {
+          "call": "built",
+          "channel_id": "support",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r-acme",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r0",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

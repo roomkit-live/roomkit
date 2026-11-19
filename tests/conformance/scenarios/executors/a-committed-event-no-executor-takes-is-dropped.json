@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-committed-event-no-executor-takes-is-dropped",
+  "title": "A discussion's committed message for an agent no executor takes is dropped: the room commits and delivers it, the agent's memory never learns it, even once an executor serves the agent",
+  "rules": [
+    "§10.6.3",
+    "§10.6.7",
+    "§19.7.5 rule 3"
+  ],
+  "requirements": [
+    "RK-10.6.3-025"
+  ],
+  "notes": "Python: orchestration/strategies/discussion/_room.py _hand_to_memories, an agent offline handed nothing; turns/owner.py control. The owner's log line is not observable.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "ana here."
+            }
+          ]
+        },
+        "memory": {}
+      },
+      {
+        "id": "bob",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "bob here."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "ana_host",
+        "hosts": [
+          "ana"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "ana",
+            "bob"
+          ],
+          "addressed_only": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@bob hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.start",
+      "executor": "ana_host"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana and now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "type": "text",
+            "body": "@bob hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "bob"
+          },
+          "content": {
+            "type": "text",
+            "body": "bob here."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "type": "text",
+            "body": "@ana and now?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ana"
+          },
+          "content": {
+            "type": "text",
+            "body": "ana here."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "content": {
+              "type": "text",
+              "body": "bob here."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "ana here."
+            }
+          }
+        ]
+      }
+    },
+    "ingested": {
+      "r1": {
+        "ana": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana and now?"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "errors": []
+    }
+  }
+}

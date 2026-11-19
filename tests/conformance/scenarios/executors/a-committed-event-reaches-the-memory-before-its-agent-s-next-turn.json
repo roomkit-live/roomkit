@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-committed-event-reaches-the-memory-before-its-agent-s-next-turn",
+  "title": "An executor hands a discussion's committed message to its agent's memory before the agent's next turn: the turn's model reads what the memory learned from it",
+  "rules": [
+    "§10.6.3",
+    "§19.7.5 rule 3",
+    "§20.2"
+  ],
+  "requirements": [
+    "RK-10.6.3-024"
+  ],
+  "notes": "Python: turns/executor.py _apply_on_build and _hand_event apply a committed_event; the owner awaits the backend's control (turns/memory.py control, turns/redis.py) before it sends the room's next request. ana's retrieval memory indexes each event it is handed and hands back what it indexed: the message nobody was asked about is in the request of ana's turn, which the next message, sent with no wait between, asks for. What the executor logs of a raise is not observable.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme."
+            }
+          ]
+        },
+        "memory": {
+          "retrieval": {
+            "sources": [
+              {
+                "name": "turns",
+                "indexes": true
+              }
+            ],
+            "max_results": 3
+          }
+        }
+      },
+      {
+        "id": "bob",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "bob here."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "ana"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "ana",
+            "bob"
+          ],
+          "addressed_only": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the customer is Acme"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana who is the customer?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "ingested": {
+      "r1": {
+        "ana": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the customer is Acme"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana who is the customer?"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "ana": [
+        {
+          "messages": [
+            "$any",
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "@ana who is the customer?",
+                  "Relevant context from knowledge sources:",
+                  "the customer is Acme",
+                  "</knowledge>"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "ana",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "ana",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
