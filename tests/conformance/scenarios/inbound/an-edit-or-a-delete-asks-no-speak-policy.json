@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/an-edit-or-a-delete-asks-no-speak-policy",
+  "title": "An agent's speak policy is asked about a message, never about an edit or a delete of it, and no turn answers them",
+  "rules": [
+    "§10.3 Broadcast behavior rule 3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.3-067",
+    "RK-10.3-068"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "scripted"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen."
+            },
+            {
+              "text": "Seen again."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decided",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Hello there"
+          }
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decided": [
+        {
+          "speak_decision": {
+            "event": {
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello there"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen."
+          },
+          "source": {
+            "channel_id": "agent"
+          }
+        },
+        {
+          "type": "edit"
+        },
+        {
+          "type": "delete"
+        }
+      ]
+    }
+  }
+}

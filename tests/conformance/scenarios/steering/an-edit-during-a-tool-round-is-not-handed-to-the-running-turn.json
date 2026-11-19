@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/an-edit-during-a-tool-round-is-not-handed-to-the-running-turn",
+  "title": "With steer_room_turns, an edit that comes while the agent's tool runs is not handed to the running turn's next round and opens no turn; the message after it waits a turn of its own",
+  "rules": [
+    "§10.3 Broadcast behavior rule 3",
+    "§6.4",
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-10.3-068"
+  ],
+  "notes": "The edit and the message after it are committed while the tool is held (their deliveries deferred, §10.1 step 18), then the tool goes on. The running turn's second round holds a line for neither: the edit keeps its place in line for no turn, and the message behind it waits for a turn of its own, the third and last generation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            },
+            {
+              "text": "Only a.py."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the project's files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          }
+        ],
+        "steer_room_turns": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "List every file."
+          }
+        },
+        "event_type": "edit"
+      },
+      "defer_delivery": true,
+      "as": "edit",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "defer_delivery": true,
+      "as": "next",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 3
+          }
+        }
+      }
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "edit",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "next",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "a.py b.txt",
+              "is_error": false
+            }
+          ]
+        },
+        {}
+      ]
+    }
+  }
+}

@@ -1,0 +1,332 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-change-never-hides-in-a-hook-s-replacement",
+  "title": "A BEFORE_BROADCAST modify that puts a change in an edit's new content, a composite holding a change or a change of the other kind in place of a change leaves the original's content",
+  "rules": [
+    "§10.3",
+    "§9.4 A `BEFORE_BROADCAST` replacement",
+    "§10.1 step 9"
+  ],
+  "requirements": [
+    "RK-10.3-024",
+    "RK-10.3-025",
+    "RK-10.3-026",
+    "RK-10.3-027"
+  ],
+  "notes": "The hook gives the first edit an edit whose new content is a delete, the second a composite holding a delete, the third a delete, and the delete an edit. Each change is stored and applied as it arrived.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rewrite",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "edit",
+                  "target_event_id": "room-1#0",
+                  "new_content": {
+                    "type": "delete",
+                    "target_event_id": "room-1#0",
+                    "delete_type": "sender"
+                  },
+                  "edit_source": "sender"
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "type": "edit"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "text",
+                      "body": "Hooked"
+                    },
+                    {
+                      "type": "delete",
+                      "target_event_id": "room-1#0",
+                      "delete_type": "sender"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "type": "edit"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "delete",
+                  "target_event_id": "room-1#0",
+                  "delete_type": "sender"
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "type": "delete"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "edit",
+                  "target_event_id": "room-1#0",
+                  "new_content": {
+                    "type": "text",
+                    "body": "Edited instead"
+                  },
+                  "edit_source": "sender"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Once"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "text",
+                "body": "Once"
+              },
+              "edit_source": "sender"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Twice"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "text",
+                "body": "Twice"
+              },
+              "edit_source": "sender"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Thrice"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "text",
+                "body": "Thrice"
+              },
+              "edit_source": "sender"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "type": "delete",
+              "target_event_id": "room-1#0",
+              "delete_type": "sender"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Thrice"
+          },
+          "metadata": {
+            "edited": true,
+            "deleted": true
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "text",
+              "body": "Once"
+            },
+            "edit_source": "sender"
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "text",
+              "body": "Twice"
+            },
+            "edit_source": "sender"
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "text",
+              "body": "Thrice"
+            },
+            "edit_source": "sender"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "type": "delete",
+            "target_event_id": "room-1#0",
+            "delete_type": "sender"
+          }
+        }
+      ]
+    }
+  }
+}

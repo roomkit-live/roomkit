@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-direct-update-that-changes-nothing-writes-and-fires-nothing",
+  "title": "A direct update with the content already stored returns the event as stored and fires nothing; one that changes it fires ON_EVENT_UPDATED",
+  "rules": [
+    "§10.3 Direct mutation"
+  ],
+  "requirements": [
+    "RK-10.3-059"
+  ],
+  "reentrancy": [
+    "change@outside"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Same"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "content": {
+        "type": "text",
+        "body": "Same"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Same"
+          },
+          "source": {
+            "channel_id": "wa",
+            "participant_id": "+15551234567"
+          },
+          "metadata": {
+            "edited": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "content": {
+        "type": "text",
+        "body": "Changed"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "Changed"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Changed"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "updated": [
+        {
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "Changed"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            "event_processed"
+          ]
+        }
+      ]
+    }
+  }
+}

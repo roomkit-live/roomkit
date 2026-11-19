@@ -1,0 +1,2058 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/direct-updates-from-a-room-s-work-draw-no-hook-call",
+  "title": "Direct updates a message's parse, a locked hook, a delivery and a turn make, each more than the cascade's hook calls, all succeed; an ASYNC hook body's still draw all of them and stop at reentry_loop_cap",
+  "rules": [
+    "§10.3 A direct change from the room's work",
+    "§8.3",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-10.3-061"
+  ],
+  "reentrancy": [
+    "change@admitted",
+    "change@cascade",
+    "change@locked"
+  ],
+  "notes": "max_chain_depth is 2, so the cascade has 20 hook calls (and the agent answers at depth 1, within the limit). ws's parse (an admission), the SYNC BEFORE_BROADCAST hook (a locked section), sms's delivery and the agent's turn each make 21 direct updates of the first message, which all succeed. The AFTER_BROADCAST body's updates then find the 20 hook calls whole: its twenty-first raises. No ON_EVENT_UPDATED hook is registered, so the updates' triggers draw nothing.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 2
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 0
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 1
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 2
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 3
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 4
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 5
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 6
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 7
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 8
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 9
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 10
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 11
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 12
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 13
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 14
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 15
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 16
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 17
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 18
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 19
+                },
+                "as": "parse"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "parse",
+                  "n": 20
+                },
+                "as": "parse"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 0
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 1
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 2
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 3
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 4
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 5
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 6
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 7
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 8
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 9
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 10
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 11
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 12
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 13
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 14
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 15
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 16
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 17
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 18
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 19
+                },
+                "as": "delivery"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "delivery",
+                  "n": 20
+                },
+                "as": "delivery"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 0
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 1
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 2
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 3
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 4
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 5
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 6
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 7
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 8
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 9
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 10
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 11
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 12
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 13
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 14
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 15
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 16
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 17
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 18
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 19
+                },
+                "as": "turn"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "turn",
+                  "n": 20
+                },
+                "as": "turn"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "locked",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 0
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 1
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 2
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 3
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 4
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 5
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 6
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 7
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 8
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 9
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 10
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 11
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 12
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 13
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 14
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 15
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 16
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 17
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 18
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 19
+                },
+                "as": "locked"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "locked",
+                  "n": 20
+                },
+                "as": "locked"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 0
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 1
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 2
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 3
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 4
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 5
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 6
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 7
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 8
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 9
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 10
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 11
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 12
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 13
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 14
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 15
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 16
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 17
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 18
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 19
+                },
+                "as": "after"
+              },
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "metadata": {
+                  "by": "after",
+                  "n": 20
+                },
+                "as": "after"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "spare"
+      },
+      "addressed_to": []
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "start"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "parse": [
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 0
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 10
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 11
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 12
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 13
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 14
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 15
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 16
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 17
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 18
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 19
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "parse",
+              "n": 20
+            }
+          }
+        }
+      ],
+      "locked": [
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 0
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 10
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 11
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 12
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 13
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 14
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 15
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 16
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 17
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 18
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 19
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "locked",
+              "n": 20
+            }
+          }
+        }
+      ],
+      "delivery": [
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 0
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 10
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 11
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 12
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 13
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 14
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 15
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 16
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 17
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 18
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 19
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "delivery",
+              "n": 20
+            }
+          }
+        }
+      ],
+      "turn": [
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 0
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 10
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 11
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 12
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 13
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 14
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 15
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 16
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 17
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 18
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 19
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "turn",
+              "n": 20
+            }
+          }
+        }
+      ],
+      "after": [
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 0
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 10
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 11
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 12
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 13
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 14
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 15
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 16
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 17
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 18
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "by": "after",
+              "n": 19
+            }
+          }
+        },
+        {
+          "error": "reentry_loop_cap"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "spare"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "start"
+          }
+        }
+      ]
+    }
+  }
+}

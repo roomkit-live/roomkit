@@ -1,0 +1,251 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-change-s-mutation-trigger-fires-off-the-lock-before-after-broadcast",
+  "title": "An inbound edit's ON_EVENT_UPDATED hook, and a delete's ON_EVENT_DELETED hook, are called once the room lock is released, before the change's AFTER_BROADCAST hook",
+  "rules": [
+    "§10.3 Mutation triggers",
+    "§10.1 step 16"
+  ],
+  "requirements": [
+    "RK-10.3-045"
+  ],
+  "notes": "check and after observe wa's events only. While ON_EVENT_UPDATED is held at its gate, a message from ws commits: the trigger holds no room lock. hook_order is recorded as each hook is called, before its gate. The delete that follows shows the order alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "wa"
+        ]
+      },
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "updated"
+          }
+        ]
+      },
+      {
+        "name": "deleted",
+        "trigger": "on_event_deleted",
+        "execution": "async"
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "channel_ids": [
+          "wa"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Original"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Corrected"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "background": true,
+      "as": "edit"
+    },
+    {
+      "wait_for": "updated"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Meanwhile"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    },
+    {
+      "open": "updated"
+    },
+    {
+      "await": "edit",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 3
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "check",
+      "after",
+      "check",
+      "updated",
+      "after",
+      "check",
+      "deleted",
+      "after"
+    ],
+    "hooks": {
+      "check": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Original"
+            }
+          }
+        },
+        {
+          "event": {
+            "type": "edit"
+          }
+        },
+        {
+          "event": {
+            "type": "delete"
+          }
+        }
+      ],
+      "updated": [
+        {
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "Corrected"
+            },
+            "metadata": {
+              "edited": true
+            }
+          }
+        }
+      ],
+      "deleted": [
+        {
+          "event": {
+            "id": "room-1#0",
+            "metadata": {
+              "deleted": true
+            }
+          }
+        }
+      ],
+      "after": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Original"
+            }
+          }
+        },
+        {
+          "event": {
+            "id": "room-1#1",
+            "type": "edit"
+          }
+        },
+        {
+          "event": {
+            "id": "room-1#3",
+            "type": "delete"
+          }
+        }
+      ]
+    }
+  }
+}

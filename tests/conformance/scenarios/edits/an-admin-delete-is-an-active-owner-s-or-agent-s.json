@@ -1,0 +1,366 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/an-admin-delete-is-an-active-owner-s-or-agent-s",
+  "title": "An ADMIN delete passes from an active OWNER or AGENT on its channel; a member, a LEFT or BANNED owner or agent, an owner's id on another channel and a channel's own output are refused not_authorized, a sender naming no one identity_required_for_edit",
+  "rules": [
+    "§10.3 Validation rule 5",
+    "§10.3 Validation rule 3",
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-10.3-017",
+    "RK-10.3-018"
+  ],
+  "notes": "sms-owner is an owner on sms, whose id is sent on wa. ws's parse says each delete it reads travelled outbound: it is ws's own output, naming ws-owner, an owner on ws. The refused deletes all name the first message, which an accepted delete would have made no target.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "type": "delete"
+            },
+            "parsed": {
+              "source": {
+                "direction": "outbound"
+              }
+            },
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner-1",
+            "channel_id": "wa",
+            "role": "owner",
+            "status": "active"
+          },
+          {
+            "id": "agent-1",
+            "channel_id": "wa",
+            "role": "agent",
+            "status": "active"
+          },
+          {
+            "id": "member-1",
+            "channel_id": "wa",
+            "role": "member",
+            "status": "active"
+          },
+          {
+            "id": "left-owner",
+            "channel_id": "wa",
+            "role": "owner",
+            "status": "left"
+          },
+          {
+            "id": "banned-owner",
+            "channel_id": "wa",
+            "role": "owner",
+            "status": "banned"
+          },
+          {
+            "id": "banned-agent",
+            "channel_id": "wa",
+            "role": "agent",
+            "status": "banned"
+          },
+          {
+            "id": "sms-owner",
+            "channel_id": "sms",
+            "role": "owner",
+            "status": "active"
+          },
+          {
+            "id": "ws-owner",
+            "channel_id": "ws",
+            "role": "owner",
+            "status": "active"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "member-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "left-owner",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "banned-owner",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "banned-agent",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "sms-owner",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ws-owner",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_required_for_edit",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "owner-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "delete"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "agent-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#1",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "delete"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "First"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "delete",
+          "source": {
+            "participant_id": "owner-1"
+          }
+        },
+        {
+          "type": "delete",
+          "source": {
+            "participant_id": "agent-1"
+          }
+        }
+      ]
+    }
+  }
+}

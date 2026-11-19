@@ -1,0 +1,254 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-sender-who-left-or-was-banned-still-changes-their-messages",
+  "title": "A participant who left edits their message and one who was banned deletes theirs, from another channel they are on: authorship does not depend on the status",
+  "rules": [
+    "§10.3 Validation rule 3",
+    "§10.3 Validation rule 4",
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-10.3-015"
+  ],
+  "notes": "Alice and Bob are participants on wa and ws; Carol is none. Each writes on wa and changes from ws, where only a participant's id names the same author: Carol's edit is refused not_original_author, so the accepted changes of Alice, who left, and Bob, who was banned, are those of the participants, whatever their status.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "wa",
+            "connected_via": [
+              "wa",
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "wa",
+            "connected_via": [
+              "wa",
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Alice's"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Bob's"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Carol's"
+        }
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "id": "alice",
+          "status": "left"
+        }
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "bob",
+      "status": "banned",
+      "expect": {
+        "result": {
+          "id": "bob",
+          "status": "banned"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "carol",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#2",
+          "new_content": {
+            "type": "text",
+            "body": "Carol's, corrected"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_original_author",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Alice's, corrected"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "edit"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#1",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "delete"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Alice's, corrected"
+          },
+          "metadata": {
+            "edited": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Bob's"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Carol's"
+          },
+          "metadata": {
+            "edited": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "edit",
+          "source": {
+            "channel_id": "ws",
+            "participant_id": "alice"
+          }
+        },
+        {
+          "type": "delete",
+          "source": {
+            "channel_id": "ws",
+            "participant_id": "bob"
+          }
+        }
+      ]
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "alice",
+          "status": "left"
+        },
+        {
+          "id": "bob",
+          "status": "banned"
+        }
+      ]
+    }
+  }
+}

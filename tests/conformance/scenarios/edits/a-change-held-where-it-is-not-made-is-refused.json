@@ -1,0 +1,293 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-change-held-where-it-is-not-made-is-refused",
+  "title": "An event whose type and content disagree, or that holds a change in an edit's new content or a composite's part, is refused target_event_not_found, nothing of it written or applied natively",
+  "rules": [
+    "§10.3 Validation rule 1",
+    "§10.1 step 8a"
+  ],
+  "requirements": [
+    "RK-10.3-011"
+  ],
+  "notes": "The eight refused events are a message carrying an edit, a message carrying a delete, an edit carrying text, a delete carrying an edit, an edit carrying a delete, a message whose composite holds an edit, an edit whose new content is a delete, and an edit whose new content is a composite holding a delete. ws applies edits and deletes natively: it is handed the message alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Mine"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Rewritten"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "message"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "message"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Rewritten"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Rewritten"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "Hi"
+            },
+            {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "text",
+                "body": "Rewritten"
+              },
+              "edit_source": "sender"
+            }
+          ]
+        },
+        "event_type": "message"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "delete",
+            "target_event_id": "room-1#0",
+            "delete_type": "sender"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "delete",
+                "target_event_id": "room-1#0",
+                "delete_type": "sender"
+              }
+            ]
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Mine"
+          },
+          "metadata": {
+            "edited": {
+              "$absent": true
+            },
+            "deleted": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Mine"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

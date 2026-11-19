@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-second-delete-is-refused-and-a-retried-one-is-answered-as-the-first",
+  "title": "A delete of a deleted message is refused target_event_not_found, and a retry of the first delete under its idempotency key is answered as the first",
+  "rules": [
+    "§10.3 Validation rule 2",
+    "§13.4"
+  ],
+  "requirements": [
+    "RK-10.3-013"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "deleted",
+        "trigger": "on_event_deleted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Oops"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete",
+        "idempotency_key": "delete-1"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "duplicate": false,
+          "event": {
+            "id": "room-1#1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete",
+        "idempotency_key": "delete-1"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "duplicate": true,
+          "event": {
+            "id": "room-1#1",
+            "type": "delete"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Oops"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "type": "delete",
+            "target_event_id": "room-1#0",
+            "delete_type": "sender"
+          },
+          "idempotency_key": "delete-1"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Oops"
+            }
+          },
+          {
+            "type": "delete"
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "deleted": [
+        {
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      ]
+    }
+  }
+}

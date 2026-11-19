@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-change-claiming-the-system-s-authority-from-a-channel-is-refused",
+  "title": "A SYSTEM delete or an edit whose edit_source is system, from a channel's message or a direct injection, is refused not_authorized, nothing of it written",
+  "rules": [
+    "§10.3 Validation rule 6",
+    "§10.1 step 8a",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-10.3-019",
+    "RK-10.3-023",
+    "RK-10.3-046"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "wa",
+            "role": "owner"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      },
+      {
+        "name": "deleted",
+        "trigger": "on_event_deleted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Mine"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "system"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Rewritten"
+          },
+          "edit_source": "system"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_authorized",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "wa",
+      "participant_id": "alice",
+      "event_type": "delete",
+      "content": {
+        "type": "delete",
+        "target_event_id": "room-1#0",
+        "delete_type": "system"
+      },
+      "expect": {
+        "error": {
+          "name": "change_refused",
+          "reason": "not_authorized"
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "wa",
+      "participant_id": "alice",
+      "event_type": "edit",
+      "content": {
+        "type": "edit",
+        "target_event_id": "room-1#0",
+        "new_content": {
+          "type": "text",
+          "body": "Rewritten"
+        },
+        "edit_source": "system"
+      },
+      "expect": {
+        "error": {
+          "name": "change_refused",
+          "reason": "not_authorized"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Mine"
+          },
+          "metadata": {
+            "edited": {
+              "$absent": true
+            },
+            "deleted": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "updated": [],
+      "deleted": []
+    }
+  }
+}

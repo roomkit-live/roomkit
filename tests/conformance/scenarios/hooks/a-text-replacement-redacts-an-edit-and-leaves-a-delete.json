@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-text-replacement-redacts-an-edit-and-leaves-a-delete",
+  "title": "A BEFORE_BROADCAST modify replacing an edit's content by a text stores the edit saying that text; one replacing a delete's content by a text leaves the delete as it arrived",
+  "rules": [
+    "§10.3",
+    "§9.4 A `BEFORE_BROADCAST` replacement",
+    "§10.1 step 9"
+  ],
+  "requirements": [
+    "RK-10.3-026",
+    "RK-10.3-027"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "[redacted]"
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "type": "delete"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "Not deleted"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My code is 1234"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "My code is 5678"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "edit",
+            "content": {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "text",
+                "body": "[redacted]"
+              },
+              "edit_source": "sender"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender",
+          "reason": "mistake"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "delete",
+            "content": {
+              "type": "delete",
+              "target_event_id": "room-1#0",
+              "delete_type": "sender",
+              "reason": "mistake"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "[redacted]"
+          },
+          "metadata": {
+            "edited": true,
+            "deleted": true
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "text",
+              "body": "[redacted]"
+            },
+            "edit_source": "sender"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "type": "delete",
+            "target_event_id": "room-1#0",
+            "delete_type": "sender",
+            "reason": "mistake"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "My code is 1234"
+            }
+          },
+          {
+            "content": {
+              "body": {
+                "$contains": "[redacted]"
+              }
+            }
+          },
+          {
+            "content": {
+              "body": {
+                "$starts_with": "[Message deleted"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
