@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-first-post-waits-for-the-room-lock-within-process-timeout",
+  "title": "A first post waits for the room lock within its process_timeout: past it, it raises process_timeout with nothing written; an attach it made stays when the deadline passes after it",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§13.6",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-10.5-033"
+  ],
+  "notes": "In room-1 an install holds the room lock at a gate no step opens before the post's deadline: the first post's attach waits for it within the call's process_timeout, so the post raises, the host channel never attached. In room-2 the lock is free: the post's attach runs and the deadline passes later, at a gate of a BEFORE_BROADCAST hook on the post's message: the attach stays, with its record, and the message is not written.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "slow",
+        "agents": [
+          "sales"
+        ],
+        "install": {
+          "gate": "installing"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "room-1",
+      "strategy": "slow",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for": "installing"
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Notice."
+      },
+      "expect": {
+        "error": "process_timeout"
+      }
+    },
+    {
+      "open": "installing"
+    },
+    {
+      "await": "install"
+    },
+    {
+      "call": "post",
+      "room_id": "room-2",
+      "content": {
+        "type": "text",
+        "body": "Notice."
+      },
+      "expect": {
+        "error": "process_timeout"
+      }
+    },
+    {
+      "open": "late"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "room-2": []
+    },
+    "bindings": {
+      "room-1": {
+        "host": null
+      },
+      "room-2": {
+        "host": {
+          "category": "transport"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      },
+      "room-2": {
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "process_timeout"
+            },
+            {
+              "event": "room_channel_attached",
+              "channel_id": "sales"
+            }
+          ]
+        }
+      ],
+      "room-2": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}

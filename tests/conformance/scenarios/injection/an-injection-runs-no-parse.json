@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/an-injection-runs-no-parse",
+  "title": "A direct injection runs no parse: the channel's parse reactions are left to the next message, and the event is stored as given",
+  "rules": [
+    "§10.5",
+    "§10.1 step 3"
+  ],
+  "requirements": [
+    "RK-10.5-013"
+  ],
+  "notes": "sms's first parse reaction fails on the injection's text and its second rewrites the event's metadata and source type. The injection meets neither: it is stored and delivered as given. The message after it is parsed, by the second reaction, which no parse of the injection used up.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "From the console"
+            },
+            "fail": "a parse ran for an injection"
+          },
+          {
+            "parsed": {
+              "metadata": {
+                "read_by": "parse"
+              },
+              "source": {
+                "channel_type": "mms"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "From the console"
+      },
+      "metadata": {
+        "origin": "console"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "From the console"
+          },
+          "metadata": {
+            "origin": "console",
+            "read_by": {
+              "$absent": true
+            }
+          },
+          "source": {
+            "channel_id": "sms",
+            "channel_type": "sms",
+            "direction": "inbound"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#1",
+            "metadata": {
+              "read_by": "parse"
+            },
+            "source": {
+              "channel_type": "mms"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "From the console"
+          },
+          "metadata": {
+            "origin": "console",
+            "read_by": {
+              "$absent": true
+            }
+          },
+          "source": {
+            "channel_type": "sms"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "metadata": {
+            "read_by": "parse"
+          },
+          "source": {
+            "channel_type": "mms"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          }
+        ]
+      }
+    }
+  }
+}

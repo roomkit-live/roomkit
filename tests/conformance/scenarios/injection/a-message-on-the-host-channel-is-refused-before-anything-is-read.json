@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-message-on-the-host-channel-is-refused-before-anything-is-read",
+  "title": "A message handed to the inbound pipeline on the host channel is refused before anything is read: no room routed, opened or attached, nothing written",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§10.1 step 1"
+  ],
+  "requirements": [
+    "RK-10.1-009",
+    "RK-10.5-023"
+  ],
+  "notes": "The first message names its room, the second is left to the router, which would route it to room-1: neither reaches the router or the room.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "host",
+        "type": "host"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "host"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "host",
+        "sender_id": "x",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "host",
+        "sender_id": "x",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "router_calls": [],
+    "rooms": {
+      "$created": {
+        "$unordered": []
+      }
+    },
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

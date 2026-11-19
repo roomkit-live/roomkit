@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-post-reaches-each-transport-transcoded-for-what-it-carries",
+  "title": "A host channel declares every media type, and a post of any content reaches each transport transcoded for what it carries: a text channel reads a media's caption and a location's label, a channel that carries them reads them as posted",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-10.5-025"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "console",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "console"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "media",
+        "url": "https://example.com/receipt.jpg",
+        "mime_type": "image/jpeg",
+        "caption": "Your receipt"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "host"
+          }
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "location",
+        "latitude": 45.5,
+        "longitude": -73.6,
+        "label": "Office"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#1",
+          "source": {
+            "channel_id": "host"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "host": {
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media",
+                "audio",
+                "video",
+                "location",
+                "template"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "media",
+            "url": "https://example.com/receipt.jpg",
+            "caption": "Your receipt"
+          }
+        },
+        {
+          "content": {
+            "type": "location",
+            "latitude": 45.5,
+            "longitude": -73.6,
+            "label": "Office"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "[Media: Your receipt]"
+            }
+          },
+          {
+            "id": "room-1#1",
+            "content": {
+              "type": "text",
+              "body": "[Location: Office (45.5, -73.6)]"
+            }
+          }
+        ],
+        "console": [
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "media",
+              "url": "https://example.com/receipt.jpg",
+              "caption": "Your receipt"
+            }
+          },
+          {
+            "id": "room-1#1",
+            "content": {
+              "type": "location",
+              "latitude": 45.5,
+              "longitude": -73.6,
+              "label": "Office"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

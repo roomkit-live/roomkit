@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-post-shows-its-speaker-s-name-to-an-agent",
+  "title": "A post's speaker, a member the integrator added on the host channel, is shown to the agent it addresses by name",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§10.1 step 12",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.5-037"
+  ],
+  "notes": "Marie on sms and the desk's member on the host channel take part, so the agent's turns are labelled with their speaker (§6.4): the post reads as its member's name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "host",
+        "type": "host"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "It left the warehouse today."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "+15551234567",
+            "channel_id": "sms",
+            "display_name": "Marie"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "host",
+      "participant_id": "desk",
+      "display_name": "Acme Support"
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Tell the customer where the order is."
+      },
+      "participant_id": "desk",
+      "addressed_to": [
+        "agent"
+      ],
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "host",
+            "participant_id": "desk"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Acme Support: \"Tell the customer where the order is.\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "It left the warehouse today."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

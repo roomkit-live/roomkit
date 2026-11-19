@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/an-injection-takes-any-participant-id",
+  "title": "A direct injection takes any participant id: one that names no participant, or a participant of another channel, is committed in its source",
+  "rules": [
+    "§10.5",
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-10.5-038"
+  ],
+  "notes": "alice is a participant reached through ws only, whom a post from the host channel would refuse (§10.5); send_event takes her id from sms as it takes one naming nobody.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Logged by the desk"
+      },
+      "participant_id": "ghost",
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "ghost"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Forwarded for Alice"
+      },
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "id": "room-1#1",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged by the desk"
+          },
+          "source": {
+            "participant_id": "ghost"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Forwarded for Alice"
+          },
+          "source": {
+            "participant_id": "alice"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          }
+        ]
+      }
+    }
+  }
+}

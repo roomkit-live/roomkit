@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-post-continues-the-chain-it-names",
+  "title": "A post's chain_depth is the chain it continues: 0 opens one, and a post naming an answer's depth plus one ends its round trips with the agent at max_chain_depth",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.5-040"
+  ],
+  "notes": "max_chain_depth is 3. The first post opens a chain: the agent's answer is at depth 1. The host follows it up once that work is over, naming the answer's depth plus one: the post is stored at 2, and the agent's answer, which would be at 3, is recorded BLOCKED at the limit, the agent not asked.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Which order?"
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Check the order."
+      },
+      "addressed_to": [
+        "agent"
+      ],
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "chain_depth": 0
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Order 1042."
+      },
+      "addressed_to": [
+        "agent"
+      ],
+      "chain_depth": 2,
+      "expect": {
+        "result": {
+          "id": "room-1#2",
+          "chain_depth": 2
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Check the order."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Which order?"
+          },
+          "source": {
+            "channel_id": "agent"
+          },
+          "chain_depth": 1,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Order 1042."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "chain_depth": 2
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "chain_depth": 3,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Check the order."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-post-keeps-its-metadata",
+  "title": "A post's metadata, where the message comes from, is stored on its event and delivered with it",
+  "rules": [
+    "§10.5 The host's own voice"
+  ],
+  "requirements": [
+    "RK-10.5-039"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your order shipped."
+      },
+      "metadata": {
+        "workflow": "fulfilment",
+        "step": "ship",
+        "job": "job-1042"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "metadata": {
+            "workflow": "fulfilment",
+            "step": "ship",
+            "job": "job-1042"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          },
+          "metadata": {
+            "workflow": "fulfilment",
+            "step": "ship",
+            "job": "job-1042"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0",
+            "metadata": {
+              "workflow": "fulfilment",
+              "step": "ship",
+              "job": "job-1042"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

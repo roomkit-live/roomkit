@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-closed-room-refuses-a-post",
+  "title": "A closed room refuses a post with room_closed and says so, whether the post would attach the host channel or finds it bound, its key a replay or not, and nothing is written",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§5.1",
+    "§8.2"
+  ],
+  "requirements": [
+    "RK-10.5-031",
+    "RK-5.1-012"
+  ],
+  "notes": "room-1 never bound the host channel: its first post, refused in the section that would attach it, emits room_refused_event as a post refused at its gate does. room-2 bound it with its first post, then closed: the room's status is read before the key, so the replay is refused too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "status": "closed"
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Are you there?"
+      },
+      "expect": {
+        "error": "room_closed"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-2",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "idempotency_key": "notice",
+      "expect": {
+        "result": {
+          "id": "room-2#0"
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-2",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-2",
+      "content": {
+        "type": "text",
+        "body": "See you then"
+      },
+      "expect": {
+        "error": "room_closed"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-2",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "idempotency_key": "notice",
+      "expect": {
+        "error": "room_closed"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "room-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your appointment is at 3 pm"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "host": null
+      },
+      "room-2": {
+        "host": {
+          "category": "transport"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": []
+      },
+      "room-2": {
+        "sms": [
+          {
+            "id": "room-2#0"
+          }
+        ],
+        "ws": [
+          {
+            "id": "room-2#0"
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "room_refused_event",
+          "status": "closed",
+          "operation": "inbound",
+          "event_type": "message"
+        }
+      ],
+      "room-2": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-2#0"
+            },
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws",
+              "event_id": "room-2#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-2#0"
+            }
+          ]
+        },
+        {
+          "event": "room_closed"
+        },
+        {
+          "event": "room_refused_event",
+          "status": "closed",
+          "operation": "inbound",
+          "event_type": "message"
+        },
+        {
+          "event": "room_refused_event",
+          "status": "closed",
+          "operation": "inbound",
+          "event_type": "message"
+        }
+      ]
+    }
+  }
+}

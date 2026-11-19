@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-host-binding-made-by-the-first-post-s-section-is-kept",
+  "title": "A host binding the integrator made before the first post, or alongside it, is kept with its settings, and concurrent first posts attach the host channel once",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-10.5-030"
+  ],
+  "notes": "room-1's binding is attached by the integrator before the post, which keeps it and attaches nothing: one attachment, the integrator's. room-2's attach and post run together: whichever binds first, the binding left is the integrator's, its settings unreplaced; how many attachments that writes is left open. room-3's three first posts attach the host channel once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "host",
+        "type": "host"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "host",
+      "access": "write_only",
+      "metadata": {
+        "desk": "1"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Notice."
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "concurrent": [
+        {
+          "call": "attach_channel",
+          "room_id": "room-2",
+          "channel_id": "host",
+          "access": "write_only",
+          "metadata": {
+            "desk": "2"
+          }
+        },
+        {
+          "call": "post",
+          "room_id": "room-2",
+          "content": {
+            "type": "text",
+            "body": "Notice."
+          }
+        }
+      ]
+    },
+    {
+      "concurrent": [
+        {
+          "call": "post",
+          "room_id": "room-3",
+          "content": {
+            "type": "text",
+            "body": "Notice 1."
+          }
+        },
+        {
+          "call": "post",
+          "room_id": "room-3",
+          "content": {
+            "type": "text",
+            "body": "Notice 2."
+          }
+        },
+        {
+          "call": "post",
+          "room_id": "room-3",
+          "content": {
+            "type": "text",
+            "body": "Notice 3."
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "host": {
+          "category": "transport",
+          "access": "write_only",
+          "metadata": {
+            "desk": "1"
+          }
+        }
+      },
+      "room-2": {
+        "host": {
+          "category": "transport",
+          "access": "write_only",
+          "metadata": {
+            "desk": "2"
+          }
+        }
+      },
+      "room-3": {
+        "host": {
+          "category": "transport",
+          "access": "read_write"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      },
+      "room-3": {
+        "sms": {
+          "$unordered": [
+            {
+              "id": "room-3#0"
+            },
+            {
+              "id": "room-3#1"
+            },
+            {
+              "id": "room-3#2"
+            }
+          ]
+        }
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host",
+          "access": "write_only"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ],
+      "room-3": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-3#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-3#0"
+            },
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-3#1"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-3#1"
+            },
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-3#2"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-3#2"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

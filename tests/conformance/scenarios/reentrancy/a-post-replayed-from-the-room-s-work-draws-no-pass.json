@@ -1,0 +1,736 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-post-replayed-from-the-room-s-work-draws-no-pass",
+  "title": "A post replayed from the room's work is read before the reentry budget: twelve posts with one key past a budget of ten return the first, and a new post still has its pass",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§13.4",
+    "§9.5.1",
+    "§8.3 Reentry cap"
+  ],
+  "requirements": [
+    "RK-10.5-041"
+  ],
+  "reentrancy": [
+    "inject@locked",
+    "inject@admitted"
+  ],
+  "notes": "max_chain_depth is 1, so the cascade's budget is 10 passes. A locked hook (room-1) and an off-lock hook (room-2) on sms's message each post twelve times with one key, then once with none. The first post attaches the host channel from within the room's work; each replay returns it, read before the budget and drawing nothing, so the new post still has its pass. Drawn by the replays, the budget would be spent by the tenth post and the last ones stored BLOCKED.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "locked",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1",
+              "source_channel_id": "sms"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "as": "fresh"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "off_lock",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-2",
+              "source_channel_id": "sms"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "Received."
+                },
+                "idempotency_key": "ack",
+                "as": "ack2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "as": "fresh2"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "ack": [
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        }
+      ],
+      "fresh": [
+        {
+          "result": {
+            "content": {
+              "type": "text",
+              "body": "We answer within the hour."
+            },
+            "blocked_by": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "ack2": [
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        },
+        {
+          "result": {
+            "id": {
+              "$as": "first2"
+            },
+            "content": {
+              "type": "text",
+              "body": "Received."
+            }
+          }
+        }
+      ],
+      "fresh2": [
+        {
+          "result": {
+            "content": {
+              "type": "text",
+              "body": "We answer within the hour."
+            },
+            "blocked_by": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Received."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Received."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        }
+      ]
+    }
+  }
+}

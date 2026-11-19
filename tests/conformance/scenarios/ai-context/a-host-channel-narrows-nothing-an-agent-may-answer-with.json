@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-context/a-host-channel-narrows-nothing-an-agent-may-answer-with",
+  "title": "A host channel bound by a post narrows nothing an agent may answer with: its turn reads the capabilities and media types of the transports that send",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§6.7"
+  ],
+  "requirements": [
+    "RK-10.5-024"
+  ],
+  "notes": "The post asks no agent (it names none). The turn that answers ws's message reads ws's capabilities whole, as with no host channel bound.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "direction": "bidirectional",
+        "capabilities": {
+          "supports_threading": true,
+          "supports_reactions": true,
+          "supports_edit": true,
+          "supports_delete": true,
+          "supports_read_receipts": true,
+          "supports_typing": true,
+          "supports_templates": true,
+          "supports_rich_text": true,
+          "supports_buttons": true,
+          "supports_cards": true,
+          "supports_quick_replies": true,
+          "supports_media": true,
+          "supports_audio": true,
+          "supports_video": true,
+          "max_length": null,
+          "max_buttons": null,
+          "max_media_size_bytes": null,
+          "max_audio_duration_seconds": null,
+          "max_video_duration_seconds": null,
+          "media_types": [
+            "text",
+            "rich",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/png"
+          ],
+          "supported_audio_formats": [
+            "wav"
+          ],
+          "supported_video_formats": [
+            "mp4"
+          ],
+          "custom": {
+            "owner": "first"
+          }
+        }
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "text": "Sure."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room",
+      "content": {
+        "type": "text",
+        "body": "Notice."
+      },
+      "expect": {
+        "result": {
+          "source": {
+            "channel_id": "host"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Thanks!"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room": {
+        "host": {
+          "channel_type": "host",
+          "category": "transport"
+        }
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "target_capabilities": {
+            "supports_threading": true,
+            "supports_reactions": true,
+            "supports_edit": true,
+            "supports_delete": true,
+            "supports_read_receipts": true,
+            "supports_typing": true,
+            "supports_templates": true,
+            "supports_rich_text": true,
+            "supports_buttons": true,
+            "supports_cards": true,
+            "supports_quick_replies": true,
+            "supports_media": true,
+            "supports_audio": true,
+            "supports_video": true,
+            "max_length": null,
+            "max_buttons": null,
+            "max_media_size_bytes": null,
+            "max_audio_duration_seconds": null,
+            "max_video_duration_seconds": null,
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supported_media_types": [
+              "image/png"
+            ],
+            "supported_audio_formats": [
+              "wav"
+            ],
+            "supported_video_formats": [
+              "mp4"
+            ],
+            "custom": {
+              "owner": "first"
+            }
+          },
+          "target_media_types": {
+            "$unordered": [
+              "text",
+              "rich",
+              "media"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

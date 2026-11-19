@@ -1,0 +1,1624 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-first-post-past-the-reentry-budget-binds-nothing",
+  "title": "A first post from the room's work past its cascade's reentry budget is stored BLOCKED and binds nothing: no host binding, no attachment, no ON_CHANNEL_ATTACHED; a room the host channel was detached from refuses it first",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§8.3 Reentry cap",
+    "§9.5.1 The room's work outside the lock"
+  ],
+  "requirements": [
+    "RK-10.5-034"
+  ],
+  "reentrancy": [
+    "inject@cascade",
+    "inject@locked",
+    "inject@admitted"
+  ],
+  "notes": "max_chain_depth is 1, so the cascade's budget is 10 passes. In room-1, ws's delivery of the message makes ten injections, which draw them, then a first post, which is past the budget: stored BLOCKED before any attach, with the visibility the host channel's binding at its defaults gives, all. Its host channel is not bound and ON_CHANNEL_ATTACHED does not run; the next post, outside that work, attaches it once. In room-2 the host channel was detached before: the same post is refused channel_not_bound, the revocation checked before its pass, and nothing of it is stored. In room-3, room-4 and room-5 the same ten injections and first post come from a locked hook, an off-lock hook and an ASYNC hook's body: each post is stored BLOCKED and binds nothing, and posted again with its key it is a replay, which returns that record and binds nothing either.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "room_id": "room-1",
+              "text": "Hello?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_1"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "as": "late_1"
+              }
+            ]
+          },
+          {
+            "when": {
+              "room_id": "room-2",
+              "text": "Hello?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_2"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "as": "late_2"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attached",
+        "trigger": "on_channel_attached",
+        "execution": "async"
+      },
+      {
+        "name": "locked",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-3",
+              "text": "Hello?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_3"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "late_3"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "again_3"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "off_lock",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-4",
+              "text": "Hello?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_4"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "late_4"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "again_4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-5",
+              "text": "Hello?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Logged."
+                },
+                "as": "logged_5"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "late_5"
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "We answer within the hour."
+                },
+                "idempotency_key": "late",
+                "as": "again_5"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_binding",
+      "room_id": "room-1",
+      "channel_id": "host",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your order shipped."
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#12"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-2",
+      "content": {
+        "type": "text",
+        "body": "Earlier notice."
+      },
+      "expect": {
+        "result": {
+          "id": "room-2#0"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-2",
+      "channel_id": "host"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "late_1": [
+        {
+          "result": {
+            "id": "room-1#11",
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "visibility": "all",
+            "source": {
+              "channel_id": "host",
+              "channel_type": "host",
+              "direction": "inbound"
+            }
+          }
+        }
+      ],
+      "late_2": [
+        {
+          "error": "channel_not_bound"
+        }
+      ],
+      "late_3": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped3"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ],
+      "again_3": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped3"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ],
+      "late_4": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped4"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ],
+      "again_4": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped4"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ],
+      "late_5": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped5"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ],
+      "again_5": [
+        {
+          "result": {
+            "id": {
+              "$as": "capped5"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "source": {
+              "channel_id": "host"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap",
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Earlier notice."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap",
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-4": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap",
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-5": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Logged."
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "We answer within the hour."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap",
+          "visibility": "all"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello?"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Your order shipped."
+            }
+          }
+        ],
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Your order shipped."
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Earlier notice."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello?"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Logged."
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "attached": {
+        "$unordered": [
+          {
+            "trigger": "on_channel_attached",
+            "room_id": "room-1"
+          },
+          {
+            "trigger": "on_channel_attached",
+            "room_id": "room-2"
+          }
+        ]
+      }
+    },
+    "bindings": {
+      "room-1": {
+        "host": {
+          "category": "transport"
+        }
+      },
+      "room-2": {
+        "host": null
+      },
+      "room-3": {
+        "host": null
+      },
+      "room-4": {
+        "host": null
+      },
+      "room-5": {
+        "host": null
+      }
+    }
+  }
+}

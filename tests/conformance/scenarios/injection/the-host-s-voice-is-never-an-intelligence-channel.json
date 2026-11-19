@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/the-host-s-voice-is-never-an-intelligence-channel",
+  "title": "The host's voice never comes from an intelligence channel: a post from an agent's channel, and the host channel attached as an intelligence channel, are refused with nothing written",
+  "rules": [
+    "§10.5 The host's own voice"
+  ],
+  "requirements": [
+    "RK-10.5-020",
+    "RK-10.5-022"
+  ],
+  "notes": "Both refusals write nothing: no event, no binding, no attachment. The post after them, from the host channel, attaches it as a transport.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "host",
+        "type": "host"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "channel_id": "ai",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "host",
+      "category": "intelligence",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "host",
+            "direction": "inbound"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your appointment is at 3 pm"
+          },
+          "source": {
+            "channel_id": "host"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "host": {
+          "category": "transport"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

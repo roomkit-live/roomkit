@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-post-after-the-host-channel-is-detached-is-refused",
+  "title": "A post into a room the host channel was detached from raises channel_not_bound, its key a replay or not: the channel is not attached again and nothing is written",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§7.5"
+  ],
+  "requirements": [
+    "RK-10.5-032"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "idempotency_key": "notice",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "host"
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "See you then"
+      },
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "idempotency_key": "notice",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your appointment is at 3 pm"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "host": null
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "event": "room_channel_detached",
+          "channel_id": "host"
+        }
+      ]
+    }
+  }
+}

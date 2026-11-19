@@ -1,0 +1,258 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-post-replayed-with-its-key-sends-nothing-again",
+  "title": "A post replayed with its key returns the event the key committed and sends nothing again; a blank key is no key, nor a key another channel holds",
+  "rules": [
+    "§10.5 The host's own voice",
+    "§13.4"
+  ],
+  "requirements": [
+    "RK-10.5-041"
+  ],
+  "notes": "A key is held by the channel that committed it in the room: the key ws's injection holds is no replay for the host channel's post.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your order shipped."
+      },
+      "idempotency_key": "notice-1042",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your order shipped again."
+      },
+      "idempotency_key": "notice-1042",
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          }
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Blank 1."
+      },
+      "idempotency_key": "",
+      "expect": {
+        "result": {
+          "id": "room-1#1"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Blank 2."
+      },
+      "idempotency_key": "",
+      "expect": {
+        "result": {
+          "id": "room-1#2"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Spaces 1."
+      },
+      "idempotency_key": "   ",
+      "expect": {
+        "result": {
+          "id": "room-1#3"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Spaces 2."
+      },
+      "idempotency_key": "   ",
+      "expect": {
+        "result": {
+          "id": "room-1#4"
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "From the console."
+      },
+      "idempotency_key": "notice-7",
+      "expect": {
+        "result": {
+          "id": "room-1#5"
+        }
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your parcel is out for delivery."
+      },
+      "idempotency_key": "notice-7",
+      "expect": {
+        "result": {
+          "id": "room-1#6",
+          "source": {
+            "channel_id": "host"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          },
+          "idempotency_key": "notice-1042"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Blank 1."
+          },
+          "idempotency_key": {
+            "$absent": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Blank 2."
+          },
+          "idempotency_key": {
+            "$absent": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Spaces 1."
+          },
+          "idempotency_key": {
+            "$absent": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Spaces 2."
+          },
+          "idempotency_key": {
+            "$absent": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the console."
+          },
+          "source": {
+            "channel_id": "ws"
+          },
+          "idempotency_key": "notice-7"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Your parcel is out for delivery."
+          },
+          "source": {
+            "channel_id": "host"
+          },
+          "idempotency_key": "notice-7"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4"
+          },
+          {
+            "id": "room-1#5"
+          },
+          {
+            "id": "room-1#6"
+          }
+        ]
+      }
+    }
+  }
+}
