@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-memory-s-window-does-not-count-a-kept-instruction",
+  "title": "A memory's window counts the room's messages, never an agent's kept instruction: the instruction replays where its turn read it and leaves the window's messages whole",
+  "rules": [
+    "§10.1.1",
+    "§20.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.1.1-045"
+  ],
+  "notes": "The agent's window holds 4 events, the turn's own event among them. At `Thanks.` the room holds four messages and the agent's instruction_read row: the window reads the four messages, `Where is my order?` included, and the instruction replays between the answer before it and the answer its turn wrote. A window that counted the row would read `Let me ask the team.` first and leave `Where is my order?` out. memory/the-window-counts-no-tool-row is the same for an earlier turn's tool rows.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "max_context_events": 4,
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me ask the team."
+            },
+            {
+              "text": "It arrives on Thursday."
+            },
+            {
+              "text": "You are welcome."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Look order 42 up."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Where is my order?"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Let me ask the team."
+          }
+        },
+        {
+          "type": "instruction_read",
+          "content": {
+            "body": "Look order 42 up."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "It arrives on Thursday."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Thanks."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "You are welcome."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Where is my order?"
+            },
+            {
+              "role": "assistant",
+              "text": "Let me ask the team."
+            },
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nLook order 42 up."
+            },
+            {
+              "role": "assistant",
+              "text": "It arrives on Thursday."
+            },
+            {
+              "role": "user",
+              "text": "Thanks."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

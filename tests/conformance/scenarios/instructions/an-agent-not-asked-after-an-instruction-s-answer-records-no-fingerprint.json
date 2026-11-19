@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-agent-not-asked-after-an-instruction-s-answer-records-no-fingerprint",
+  "title": "The record of an agent not asked at the chain-depth limit by the answer to an instruction carries no fingerprint, though the answer it would have answered does",
+  "rules": [
+    "§10.1.1 rule 6",
+    "§8.3",
+    "§19.3.1"
+  ],
+  "requirements": [
+    "RK-10.1.1-027"
+  ],
+  "notes": "max_chain_depth 2. The instruction (depth 0) asks `ai`, whose answer (depth 1) carries the fingerprint and solicits `other` under AGENT_CHAIN (§19.3.1); `other` is not asked at the limit (1 + 1 >= 2), and its record, stored BLOCKED at depth 2 in reply to the answer, carries no fingerprint: neither the answer's nor the instruction's.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 2
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello, I am your assistant"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          },
+          {
+            "channel_id": "other"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello, I am your assistant"
+          },
+          "status": "delivered",
+          "chain_depth": 1,
+          "metadata": {
+            "instruction": {
+              "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+              "length": 18
+            }
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "other",
+            "direction": "outbound"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 2,
+          "responds_to": "room-1#0",
+          "metadata": {
+            "instruction": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "type": "instruction"
+          }
+        ],
+        "other": []
+      }
+    }
+  }
+}

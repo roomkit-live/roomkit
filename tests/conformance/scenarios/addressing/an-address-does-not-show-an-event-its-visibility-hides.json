@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "addressing/an-address-does-not-show-an-event-its-visibility-hides",
+  "title": "An address narrows who is asked, never who sees: an event hidden from an agent by its visibility is not delivered to it though addressed to it, and an agent it shows the event to is not asked unless addressed",
+  "rules": [
+    "§10.2 Solicitation",
+    "§7.3",
+    "§19.3 rule 1"
+  ],
+  "requirements": [
+    "RK-10.2-018",
+    "RK-10.2-019",
+    "RK-10.2-020"
+  ],
+  "notes": "The first message is addressed to `a1` and visible to transports only: `a1` is not asked, `witness` is delivered it. The second is addressed to `a1` and visible to `a2` only: neither agent is asked (`a1` does not see it, `a2` is not addressed) and `witness` is not delivered it. The third, visible to all, asks `a1`, whose answer asks `a2` under AGENT_CHAIN (§19.3.1). Python: tests/test_addressing.py::test_visibility_and_addressing_compose.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "witness",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a1"
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "a2",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "witness"
+          },
+          {
+            "channel_id": "a1"
+          },
+          {
+            "channel_id": "a2"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 transports only"
+        },
+        "addressed_to": [
+          "a1"
+        ],
+        "visibility": "transport"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "transport",
+            "addressed_to": [
+              "a1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 for a2 only"
+        },
+        "addressed_to": [
+          "a1"
+        ],
+        "visibility": "a2"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "a2",
+            "addressed_to": [
+              "a1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 for all"
+        },
+        "addressed_to": [
+          "a1"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "@a1 transports only"
+          },
+          "visibility": "transport"
+        },
+        {
+          "content": {
+            "body": "@a1 for a2 only"
+          },
+          "visibility": "a2"
+        },
+        {
+          "content": {
+            "body": "@a1 for all"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a1"
+          },
+          "content": {
+            "body": "from a1"
+          },
+          "responds_to": "room-1#2"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a1": [
+          {
+            "id": "room-1#2"
+          }
+        ],
+        "a2": [
+          {
+            "id": "room-1#3"
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "witness": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#3"
+          }
+        ]
+      }
+    }
+  }
+}

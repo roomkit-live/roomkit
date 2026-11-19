@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-standalone-instruction-s-target-and-hooks-are-handed-the-room-s-context",
+  "title": "A standalone instruction's target and its hooks are handed the room's recent events, as for any event: reading none of them is the turn's own duty",
+  "rules": [
+    "§10.1.1 step 7",
+    "§10.2",
+    "§9.4"
+  ],
+  "requirements": [
+    "RK-10.1.1-033",
+    "RK-10.2-014"
+  ],
+  "notes": "`scribe` is a scripted intelligence channel declaring a window of 5. Its turns for m0 and m1 are handed the room with the message as its newest event; its turn for the standalone instruction, never committed, is handed the room's events as they stand, m0 and m1, as its BEFORE_BROADCAST and AFTER_BROADCAST hooks are. Each message's AFTER_BROADCAST context is not asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "scribe",
+        "type": "ai",
+        "category": "intelligence",
+        "recent_events_window": 5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "scribe"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "before_broadcast"
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "scribe"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "$e1",
+            "type": "instruction"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "contexts": {
+      "room-1": {
+        "scribe": [
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ]
+          },
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ]
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "scribe": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "$e1"
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "index": 0
+          },
+          "recent_events": []
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "index": 1
+          },
+          "recent_events": [
+            "room-1#0"
+          ]
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "id": "$e1",
+            "type": "instruction"
+          },
+          "context_room": {
+            "id": "room-1"
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1"
+          ]
+        }
+      ],
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "id": "room-1#0"
+          },
+          "recent_events": "$any"
+        },
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "id": "room-1#1"
+          },
+          "recent_events": "$any"
+        },
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "id": "$e1",
+            "type": "instruction"
+          },
+          "context_room": {
+            "id": "room-1"
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1"
+          ]
+        }
+      ]
+    }
+  }
+}

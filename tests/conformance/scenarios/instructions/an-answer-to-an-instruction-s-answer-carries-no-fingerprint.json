@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-answer-to-an-instruction-s-answer-carries-no-fingerprint",
+  "title": "Only the answer to an instruction carries its fingerprint: another agent's answer to that answer, and the record of the agent not asked at the chain-depth limit after it, carry none",
+  "rules": [
+    "§10.1.1 rule 6",
+    "§8.3",
+    "§19.3.1"
+  ],
+  "requirements": [
+    "RK-10.1.1-027"
+  ],
+  "notes": "max_chain_depth 3. The instruction (depth 0) asks `ai`, whose answer (depth 1) carries the fingerprint and asks `other` under AGENT_CHAIN (§19.3.1); `other`'s answer (depth 2) asks `ai` again, which is not asked at the limit (2 + 1 >= 3): its record is stored BLOCKED at depth 3. Python: tests/test_instruction_fingerprint.py::test_an_answer_to_a_message_records_no_instruction (a message's answer).",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello, I am your assistant"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hello, I am your assistant"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Nice to meet you"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          },
+          {
+            "channel_id": "other"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello, I am your assistant"
+          },
+          "status": "delivered",
+          "chain_depth": 1,
+          "metadata": {
+            "instruction": {
+              "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+              "length": 18
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "other"
+          },
+          "content": {
+            "type": "text",
+            "body": "Nice to meet you"
+          },
+          "status": "delivered",
+          "chain_depth": 2,
+          "responds_to": "room-1#0",
+          "metadata": {
+            "instruction": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 3,
+          "responds_to": "room-1#1",
+          "metadata": {
+            "instruction": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "type": "instruction"
+          }
+        ],
+        "other": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    }
+  }
+}

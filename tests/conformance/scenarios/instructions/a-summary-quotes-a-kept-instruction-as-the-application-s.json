@@ -1,0 +1,240 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-summary-quotes-a-kept-instruction-as-the-application-s",
+  "title": "A summarizing memory's summarizer quotes an agent's kept instruction as the application's, with its mark, never as a participant's words",
+  "rules": [
+    "§10.1.1",
+    "§20.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.1.1-045"
+  ],
+  "notes": "The instruction opens the room; the agent keeps it and replays it at the head of its later histories (instructions/an-instruction-that-opened-the-room-opens-its-later-history). At the third turn a round measures past tier2_ratio of the memory's window and the memory compacts the history between two calls, as in memory/a-summarizing-memory-compacts-a-turn-past-its-threshold-between-two-calls: the replayed instruction and the answer its turn wrote are summarized. The summarizer reads the instruction quoted with the application's mark, as the turn read it, never as the bare words of the sender who carried it. Only the transcript lines are asserted, not the summarizer's ask before them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 820,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Answer 3."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "found"
+          }
+        ],
+        "memory": {
+          "summarizing": {
+            "max_context_tokens": 1000,
+            "tier2_ratio": 0.8,
+            "summary_max_tokens": 50,
+            "min_events": 2
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "The application asked a first thing."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Instruction 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nInstruction 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nInstruction 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nInstruction 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": "$any"
+        }
+      ],
+      "agent/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "<conversation>\n[user]: “[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.] Instruction 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n</conversation>"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

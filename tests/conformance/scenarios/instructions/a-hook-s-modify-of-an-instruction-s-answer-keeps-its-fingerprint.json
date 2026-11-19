@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-hook-s-modify-of-an-instruction-s-answer-keeps-its-fingerprint",
+  "title": "A BEFORE_BROADCAST hook's modify of the answer to an instruction keeps the instruction's fingerprint, whether the hook writes the instruction's text under its key or drops the key, buffered or streamed; the hook's other changes stand",
+  "rules": [
+    "§10.1.1 rule 6",
+    "§9.4"
+  ],
+  "requirements": [
+    "RK-10.1.1-026"
+  ],
+  "notes": "A modify's event is a patch: its `metadata` replaces the answer's whole. In room-1 the hook writes the instruction's text under `instruction`, in room-2 it leaves the key out of a streamed answer's row; both stored answers hold the fingerprint the pipeline wrote, and the hook's `reviewed`. The streamed agent's own instruction_read row runs no hook. Python: tests/test_instruction_fingerprint.py::test_a_hook_cannot_change_or_remove_a_response_s_fingerprint.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello, I am your assistant"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "streamer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Hello, ",
+                "I am here"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "streamer",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tamper",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "instruction": "Introduce yourself",
+                  "reviewed": true
+                }
+              }
+            }
+          },
+          {
+            "when": {
+              "source_channel_id": "streamer"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "reviewed": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "streamer"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello, I am your assistant"
+          },
+          "status": "delivered",
+          "metadata": {
+            "instruction": {
+              "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+              "length": 18
+            },
+            "reviewed": true
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "streamer"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "streamer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello, I am here"
+          },
+          "status": "delivered",
+          "metadata": {
+            "instruction": {
+              "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+              "length": 18
+            },
+            "reviewed": true
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0",
+            "metadata": {
+              "instruction": {
+                "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+                "length": 18
+              },
+              "reviewed": true
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "sms": [
+          {
+            "id": "room-2#1",
+            "metadata": {
+              "instruction": {
+                "sha256": "d0247b12d965ab4eccd45b15ca1625ed99756bfa842f3b95d03ef34eeb3539e0",
+                "length": 18
+              },
+              "reviewed": true
+            }
+          }
+        ]
+      }
+    }
+  }
+}

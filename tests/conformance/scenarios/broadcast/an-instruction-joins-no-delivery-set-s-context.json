@@ -1,0 +1,260 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/an-instruction-joins-no-delivery-set-s-context",
+  "title": "An instruction, never committed, joins no delivery set's context: neither the set of the message whose delivery it waits behind, nor its own answer's, nor a later message's",
+  "rules": [
+    "§10.2",
+    "§10.1.1 rule 5"
+  ],
+  "requirements": [
+    "RK-10.2-014"
+  ],
+  "notes": "m0's delivery to `reader` is held at `held` when the instruction is sent, so the instruction's delivery set may queue in the lane behind m0's (no step waits for its pass before `held` opens); m0's own context is read before its commit (RK-10.2-012) and asserted only for completeness. `reader` and `agent` declare a window of 5. The instruction's provisional index is 1, which the agent's answer then takes: an instruction in a context would read as $e1, never room-1#1. The agent's turn for the instruction is handed the room as it stands (RK-10.1.1-033).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 5,
+        "deliver": [
+          {
+            "when": {
+              "text": "m0"
+            },
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "recent_events_window": 5,
+        "on_event": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "background": true,
+      "as": "m0"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Check the order."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "background": true,
+      "as": "instructed"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "m0",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "instructed",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "$e1"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "m0"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Done."
+          }
+        },
+        {
+          "content": {
+            "body": "m1"
+          }
+        }
+      ]
+    },
+    "contexts": {
+      "room-1": {
+        "reader": [
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1",
+              "room-1#2"
+            ]
+          }
+        ],
+        "agent": [
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "on_event",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1",
+              "room-1#2"
+            ]
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "reader": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "agent": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "$e1"
+          },
+          {
+            "id": "room-1#2"
+          }
+        ]
+      }
+    }
+  }
+}

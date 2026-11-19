@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-agent-an-instruction-cannot-ask-at-the-depth-limit-records-no-fingerprint",
+  "title": "The record of the agent an instruction addresses, not asked at the chain-depth limit, carries no fingerprint of the instruction",
+  "rules": [
+    "§10.1.1 rule 6",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.1.1-027"
+  ],
+  "notes": "max_chain_depth 1: the instruction (depth 0) cannot ask `ai` (0 + 1 >= 1). In place of its answer the instruction's delivery set stores a BLOCKED record at depth 1, responding to the instruction ($e1, never stored), and the record carries no fingerprint: it is no response.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "$e1",
+            "type": "instruction"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ai",
+            "direction": "outbound"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 1,
+          "responds_to": "$e1",
+          "metadata": {
+            "instruction": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}

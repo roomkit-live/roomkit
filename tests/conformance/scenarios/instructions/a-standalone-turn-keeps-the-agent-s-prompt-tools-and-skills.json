@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-standalone-turn-keeps-the-agent-s-prompt-tools-and-skills",
+  "title": "A standalone instruction's turn reads nothing of the room, yet its request carries the agent's own system prompt, tools and skill catalogue, as its turn for a message does",
+  "rules": [
+    "§10.1.1 step 7",
+    "§6.4",
+    "§24.3"
+  ],
+  "requirements": [
+    "RK-10.1.1-032"
+  ],
+  "notes": "The standalone request names the same system prompt and the same tools (names in order, descriptions and parameters) as the ordinary turn before it: the prompt with the skill catalogue, the agent's tool and the skill tool. Only its messages differ: the instruction alone. The tool-search and skill-gating standalone scenarios assert what such a request lacks (the room's found tools, an activation); this one asserts what it keeps.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "Be brief.",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look an order up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ],
+        "skills": [
+          {
+            "name": "s1",
+            "description": "The s1 procedure",
+            "instructions": "Rules for s1."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "A summary."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Note this."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$as": "prompt"
+          },
+          "tool_names": {
+            "$as": "tools"
+          },
+          "tool_definitions": {
+            "$as": "definitions"
+          },
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "activate_skill": {
+              "$present": true
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Note this."
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$as": "prompt"
+          },
+          "tool_names": {
+            "$as": "tools"
+          },
+          "tool_definitions": {
+            "$as": "definitions"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize the room."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

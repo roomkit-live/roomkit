@@ -1,0 +1,257 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/a-channel-registered-again-serves-the-bindings-it-kept",
+  "title": "A transport and an agent unregistered, then registered again under their ids, serve the bindings they kept: the room's next message reaches them as before",
+  "rules": [
+    "§10.2 An unregistered channel",
+    "§10.2 step 3"
+  ],
+  "requirements": [
+    "RK-10.2-017"
+  ],
+  "notes": "While unregistered, `ws` is skipped and `ai` reported channel_not_registered (inbound/an-unregistered-target-is-skipped-or-reported). Registered again from the same definition, each is delivered m2 through the binding the room kept: no attach runs again. greeting/a-channel-unregistered-greets-no-more registers an agent again but binds it to new rooms.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "sms"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Got it."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws",
+            "metadata": {
+              "desk": "north"
+            }
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "ws"
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "ai"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "sms"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Back."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "m0"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "Got it."
+          }
+        },
+        {
+          "content": {
+            "body": "m1"
+          }
+        },
+        {
+          "content": {
+            "body": "m2"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "Back."
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "ws": {
+          "channel_id": "ws",
+          "metadata": {
+            "desk": "north"
+          }
+        },
+        "ai": {
+          "channel_id": "ai"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4"
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#3"
+          }
+        ]
+      }
+    },
+    "room_callbacks": {
+      "room-1": {
+        "ws": [],
+        "ai": []
+      }
+    }
+  }
+}

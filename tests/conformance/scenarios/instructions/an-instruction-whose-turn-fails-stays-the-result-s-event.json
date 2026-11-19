@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-instruction-whose-turn-fails-stays-the-result-s-event",
+  "title": "An instruction whose addressed agent's generation fails stays the result's event, the failure reported on the result's error, whether the provider refuses or fails otherwise",
+  "rules": [
+    "§10.1.1 rule 5",
+    "§10.1 step 18",
+    "§13.6"
+  ],
+  "requirements": [
+    "RK-10.1.1-021"
+  ],
+  "notes": "The same as inbound/a-headless-turn-s-provider-error-reaches-the-caller-and-on-error, for an instruction: the instruction was decided (allowed) before its delivery set ran the turn that failed, so the result keeps it as its event, DELIVERED, and carries the failure on `error` (post-commit phase).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "refused",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "connection error"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "broken",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "fails": "unexpected boom"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "refused",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "broken",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "refused"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction",
+            "status": "delivered",
+            "content": {
+              "type": "text",
+              "body": "Introduce yourself"
+            }
+          },
+          "error": {
+            "$contains": "connection error"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "broken"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction",
+            "status": "delivered",
+            "content": {
+              "type": "text",
+              "body": "Introduce yourself"
+            }
+          },
+          "error": {
+            "$contains": "unexpected boom"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}
