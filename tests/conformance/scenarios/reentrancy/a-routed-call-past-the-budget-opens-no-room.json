@@ -1,21 +1,21 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reentrancy/a-routed-call-past-the-budget-opens-no-room",
-  "title": "A transport whose every delivery sends a message the router opens a room for stops at its cascade's budget: the message past it is refused before a room is created",
+  "title": "A message a room's delivery sends past its cascade's budget, which the router gives no room, is refused before a new room is created",
   "rules": [
     "§8.3",
     "§9.5.1",
-    "§9.5.1 The room's work outside the lock",
     "§9.5.1 Past the cap",
     "§10.1 step 2",
-    "§10.1 step 18",
     "§10.4"
   ],
   "requirements": [
-    "RK-9.5.1-056",
     "RK-9.5.1-063"
   ],
-  "notes": "The router answers no room: each message the loop channel's delivery sends opens one, which an ON_ROOM_CREATED hook binds to the loop channel, so the chain goes on there on the budget of room-1's cascade. Each call, into another room than the one whose delivery makes it, waits for the delivery of its message there, which makes the next call: the refused call ends first. Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_transport_opening_a_room_on_every_delivery_stops_at_the_cap[no-room].",
+  "reentrancy": [
+    "inject@cascade"
+  ],
+  "notes": "The loop channel's delivery spends room-1's budget with messages naming it, then sends one the router answers no room for: step 2 would open a room for it, and refuses it first. Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_transport_opening_a_room_on_every_delivery_stops_at_the_cap[no-room], which spends the budget on the rooms it opens.",
   "setup": {
     "kit": {
       "max_chain_depth": 1,
@@ -35,19 +35,235 @@
         "category": "transport",
         "deliver": [
           {
-            "repeat": true,
             "do": [
               {
                 "call": "process_inbound",
+                "room_id": "room-1",
                 "message": {
                   "channel_id": "sms",
                   "sender_id": "u",
                   "content": {
                     "type": "text",
-                    "body": "open"
+                    "body": "again"
                   }
                 },
-                "as": "open"
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "again"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15550000002",
+                  "content": {
+                    "type": "text",
+                    "body": "routed"
+                  }
+                },
+                "as": "refused",
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "reentry_loop_cap",
+                    "event": null
+                  }
+                }
               }
             ]
           }
@@ -63,24 +279,6 @@
           },
           {
             "channel_id": "loop"
-          }
-        ]
-      }
-    ],
-    "hooks": [
-      {
-        "name": "bind",
-        "trigger": "on_room_created",
-        "reactions": [
-          {
-            "repeat": true,
-            "do": [
-              {
-                "call": "attach_channel",
-                "room_id": "$room",
-                "channel_id": "loop"
-              }
-            ]
           }
         ]
       }
@@ -111,102 +309,81 @@
             "type": "text",
             "body": "hello"
           }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
         }
       ]
     },
     "rooms": {
       "$created": {
-        "$unordered": [
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          },
-          {
-            "status": "active"
-          }
-        ]
+        "$unordered": []
       }
     },
     "actions": {
-      "open": [
+      "refused": [
         {
           "result": {
             "blocked": true,
             "reason": "reentry_loop_cap",
             "event": null
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
-          }
-        },
-        {
-          "result": {
-            "blocked": false
           }
         }
       ]
