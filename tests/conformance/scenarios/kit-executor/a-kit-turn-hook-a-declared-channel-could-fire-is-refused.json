@@ -7,6 +7,8 @@
     "§10.6.6"
   ],
   "requirements": [
+    "RK-10.6.6-009",
+    "RK-10.6.6-010",
     "RK-9.1-008"
   ],
   "notes": "The kit holds meteo by its declaration alone: its turns run on another executor, where a hook registered on the kit never fires. A global hook with no channel filter, one naming meteo, or one whose channel_types names meteo's type on a trigger whose payload carries it, is refused; a room hook is refused while any channel is declared, the room's channels being known only later; a hook filtered to support, which the kit holds live, or to the voice type on on_tool_call, is kept, and only the first fires, for support's call. Python: tests/test_turn_hooks.py::test_a_kit_turn_hook_a_declared_channel_could_fire_is_refused_in_either_order, test_a_kit_turn_hook_whose_filter_leaves_the_declared_channel_out_is_kept, test_a_kit_room_turn_hook_is_refused_while_any_channel_is_declared.",

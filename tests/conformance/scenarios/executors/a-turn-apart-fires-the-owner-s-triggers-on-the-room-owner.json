@@ -1,0 +1,296 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-fires-the-owner-s-triggers-on-the-room-owner",
+  "title": "A turn on an executor apart fires the owner's triggers on the room owner: BEFORE_BROADCAST and AFTER_BROADCAST on its stored answer, ON_TASK_CREATED for its output's task, and ON_ERROR when it fails",
+  "rules": [
+    "§10.6.6",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-10.6.6-006"
+  ],
+  "notes": "Python: tests/test_turns_wiring.py and turns/owner.py. The hooks are the kit's, registered on the room owner; helper is held by its declaration alone and runs on first. Its first turn answers and hands a task in its output; its second raises. Every trigger here is fired by the owner from what the turn's frames carry: no hook of the kit could fire on the executor, which holds none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "text": "Plan it."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Planned."
+                }
+              }
+            ],
+            "output": {
+              "tasks": [
+                {
+                  "title": "Send the plan"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "Break it."
+            },
+            "fail": "the plan broke"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "helper"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_broadcast"
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      {
+        "name": "created",
+        "trigger": "on_task_created",
+        "execution": "async"
+      },
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Plan it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Break it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the plan broke"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Plan it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "helper"
+          },
+          "content": {
+            "type": "text",
+            "body": "Planned."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Break it."
+          }
+        }
+      ]
+    },
+    "tasks": {
+      "r1": [
+        {
+          "title": "Send the plan"
+        }
+      ]
+    },
+    "hooks": {
+      "before": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "ws"
+            },
+            "content": {
+              "body": "Plan it."
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "body": "Planned."
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "ws"
+            },
+            "content": {
+              "body": "Break it."
+            }
+          }
+        }
+      ],
+      "after": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "body": "Plan it."
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "source": {
+                "channel_id": "helper"
+              },
+              "content": {
+                "body": "Planned."
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "body": "Break it."
+              }
+            }
+          }
+        ]
+      },
+      "created": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "r1"
+        }
+      ],
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "helper"
+            },
+            "metadata": {
+              "error": {
+                "$contains": "the plan broke"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "helper",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "helper",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "helper",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-room-s-attach-and-detach-are-applied-on-the-executor-before-they-return",
+  "title": "A room's attach and detach of a declared channel are applied by the executor holding its build before the owner goes on: the owner's hook on the change reads what the channel's callback did",
+  "rules": [
+    "§10.6.9",
+    "§10.6.3",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-10.6.9-009"
+  ],
+  "notes": "Python: turns/owner.py and turns/memory.py await the executor's answer to room_attached and room_detached; tests/test_turns_channel_control.py. first holds helper's build since r0's turn. Its on_room_attached and on_room_detached each wait at a gate, then post a status. The owner's ON_CHANNEL_ATTACHED and ON_CHANNEL_DETACHED hooks, which fire once the change is made, read the status bus: an owner that went on before the executor applied the control would fire them while the callback waits at its gate, and read nothing. roomkit-rs's Redis runner serves first on a node of its own, so the control crosses Redis; roomkit's harness serves it in the owner's process.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello back."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ],
+        "on_room_attached": [
+          {
+            "gate": "attaching",
+            "do": [
+              {
+                "call": "status.post",
+                "agent_id": "helper",
+                "action": "attached",
+                "status": "ok"
+              }
+            ]
+          }
+        ],
+        "on_room_detached": [
+          {
+            "gate": "detaching",
+            "do": [
+              {
+                "call": "status.post",
+                "agent_id": "helper",
+                "action": "detached",
+                "status": "ok"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "helper"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r0",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attached",
+        "trigger": "on_channel_attached",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "r1"
+            },
+            "do": [
+              {
+                "call": "status.recent",
+                "as": "after_attach"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "detached",
+        "trigger": "on_channel_detached",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "r1"
+            },
+            "do": [
+              {
+                "call": "status.recent",
+                "as": "after_detach"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r0",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "category": "intelligence",
+      "background": true,
+      "as": "attach"
+    },
+    {
+      "wait_for": "attaching"
+    },
+    {
+      "open": "attaching"
+    },
+    {
+      "await": "attach"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "background": true,
+      "as": "detach"
+    },
+    {
+      "wait_for": "detaching"
+    },
+    {
+      "open": "detaching"
+    },
+    {
+      "await": "detach"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "after_attach": [
+        {
+          "result": [
+            {
+              "agent_id": "helper",
+              "action": "attached",
+              "status": "ok"
+            }
+          ]
+        }
+      ],
+      "after_detach": [
+        {
+          "result": [
+            {
+              "agent_id": "helper",
+              "action": "attached",
+              "status": "ok"
+            },
+            {
+              "agent_id": "helper",
+              "action": "detached",
+              "status": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "helper",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "helper",
+          "room_id": "r0",
+          "build": 1
+        },
+        {
+          "call": "on_room_attached",
+          "channel_id": "helper",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_room_detached",
+          "channel_id": "helper",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-provider-the-factory-hands-every-build-outlives-its-executor-s-close",
+  "title": "An executor closed while the host's factory hands every build one provider closes its own build and leaves that provider open: the next turn, on another executor, answers on it",
+  "rules": [
+    "§10.6.8",
+    "§10.6.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.6.8-032"
+  ],
+  "notes": "RMK-1635. coder's model is one object every build of coder is handed, as a host's factory shares one client; it fails once closed, as a real client does. Closing first closes the build first made, the channel it owns, and not what the build was handed: second's build answers the next turn on the same model.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "fails_once_closed": true,
+          "rounds": [
+            {
+              "text": "A."
+            },
+            {
+              "text": "B."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "A."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "B."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "close",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

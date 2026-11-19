@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-silent-while-its-tool-runs-past-the-heartbeat-timeout-is-kept",
+  "title": "A turn on an executor apart whose tool runs four times the heartbeat timeout, the turn sending nothing else meanwhile, is kept: both sides beat, the tool's own bound ends the call, and the next round answers",
+  "rules": [
+    "§10.6.8",
+    "§21.6"
+  ],
+  "requirements": [
+    "RK-10.6.8-006",
+    "RK-10.6.8-013"
+  ],
+  "notes": "Python: turns/_executor_turn.py _beat and turns/_owner_turn.py _beat_while_open; tests/test_turns_failures.py::test_a_tool_blocking_the_loop_past_the_heartbeat_timeout_is_not_lost. While lookup hangs, the turn has nothing to send for 1.6 seconds, four times heartbeat_timeout: each side sends its heartbeats, so the owner does not lose the executor (executor_lost) and the executor does not lose the owner (owner_lost). lookup's own bound ends the call as failed; the next round's answer is stored and the caller reads no error.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 20,
+        "heartbeat_timeout_ms": 400,
+        "accept_ms": 2000,
+        "cancel_ms": 100
+      }
+    },
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "It did not answer."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "hangs": true
+          }
+        ],
+        "tool_timeouts_ms": {
+          "lookup": 1600
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Look it up."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "tool_id": "c1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "tool_id": "c1",
+            "outcome": "failed"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "It did not answer."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

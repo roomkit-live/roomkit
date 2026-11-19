@@ -1,0 +1,361 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-s-delegation-and-segments-fire-their-hooks-on-the-room-owner",
+  "title": "A turn on an executor apart that delegates fires ON_TASK_DELEGATED on the room owner, which serves the delegation, and BEFORE_BROADCAST and AFTER_BROADCAST there on each segment of its answer it stores",
+  "rules": [
+    "§10.6.6",
+    "§9.5",
+    "§23.4"
+  ],
+  "requirements": [
+    "RK-10.6.6-006"
+  ],
+  "notes": "Python: tests/test_turns_owner_tools.py, turns/owner.py. coder runs on first; its delegate_task is served on the room owner, which fires ON_TASK_DELEGATED. Its answer is stored as segments, the text before its call and the text after, each passing the owner's BEFORE_BROADCAST and AFTER_BROADCAST. The hooks are the kit's, filtered to coder's events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix it."
+                  }
+                }
+              ],
+              "text": "Asking the worker."
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Fixed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "worker"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "before",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "coder"
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "channel_ids": [
+          "coder"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "coder",
+      "handler": "tool",
+      "targets": [
+        [
+          "worker",
+          "Fixes"
+        ]
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        "$any"
+      ]
+    },
+    "executors": {
+      "first": [
+        "$any",
+        "$any",
+        "$any"
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "worker",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "room_id": "$r1",
+          "build": 1
+        }
+      ]
+    },
+    "hooks": {
+      "delegated": [
+        {
+          "trigger": "on_task_delegated",
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "agent_id": "worker",
+              "parent_room_id": "r1",
+              "task_input": "Fix it."
+            }
+          }
+        }
+      ],
+      "before": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "text",
+              "body": "Asking the worker."
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "tool_call_start",
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "tool_call",
+              "tool_name": "delegate_task",
+              "tool_id": "c1"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "tool_call_end",
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "tool_call",
+              "tool_name": "delegate_task",
+              "tool_id": "c1",
+              "outcome": "served"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "text",
+              "body": "On it."
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "text",
+              "body": "Fixed."
+            }
+          }
+        }
+      ],
+      "after": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "type": "message",
+              "source": {
+                "channel_id": "coder"
+              },
+              "content": {
+                "type": "text",
+                "body": "Asking the worker."
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "type": "tool_call_start",
+              "source": {
+                "channel_id": "coder"
+              },
+              "content": {
+                "type": "tool_call",
+                "tool_name": "delegate_task",
+                "tool_id": "c1"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "type": "tool_call_end",
+              "source": {
+                "channel_id": "coder"
+              },
+              "content": {
+                "type": "tool_call",
+                "tool_name": "delegate_task",
+                "tool_id": "c1",
+                "outcome": "served"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "type": "message",
+              "source": {
+                "channel_id": "coder"
+              },
+              "content": {
+                "type": "text",
+                "body": "On it."
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "r1",
+            "event": {
+              "type": "message",
+              "source": {
+                "channel_id": "coder"
+              },
+              "content": {
+                "type": "text",
+                "body": "Fixed."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -7,7 +7,8 @@
     "§10.6.8"
   ],
   "requirements": [
-    "RK-10.6.5-013"
+    "RK-10.6.5-013",
+    "RK-10.6.8-015"
   ],
   "notes": "Python: turns/_owner_calls.py, whose calls of a turn the owner ends are cancelled with it; tests/test_turns_owner_tools.py::test_a_turn_cut_withdraws_its_calls_from_the_owner (a turn its owner cuts). The killed executor never sends call_cancel (§10.6.8), so only the owner's own cancel reaches the verb's 'withdrawn' gate. A turn the owner cuts with its executor alive is answered by the executor's call_cancel too (RK-10.6.5-012): no scenario tells the two apart.",
   "setup": {

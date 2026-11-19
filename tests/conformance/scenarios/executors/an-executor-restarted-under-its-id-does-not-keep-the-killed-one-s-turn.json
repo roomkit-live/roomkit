@@ -1,0 +1,207 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-restarted-under-its-id-does-not-keep-the-killed-one-s-turn",
+  "title": "An executor killed during a turn and started again at once under its id beats for none of the killed one's turns: the turn still fails executor_lost, and the executor started again takes the room's next turn",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-012"
+  ],
+  "notes": "Python: tests/test_turns_redis.py::test_an_executor_restarted_under_its_id_does_not_hold_the_dead_one_s_turn kills a real process and starts another under the same id. Here first is killed while a tool holds its turn and served again under the same id before the turn is lost: what the new one beats keeps nothing of the killed one alive. roomkit-rs's Redis runner serves the new one on a node of its own and, since a later step starts it again, returns from the kill at once, as a supervisor's restart would: its beats must keep nothing of the killed one's turn alive. roomkit's harness serves it again in the owner's process, where it is another executor object under the same id.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 1000,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "slow",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Back."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "slow",
+            "gate": "tool",
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "executor.kill",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "first"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Looking."
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "pending"
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "failed"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Back."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 2
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 2
+        }
+      ]
+    }
+  }
+}

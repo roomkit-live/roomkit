@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-s-error-message-reaches-on-error-and-never-a-model",
+  "title": "A turn on an executor apart that fails crosses its error to the room owner: ON_ERROR and the caller read its message, and neither the room nor the agent's next request carries it",
+  "rules": [
+    "§10.6.8",
+    "§10.6.6",
+    "§9.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-10.6.6-006",
+    "RK-10.6.8-050"
+  ],
+  "notes": "Python: turns/_error_codec.py; tests/test_turns_failures.py. coder runs on first; its first generation fails with a message holding a key. The error crosses as an error record and the owner rebuilds it: the kit's ON_ERROR hook fires on the owner from the turn's error frame, and it and the caller read the message. The room's timeline holds only the messages, and the next turn's request to the model carries the two messages people wrote and nothing of the error.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "fails": "upstream refused key sk-live-4f9c2e"
+            },
+            {
+              "text": "Back."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "sk-live-4f9c2e"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "Back."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "coder"
+            },
+            "content": {
+              "type": "text",
+              "body": {
+                "$contains": "sk-live-4f9c2e"
+              }
+            },
+            "metadata": {
+              "error": {
+                "$contains": "sk-live-4f9c2e"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "coder": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            },
+            {
+              "role": "user",
+              "text": "Again."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-cancel-for-a-channel-without-steering-cuts-its-turn",
+  "title": "A Cancel steered at an intelligence channel that has no steering of its own reaches its running turn as the turn's cancel: the steer counts one loop reached and the turn ends without its answer",
+  "rules": [
+    "§10.6.8",
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-10.6.8-038"
+  ],
+  "notes": "Python: tests/test_turns_control.py::test_a_cancel_for_a_channel_without_steering_cuts_its_turn. agent is a scripted intelligence channel, which answers no steering directive; its turn is held at a gate. The Cancel is sent as the turn's cancel and counts as one loop reached; the turn ends while the gate is still shut, and the answer the reaction would have given once it opened is never stored.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "gate": "held",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "steer",
+      "room_id": "r1",
+      "channel_id": "agent",
+      "directive": {
+        "type": "cancel",
+        "reason": "Alice pressed stop"
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        }
+      ]
+    }
+  }
+}

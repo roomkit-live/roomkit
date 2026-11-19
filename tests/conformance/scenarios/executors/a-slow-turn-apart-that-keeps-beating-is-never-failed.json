@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-slow-turn-apart-that-keeps-beating-is-never-failed",
+  "title": "A turn on an executor apart whose channel takes four times the heartbeat timeout to answer, the turn sending nothing meanwhile, is never failed by the owner: it answers",
+  "rules": [
+    "§10.6.8",
+    "§13.6"
+  ],
+  "requirements": [
+    "RK-10.6.8-006",
+    "RK-10.6.8-013"
+  ],
+  "notes": "Python: turns/_executor_turn.py _beat and turns/_owner_turn.py _beat_while_open; tests/test_turns_failures.py::test_a_tool_blocking_the_loop_past_the_heartbeat_timeout_is_not_lost. coder is a scripted intelligence channel held by its declaration alone; its turn waits 1.6 seconds before it answers, four times heartbeat_timeout, and sends nothing else meanwhile. The heartbeats tell this slow turn from a lost executor: the framework sets no timeout of its own around on_event, the answer is stored and the caller reads no error.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 20,
+        "heartbeat_timeout_ms": 400,
+        "accept_ms": 2000,
+        "cancel_ms": 100
+      }
+    },
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "delay_ms": 1600,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Sorry for the wait."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Take your time."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Take your time."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "Sorry for the wait."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
