@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-declared-worker-s-result-tool-rides-its-child-room-s-requests-alone",
+  "title": "The result tool of a task delegated to an agent the kit holds by its declaration is kept by the room owner for the child room: the one build serving the child room and another room at once finds it in the child room's request alone",
+  "rules": [
+    "§10.6.2",
+    "§23.3"
+  ],
+  "requirements": [
+    "RK-10.6.2-012"
+  ],
+  "notes": "Python: tests/test_owner_tool_store.py test_a_declared_worker_hands_its_structured_result_back; tasks/a-result-tool-is-declared-in-the-child-room-only for the agent registered live. The child's turn holds at a gate while the customer room's turn runs on the same build: the result tool rides the child room's request alone, and its call is the task's result. The child room is $r1.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "declared": true,
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "child",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Private result."
+                  }
+                }
+              ],
+              "gate": "child"
+            },
+            {
+              "text": "Public answer."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "worker"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": []
+      },
+      {
+        "id": "customer",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "worker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Private task.",
+      "wait": true,
+      "require_structured_result": true,
+      "background": true,
+      "as": "child"
+    },
+    {
+      "wait_for": "child"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "customer",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "child"
+    },
+    {
+      "await": "child",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "{\"status\": \"completed\", \"summary\": \"Private result.\", \"data\": {}, \"deliverables\": [], \"reason\": \"\"}"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": [
+        {
+          "tools": {
+            "submit_result": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "submit_result": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "customer": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Public answer."
+          },
+          "source": {
+            "channel_id": "worker"
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "worker",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "build": 1,
+          "room_id": "$r1"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "build": 1,
+          "room_id": "customer"
+        }
+      ]
+    }
+  }
+}

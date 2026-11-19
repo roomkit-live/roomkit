@@ -1,0 +1,67 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-declared-agent-binds-as-an-intelligence-channel-only",
+  "title": "A channel the kit holds by its declaration alone is refused as a transport binding, nothing written, and binds as an intelligence channel",
+  "rules": [
+    "§10.6.2"
+  ],
+  "requirements": [
+    "RK-10.6.2-009"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_a_declared_channel_is_attached_as_an_intelligence_channel_only. A binding without a category takes the channel's own, which a declaration gives as intelligence (§10.6.2).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "ana",
+      "category": "transport",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "r1",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "ana",
+      "expect": {
+        "result": {
+          "channel_id": "ana",
+          "category": "intelligence"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "ana": {
+          "category": "intelligence"
+        }
+      }
+    }
+  }
+}

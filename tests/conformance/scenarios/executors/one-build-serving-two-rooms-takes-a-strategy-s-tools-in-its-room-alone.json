@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/one-build-serving-two-rooms-takes-a-strategy-s-tools-in-its-room-alone",
+  "title": "One build of an agent serving two rooms, one holding a Supervisor it supervises, is given the strategy's tools in that room's requests alone",
+  "rules": [
+    "§10.6.1",
+    "§10.6.2",
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-10.6.1-008",
+    "RK-10.6.2-012"
+  ],
+  "notes": "Python: tests/test_owner_tool_store.py test_a_strategy_s_tools_are_the_owner_s_never_the_agent_s. The owner keeps the tools the install sets up for sup in r1 and sends them with r1's requests: the same build answers in r2 without them, which a tool installed on the channel object would have reached.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "declared": true,
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "In r1."
+            },
+            {
+              "text": "In r2."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "declared": true,
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "sup",
+          "researcher"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sup",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look up Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "In r1."
+          },
+          "source": {
+            "channel_id": "sup"
+          }
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "In r2."
+          },
+          "source": {
+            "channel_id": "sup"
+          }
+        }
+      ]
+    },
+    "models": {
+      "researcher": [],
+      "sup": [
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "sup",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "sup",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "sup",
+          "build": 1,
+          "room_id": "r2"
+        }
+      ]
+    }
+  }
+}

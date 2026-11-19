@@ -1,0 +1,227 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-channel-call-leaves-the-room-s-state-as-a-turn-does",
+  "title": "A channel call leaves a room's state as a turn does: the next turn names it and keeps the state, a call after that turn names it and keeps it too, and a call back on an executor whose state a turn and a call elsewhere made stale drops that state before its verb",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-10.6.2-035",
+    "RK-10.6.2-036"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_a_channel_call_drops_a_state_a_turn_elsewhere_made_stale, test_a_turn_after_a_channel_call_names_it_and_keeps_its_state. Dropping reads as the channel's on_room_detached (§10.6.2). What the calls keep is also stored with the room, so the read back on first answers what second's call left.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "m": "sonnet"
+      },
+      "expect": {
+        "result": {
+          "m": "sonnet"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "result": {
+          "m": "sonnet"
+        }
+      }
+    },
+    {
+      "call": "executor.pause",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "m": "opus"
+      },
+      "expect": {
+        "result": {
+          "m": "opus"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      }
+    },
+    {
+      "call": "executor.resume",
+      "executor": "first"
+    },
+    {
+      "call": "executor.close",
+      "executor": "second"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "result": {
+          "m": "opus"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1",
+          "verb": "keep"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1",
+          "verb": "read"
+        },
+        {
+          "call": "on_room_detached",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1",
+          "verb": "read"
+        }
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1",
+          "verb": "keep"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "close",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

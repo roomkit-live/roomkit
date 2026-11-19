@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-declared-agent-s-delegate-task-is-kept-by-the-owner-for-each-build",
+  "title": "delegate_task set up on an agent the kit holds by its declaration is kept by the room owner: each build of the agent finds it in its request, a build made after a release included, and its call is served by the owner",
+  "rules": [
+    "§10.6.2",
+    "§10.6.5",
+    "§23.4"
+  ],
+  "requirements": [
+    "RK-10.6.2-012"
+  ],
+  "notes": "Python: tests/test_turns_owner_tools.py test_a_supervisors_strategy_tool_is_served_on_the_owner; executors/a-turn-apart-calls-a-tool-the-room-owner-serves. The setup is made on the owner before any build; the build made after release_channel finds the tool all the same, so nothing was installed on a build. The close runs apart from the turns, so the executor's list is matched in any order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix it."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Fixed."
+            },
+            {
+              "text": "Again on it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "worker"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "coder",
+      "handler": "tool",
+      "targets": [
+        [
+          "worker",
+          "Fixes"
+        ]
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "release_channel",
+      "channel_id": "coder"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Once more."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": [
+        {
+          "tools": {
+            "delegate_task": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "delegate_task": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        {
+          "tools": {
+            "delegate_task": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "delegate_task": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "close",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 2
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "build": 2,
+            "room_id": "r1"
+          }
+        ]
+      },
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "worker",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "build": 1,
+          "room_id": "$r1"
+        }
+      ]
+    }
+  }
+}

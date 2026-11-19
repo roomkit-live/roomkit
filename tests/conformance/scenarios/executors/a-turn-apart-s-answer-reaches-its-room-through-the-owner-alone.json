@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-s-answer-reaches-its-room-through-the-owner-alone",
+  "title": "An answer a turn on an executor apart gives is stored and delivered once, by the room owner, and refused, stored nowhere, once a step closed the room while the turn ran",
+  "rules": [
+    "§10.6",
+    "§5.1"
+  ],
+  "requirements": [
+    "RK-10.6-006"
+  ],
+  "notes": "Python: tests/test_executor_without_store.py; rooms/an-agent-s-answer-whose-room-a-step-closes-during-its-generation-is-refused for an agent the kit holds live. The executor commits, delivers and broadcasts nothing: its first answer is stored once and reaches sms once, through the owner; its second, held at a gate while a step closes the room, is refused by the owner's commit and stored nowhere, which an executor committing on its own would have stored.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First."
+            },
+            {
+              "gate": "generate",
+              "text": "Too late"
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "generate"
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "open": "generate"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "First."
+          },
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again"
+          },
+          "source": {
+            "channel_id": "sms"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "First."
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "agent",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "build": 1,
+          "room_id": "room-1"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "build": 1,
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}

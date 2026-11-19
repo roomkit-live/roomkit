@@ -1,0 +1,307 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-thought-a-build-let-go-past-the-bound-held-starts-anew",
+  "title": "An executor keeping one agent built lets go of an agent's build when it builds another, and the room's thought that build held starts anew at the agent's next build, as after a restart",
+  "rules": [
+    "§10.6.2",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.6.2-017",
+    "RK-10.6.2-028"
+  ],
+  "notes": "Python: tests/test_turns_channel_release.py; speaking/reattaching-starts-with-an-empty-thought-streaming for a detach. The thought is the build's, never the room's (§10.6.2): the second turn reads the first turn's thought in the same build; the build that replaces the one let go reads none. The closes run apart from the turns, so the executor's list is matched in any order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They discuss the weather.",
+                "want_to_say": [],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From other."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "agent",
+          "other"
+        ],
+        "max_channels": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "other",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We need the price."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "And the date."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Anything else?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "And the date."
+            }
+          },
+          "thought": {
+            "text": "They discuss the weather.",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Anything else?"
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "previous": {
+            "text": "They discuss the weather.",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From other."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "pool": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "agent",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "agent",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "agent",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "built",
+            "channel_id": "other",
+            "build": 1
+          },
+          {
+            "call": "close",
+            "channel_id": "agent",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "other",
+            "build": 1,
+            "room_id": "r2"
+          },
+          {
+            "call": "built",
+            "channel_id": "agent",
+            "build": 2
+          },
+          {
+            "call": "close",
+            "channel_id": "other",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "agent",
+            "build": 2,
+            "room_id": "r1"
+          }
+        ]
+      }
+    }
+  }
+}

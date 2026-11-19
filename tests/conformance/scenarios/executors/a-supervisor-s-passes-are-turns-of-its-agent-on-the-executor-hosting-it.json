@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-supervisor-s-passes-are-turns-of-its-agent-on-the-executor-hosting-it",
+  "title": "A Supervisor over agents declared on executors runs on the room owner: its first pass and its presentation of the results are each a turn of the supervising agent on the executor hosting it, and the worker's task a turn on its own",
+  "rules": [
+    "§10.6.1",
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-10.6.1-006",
+    "RK-10.6.1-007",
+    "RK-10.6.2-012"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_turns.py test_a_supervisors_runner_runs_on_the_owner; tests/test_declared_strategies.py. A runner taken by the executor inside one turn of sup would show one on_event there and make its passes in that build; on the owner each pass is a turn of its own. The workers' child room is $r1.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "declared": true,
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "declared": true,
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "sup"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "analyst"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Acme, in short."
+          },
+          "source": {
+            "channel_id": "sup"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "models": {
+      "analyst": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Acme"
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "sup",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "sup",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "sup",
+          "build": 1,
+          "room_id": "r1"
+        }
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "analyst",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "analyst",
+          "build": 1,
+          "room_id": "$r1"
+        }
+      ]
+    }
+  }
+}

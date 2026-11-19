@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-declared-agent-greets-the-room-a-first-message-creates",
+  "title": "An agent the kit holds by its declaration greets the room a first message creates as the same agent registered live does, before the message, and its turn runs on the executor hosting it",
+  "rules": [
+    "§10.6.2",
+    "§19.1"
+  ],
+  "requirements": [
+    "RK-10.6.2-011"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_a_declared_agent_greets_as_the_live_one_does. greeting/an-agent-greets-the-room-a-first-message-creates is the same agent registered live, with the same outcome: the owner reads the greeting from the declaration, and the executor builds the agent only for its turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "How can I help?"
+              ]
+            }
+          ]
+        },
+        "agent": {
+          "greeting": "Welcome!"
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agent",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "How can I help?"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          },
+          {
+            "content": {
+              "body": "How can I help?"
+            }
+          }
+        ]
+      }
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "agent",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "build": 1,
+          "room_id": "$r1"
+        }
+      ]
+    }
+  }
+}
