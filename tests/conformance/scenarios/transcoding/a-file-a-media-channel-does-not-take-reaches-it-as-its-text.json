@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-file-a-media-channel-does-not-take-reaches-it-as-its-text",
+  "title": "A channel naming MEDIA receives a file of a type outside its non-empty supported_media_types, or of a known size over its max_media_size_bytes, as its text form, alone or in a composite, and a file it takes as it is",
+  "rules": [
+    "§5.8",
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-5.8-007"
+  ],
+  "notes": "mms takes JPEG files up to 1000 bytes. The PNG and the 5000-byte JPEG reach it as text, as they reach a channel that does not name MEDIA (transcoding/a-media-reaches-a-text-channel-as-its-label); the 1000-byte JPEG, at the limit, reaches it as a file. A composite holding the PNG reaches it as one text. A native edit carrying a file is not asserted: §6.6 delivers it without transcoding.",
+  "setup": {
+    "channels": [
+      {
+        "id": "mms",
+        "type": "mms",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/jpeg"
+          ],
+          "max_media_size_bytes": 1000
+        }
+      },
+      {
+        "id": "console",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "mms"
+          },
+          {
+            "channel_id": "console"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/p.png",
+          "mime_type": "image/png",
+          "caption": "A drawing",
+          "size_bytes": 200
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/big.jpg",
+          "mime_type": "image/jpeg",
+          "caption": "A large photo",
+          "size_bytes": 5000
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/small.jpg",
+          "mime_type": "image/jpeg",
+          "caption": "A small photo",
+          "size_bytes": 1000
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "Look"
+            },
+            {
+              "type": "media",
+              "url": "https://example.com/p.png",
+              "mime_type": "image/png",
+              "caption": "A drawing",
+              "size_bytes": 200
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "mms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "[Media: A drawing]"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "[Media: A large photo]"
+            }
+          },
+          {
+            "content": {
+              "type": "media",
+              "url": "https://example.com/small.jpg",
+              "mime_type": "image/jpeg",
+              "caption": "A small photo",
+              "size_bytes": 1000
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Look\n[Media: A drawing]"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

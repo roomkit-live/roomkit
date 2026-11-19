@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/add-member-records-each-role-as-given",
+  "title": "add_member records each ParticipantRole as given, read back from the call, the member list and the store",
+  "rules": [
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-5.5-011"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "owner-1",
+      "role": "owner",
+      "expect": {
+        "result": {
+          "id": "owner-1",
+          "role": "owner"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "agent-1",
+      "role": "agent",
+      "expect": {
+        "result": {
+          "id": "agent-1",
+          "role": "agent"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "member-1",
+      "role": "member",
+      "expect": {
+        "result": {
+          "id": "member-1",
+          "role": "member"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "observer-1",
+      "role": "observer",
+      "expect": {
+        "result": {
+          "id": "observer-1",
+          "role": "observer"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "bot-1",
+      "role": "bot",
+      "expect": {
+        "result": {
+          "id": "bot-1",
+          "role": "bot"
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "owner-1",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "id": "agent-1",
+              "role": "agent",
+              "status": "active"
+            },
+            {
+              "id": "member-1",
+              "role": "member",
+              "status": "active"
+            },
+            {
+              "id": "observer-1",
+              "role": "observer",
+              "status": "active"
+            },
+            {
+              "id": "bot-1",
+              "role": "bot",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "owner-1",
+            "role": "owner"
+          },
+          {
+            "id": "agent-1",
+            "role": "agent"
+          },
+          {
+            "id": "member-1",
+            "role": "member"
+          },
+          {
+            "id": "observer-1",
+            "role": "observer"
+          },
+          {
+            "id": "bot-1",
+            "role": "bot"
+          }
+        ]
+      }
+    }
+  }
+}

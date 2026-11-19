@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-its-channel-reads-elsewhere-is-found-through-the-correspondent-its-attach-names",
+  "title": "A binding whose channel reads its recipient under another key than its declared one is found at step 1 through the correspondent its attach names, on a channel serving other rooms",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-018"
+  ],
+  "notes": "The channel declares phone_number and its recipient_address reads reached_at. Each attach gives the recipient under reached_at and names that address the binding's correspondent; with two rooms bound to the channel, step 3 finds no single room, so each correspondent reaches their room by step 1 alone. The other half, step 3: routing/a-binding-its-channel-reads-elsewhere-is-found-at-step-three-as-the-one-room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-bob"
+      },
+      {
+        "id": "room-carol"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-bob",
+      "channel_id": "sms",
+      "metadata": {
+        "reached_at": "+15550000002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-carol",
+      "channel_id": "sms",
+      "metadata": {
+        "reached_at": "+15550000003"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000003"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-bob"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "Carol here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-carol"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-bob": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "room-carol": {
+        "sms": {
+          "participant_id": "+15550000003"
+        }
+      }
+    },
+    "timeline": {
+      "room-bob": [
+        {
+          "content": {
+            "body": "Bob here"
+          }
+        }
+      ],
+      "room-carol": [
+        {
+          "content": {
+            "body": "Carol here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,385 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/a-delivery-is-refused-alike-for-no-recipient-and-a-value-that-is-not-one",
+  "title": "A delivery to a binding holding no value under its recipient key (absent, null, blank) and one holding a value that is not a recipient (a float) are refused alike, before any send: delivery_failed and a failed result of code no_recipient",
+  "rules": [
+    "§5.7",
+    "§10.2"
+  ],
+  "requirements": [
+    "RK-5.7-019"
+  ],
+  "notes": "The sms bindings are written through the store, as an attach would read and keep these values its own way. The sms channel's deliver() is never reached.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-absent",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-null",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-blank",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-float",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-absent",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-null",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": null
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-blank",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "   "
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-float",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": 42.5
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-absent",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-absent"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-null",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-null"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-blank",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-blank"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-float",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-float"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-absent": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      ],
+      "room-null": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      ],
+      "room-blank": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      ],
+      "room-float": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "sms": {
+              "channel_id": "sms",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-absent": {
+        "sms": []
+      },
+      "room-null": {
+        "sms": []
+      },
+      "room-blank": {
+        "sms": []
+      },
+      "room-float": {
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-absent": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_failed",
+              "channel_id": "sms",
+              "error": {
+                "$contains": "no_recipient"
+              }
+            },
+            {
+              "event": "broadcast_partial_failure",
+              "failed": 1
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ],
+      "room-null": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_failed",
+              "channel_id": "sms",
+              "error": {
+                "$contains": "no_recipient"
+              }
+            },
+            {
+              "event": "broadcast_partial_failure",
+              "failed": 1
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ],
+      "room-blank": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_failed",
+              "channel_id": "sms",
+              "error": {
+                "$contains": "no_recipient"
+              }
+            },
+            {
+              "event": "broadcast_partial_failure",
+              "failed": 1
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ],
+      "room-float": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_failed",
+              "channel_id": "sms",
+              "error": {
+                "$contains": "no_recipient"
+              }
+            },
+            {
+              "event": "broadcast_partial_failure",
+              "failed": 1
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

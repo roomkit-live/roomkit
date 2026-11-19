@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/a-participant-record-is-read-back-whole",
+  "title": "A participant's record is read back whole, each member by its meaning: its room, its primary and reached channels, its identification, its candidates while ambiguous, who resolved it and when, and the integrator's reference and data kept",
+  "rules": [
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-5.5-001",
+    "RK-5.5-023"
+  ],
+  "notes": "p1 is seeded ambiguous with an external reference and metadata, reaches a second channel, then is resolved; p3 stays ambiguous. The instants are only present: their order is not this unit's.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id1",
+        "display_name": "Alice"
+      },
+      {
+        "id": "id2"
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p1",
+            "channel_id": "sms",
+            "identification": "ambiguous",
+            "candidates": [
+              "id1",
+              "id2"
+            ],
+            "external_id": "crm-42",
+            "metadata": {
+              "tier": "gold"
+            }
+          },
+          {
+            "id": "p3",
+            "channel_id": "ws",
+            "display_name": "Dana",
+            "role": "observer",
+            "identification": "ambiguous",
+            "candidates": [
+              "id1",
+              "id2"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "p1",
+      "expect": {
+        "result": {
+          "id": "p1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ]
+        }
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p1",
+      "identity_id": "id1",
+      "resolved_by": "advisor1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "p1",
+            "room_id": "room-1",
+            "channel_id": "sms",
+            "display_name": "Alice",
+            "role": "member",
+            "status": "active",
+            "identification": "identified",
+            "identity_id": "id1",
+            "candidates": null,
+            "connected_via": [
+              "sms",
+              "ws"
+            ],
+            "external_id": "crm-42",
+            "resolved_at": {
+              "$present": true
+            },
+            "resolved_by": "advisor1",
+            "joined_at": {
+              "$present": true
+            },
+            "metadata": {
+              "tier": "gold"
+            }
+          },
+          {
+            "id": "p3",
+            "room_id": "room-1",
+            "channel_id": "ws",
+            "display_name": "Dana",
+            "role": "observer",
+            "status": "active",
+            "identification": "ambiguous",
+            "identity_id": null,
+            "candidates": [
+              "id1",
+              "id2"
+            ],
+            "connected_via": [
+              "ws"
+            ],
+            "external_id": null,
+            "resolved_at": null,
+            "resolved_by": null,
+            "joined_at": {
+              "$present": true
+            },
+            "metadata": {}
+          }
+        ]
+      }
+    }
+  }
+}

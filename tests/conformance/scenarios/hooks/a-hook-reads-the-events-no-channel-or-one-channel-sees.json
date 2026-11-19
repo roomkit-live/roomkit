@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-reads-the-events-no-channel-or-one-channel-sees",
+  "title": "A hook's context lists the room's events whole: an event stored with visibility none and one limited to one channel are in the recent_events of the next message's hook",
+  "rules": [
+    "§7.5",
+    "§9.1"
+  ],
+  "requirements": [
+    "RK-7.5-034"
+  ],
+  "notes": "Python: tests/test_context_visibility.py::test_hooks_still_see_the_whole_timeline. Visibility is a rule between the room and its channels; host code reads the timeline whole.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws3",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ws3"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "capture",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "u-ws1",
+        "content": {
+          "type": "text",
+          "body": "hidden"
+        },
+        "visibility": "none"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "u-ws1",
+        "content": {
+          "type": "text",
+          "body": "for ws2 only"
+        },
+        "visibility": "ws2"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "u-ws2",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "visibility": "none",
+          "content": {
+            "body": "hidden"
+          }
+        },
+        {
+          "index": 1,
+          "visibility": "ws2",
+          "content": {
+            "body": "for ws2 only"
+          }
+        },
+        {
+          "index": 2,
+          "visibility": "all",
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "capture": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "hidden"
+            }
+          },
+          "recent_events": []
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "for ws2 only"
+            }
+          },
+          "recent_events": [
+            "room-1#0"
+          ]
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1"
+          ]
+        }
+      ]
+    }
+  }
+}

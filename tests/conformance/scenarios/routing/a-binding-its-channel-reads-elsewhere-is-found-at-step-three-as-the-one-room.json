@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-its-channel-reads-elsewhere-is-found-at-step-three-as-the-one-room",
+  "title": "A binding stored with its recipient under the key its channel reads in place of its declared one, naming no correspondent, is found at step 3 as the one room bound to the channel, and its recipient is admitted",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-018"
+  ],
+  "notes": "The channel declares phone_number and its recipient_address reads reached_at. The binding is written through the store, so no attach names its correspondent, and step 1, reading the declared key as stored, finds nothing; the room is the one bound to the channel, and Bob, the recipient the channel reads, is admitted there and recorded as its correspondent. The stranger's side: routing/step-three-reads-a-recipient-by-the-channel-s-own-method.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "reached_at": "+15550000002"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

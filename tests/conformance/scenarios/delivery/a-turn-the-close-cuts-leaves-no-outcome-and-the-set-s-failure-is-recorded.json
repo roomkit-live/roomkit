@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-turn-the-close-cuts-leaves-no-outcome-and-the-set-s-failure-is-recorded",
+  "title": "A delivery set whose agent turn the kit's close cuts records on its event the transport that failed, and no outcome for the cut turn",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-5.13-005",
+    "RK-5.13-007"
+  ],
+  "notes": "The bot's turn is held at a gate no step opens; the close starts while it is held and cuts it. ws refuses its delivery. The caller and the stored event read ws's failure and nothing for bot. What the close's grace cuts is not this scenario's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "refuse": {
+              "error": "rejected",
+              "code": "550",
+              "retryable": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B1"
+                }
+              }
+            ],
+            "gate": "bot-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "bot"
+        ]
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "bot-runs"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "channel_id": "ws",
+              "status": "failed",
+              "error": {
+                "code": "550",
+                "retryable": false
+              }
+            },
+            "bot": {
+              "$absent": true
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "closing"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "status": "delivered",
+          "delivery_results": {
+            "ws": {
+              "channel_id": "ws",
+              "status": "failed",
+              "error": {
+                "code": "550",
+                "retryable": false
+              }
+            },
+            "bot": {
+              "$absent": true
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

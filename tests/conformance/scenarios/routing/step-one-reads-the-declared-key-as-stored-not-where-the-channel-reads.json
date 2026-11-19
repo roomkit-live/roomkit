@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/step-one-reads-the-declared-key-as-stored-not-where-the-channel-reads",
+  "title": "Step 1 reads a binding's recipient under the channel's declared key, as stored: a sender a binding names only under the key its channel reads in place of it, on a channel bound to two rooms, is found nowhere and gets a room of their own",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-018"
+  ],
+  "notes": "The channel declares phone_number and its recipient_address reads reached_at. Both bindings are written through the store with a recipient under reached_at alone and no correspondent. Step 1 finds Bob under neither, and step 3 finds no single room, so Bob gets $r1, though room-bob's binding delivers to him. The ways such a binding is found: routing/a-binding-its-channel-reads-elsewhere-is-found-through-the-correspondent-its-attach-names and routing/a-binding-its-channel-reads-elsewhere-is-found-at-step-three-as-the-one-room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-bob"
+      },
+      {
+        "id": "room-carol"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-bob",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-carol",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000003"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-bob": [],
+      "room-carol": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-attach-naming-no-category-takes-the-channel-s-own",
+  "title": "An attach naming no category binds the channel in its own category, whatever its type: an intelligence channel takes part as one, handed the message as a turn, a transport as a transport, delivered it",
+  "rules": [
+    "§5.7"
+  ],
+  "requirements": [
+    "RK-5.7-004"
+  ],
+  "notes": "relay is a WebSocket channel declaring itself an intelligence channel: its binding follows its own category, not its type.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "relay",
+        "type": "websocket",
+        "category": "intelligence"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ai",
+      "expect": {
+        "result": {
+          "channel_id": "ai",
+          "category": "intelligence"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms",
+          "category": "transport"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "relay",
+      "expect": {
+        "result": {
+          "channel_id": "relay",
+          "category": "intelligence"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "channel_id": "ws",
+          "category": "transport"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "ai": {
+          "category": "intelligence"
+        },
+        "sms": {
+          "category": "transport"
+        },
+        "relay": {
+          "category": "intelligence"
+        },
+        "ws": {
+          "category": "transport"
+        }
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ],
+        "relay": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ],
+        "relay": [],
+        "ai": []
+      }
+    }
+  }
+}

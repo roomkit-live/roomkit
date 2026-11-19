@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-media-channel-with-no-limit-takes-every-file-as-it-is",
+  "title": "A channel naming MEDIA with an empty supported_media_types takes a file of any type, one with a null max_media_size_bytes a file of any size, and one with a limit a file of unknown size, each as it is",
+  "rules": [
+    "§5.8",
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-5.8-008"
+  ],
+  "notes": "open declares no type and no size limit; capped declares JPEG files up to 1000 bytes and is handed a JPEG with no size_bytes.",
+  "setup": {
+    "channels": [
+      {
+        "id": "open",
+        "type": "mms",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ],
+          "supported_media_types": [],
+          "max_media_size_bytes": null
+        }
+      },
+      {
+        "id": "capped",
+        "type": "whatsapp",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/jpeg"
+          ],
+          "max_media_size_bytes": 1000
+        }
+      },
+      {
+        "id": "console",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-open",
+        "bindings": [
+          {
+            "channel_id": "open"
+          },
+          {
+            "channel_id": "console"
+          }
+        ]
+      },
+      {
+        "id": "room-capped",
+        "bindings": [
+          {
+            "channel_id": "capped"
+          },
+          {
+            "channel_id": "console"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-open",
+      "channel_id": "console",
+      "content": {
+        "type": "media",
+        "url": "https://example.com/report.pdf",
+        "mime_type": "application/pdf",
+        "caption": "The report",
+        "size_bytes": 50000000
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-capped",
+      "channel_id": "console",
+      "content": {
+        "type": "media",
+        "url": "https://example.com/photo.jpg",
+        "mime_type": "image/jpeg",
+        "caption": "A photo"
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-open": {
+        "open": [
+          {
+            "content": {
+              "type": "media",
+              "url": "https://example.com/report.pdf",
+              "mime_type": "application/pdf",
+              "caption": "The report",
+              "size_bytes": 50000000
+            }
+          }
+        ]
+      },
+      "room-capped": {
+        "capped": [
+          {
+            "content": {
+              "type": "media",
+              "url": "https://example.com/photo.jpg",
+              "mime_type": "image/jpeg",
+              "caption": "A photo",
+              "size_bytes": null
+            }
+          }
+        ]
+      }
+    }
+  }
+}

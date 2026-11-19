@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-routed-on-a-webhook-writes-nothing-as-its-recipient",
+  "title": "A message routed on a channel that delivers to a URL writes nothing of it as the binding's recipient: the binding's metadata is the one its attach wrote",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-012",
+    "RK-5.7-014"
+  ],
+  "notes": "A copy of routing/a-webhook-s-recipient-names-no-correspondent that reads the binding after the message: the metadata read before it, $as attached, is the whole metadata after it. Whether the sender is recorded as the binding's correspondent is not this unit's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "crm",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello back"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "bridge"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bridge",
+      "channel_id": "crm",
+      "metadata": {
+        "recipient_id": "https://crm.example.com/api/messages"
+      },
+      "expect": {
+        "result": {
+          "metadata": {
+            "recipient_id": "https://crm.example.com/api/messages"
+          }
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "bridge",
+      "channel_id": "crm",
+      "expect": {
+        "result": {
+          "metadata": {
+            "$as": "attached"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "crm",
+        "sender_id": "crm-system",
+        "content": {
+          "type": "text",
+          "body": "Subscription expires soon"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "bridge"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "bridge": {
+        "crm": {
+          "metadata": {
+            "$as": "attached"
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "bridge": {
+        "crm": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello back"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

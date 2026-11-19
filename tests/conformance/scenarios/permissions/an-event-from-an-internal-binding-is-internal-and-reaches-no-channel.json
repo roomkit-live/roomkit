@@ -1,0 +1,201 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-event-from-an-internal-binding-is-internal-and-reaches-no-channel",
+  "title": "A message whose source binding the store holds as internal is committed internal whatever its own visibility, all or transport, and reaches no channel: no transport is delivered it, no agent is asked about it, and no later model reads it",
+  "rules": [
+    "§7.3",
+    "§7.5"
+  ],
+  "requirements": [
+    "RK-7.3-014",
+    "RK-7.3-031"
+  ],
+  "notes": "No public door writes internal (RK-7.3-020); the binding is written through the store, the way to put internal on one side of the intersection. The agent's model is asked once, for Hello, and reads it alone. Not asserted: the framework's own internal record (the voice interruption record, §6.4), and the contexts handed to a transport's deliver().",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "obs",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "obs"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "visibility": "internal"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "two"
+        },
+        "visibility": "transport"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "visibility": "internal",
+          "content": {
+            "body": "one"
+          }
+        },
+        {
+          "index": 1,
+          "visibility": "internal",
+          "content": {
+            "body": "two"
+          }
+        },
+        {
+          "index": 2,
+          "visibility": "all",
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Hi."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "obs": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          },
+          {
+            "content": {
+              "body": "Hi."
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "Hi."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
