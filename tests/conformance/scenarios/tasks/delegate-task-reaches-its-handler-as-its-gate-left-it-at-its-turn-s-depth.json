@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/delegate-task-reaches-its-handler-as-its-gate-left-it-at-its-turn-s-depth",
+  "title": "delegate_task, served by the room owner, reaches its handler with the arguments a BEFORE_TOOL_USE hook rewrote, and its handler runs at the depth of the turn that called it: the task is the rewritten one, and its result is handed back at the turn's depth",
+  "rules": [
+    "§10.6.5",
+    "§21.4",
+    "§23.3",
+    "§23.4",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.6.5-009"
+  ],
+  "notes": "Python: turns/wire.py ToolCall, which carries the call's arguments as the gate left them and the turn's chain depth to the owner (turns/_owner_calls.py), where the DelegateHandler reads them (tasks/delegate.py); tests/test_turns_owner_tools.py::test_a_handler_runs_on_the_owner_under_what_the_turn_gave_its_call. The message arrives at depth 1, so the assistant's turn answers at depth 2, and the result the task hands back reaches it at that depth (§23.3 step 8): its answer to the result is at depth 3, where a handler run at depth 0 would hand it back at 0 and the answer be at 1. The rows between are the turn's tool-call rows and the record of the instruction it read. The owner floors the handler's depth at the turn's response depth (turns/_owner_calls.py), so the depth the tool_call message itself carries is not observed here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Fixed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "assistant",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix the test."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "The build is fixed."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "assistant"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "arguments": {
+                  "agent": "worker",
+                  "task": "Fix the build."
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "assistant",
+      "handler": "tool"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "The test fails."
+      },
+      "chain_depth": 1
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_input": "Fix the build."
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "The test fails."
+          }
+        },
+        "$any",
+        "$any",
+        {
+          "chain_depth": 2,
+          "source": {
+            "channel_id": "assistant"
+          },
+          "content": {
+            "type": "text",
+            "body": "On it."
+          }
+        },
+        "$any",
+        {
+          "chain_depth": 3,
+          "source": {
+            "channel_id": "assistant"
+          },
+          "content": {
+            "type": "text",
+            "body": "The build is fixed."
+          }
+        }
+      ]
+    },
+    "models": {
+      "worker": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Fix the build."
+            }
+          ]
+        }
+      ],
+      "assistant": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        "$any"
+      ]
+    },
+    "hooks": {
+      "gate": [
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "name": "delegate_task",
+            "arguments": {
+              "agent": "worker",
+              "task": "Fix the test."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

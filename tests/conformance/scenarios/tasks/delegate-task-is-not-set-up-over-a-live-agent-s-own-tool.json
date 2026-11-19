@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/delegate-task-is-not-set-up-over-a-live-agent-s-own-tool",
+  "title": "setup_delegation on an agent the kit holds live whose own tools declare delegate_task is refused, and nothing is set up: the agent declares its own tool alone, and its call reaches its own handler",
+  "rules": [
+    "§10.6.5",
+    "§23.4",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-10.6.5-016"
+  ],
+  "notes": "Python: tests/test_owner_tool_store.py::test_the_owner_refuses_a_tool_a_live_agent_already_has; channels/declared.py owner_tools_of, whose registry refuses a name the agent serves (ToolNameCollisionError). roomkit-rs: RoomKitError::ToolNameCollision. An agent held by its declaration alone is set up all the same, its executor refusing the turn (executors/an-executor-refuses-a-turn-whose-channel-declares-an-owner-s-tool).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      },
+      {
+        "id": "assistant",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix it."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "delegate_task",
+            "description": "The host's own.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "own"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "assistant"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "assistant",
+      "handler": "tool",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Fix the test."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "assistant": [
+        {
+          "tool_names": [
+            "delegate_task",
+            "read_stored_result"
+          ],
+          "tool_definitions": {
+            "delegate_task": {
+              "description": "The host's own."
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "own",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "worker": []
+    },
+    "rooms": {
+      "$r1": null
+    },
+    "hooks": {
+      "delegated": []
+    }
+  }
+}

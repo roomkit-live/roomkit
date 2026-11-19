@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/work-a-turn-began-sends-at-the-depth-of-its-own-event",
+  "title": "An event work a turn began sends through its host once the turn is over has the depth of its own event, the one its call names, not the turn's",
+  "rules": [
+    "§10.6.5",
+    "§9.5.1",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.6.5-034"
+  ],
+  "notes": "Python: tests/test_turns_between.py::test_a_room_call_after_the_turn_sends_at_the_depth_it_names; core/_turn_host.py call_between_turns, which runs the verb as work that starts fresh. The message arrives at depth 2, so the turn answers at depth 3; the work after it sends at 0 when it names no depth, and at the depth it names.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Sure."
+                }
+              }
+            ],
+            "after_turn": [
+              {
+                "call": "host.send_event",
+                "room_id": "room-1",
+                "channel_id": "ai",
+                "content": {
+                  "type": "text",
+                  "body": "Later."
+                }
+              },
+              {
+                "call": "host.send_event",
+                "room_id": "room-1",
+                "channel_id": "ai",
+                "content": {
+                  "type": "text",
+                  "body": "Named."
+                },
+                "chain_depth": 1
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "chain_depth": 2,
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "chain_depth": 3,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Sure."
+          }
+        },
+        {
+          "chain_depth": 0,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Later."
+          }
+        },
+        {
+          "chain_depth": 1,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Named."
+          }
+        }
+      ]
+    }
+  }
+}

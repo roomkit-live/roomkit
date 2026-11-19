@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/work-a-turn-began-is-refused-the-verbs-that-need-its-turn",
+  "title": "After its turn ended, work the turn began is refused delegate, wait_task, room_tasks and room_context, each with an error naming the verb, while the verbs served between turns still write its room",
+  "rules": [
+    "§10.6.5"
+  ],
+  "requirements": [
+    "RK-10.6.5-023"
+  ],
+  "notes": "Python: tests/test_turns_between.py::test_a_verb_that_needs_its_turn_is_refused_after_it; turns/host.py TurnHost._send, which refuses a verb outside BETWEEN_TURNS once the turn is over, with a RuntimeError naming it. roomkit-rs: TurnHost in turn.rs, RoomKitError::Runtime naming it. The metadata update after the refusals shows the host still reaches the owner. room_vision, the other reader of owner-process state, has no call here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "found"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Sure."
+                }
+              }
+            ],
+            "after_turn": [
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "Look it up.",
+                "as": "delegate",
+                "expect": {
+                  "error": {
+                    "name": "needs_turn",
+                    "reason": "delegate"
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "task-1",
+                "timeout_ms": 50,
+                "as": "wait_task",
+                "expect": {
+                  "error": {
+                    "name": "needs_turn",
+                    "reason": "wait_task"
+                  }
+                }
+              },
+              {
+                "call": "host.room_tasks",
+                "as": "room_tasks",
+                "expect": {
+                  "error": {
+                    "name": "needs_turn",
+                    "reason": "room_tasks"
+                  }
+                }
+              },
+              {
+                "call": "host.room_context",
+                "as": "room_context",
+                "expect": {
+                  "error": {
+                    "name": "needs_turn",
+                    "reason": "room_context"
+                  }
+                }
+              },
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-1",
+                "metadata": {
+                  "later": true
+                },
+                "as": "metadata",
+                "expect": {
+                  "result": {
+                    "id": "room-1",
+                    "metadata": {
+                      "later": true
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "later": true
+        }
+      },
+      "$r1": null
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Sure."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "delegated": []
+    }
+  }
+}

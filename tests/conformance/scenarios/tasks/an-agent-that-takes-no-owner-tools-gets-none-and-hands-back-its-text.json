@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-agent-that-takes-no-owner-tools-gets-none-and-hands-back-its-text",
+  "title": "An ACP agent, whose turns do not take the owner's tools, is refused delegate_task, task_status and work_in_background, and a structured delegation to it sets up no result tool: its result is its text, asked once",
+  "rules": [
+    "§10.6.5",
+    "§23.3",
+    "§23.4",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.6.5-017"
+  ],
+  "notes": "Python: channels/declared.py owner_tools_of refuses a channel whose declaration says takes_owner_tools false (ValueError), the ACP channel's (channels/base.py); core/mixins/_child_execution.py _takes_owner_tools, which runs such a worker for its text, with no submit_result and no re-prompt. A scripted ACP agent prompted past its last answer would end its turn with no text, so the one answer is the only prompt it can read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Found it."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "claude",
+      "handler": "tool",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "setup_task_tools",
+      "agent_id": "claude",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "claude",
+      "worker": "claude",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "claude",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Found it.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": {
+            "$contains": "Look it up."
+          }
+        }
+      ]
+    }
+  }
+}

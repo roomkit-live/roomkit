@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executor-close/a-turn-closing-the-kit-sees-its-close-return",
+  "title": "A turn whose code closes the kit sees its close return, neither cut nor waiting for the turn it runs under, and the kit is closed",
+  "rules": [
+    "§10.6.5",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-10.6.5-056"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_close_from_a_tool_returns_and_seals_the_kit; the in-memory backend runs the turn in a copy of the owner's context, so the close knows the turns its caller runs under: core/framework.py close and _shut_down, turns/owner.py _close, which abandons the owner's open turns, and turns/executor.py _close, which spares the call's own task. A close waiting for the turn its call awaits would never return, and a close cutting its caller would record no result. That the turn is cut is not observed: once the close returned, the kit is sealed and nothing the turn could still do shows.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "close",
+                "as": "closed"
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Never."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "error": "kit_closed"
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "closed": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}

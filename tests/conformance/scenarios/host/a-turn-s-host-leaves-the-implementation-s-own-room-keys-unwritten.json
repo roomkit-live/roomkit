@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-turn-s-host-leaves-the-implementation-s-own-room-keys-unwritten",
+  "title": "A room-metadata update through a turn's host, during the turn and from work it began after it, writes the caller's keys and leaves unwritten the keys of the implementation's own namespace: a detach's revocation, what the room keeps for a channel",
+  "rules": [
+    "§10.6.5",
+    "§5.1",
+    "§7.5",
+    "§10.6.2"
+  ],
+  "requirements": [
+    "RK-10.6.5-036",
+    "RK-5.1-025"
+  ],
+  "notes": "Python: core/_turn_host.py _update_room_metadata runs the kit's update_room_metadata, whose without_framework_keys drops every key under roomkit: with a warning and writes the rest (core/mixins/room_lifecycle.py, RFC §5.1); tests/test_turns_host.py::test_room_metadata_status_and_observations_are_written_on_the_owner. The forged keys stand for a detach's revocation (§7.5) and what the room keeps for a channel (§10.6.2); the room never held them, so a write of them would show.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "stage": "billing",
+                  "roomkit:detached_channels": [
+                    "ai"
+                  ],
+                  "roomkit:channel_state:ai": {
+                    "forged": true
+                  }
+                },
+                "as": "during",
+                "expect": {
+                  "result": {
+                    "id": "room-1",
+                    "metadata": {
+                      "crm": "c_1",
+                      "stage": "billing",
+                      "roomkit:detached_channels": {
+                        "$absent": true
+                      },
+                      "roomkit:channel_state:ai": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Sure."
+                }
+              }
+            ],
+            "after_turn": [
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-1",
+                "metadata": {
+                  "later": true,
+                  "roomkit:forged": true,
+                  "roomkit:detached_channels": [
+                    "ai"
+                  ],
+                  "roomkit:channel_state:ai": {
+                    "forged": true
+                  }
+                },
+                "as": "after",
+                "expect": {
+                  "result": {
+                    "id": "room-1",
+                    "metadata": {
+                      "later": true,
+                      "roomkit:forged": {
+                        "$absent": true
+                      },
+                      "roomkit:detached_channels": {
+                        "$absent": true
+                      },
+                      "roomkit:channel_state:ai": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "metadata": {
+          "crm": "c_1"
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "crm": "c_1",
+          "stage": "billing",
+          "later": true,
+          "roomkit:forged": {
+            "$absent": true
+          },
+          "roomkit:detached_channels": {
+            "$absent": true
+          },
+          "roomkit:channel_state:ai": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Sure."
+          }
+        }
+      ]
+    }
+  }
+}

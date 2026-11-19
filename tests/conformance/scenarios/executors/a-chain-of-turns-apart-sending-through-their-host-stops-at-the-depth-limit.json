@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-chain-of-turns-apart-sending-through-their-host-stops-at-the-depth-limit",
+  "title": "Agents on an executor apart, one sending into its room through its host on every turn and the other answering it, stop at max_chain_depth: the host's verbs carry the turn's depth across the backend",
+  "rules": [
+    "§10.6.5",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.6.5-034",
+    "RK-10.6.5-057"
+  ],
+  "notes": "Python: turns/host.py TurnHost, each verb a host_call carrying the turn's chain depth; core/_turn_host.py. The scenario host/a-chain-of-turns-sending-through-their-host-stops-at-the-depth-limit on the kit's own executor; here the turns run on an executor of their own, which shares no execution context with the owner (§10.6.5).",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "host.send_event",
+                "room_id": "$room",
+                "channel_id": "a",
+                "content": {
+                  "type": "text",
+                  "body": "A"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "a"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "a",
+          "b"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "chain_depth": 1,
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A"
+          }
+        },
+        {
+          "chain_depth": 2,
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B"
+          }
+        },
+        {
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 3,
+          "source": {
+            "channel_id": "a"
+          }
+        }
+      ]
+    }
+  }
+}

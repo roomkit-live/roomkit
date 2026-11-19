@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-chain-of-turns-sending-through-their-host-stops-at-the-depth-limit",
+  "title": "An agent whose every turn sends into its room through its host, which another agent answers, stops at max_chain_depth: what the host sends during a turn is as deep as the turn's response, so the turn whose answer would reach the limit is not asked",
+  "rules": [
+    "§10.6.5",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-10.6.5-034"
+  ],
+  "notes": "Python: core/_turn_host.py _send_event sends at the depth the turn's call carries, its response's (turns/host.py); tests/test_turns_host.py. a answers every event with no message of its own, only the host's send; b answers a. At max_chain_depth 3, a's turn on b's answer at depth 2 would answer at the limit: it is not asked, its record stored BLOCKED (§8.3), so the chain ends. Sent at depth 0, the host's events would loop for ever.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "host.send_event",
+                "room_id": "$room",
+                "channel_id": "a",
+                "content": {
+                  "type": "text",
+                  "body": "A"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "a"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "chain_depth": 1,
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A"
+          }
+        },
+        {
+          "chain_depth": 2,
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B"
+          }
+        },
+        {
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 3,
+          "source": {
+            "channel_id": "a"
+          }
+        }
+      ]
+    }
+  }
+}

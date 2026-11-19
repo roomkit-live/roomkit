@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-refuses-a-turn-whose-channel-declares-an-owner-s-tool",
+  "title": "A declared agent set up with delegate_task by the owner, whose build on its executor declares a tool of that name, has its turn refused with an error naming the tool; its model is never asked and the room goes on",
+  "rules": [
+    "§10.6.5",
+    "§23.4"
+  ],
+  "requirements": [
+    "RK-10.6.5-015",
+    "RK-10.6.5-016"
+  ],
+  "notes": "Python: tests/test_owner_tool_store.py::test_an_executor_refuses_a_turn_whose_owner_tool_its_channel_declares; turns/executor.py _refuse_clashing_owner_tools. The owner holds the agent by its declaration, which names no tool, so setup_delegation passes (§10.6.5: it cannot refuse the clash there); the executor's build declares delegate_task itself, so the turn the owner sends with delegate_task among its owner_tools is refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix it."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Fixed."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "delegate_task",
+            "description": "The host's own.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "own"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "coder",
+      "handler": "tool",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "delegate_task"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": null
+    }
+  }
+}

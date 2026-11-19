@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/the-owner-cancels-the-calls-of-a-turn-it-loses",
+  "title": "A turn on an executor apart whose tool waits on a verb the room owner serves, its executor then killed: the owner, losing the turn, cancels the verb itself, the executor sending nothing more",
+  "rules": [
+    "§10.6.5",
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.5-013"
+  ],
+  "notes": "Python: turns/_owner_calls.py, whose calls of a turn the owner ends are cancelled with it; tests/test_turns_owner_tools.py::test_a_turn_cut_withdraws_its_calls_from_the_owner (a turn its owner cuts). The killed executor never sends call_cancel (§10.6.8), so only the owner's own cancel reaches the verb's 'withdrawn' gate. A turn the owner cuts with its executor alive is answered by the executor's call_cancel too (RK-10.6.5-012): no scenario tells the two apart.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 1000,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "lookup",
+            "host_calls": {
+              "calls": [
+                {
+                  "verb": "app.hold"
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Back."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.hold",
+      "handler": {
+        "returns": "unreachable",
+        "gate": "held",
+        "cancelled": "withdrawn",
+        "as": "hold"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "executor.kill",
+      "executor": "first"
+    },
+    {
+      "wait_for": "withdrawn"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "hold": [
+        {
+          "result": {
+            "room_id": "r1",
+            "tool_call_id": "c1"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "status": "pending"
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "status": "failed"
+          }
+        }
+      ]
+    }
+  }
+}
