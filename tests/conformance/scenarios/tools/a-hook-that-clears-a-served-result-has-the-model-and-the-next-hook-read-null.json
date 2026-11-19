@@ -1,0 +1,256 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-hook-that-clears-a-served-result-has-the-model-and-the-next-hook-read-null",
+  "title": "A SYNC ON_TOOL_CALL hook that clears a served result, by its override or by a MODIFY, has the model read null; the next hook reads a served call whose result is null",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-064",
+    "RK-9.3-065",
+    "RK-9.3-092"
+  ],
+  "notes": "call-1 is cleared through the result override, call-2 through a MODIFY whose event carries no result. The original never reaches the model, the next hook, the observers or the stored row. Python: tests/test_tool_call_hook_chain.py::test_a_hook_that_clears_the_result_withholds_it, tests/test_tool_call_verdict_reading.py::test_an_emptied_text_result_is_not_served_again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "SSN 123-45-6789"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "clear",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "result": null
+              }
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "result": null
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "next",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 1
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look me up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "null",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "null",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "null",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "next": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": "null",
+            "is_error": false,
+            "refused": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": "null",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ],
+      "audit": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": "null",
+            "is_error": false,
+            "refused": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": "null",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-1",
+            "outcome": "served",
+            "status": "completed",
+            "result": "null"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-2"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-2",
+            "outcome": "served",
+            "status": "completed",
+            "result": "null"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

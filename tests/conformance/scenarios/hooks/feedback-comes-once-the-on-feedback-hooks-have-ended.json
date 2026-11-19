@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/feedback-comes-once-the-on-feedback-hooks-have-ended",
+  "title": "feedback comes once the ASYNC ON_FEEDBACK hooks have ended, submit_feedback not waiting for them",
+  "rules": [
+    "§8.2",
+    "§9.3",
+    "§15.9"
+  ],
+  "requirements": [
+    "RK-9.3-039"
+  ],
+  "notes": "submit_feedback returns while the hook is held at 'audit'; the hook then marks the room. The feedback handler reads the room: it sees the mark, so feedback came after the hook ended.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "feedback",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "get_room",
+                "room_id": "room-1",
+                "as": "seen"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_feedback",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "audit",
+            "do": [
+              {
+                "call": "store.patch_room_metadata",
+                "room_id": "room-1",
+                "patch": {
+                  "audited": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "submit_feedback",
+      "room_id": "room-1",
+      "rating": 0.8,
+      "channel_id": "sms",
+      "comment": "Fast",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "wait_for": "audit"
+    },
+    {
+      "open": "audit"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "seen": [
+        {
+          "result": {
+            "id": "room-1",
+            "metadata": {
+              "audited": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_feedback",
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}

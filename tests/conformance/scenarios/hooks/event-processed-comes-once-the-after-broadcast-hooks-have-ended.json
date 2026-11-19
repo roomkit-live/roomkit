@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/event-processed-comes-once-the-after-broadcast-hooks-have-ended",
+  "title": "event_processed comes once the event's ASYNC AFTER_BROADCAST hooks have ended, the inbound call not waiting for them",
+  "rules": [
+    "§8.2",
+    "§9.3",
+    "§10.2"
+  ],
+  "requirements": [
+    "RK-9.3-039"
+  ],
+  "notes": "The hook holds at 'audit' until the inbound call has returned, then marks the room. The event_processed handler reads the room: it sees the mark, so event_processed came after the hook ended.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "event_processed",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "get_room",
+                "room_id": "room-1",
+                "as": "seen"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "audit",
+            "do": [
+              {
+                "call": "store.patch_room_metadata",
+                "room_id": "room-1",
+                "patch": {
+                  "audited": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "ping"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "wait_for": "audit"
+    },
+    {
+      "open": "audit"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "seen": [
+        {
+          "result": {
+            "id": "room-1",
+            "metadata": {
+              "audited": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}

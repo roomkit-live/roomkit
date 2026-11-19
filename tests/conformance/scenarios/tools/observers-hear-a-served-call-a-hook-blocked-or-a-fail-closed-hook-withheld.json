@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/observers-hear-a-served-call-a-hook-blocked-or-a-fail-closed-hook-withheld",
+  "title": "The ASYNC ON_TOOL_CALL observers of a served call fire after a SYNC hook's BLOCK, and after a fail-closed hook that withheld the result by failing, with the failure marker and the reason the model reads",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-066"
+  ],
+  "notes": "call-1: 'withhold' blocks it. call-2: 'pii', fail-closed, raises. Each call is its own round, so each hook's reactions apply in order. The observers read what the model reads, the block's reason or the fail-closed hook's hook_error:<name> (§9.3 SYNC hooks), never the tool's result. Python: tests/test_tool_call_hook_chain.py::test_observers_fire_after_a_block_with_the_failure, test_observers_fire_after_a_fail_closed_hook_fails.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "SSN 123-45-6789"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pii",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 0,
+        "fail_closed": true,
+        "reactions": [
+          {},
+          {
+            "fail": "classifier down"
+          }
+        ]
+      },
+      {
+        "name": "withhold",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 1,
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "restricted"
+            }
+          },
+          {}
+        ]
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look me up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"restricted\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"restricted\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"hook_error:pii\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": "{\"error\": \"restricted\"}",
+            "is_error": true
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": "{\"error\": \"hook_error:pii\"}",
+            "is_error": true
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-1",
+            "status": "failed",
+            "result": {
+              "$lacks": "123-45-6789"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-2"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-2",
+            "status": "failed",
+            "result": {
+              "$lacks": "123-45-6789"
+            }
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

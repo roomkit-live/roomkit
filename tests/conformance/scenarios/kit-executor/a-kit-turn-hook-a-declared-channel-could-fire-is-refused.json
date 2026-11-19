@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-executor/a-kit-turn-hook-a-declared-channel-could-fire-is-refused",
+  "title": "A hook on a turn trigger registered on the kit is refused while a channel the kit holds by its declaration alone could fire it; one whose filter leaves that channel out is kept and fires for the live agent",
+  "rules": [
+    "§9.1",
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-9.1-008"
+  ],
+  "notes": "The kit holds meteo by its declaration alone: its turns run on another executor, where a hook registered on the kit never fires. A global hook with no channel filter, one naming meteo, or one whose channel_types names meteo's type on a trigger whose payload carries it, is refused; a room hook is refused while any channel is declared, the room's channels being known only later; a hook filtered to support, which the kit holds live, or to the voice type on on_tool_call, is kept, and only the first fires, for support's call. Python: tests/test_turn_hooks.py::test_a_kit_turn_hook_a_declared_channel_could_fire_is_refused_in_either_order, test_a_kit_turn_hook_whose_filter_leaves_the_declared_channel_out_is_kept, test_a_kit_room_turn_hook_is_refused_while_any_channel_is_declared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Found."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "meteo",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "everyone",
+        "trigger": "before_ai_generation"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "meteo_calls",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "channel_ids": [
+          "meteo"
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "ai_calls",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "channel_types": [
+          "ai"
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "room_gate",
+        "trigger": "before_tool_use"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "support_calls",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "channel_ids": [
+          "support"
+        ]
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "voice_calls",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "channel_types": [
+          "voice"
+        ]
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "everyone": [],
+      "meteo_calls": [],
+      "ai_calls": [],
+      "room_gate": [],
+      "voice_calls": [],
+      "support_calls": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup",
+            "tool_call_id": "c1",
+            "result": "found",
+            "is_error": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "support": [
+        {},
+        {}
+      ]
+    }
+  }
+}

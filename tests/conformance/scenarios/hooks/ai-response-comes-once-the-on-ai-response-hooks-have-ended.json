@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/ai-response-comes-once-the-on-ai-response-hooks-have-ended",
+  "title": "ai_response comes once the turn's ASYNC ON_AI_RESPONSE hooks have ended, the turn not waiting for them",
+  "rules": [
+    "§8.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-039"
+  ],
+  "notes": "The hook holds at 'audit' until the inbound call has returned, then marks the room. The ai_response handler reads the room: it sees the mark, so ai_response came after the hook ended. Python: turns/_wiring.py build_after_response_hook emits ai_response once the observers it starts have ended (then=reported); reentrancy/an-ai-response-handler-posting-after-a-slower-on-ai-response-hook-stops-at-the-depth-limit holds the same hook.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "ai_response",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "get_room",
+                "room_id": "room-1",
+                "as": "seen"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_ai_response",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "audit",
+            "do": [
+              {
+                "call": "store.patch_room_metadata",
+                "room_id": "room-1",
+                "patch": {
+                  "audited": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "inbound"
+    },
+    {
+      "wait_for": "audit"
+    },
+    {
+      "await": "inbound",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "open": "audit"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "seen": [
+        {
+          "result": {
+            "id": "room-1",
+            "metadata": {
+              "audited": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}

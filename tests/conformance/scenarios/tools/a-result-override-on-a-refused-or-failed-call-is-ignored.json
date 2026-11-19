@@ -1,0 +1,252 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-result-override-on-a-refused-or-failed-call-is-ignored",
+  "title": "A SYNC ON_TOOL_CALL hook's result override on a call refused before execution or failed during it is ignored: the model reads the refusal or the failure",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-088"
+  ],
+  "notes": "call-1 is refused by BEFORE_TOOL_USE; call-2's handler raises. The SYNC ON_TOOL_CALL hook offers a result on every firing it gets; neither call reads it, on the model's side, the observers' or the stored row. Such a firing reaches the ASYNC hooks alone (RK-9.3-070), so the hook's calls are left unasserted: an implementation that handed it the firing would still have to ignore its override.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "charge",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "found"
+          },
+          {
+            "name": "charge",
+            "description": "Charge a card.",
+            "parameters": {
+              "type": "object"
+            },
+            "raises": {
+              "kind": "RuntimeError",
+              "message": "card declined"
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Needs approval"
+            }
+          },
+          {}
+        ]
+      },
+      {
+        "name": "override",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "result": "OVERRIDDEN"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Charge me."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Needs approval\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Needs approval\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"Tool 'charge' failed (RuntimeError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": "{\"error\": \"Needs approval\"}",
+            "is_error": true,
+            "refused": true
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": "{\"error\": \"Tool 'charge' failed (RuntimeError)\"}",
+            "is_error": true,
+            "refused": false,
+            "error_detail": {
+              "$contains": "card declined"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-1",
+            "outcome": "refused",
+            "status": "failed",
+            "result": {
+              "$lacks": "OVERRIDDEN"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-2"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-2",
+            "status": "failed",
+            "result": {
+              "$lacks": "OVERRIDDEN"
+            }
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

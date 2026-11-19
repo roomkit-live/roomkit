@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-a-first-message-opens-is-announced-with-its-strategy-s-agents-and-not-the-sender-s-channel",
+  "title": "A room a first message opens under the kit's default strategy is announced with the agents the strategy attached; the channel whose message opened it is attached after its ON_ROOM_CREATED hooks",
+  "rules": [
+    "§9.2",
+    "§10.1 step 2",
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-9.2-114"
+  ],
+  "notes": "The hook lists the room's bindings while it runs: only the strategy's agent. Once the message is processed, the room holds the sms binding too. It reads the room as stored, not the hook's context, which no runner records. Python: core/mixins/inbound.py `_open_room` creates the room through create_room, which installs the kit's strategy before the hooks run, then attaches the channel.",
+  "setup": {
+    "kit": {
+      "orchestration": "team"
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "agents": [
+          "agent"
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "announced",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "list_bindings",
+                "room_id": "$room",
+                "as": "bindings_at_creation"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "$r1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "channel_id": "agent",
+              "category": "intelligence"
+            },
+            {
+              "channel_id": "sms",
+              "category": "transport"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "announced": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "$r1"
+        }
+      ]
+    },
+    "actions": {
+      "bindings_at_creation": [
+        {
+          "result": [
+            {
+              "channel_id": "agent",
+              "category": "intelligence"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

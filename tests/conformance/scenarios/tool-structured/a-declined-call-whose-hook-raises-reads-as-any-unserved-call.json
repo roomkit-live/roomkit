@@ -1,0 +1,238 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-structured/a-declined-call-whose-hook-raises-reads-as-any-unserved-call",
+  "title": "A call nothing served whose SYNC ON_TOOL_CALL hook raises reads as any call nothing served, the hook's message on error_detail",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-087"
+  ],
+  "notes": "The tool declines both calls. On call-1 the hook raises; on call-2 it allows. Both read the same to the model and on the stored row; only call-1's observers read the hook's message on error_detail.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                }
+              }
+            },
+            "declines": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "serve",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "fail": "pricing service down"
+          },
+          {
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look me up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": {
+                "$as": "unserved"
+              },
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": {
+                "$as": "unserved"
+              },
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": {
+                "$as": "unserved"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": {
+              "$as": "unserved"
+            },
+            "is_error": true,
+            "refused": false,
+            "error_detail": {
+              "$contains": "pricing service down"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": {
+              "$as": "unserved"
+            },
+            "is_error": true,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-1",
+            "outcome": "unserved",
+            "status": "failed",
+            "result": {
+              "$as": "unserved"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-2"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-2",
+            "outcome": "unserved",
+            "status": "failed",
+            "result": {
+              "$as": "unserved"
+            }
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}
