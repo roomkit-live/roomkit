@@ -10,6 +10,7 @@
   "requirements": [
     "RK-10.6.5-027",
     "RK-10.6.5-033",
+    "RK-10.6.5-040",
     "RK-5.11-001"
   ],
   "notes": "Python: tests/test_turns_host.py::test_room_metadata_status_and_observations_are_written_on_the_owner, test_a_status_post_names_its_turn_s_room. A host's status names its turn's room when its metadata names none.",

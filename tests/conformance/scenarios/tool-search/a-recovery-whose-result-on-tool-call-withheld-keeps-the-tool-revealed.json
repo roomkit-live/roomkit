@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.2-073"
+  ],
   "notes": "Python: tests/test_tool_search_recovered_reveal.py::test_a_call_the_tool_answered_keeps_it_revealed[on-tool-call-block].",
   "setup": {
     "channels": [

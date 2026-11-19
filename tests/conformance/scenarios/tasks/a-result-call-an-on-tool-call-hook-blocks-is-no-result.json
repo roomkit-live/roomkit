@@ -7,6 +7,7 @@
     "§9.4"
   ],
   "requirements": [
+    "RK-9.2-073",
     "RK-9.3-060"
   ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestTheWorkersResultCall::test_a_blocked_call_is_no_result_and_its_turn_goes_on; core/mixins/_child_execution.py _scan_for_submitted_result (only the worker's served call counts, RMK-396). A blocked call is no result, so it does not end the turn (RMK-357): each turn asks the model again, the blocked call's result in hand.",

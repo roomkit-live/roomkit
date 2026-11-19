@@ -6,7 +6,8 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-10.1-130"
+    "RK-10.1-130",
+    "RK-10.6.4-016"
   ],
   "notes": "Python: tests/test_response_metadata.py::test_a_before_tool_use_write_reaches_the_inbound_result[True].",
   "setup": {

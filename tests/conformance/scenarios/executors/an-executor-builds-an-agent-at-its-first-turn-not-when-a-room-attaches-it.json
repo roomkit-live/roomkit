@@ -6,6 +6,8 @@
     "§10.6.3"
   ],
   "requirements": [
+    "RK-10.6-005",
+    "RK-10.6.2-013",
     "RK-10.6.3-014"
   ],
   "notes": "Python: tests/test_turns_channel_control.py test_attach_and_detach_apply_where_the_channel_is_built_and_build_nothing.",

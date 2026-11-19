@@ -7,6 +7,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-10.6.6-014",
     "RK-9.1-004"
   ],
   "notes": "One agent answers in both rooms, one turn after the other: its model's rounds are read in that order. The gate added for room-1 refuses room-1's call and never sees room-2's; the observer added for room-2 hears of room-2's call alone.",

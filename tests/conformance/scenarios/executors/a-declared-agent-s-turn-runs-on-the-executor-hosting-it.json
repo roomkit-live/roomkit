@@ -7,9 +7,14 @@
     "§10.6.7"
   ],
   "requirements": [
+    "RK-10.6-003",
+    "RK-10.6-005",
+    "RK-10.6.1-005",
+    "RK-10.6.2-005",
     "RK-10.6.2-008",
     "RK-10.6.2-010",
-    "RK-10.6.7-004"
+    "RK-10.6.7-004",
+    "RK-10.6.7-023"
   ],
   "notes": "Python: tests/test_channel_declaration.py test_a_declared_agent_s_turn_runs_on_the_executor_that_builds_it.",
   "setup": {

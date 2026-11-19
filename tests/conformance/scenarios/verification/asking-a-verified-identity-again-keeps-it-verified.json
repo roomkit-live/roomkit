@@ -5,6 +5,9 @@
   "rules": [
     "§11.7.2"
   ],
+  "requirements": [
+    "RK-5.5-005"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_asking_a_verified_identity_again_keeps_it_verified_meanwhile (RMK-1171).",
   "setup": {
     "rooms": [

@@ -6,6 +6,9 @@
     "§11.7.5",
     "§11.7.7"
   ],
+  "requirements": [
+    "RK-5.5-005"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_revoking_a_pending_identity_kills_its_link (RMK-1171).",
   "setup": {
     "rooms": [

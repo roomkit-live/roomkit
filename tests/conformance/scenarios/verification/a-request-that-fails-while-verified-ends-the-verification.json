@@ -8,6 +8,7 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-5.5-005",
     "RK-9.2-028"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_failed_request_ends_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_request_that_fails_while_verified_ends_the_verification (RMK-1171). A code is digits: a secret with letters never matches one.",

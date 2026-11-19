@@ -8,6 +8,7 @@
     "§21.1"
   ],
   "requirements": [
+    "RK-9.2-073",
     "RK-9.3-060"
   ],
   "notes": "Python: tests/test_deferred_tools.py::test_a_blocked_activation_references_nothing; channels/_skill_activation.py records only a served activation. This case exercises the same existing-skill boundary without deferred loading, not the unknown-skill Tool Search hint branch.",

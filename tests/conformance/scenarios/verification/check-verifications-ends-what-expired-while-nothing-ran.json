@@ -7,6 +7,7 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-5.5-005",
     "RK-9.2-028"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_verification_lifecycle.py::test_what_expired_while_nothing_ran_is_ended_at_start (RMK-1171). The records are the store's, as another process left them. A kit's start runs the same check: that is in each implementation's own tests.",

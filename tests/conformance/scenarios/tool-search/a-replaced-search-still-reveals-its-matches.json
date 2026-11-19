@@ -7,6 +7,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-9.2-073",
     "RK-9.3-062"
   ],
   "notes": "Python: tests/test_find_tools_judged.py::TestText::test_a_replaced_search_still_reveals_its_matches.",

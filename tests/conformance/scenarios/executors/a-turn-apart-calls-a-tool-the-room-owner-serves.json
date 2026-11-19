@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.6.5-006",
-    "RK-10.6.5-008"
+    "RK-10.6.5-008",
+    "RK-10.6.5-010",
+    "RK-10.6.5-014"
   ],
   "notes": "Python: tests/test_turns_owner_tools.py. delegate_task is served by the owner: the call crosses from the executor, its handler runs on the owner.",
   "setup": {

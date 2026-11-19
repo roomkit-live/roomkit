@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.1-028",
     "RK-10.3-014",
-    "RK-10.3-016"
+    "RK-10.3-016",
+    "RK-5.2-009"
   ],
   "notes": "A channel that reads its own output back off its wire (an echo) parses it OUTBOUND. The direction stands: the event is the channel's own, whatever participant it names, so a sender's delete it carries holds no authorship of that participant's messages.",
   "setup": {
