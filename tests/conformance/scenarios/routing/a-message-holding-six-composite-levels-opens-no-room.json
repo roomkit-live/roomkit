@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-holding-six-composite-levels-opens-no-room",
+  "title": "A message whose content holds a sixth composite level is refused before it is routed: no room is created, nothing stored",
+  "rules": [
+    "§5.3",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.3-020",
+    "RK-5.3-021"
+  ],
+  "notes": "The SMS channel is bound to no room, so a message routed from it opens one. The refused message opens none; the next one, valid, opens the room and takes its first index.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "sms",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "$r1#0"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    }
+  }
+}

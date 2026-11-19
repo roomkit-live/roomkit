@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-template-reaches-a-text-channel-as-its-body",
+  "title": "A template reaches a channel that does not carry TEMPLATE as its body, and a template channel whole, its language en by default",
+  "rules": [
+    "§5.3",
+    "§6.6",
+    "§10.2 step 3c"
+  ],
+  "requirements": [
+    "RK-5.3-010"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "console",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "template"
+          ]
+        }
+      },
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "template"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "wa"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "template",
+        "template_id": "order_ready",
+        "parameters": {
+          "order": "42",
+          "pickup": "counter 3"
+        },
+        "body": "Your order 42 is ready at counter 3"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "template",
+            "template_id": "order_ready",
+            "parameters": {
+              "order": "42",
+              "pickup": "counter 3"
+            },
+            "body": "Your order 42 is ready at counter 3",
+            "language": "en"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Your order 42 is ready at counter 3"
+            }
+          }
+        ],
+        "wa": [
+          {
+            "content": {
+              "type": "template",
+              "template_id": "order_ready",
+              "parameters": {
+                "order": "42",
+                "pickup": "counter 3"
+              },
+              "body": "Your order 42 is ready at counter 3",
+              "language": "en"
+            }
+          }
+        ],
+        "console": []
+      }
+    }
+  }
+}

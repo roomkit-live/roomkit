@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-audio-without-a-mime-type-reads-audio-ogg",
+  "title": "A voice note whose content names no MIME type is stored as audio/ogg, its duration and transcript kept",
+  "rules": [
+    "§5.3"
+  ],
+  "requirements": [
+    "RK-5.3-006"
+  ],
+  "notes": "AudioContent's mime_type defaults to audio/ogg, as VideoContent's defaults to video/mp4 (§5.3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "audio",
+          "url": "https://example.com/voice-note",
+          "duration_seconds": 4.5,
+          "transcript": "Call me back after five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "audio",
+            "url": "https://example.com/voice-note",
+            "duration_seconds": 4.5,
+            "mime_type": "audio/ogg",
+            "transcript": "Call me back after five"
+          }
+        }
+      ]
+    }
+  }
+}

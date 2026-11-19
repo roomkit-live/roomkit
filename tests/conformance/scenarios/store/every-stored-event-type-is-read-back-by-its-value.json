@@ -1,0 +1,442 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/every-stored-event-type-is-read-back-by-its-value",
+  "title": "An event of each type the RFC stores is read back with its type, by its serialized value",
+  "rules": [
+    "§5.2",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.2-002"
+  ],
+  "notes": "One event of each EventType a room stores, committed through the store and read back in index order. INSTRUCTION is never stored (§10.1.1), nor are TASK_DELEGATED and TASK_COMPLETED, the payloads of their hooks (§23.5), nor TYPING and PRESENCE, published without being stored (§8.4): their behaviours are their own units'. An INSTRUCTION_READ is visible to its agent alone (§10.1.1), so it is written with that visibility; the store reads every row back whatever its visibility.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "text",
+          "body": "message"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "system",
+        "content": {
+          "type": "text",
+          "body": "system"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "read_receipt",
+        "content": {
+          "type": "text",
+          "body": "read_receipt"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "delivery_receipt",
+        "content": {
+          "type": "text",
+          "body": "delivery_receipt"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "reaction",
+        "content": {
+          "type": "text",
+          "body": "reaction"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "edited"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "delete",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "participant_joined",
+        "content": {
+          "type": "text",
+          "body": "participant_joined"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "participant_left",
+        "content": {
+          "type": "text",
+          "body": "participant_left"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "participant_identified",
+        "content": {
+          "type": "text",
+          "body": "participant_identified"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "participant_updated",
+        "content": {
+          "type": "text",
+          "body": "participant_updated"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "channel_attached",
+        "content": {
+          "type": "text",
+          "body": "channel_attached"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "channel_detached",
+        "content": {
+          "type": "text",
+          "body": "channel_detached"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "channel_muted",
+        "content": {
+          "type": "text",
+          "body": "channel_muted"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "channel_unmuted",
+        "content": {
+          "type": "text",
+          "body": "channel_unmuted"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "channel_updated",
+        "content": {
+          "type": "text",
+          "body": "channel_updated"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "dtmf",
+        "content": {
+          "type": "text",
+          "body": "dtmf"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "recording_started",
+        "content": {
+          "type": "text",
+          "body": "recording_started"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "recording_stopped",
+        "content": {
+          "type": "text",
+          "body": "recording_stopped"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "task_created",
+        "content": {
+          "type": "text",
+          "body": "task_created"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "observation",
+        "content": {
+          "type": "text",
+          "body": "observation"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "call-1"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_end",
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "call-1"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "instruction_read",
+        "content": {
+          "type": "text",
+          "body": "instruction_read"
+        },
+        "visibility": "agent"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "system",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "read_receipt",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "delivery_receipt",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "reaction",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "type": "delete"
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "participant_left",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "participant_identified",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "participant_updated",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "channel_attached",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "channel_detached",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "channel_muted",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "channel_unmuted",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "channel_updated",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "dtmf",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "recording_started",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "recording_stopped",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "task_created",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "observation",
+          "content": {
+            "type": "text"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call"
+          }
+        },
+        {
+          "type": "instruction_read",
+          "content": {
+            "type": "text"
+          }
+        }
+      ]
+    }
+  }
+}

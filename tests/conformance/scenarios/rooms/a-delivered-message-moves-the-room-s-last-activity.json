@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-delivered-message-moves-the-room-s-last-activity",
+  "title": "Each message the room stores DELIVERED through the pipeline moves its last activity",
+  "rules": [
+    "§5.1",
+    "§10.1 step 12"
+  ],
+  "requirements": [
+    "RK-5.1-045"
+  ],
+  "notes": "A room that has had no activity reads no last_activity_at. Each DELIVERED commit moves it to the commit's instant, which the RFC does not tie to the event's created_at: the scenario reads that the first commit set it, then sets it to an instant long past and reads that the next commit moved it away from there.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": null
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$present": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "set_room_timers",
+      "room_id": "room-1",
+      "timers": {
+        "last_activity_at": "2020-01-01T00:00:00Z"
+      },
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "past"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Still there?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "moved"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "status": "active",
+        "timers": {
+          "last_activity_at": {
+            "$as": "moved"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Still there?"
+          },
+          "status": "delivered"
+        }
+      ]
+    }
+  }
+}

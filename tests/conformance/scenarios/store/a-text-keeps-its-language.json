@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-text-keeps-its-language",
+  "title": "A text keeps the language it names, stored and delivered, and one naming none reads null",
+  "rules": [
+    "§5.3",
+    "§10.2"
+  ],
+  "requirements": [
+    "RK-5.3-002"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Bonjour",
+          "language": "fr"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Bonjour",
+            "language": "fr"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello",
+            "language": null
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Bonjour",
+              "language": "fr"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello",
+              "language": null
+            }
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}

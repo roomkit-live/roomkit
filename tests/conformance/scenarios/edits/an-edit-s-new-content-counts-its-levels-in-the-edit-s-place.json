@@ -1,0 +1,256 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/an-edit-s-new-content-counts-its-levels-in-the-edit-s-place",
+  "title": "An edit's new content stands in the edit's place: five levels as an edit's content are taken, as a composite's part refused",
+  "rules": [
+    "§5.3",
+    "§10.3"
+  ],
+  "requirements": [
+    "RK-5.3-019"
+  ],
+  "notes": "An edit standing alone is an event's content: its new content of five levels stands at the top and is taken, and the target holds it once the edit is committed. The same edit as the part of a composite stands at level 2, so its new content reaches a sixth level and is refused where it is built (invalid_argument), before §10.3 would refuse a change held in a composite.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Draft"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "text",
+                "body": "top"
+              },
+              {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "text",
+                                "body": "leaf one"
+                              },
+                              {
+                                "type": "text",
+                                "body": "leaf two"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "edit",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "edit",
+              "target_event_id": "room-1#0",
+              "new_content": {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "text",
+                    "body": "top"
+                  },
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "composite",
+                                "parts": [
+                                  {
+                                    "type": "text",
+                                    "body": "leaf one"
+                                  },
+                                  {
+                                    "type": "text",
+                                    "body": "leaf two"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "edit_source": "sender"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "text",
+                "body": "top"
+              },
+              {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "text",
+                                "body": "leaf one"
+                              },
+                              {
+                                "type": "text",
+                                "body": "leaf two"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "metadata": {
+            "edited": true
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "text",
+                  "body": "top"
+                },
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf one"
+                                },
+                                {
+                                  "type": "text",
+                                  "body": "leaf two"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

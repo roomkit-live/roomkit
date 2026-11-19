@@ -1,0 +1,316 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/every-content-type-is-read-back-as-it-was-stored",
+  "title": "An event of each content type is read back holding that one content, named by its type",
+  "rules": [
+    "§5.3",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.3-015",
+    "RK-5.3-016"
+  ],
+  "notes": "One event of each of the twelve content types, committed through the store and read back in index order, each content whole and its type field the RFC's name.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "text",
+          "body": "hi",
+          "language": "en"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "rich",
+          "body": "**hi**",
+          "format": "markdown",
+          "plain_text": "hi"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/menu.pdf",
+          "mime_type": "application/pdf",
+          "filename": "menu.pdf"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "location",
+          "latitude": 45.5,
+          "longitude": -73.6,
+          "label": "Office"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "audio",
+          "url": "https://example.com/note.ogg",
+          "mime_type": "audio/ogg"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "video",
+          "url": "https://example.com/clip.mp4",
+          "mime_type": "video/mp4"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "see attached"
+            },
+            {
+              "type": "media",
+              "url": "https://example.com/a.png",
+              "mime_type": "image/png"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "system",
+        "content": {
+          "type": "system",
+          "body": "Agent joined",
+          "code": "agent_joined",
+          "data": {
+            "agent": "a1"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "content": {
+          "type": "template",
+          "template_id": "welcome",
+          "language": "fr",
+          "parameters": {
+            "name": "Ada"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "delete",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#1",
+          "delete_type": "sender"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "call-1",
+          "arguments": {
+            "q": "menu"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "hi",
+            "language": "en"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "rich",
+            "body": "**hi**",
+            "format": "markdown",
+            "plain_text": "hi"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "media",
+            "url": "https://example.com/menu.pdf",
+            "mime_type": "application/pdf",
+            "filename": "menu.pdf"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "location",
+            "latitude": 45.5,
+            "longitude": -73.6,
+            "label": "Office"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "audio",
+            "url": "https://example.com/note.ogg",
+            "mime_type": "audio/ogg"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "video",
+            "url": "https://example.com/clip.mp4",
+            "mime_type": "video/mp4"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "text",
+                "body": "see attached"
+              },
+              {
+                "type": "media",
+                "url": "https://example.com/a.png",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        },
+        {
+          "type": "system",
+          "content": {
+            "type": "system",
+            "body": "Agent joined",
+            "code": "agent_joined",
+            "data": {
+              "agent": "a1"
+            }
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "template",
+            "template_id": "welcome",
+            "language": "fr",
+            "parameters": {
+              "name": "Ada"
+            }
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "type": "edit",
+            "target_event_id": "room-1#0",
+            "new_content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "type": "delete",
+            "target_event_id": "room-1#1",
+            "delete_type": "sender"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "tool_id": "call-1",
+            "arguments": {
+              "q": "menu"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

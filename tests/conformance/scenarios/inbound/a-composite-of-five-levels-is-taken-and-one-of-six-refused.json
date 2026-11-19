@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-composite-of-five-levels-is-taken-and-one-of-six-refused",
+  "title": "A composite five levels deep is taken, its text parts adding no level, and one six levels deep is refused",
+  "rules": [
+    "§5.3"
+  ],
+  "requirements": [
+    "RK-5.3-018",
+    "RK-5.3-020"
+  ],
+  "notes": "The first message's outermost composite holds a text beside a composite, and its fifth level holds two texts: were a text part a level, it would hold six. The second message's sixth level is refused where its content is built (invalid_argument), and nothing of it is stored.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "top"
+            },
+            {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "text",
+                              "body": "leaf one"
+                            },
+                            {
+                              "type": "text",
+                              "body": "leaf two"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "text",
+                  "body": "top"
+                },
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf one"
+                                },
+                                {
+                                  "type": "text",
+                                  "body": "leaf two"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "text",
+                "body": "top"
+              },
+              {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "text",
+                                "body": "leaf one"
+                              },
+                              {
+                                "type": "text",
+                                "body": "leaf two"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    }
+  }
+}

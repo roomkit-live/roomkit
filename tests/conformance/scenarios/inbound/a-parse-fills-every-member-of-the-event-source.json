@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parse-fills-every-member-of-the-event-source",
+  "title": "Every member of the source the channel's parse builds is stored and delivered as the parse set it",
+  "rules": [
+    "§5.2",
+    "§10.1 step 4"
+  ],
+  "requirements": [
+    "RK-5.2-004"
+  ],
+  "notes": "The scripted channel's parse sources the message as a transport does: its channel, its type, the inbound direction, the sender as participant, and the message's external id, raw payload and provider message id; its parse reaction names the provider. No verification policy applies, so the source's verification is null.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Sourced"
+            },
+            "parsed": {
+              "source": {
+                "provider": "AcmeSMS"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Sourced"
+        },
+        "external_id": "ext-7",
+        "raw_payload": {
+          "From": "+15551234567",
+          "Body": "Sourced",
+          "NumSegments": "1"
+        },
+        "provider_message_id": "SM123"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms",
+              "direction": "inbound",
+              "participant_id": "+15551234567",
+              "verification": null,
+              "external_id": "ext-7",
+              "provider": "AcmeSMS",
+              "raw_payload": {
+                "From": "+15551234567",
+                "Body": "Sourced",
+                "NumSegments": "1"
+              },
+              "provider_message_id": "SM123"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Sourced"
+          },
+          "source": {
+            "channel_id": "sms",
+            "channel_type": "sms",
+            "direction": "inbound",
+            "participant_id": "+15551234567",
+            "verification": null,
+            "external_id": "ext-7",
+            "provider": "AcmeSMS",
+            "raw_payload": {
+              "From": "+15551234567",
+              "Body": "Sourced",
+              "NumSegments": "1"
+            },
+            "provider_message_id": "SM123"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms",
+              "direction": "inbound",
+              "participant_id": "+15551234567",
+              "verification": null,
+              "external_id": "ext-7",
+              "provider": "AcmeSMS",
+              "raw_payload": {
+                "From": "+15551234567",
+                "Body": "Sourced",
+                "NumSegments": "1"
+              },
+              "provider_message_id": "SM123"
+            }
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/channel-data-no-typed-structure-names-is-kept-as-a-map",
+  "title": "Channel data whose keys no typed structure names is stored and delivered as the map the parse wrote",
+  "rules": [
+    "§5.4",
+    "§10.1 step 4"
+  ],
+  "requirements": [
+    "RK-5.4-004"
+  ],
+  "notes": "The parse writes channel data under keys of its own, none a typed ChannelData names; they are kept whole, nested values included.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Routed"
+            },
+            "parsed": {
+              "channel_data": {
+                "carrier": "acme",
+                "hop_count": 2,
+                "route": {
+                  "hops": [
+                    "edge-1",
+                    "core-2"
+                  ],
+                  "cost": 0.5
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Routed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Routed"
+          },
+          "channel_data": {
+            "carrier": "acme",
+            "hop_count": 2,
+            "route": {
+              "hops": [
+                "edge-1",
+                "core-2"
+              ],
+              "cost": 0.5
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "channel_data": {
+              "carrier": "acme",
+              "hop_count": 2,
+              "route": {
+                "hops": [
+                  "edge-1",
+                  "core-2"
+                ],
+                "cost": 0.5
+              }
+            }
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}

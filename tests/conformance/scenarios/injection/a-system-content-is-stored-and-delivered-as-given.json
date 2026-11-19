@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-system-content-is-stored-and-delivered-as-given",
+  "title": "A system content an injection carries is stored and delivered with its body, code and data as given",
+  "rules": [
+    "§5.3",
+    "§10.5",
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-5.3-009"
+  ],
+  "notes": "A system content reaches every channel unchanged (§6.6), so the text-only SMS channel receives it whole.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "system",
+        "body": "Maintenance at noon",
+        "code": "maintenance_window",
+        "data": {
+          "window": {
+            "start": "12:00",
+            "minutes": 30
+          },
+          "notify": true,
+          "zones": [
+            "east",
+            "west"
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "status": "delivered",
+          "content": {
+            "type": "system",
+            "body": "Maintenance at noon",
+            "code": "maintenance_window",
+            "data": {
+              "window": {
+                "start": "12:00",
+                "minutes": 30
+              },
+              "notify": true,
+              "zones": [
+                "east",
+                "west"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "system",
+            "body": "Maintenance at noon",
+            "code": "maintenance_window",
+            "data": {
+              "window": {
+                "start": "12:00",
+                "minutes": 30
+              },
+              "notify": true,
+              "zones": [
+                "east",
+                "west"
+              ]
+            }
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "system",
+              "body": "Maintenance at noon",
+              "code": "maintenance_window",
+              "data": {
+                "window": {
+                  "start": "12:00",
+                  "minutes": 30
+                },
+                "notify": true,
+                "zones": [
+                  "east",
+                  "west"
+                ]
+              }
+            }
+          }
+        ],
+        "ws": []
+      }
+    }
+  }
+}

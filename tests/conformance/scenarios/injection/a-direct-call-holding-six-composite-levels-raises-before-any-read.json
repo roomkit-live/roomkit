@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-direct-call-holding-six-composite-levels-raises-before-any-read",
+  "title": "send_event, commit_event and update_event given content holding a sixth composite level raise before anything is read",
+  "rules": [
+    "§5.3",
+    "§10.5",
+    "§10.3"
+  ],
+  "requirements": [
+    "RK-5.3-021"
+  ],
+  "notes": "Each call names a room that does not exist: one that read anything before refusing the content would answer room_not_found. An edit's new content counts its levels in the edit's place, so an edit holding six levels is refused as the six levels are.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-gone",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "text",
+                                "body": "leaf"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-gone",
+      "channel_id": "ws",
+      "event_type": "edit",
+      "content": {
+        "type": "edit",
+        "target_event_id": "evt-gone",
+        "new_content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-gone",
+      "event": {
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "composite",
+                  "parts": [
+                    {
+                      "type": "composite",
+                      "parts": [
+                        {
+                          "type": "composite",
+                          "parts": [
+                            {
+                              "type": "composite",
+                              "parts": [
+                                {
+                                  "type": "text",
+                                  "body": "leaf"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-gone",
+      "event_id": "evt-gone",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "composite",
+                "parts": [
+                  {
+                    "type": "composite",
+                    "parts": [
+                      {
+                        "type": "composite",
+                        "parts": [
+                          {
+                            "type": "composite",
+                            "parts": [
+                              {
+                                "type": "text",
+                                "body": "leaf"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ]
+}
