@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Voice STT waits for partial transcription observers before reading the next result in both VAD-segmented and continuous sessions. A slow partial observer can now finish before the final transcription is delivered (RFC §9.3, RMK-1841).
+
 ## [0.116.0] — 2026-11-20
 
 ### Added

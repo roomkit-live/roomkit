@@ -473,10 +473,7 @@ class VoiceSTTMixin:
                         # A held segment is not a turn yet: its words reach
                         # no hook unless they cut in.
                         if not self._is_held_for_transcript(session.id):
-                            self._schedule(
-                                self._fire_partial_transcription_hook(session, result, room_id),
-                                name=f"partial_stt:{session.id}",
-                            )
+                            await self._fire_partial_transcription_hook(session, result, room_id)
                     if result.text:
                         # A segment SEMANTIC holds during playback is judged
                         # on its words as they come (RFC §12.3.13).
@@ -1167,11 +1164,8 @@ class VoiceSTTMixin:
                             # An echo is nobody's words: its partials are not
                             # published, as its final is no turn (§12.3.13).
                             if not self._echoes_burst(session.id, result.text):
-                                self._schedule(
-                                    self._fire_partial_transcription_hook(
-                                        session, result, room_id
-                                    ),
-                                    name=f"partial_stt:{session.id}",
+                                await self._fire_partial_transcription_hook(
+                                    session, result, room_id
                                 )
                 except asyncio.CancelledError:
                     return
