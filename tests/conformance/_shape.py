@@ -46,6 +46,7 @@ from tests.conformance._mcp_shape import mcp_problems as host_mcp_problems
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._realtime_session import REALTIME_ARGUMENTS
+from tests.conformance._recording import RECORDING_ARGUMENTS
 from tests.conformance._routing import (
     CONDITIONS,
     ROUTER,
@@ -70,6 +71,7 @@ from tests.conformance._strategies import (
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._thinking import channel_problems as thinking_problems
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
+from tests.conformance._video import VIDEO_ARGUMENTS
 from tests.conformance._voice import VOICE_ARGUMENTS
 
 # `rules` and `requirements` cite the RFC for the checker; the runner ignores them.
@@ -620,6 +622,7 @@ CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS | VOICE_ARGUMENTS
 CALLS |= CONFERENCE_ARGUMENTS | REALTIME_ARGUMENTS
+CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS

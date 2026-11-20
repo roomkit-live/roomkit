@@ -44,10 +44,13 @@ from roomkit.orchestration import DispatchDecisionEvent, HandoffHandler, SpeakQu
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
+from roomkit.recorder.feed import RoomRecordingFeed
+from roomkit.recorder.mock import MockMediaRecorder
 from roomkit.speaking import SpeakDecisionEvent, ThoughtEvent
 from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
+from roomkit.voice.events import RecordingStartedEvent, RecordingStoppedEvent
 from roomkit.voice.realtime.events import RealtimeDelegationEvent
 from tests import redis_turn_mode
 from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
@@ -101,6 +104,7 @@ from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._publications import Publications
 from tests.conformance._realtime_session import REALTIME_CALLS, ScriptedRealtimeSession
+from tests.conformance._recording import RECORDING_CALLS
 from tests.conformance._routing import ROUTING_CALLS
 from tests.conformance._script import (
     GATE_BOUND_S,
@@ -127,6 +131,7 @@ from tests.conformance._verification import (
     opened_labels,
     verification_options,
 )
+from tests.conformance._video import VIDEO_CALLS, VideoFixture, video_payload
 from tests.conformance._voice import VOICE_CALLS, VoiceFixture, voice_payload
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
@@ -258,6 +263,9 @@ class Harness:
         self._open_process = open_process
         self.gates = Gates()
         self.conferences: dict[str, ConferenceFixture] = {}
+        self.video_fixtures: dict[str, VideoFixture] = {}
+        self.media_recorders: dict[str, MockMediaRecorder] = {}
+        self.recording_feeds: dict[tuple[str, str], RoomRecordingFeed] = {}
         self.voice_fixtures: dict[str, VoiceFixture] = {}
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
@@ -472,6 +480,12 @@ class Harness:
             call["voice"] = {"text": payload}
         elif (voice := voice_payload(payload)) is not None:
             call["voice"] = voice
+        if (video := video_payload(payload)) is not None:
+            call["video"] = video
+        if isinstance(payload, RecordingStartedEvent | RecordingStoppedEvent):
+            call["recording"] = {"recording_id": payload.id, "room_id": payload.room_id}
+            if isinstance(payload, RecordingStoppedEvent):
+                call["recording"]["urls"] = list(payload.urls)
         if isinstance(payload, RealtimeDelegationEvent):
             call["delegation"] = {"delegation_id": payload.delegation_id, "target": payload.target}
         if isinstance(payload, ProtocolTrace):
@@ -847,7 +861,7 @@ class Harness:
         calls |= SKILL_REGISTRY_CALLS
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS
-        calls |= BELOW_KIT_CALLS | VOICE_CALLS
+        calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

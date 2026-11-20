@@ -30,13 +30,16 @@ from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
+from roomkit.models.vision_event import VisionEvent
 from roomkit.speaking import SpeakDecisionEvent
 from roomkit.tools import current_response_metadata
+from roomkit.video.events import BridgeVideoEvent
 from roomkit.voice.events import TranscriptionEvent
 from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
 from tests.conformance._speaking import patched_decision
+from tests.conformance._video import patched_video_event
 
 if TYPE_CHECKING:
     from roomkit.models.framework_event import FrameworkEvent
@@ -695,6 +698,8 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
             data["event"] = patched_generation(payload, data["event"])
         elif isinstance(payload, ToolRoundEvent):
             data["event"] = patched_tool_round(payload, data["event"])
+        elif isinstance(payload, BridgeVideoEvent | VisionEvent):
+            data["event"] = patched_video_event(payload, data["event"])
         elif isinstance(payload, PendingInputEvent | TranscriptionEvent):
             data["event"] = dataclasses.replace(payload, **data["event"])
     data["injected_events"] = [
