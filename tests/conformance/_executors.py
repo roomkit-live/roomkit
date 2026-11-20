@@ -178,7 +178,7 @@ class Executors:
         note("built", None)
         turns: dict[str, dict[str, Any]] = {}
         _record_calls(channel, note, turns)
-        _record_tools(channel, turns)
+        _record_tools(channel, {tool["name"] for tool in spec.get("tools", [])}, turns)
         return channel
 
     def running(self, executor_id: str) -> _ScenarioExecutor:
@@ -276,17 +276,17 @@ def _keep_turn(item: dict[str, Any] | None, turns: dict[str, dict[str, Any]]) ->
         turns[turn_id] = item
 
 
-def _record_tools(channel: Channel, turns: dict[str, dict[str, Any]]) -> None:
-    """Has the host's tool handler of *channel*, an AI channel's
-    ``tool_handler``, note each call it is handed under the turn it serves
-    (README, ``executors``: ``tools``)."""
+def _record_tools(channel: Channel, scripted: set[str], turns: dict[str, dict[str, Any]]) -> None:
+    """Has *channel*, a scripted agent, note each call of one of its own
+    *scripted* tools its handler runs, under the turn it serves (README,
+    ``executors``: ``tools``): the AI channel's ``tool_handler`` serves them."""
     handler = getattr(channel, "tool_handler", None)
     if handler is None:
         return
 
     async def noting(name: str, arguments: dict[str, Any]) -> Any:
         turn_id = current_turn_id()
-        if turn_id is not None and turn_id in turns:
+        if name in scripted and turn_id is not None and turn_id in turns:
             turns[turn_id]["tools"].append(name)
         return await handler(name, arguments)
 
