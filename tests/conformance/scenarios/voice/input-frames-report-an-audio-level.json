@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/input-frames-report-an-audio-level",
+  "title": "An inbound PCM frame produces a level for its session",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-045"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "input",
+        "trigger": "on_input_audio_level",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "input": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "level_db": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

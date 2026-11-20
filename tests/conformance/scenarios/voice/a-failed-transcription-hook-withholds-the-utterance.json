@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-failed-transcription-hook-withholds-the-utterance",
+  "title": "An unavailable transcription redactor keeps the original words out of the room",
+  "rules": [
+    "§9.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-021"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "fail": "redactor unavailable"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "private number"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "redact": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "private number"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": []
+    }
+  }
+}

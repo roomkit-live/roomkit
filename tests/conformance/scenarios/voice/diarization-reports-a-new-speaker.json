@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/diarization-reports-a-new-speaker",
+  "title": "The first diarization label produces a speaker-change event",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-047"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observer",
+        "trigger": "on_speaker_change",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "speakers": [
+        {
+          "speaker_id": "s2",
+          "confidence": 0.87,
+          "is_new_speaker": true
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "observer": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "speaker_id": "s2",
+            "source": "pipeline",
+            "confidence": 0.87
+          }
+        }
+      ]
+    }
+  }
+}

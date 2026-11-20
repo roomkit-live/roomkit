@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-streamed-reply-checks-each-sentence-before-synthesis",
+  "title": "A streamed reply checks each sentence and withholds the one whose redactor fails",
+  "rules": [
+    "§9.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.2-038",
+    "RK-9.3-021"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_tts",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "fail": "redactor unavailable"
+          },
+          {
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.stream",
+      "channel_id": "phone",
+      "chunks": [
+        "Your first sentence is public. ",
+        "Your second sentence is private. ",
+        "Your last sentence is public."
+      ]
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your first sentence is public.",
+            "Your last sentence is public."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "redact": [
+        {
+          "voice": {
+            "text": "Your first sentence is public."
+          }
+        },
+        {
+          "voice": {
+            "text": "Your second sentence is private."
+          }
+        },
+        {
+          "voice": {
+            "text": "Your last sentence is public."
+          }
+        }
+      ]
+    }
+  }
+}

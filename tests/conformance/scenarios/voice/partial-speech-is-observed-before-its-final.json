@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/partial-speech-is-observed-before-its-final",
+  "title": "The partial transcription observer completes before the final is routed",
+  "rules": [
+    "§9.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-038"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "partial",
+        "trigger": "on_partial_transcription",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "partial-observer",
+            "do": [
+              {
+                "call": "publish_typing",
+                "room_id": "r1",
+                "user_id": "partial",
+                "is_typing": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "final",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "publish_typing",
+                "room_id": "r1",
+                "user_id": "final",
+                "is_typing": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "hello"
+      ],
+      "transcripts": [
+        "hello there"
+      ]
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "r1",
+      "subscriber": "ordering"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "partial-observer"
+    },
+    {
+      "open": "partial-observer"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "partial",
+      "final"
+    ],
+    "hooks": {
+      "partial": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "hello"
+          }
+        }
+      ],
+      "final": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "hello there"
+          }
+        }
+      ]
+    },
+    "subscribers": {
+      "ordering": [
+        {
+          "type": "typing_start",
+          "user_id": "partial"
+        },
+        {
+          "type": "typing_stop",
+          "user_id": "final"
+        }
+      ]
+    }
+  }
+}

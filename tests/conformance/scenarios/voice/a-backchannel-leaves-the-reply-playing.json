@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-backchannel-leaves-the-reply-playing",
+  "title": "A recognized acknowledgement during playback is reported as a backchannel",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-051"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ack",
+        "trigger": "on_backchannel",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "acknowledged"
+          }
+        ]
+      },
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "uh-huh"
+      ],
+      "transcripts": [
+        "uh-huh"
+      ],
+      "backchannels": [
+        true
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Still speaking",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "acknowledged"
+    },
+    {
+      "open": "acknowledged"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "ack": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "uh-huh"
+          }
+        }
+      ],
+      "cut": []
+    }
+  }
+}

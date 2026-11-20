@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/streamed-recognition-reports-a-partial",
+  "title": "A streaming recognizer reports its partial words to the voice hook",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-042"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "partial",
+        "trigger": "on_partial_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "hello"
+      ],
+      "transcripts": [
+        "hello there"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "partial": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

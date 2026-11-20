@@ -1,0 +1,62 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/outbound-speech-reports-an-audio-level",
+  "title": "Playback produces an output level for the participant",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-046"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "output",
+        "trigger": "on_output_audio_level",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hello"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "output": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "level_db": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

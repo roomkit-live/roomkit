@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-detected-tone-reaches-the-dtmf-hook",
+  "title": "A DTMF observer receives the digit and duration of a detected tone",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-048"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observer",
+        "trigger": "on_dtmf",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "tones": [
+        {
+          "digit": "7",
+          "duration_ms": 160
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "observer": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "digit": "7",
+            "duration_ms": 160
+          }
+        }
+      ]
+    }
+  }
+}

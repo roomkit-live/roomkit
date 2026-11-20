@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-turn-waits-for-its-last-fragment",
+  "title": "An incomplete turn waits for another utterance and then reports their combined text",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-049",
+    "RK-9.2-050"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pending",
+        "trigger": "on_turn_incomplete",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "pending"
+          }
+        ]
+      },
+      {
+        "name": "done",
+        "trigger": "on_turn_complete",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "I need",
+        "help"
+      ],
+      "turns": [
+        false,
+        true
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "pending"
+    },
+    {
+      "open": "pending"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "pending",
+      "done"
+    ],
+    "hooks": {
+      "pending": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "I need"
+          }
+        }
+      ],
+      "done": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "I need help"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "I need help"
+          }
+        }
+      ]
+    }
+  }
+}

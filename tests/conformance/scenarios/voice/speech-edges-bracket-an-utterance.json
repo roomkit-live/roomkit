@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-edges-bracket-an-utterance",
+  "title": "The voice channel reports the speech edges of an utterance",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-035",
+    "RK-9.2-036"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "began",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "ended",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "began",
+      "ended"
+    ],
+    "hooks": {
+      "began": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "ended": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}
