@@ -75,7 +75,8 @@ def _transport(
 
 def _openai(failure: Failure) -> AIProvider:
     """openai 3.x runs on httpx2: its client raises its own connection error
-    from httpx2's, and lets an error of the stream's read through."""
+    from httpx2's. An error of a stream's read comes as it is on 3.0.0 and
+    under the SDK's connection error on 3.57.0: on its cause chain either way."""
     config = OpenAIConfig(api_key="k", model="gpt-4.1", max_retries=0)
     return OpenAIAIProvider(config, transport=_transport(failure, httpx2))
 
@@ -205,6 +206,20 @@ async def test_a_transport_failure_is_retryable(name: str, mode: str, failure: F
 
     assert error.retryable is True
     assert error.status_code is None
+
+
+@pytest.mark.parametrize("mode", ["generate", "stream"])
+async def test_the_openai_error_holds_the_httpx2_error_it_came_from(mode: str) -> None:
+    """Whichever way the SDK release surfaces a body dropped while it is read
+    (the httpx2 error itself, or its own connection error raised from it),
+    the httpx2 error is on the provider error's cause chain."""
+    error: BaseException | None = await _error(_openai("dropped"), mode)
+
+    causes = []
+    while error is not None:
+        causes.append(type(error))
+        error = error.__cause__
+    assert httpx2.ReadTimeout in causes
 
 
 @pytest.mark.parametrize("mode", ["generate", "stream"])

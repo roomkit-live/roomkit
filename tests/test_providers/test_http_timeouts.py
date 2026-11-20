@@ -293,17 +293,34 @@ CASES: dict[str, Builder] = {
 }
 
 
+# The clients built on the openai SDK take the SDK's own ``Timeout``, httpx2's:
+# an ``httpx.Timeout`` there would need an httpx the SDK does not install.
+ON_THE_OPENAI_SDK = {
+    "openai",
+    "azure",
+    "openrouter",
+    "litellm",
+    "xai",
+    "deepseek",
+    "qwen",
+    "vllm",
+    "openai-image",
+    "azure-image",
+    "xai-image",
+}
+
+
 # ---------------------------------------------------------------------------
 # The property
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("build", list(CASES.values()), ids=list(CASES))
-async def test_client_timeout_splits_connect_from_read(build: Builder) -> None:
-    timeout = await build()
+@pytest.mark.parametrize("case", list(CASES))
+async def test_client_timeout_splits_connect_from_read(case: str) -> None:
+    timeout = await CASES[case]()
 
-    kinds = (httpx.Timeout, httpx2.Timeout)
-    assert isinstance(timeout, kinds), f"a bare {type(timeout).__name__} was passed"
+    kind = httpx2.Timeout if case in ON_THE_OPENAI_SDK else httpx.Timeout
+    assert isinstance(timeout, kind), f"a {type(timeout).__module__} {type(timeout).__name__}"
     assert timeout.connect == CONNECT
     assert timeout.read == TIMEOUT
     assert timeout.write == TIMEOUT

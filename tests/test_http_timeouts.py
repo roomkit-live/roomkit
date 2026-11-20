@@ -212,8 +212,9 @@ CASES: dict[str, tuple[Builder, float | None]] = {
 async def test_client_timeout_splits_connect_from_read(build: Builder, read: float | None) -> None:
     timeout = await build()
 
-    kinds = (httpx.Timeout, httpx2.Timeout)
-    assert isinstance(timeout, kinds), f"a bare {type(timeout).__name__} was passed"
+    # The client on the openai SDK takes the SDK's own ``Timeout``, httpx2's.
+    kind = httpx2.Timeout if build is _openai_vision else httpx.Timeout
+    assert isinstance(timeout, kind), f"a {type(timeout).__module__} {type(timeout).__name__}"
     assert timeout.connect == CONNECT
     assert timeout.read == read
     assert timeout.write == TIMEOUT
