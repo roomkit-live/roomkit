@@ -26,7 +26,7 @@ from tests.conformance._shape import unknown_members
 HERE = Path(__file__).parent
 SCENARIOS = HERE / "scenarios"
 
-PROVIDED_FEATURES = {"message_session", "protocol_trace", "realtime", "voice"}
+PROVIDED_FEATURES = {"conference", "message_session", "protocol_trace", "realtime", "voice"}
 
 # Scenario id → the rule this implementation breaks (roomkit-specs
 # conformance/README.md, "Known failures").

@@ -73,6 +73,7 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._compare import Check, compare
+from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
 from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
 from tests.conformance._delivery import (
     backend_busy,
@@ -256,6 +257,7 @@ class Harness:
         self._lock_manager = lock_manager
         self._open_process = open_process
         self.gates = Gates()
+        self.conferences: dict[str, ConferenceFixture] = {}
         self.voice_fixtures: dict[str, VoiceFixture] = {}
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
@@ -839,7 +841,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
-        calls |= REALTIME_CALLS
+        calls |= CONFERENCE_CALLS | REALTIME_CALLS
         calls |= ADDRESSING_CALLS
         calls |= MCP_HOST_CALLS
         calls |= SKILL_REGISTRY_CALLS

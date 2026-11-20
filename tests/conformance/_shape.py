@@ -23,6 +23,7 @@ from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._addressing import ADDRESSING_ARGUMENTS
 from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
+from tests.conformance._conference import CONFERENCE_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
@@ -618,7 +619,7 @@ CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS | VOICE_ARGUMENTS
-CALLS |= REALTIME_ARGUMENTS
+CALLS |= CONFERENCE_ARGUMENTS | REALTIME_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
