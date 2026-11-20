@@ -320,6 +320,8 @@ class Harness:
             kwargs["max_chain_depth"] = kit_setup["max_chain_depth"]
         if "process_timeout_ms" in kit_setup:
             kwargs["process_timeout"] = kit_setup["process_timeout_ms"] / 1000
+        if "close_grace_ms" in kit_setup:
+            kwargs["close_grace"] = kit_setup["close_grace_ms"] / 1000
         if "inbound_rate_limit" in kit_setup:
             kwargs["inbound_rate_limit"] = RateLimit(**kit_setup["inbound_rate_limit"])
         if "persistence_policy" in kit_setup:

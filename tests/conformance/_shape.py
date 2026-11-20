@@ -129,6 +129,7 @@ KIT = {
     "telemetry",
     "max_chain_depth",
     "process_timeout_ms",
+    "close_grace_ms",
     "router",
     "identity_resolver",
     "identity_channel_types",
