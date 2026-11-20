@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/every-argument-that-does-not-fit-is-named",
+  "title": "A call whose arguments do not fit its schema reads every one of them at once: the required names it lacks, the names a closed schema does not declare, then each argument of another type",
+  "rules": [
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-21.1-004"
+  ],
+  "notes": "RMK-1848, HITL 48daeee0 option B. A model sent objective_title for title three times, reading each time that title was missing and never that objective_title was unknown. One argument that does not fit reads as it always has. Python: tools/validation.py validate_tool_arguments.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "create_plan",
+            "description": "Create a plan",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "objective": {
+                  "type": "string"
+                },
+                "steps": {
+                  "type": "array"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "draft": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "title",
+                "objective",
+                "steps"
+              ]
+            },
+            "returns": "created"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "create_plan",
+                  "arguments": {
+                    "objective_title": "Ship",
+                    "objective": "Ship it",
+                    "steps": []
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "create_plan",
+                  "arguments": {
+                    "name": "Ship",
+                    "draft": "maybe",
+                    "goal": "Ship it",
+                    "count": "many"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "create_plan",
+                  "arguments": {
+                    "title": "Ship",
+                    "objective": 3,
+                    "steps": []
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "create_plan",
+                  "arguments": {
+                    "title": "Ship",
+                    "objective": "Ship it",
+                    "steps": []
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": true,
+              "content": "{\"error\": \"Invalid arguments for 'create_plan': missing required argument 'title'; unknown argument 'objective_title' (this tool accepts: count, draft, objective, steps, title)\"}"
+            },
+            {
+              "tool_call_id": "c2",
+              "is_error": true,
+              "content": "{\"error\": \"Invalid arguments for 'create_plan': missing required arguments 'title', 'objective', 'steps'; unknown arguments 'name', 'goal' (this tool accepts: count, draft, objective, steps, title); argument 'draft' must be of type boolean; argument 'count' must be of type integer\"}"
+            },
+            {
+              "tool_call_id": "c3",
+              "is_error": true,
+              "content": "{\"error\": \"Invalid arguments for 'create_plan': argument 'objective' must be of type string\"}"
+            },
+            {
+              "tool_call_id": "c4",
+              "is_error": false,
+              "content": {
+                "$contains": "created"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
