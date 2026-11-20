@@ -107,6 +107,7 @@ EVENT_HANDLER_REACTION = {"when", "repeat", "gate", "do"}
 EXECUTOR = {
     "error_classes",
     "telemetry",
+    "scoring",
     "attached_media",
     "media_resolver",
     "host_predicate",
@@ -127,6 +128,7 @@ VERB = {"raises_class", "result", "keeps", "reads", "forgets", "gate", "fail", "
 KIT = {
     "error_classes",
     "telemetry",
+    "scoring",
     "max_chain_depth",
     "process_timeout_ms",
     "close_grace_ms",

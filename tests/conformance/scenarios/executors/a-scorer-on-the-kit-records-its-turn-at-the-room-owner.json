@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-scorer-on-the-kit-records-its-turn-at-the-room-owner",
+  "title": "A scorer attached to the kit records its turn's score at the room owner",
+  "rules": [
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-10.6.6-012"
+  ],
+  "notes": "The kit's live channel runs on its own executor. The store gate is reached after the owner persists the real scoring hook's observation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From the kit."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "store_faults": true,
+      "scoring": true
+    }
+  },
+  "steps": [
+    {
+      "store_fault": "add_observation",
+      "gate": "score-written"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "score-written"
+    },
+    {
+      "open": "score-written"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "observations": {
+      "r1": [
+        {
+          "room_id": "r1",
+          "channel_id": "coder",
+          "category": "score:default",
+          "confidence": 1.0,
+          "metadata": {
+            "scorer": "MockScorer",
+            "dimension": "default",
+            "score_value": 1.0
+          }
+        }
+      ]
+    }
+  },
+  "requires_features": [
+    "scoring"
+  ]
+}

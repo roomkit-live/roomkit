@@ -19,6 +19,7 @@ from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
+from roomkit.scoring import MockScorer, ScoringHook
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.mock import MockTelemetryProvider
@@ -189,6 +190,8 @@ class Executors:
 
     async def start_all(self) -> None:
         """Serves the executors the setup starts."""
+        if self._settings.get("scoring"):
+            ScoringHook(scorers=[MockScorer()]).attach(self._harness.kit)
         self._count_publications()
         for executor_id, spec in self._specs.items():
             if spec.get("started", True):
@@ -244,6 +247,8 @@ class Executors:
 
     def _add_hooks(self, executor: TurnExecutor, spec: Mapping[str, Any]) -> None:
         """Registers the hooks and defines the room hooks of *spec* (§10.6.6)."""
+        if spec.get("scoring"):
+            ScoringHook(scorers=[MockScorer()]).attach(executor)
         for hook in spec.get("hooks", []):
             trigger, execution = _trigger(hook)
             handler = hook_handler(hook, self._harness)

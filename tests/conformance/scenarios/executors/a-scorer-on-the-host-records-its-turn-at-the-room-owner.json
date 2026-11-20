@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-scorer-on-the-host-records-its-turn-at-the-room-owner",
+  "title": "A scorer attached to the host executor records its turn's score at the room owner",
+  "rules": [
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-10.6.6-012"
+  ],
+  "notes": "The store gate is reached after the owner persists the real scoring hook's observation. The host executor has no store.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From the kit."
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ],
+        "scoring": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "store_faults": true
+    }
+  },
+  "steps": [
+    {
+      "store_fault": "add_observation",
+      "gate": "score-written"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "score-written"
+    },
+    {
+      "open": "score-written"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "observations": {
+      "r1": [
+        {
+          "room_id": "r1",
+          "channel_id": "coder",
+          "category": "score:default",
+          "confidence": 1.0,
+          "metadata": {
+            "scorer": "MockScorer",
+            "dimension": "default",
+            "score_value": 1.0
+          }
+        }
+      ]
+    },
+    "executors": {
+      "host": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "room_id": "r1",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ]
+    }
+  },
+  "requires_features": [
+    "scoring"
+  ]
+}

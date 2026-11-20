@@ -34,6 +34,7 @@ PROVIDED_FEATURES = {
     "protocol_trace",
     "realtime",
     "recording",
+    "scoring",
     "video",
     "voice",
 }
@@ -138,6 +139,8 @@ _ON_EACH_STORE = (
 # advisory lock manager there, and every scenario whose steps make the store's
 # operations fail or hold (``setup.kit.store_faults``).
 _ON_POSTGRES = (
+    "executors/a-failed-state-discard-is-retried-before-the-next-turn",
+    "executors/the-kit-s-own-executor-serves-every-organization",
     "executors/a-built-channel-",
     "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
     "idempotency/",

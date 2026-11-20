@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/the-kit-s-own-executor-serves-every-organization",
+  "title": "The kit's own executor runs its live agent for every organization",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-014"
+  ],
+  "notes": "Covers the first clause, with the kit's default executor and a competing executor serving every organization. The second clause, an owner given a host's executor as its own, remains open: neither kit takes a host executor as its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "No organization."
+            },
+            {
+              "text": "Acme."
+            },
+            {
+              "text": "Beta."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ],
+        "organizations": [
+          "*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "no-org",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "acme-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "organization_id": "acme"
+      },
+      {
+        "id": "beta-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "organization_id": "beta"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "own",
+        "trigger": "before_ai_generation"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "no-org",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "acme-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "beta-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "no-org": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "No organization."
+          }
+        }
+      ],
+      "acme-room": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Acme."
+          }
+        }
+      ],
+      "beta-room": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Beta."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "host": []
+    },
+    "hooks": {
+      "own": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "no-org"
+        },
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "acme-room"
+        },
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "beta-room"
+        }
+      ]
+    }
+  }
+}
