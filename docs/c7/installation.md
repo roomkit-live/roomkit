@@ -18,7 +18,7 @@ RoomKit uses optional extras for provider-specific dependencies. Install only wh
 
 ```bash
 pip install roomkit[anthropic]    # Anthropic (Claude)
-pip install roomkit[openai]       # OpenAI (GPT)
+pip install roomkit[openai]       # OpenAI (GPT), on the openai SDK 3.x
 pip install roomkit[gemini]       # Google Gemini
 pip install roomkit[mistral]      # Mistral AI
 pip install roomkit[vllm]         # vLLM local inference (uses openai SDK)

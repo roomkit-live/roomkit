@@ -69,7 +69,7 @@ await kit.attach_channel("room-1", "sms-out",
 
 ## Connect vs Read Timeout
 
-Every httpx-backed provider config in `roomkit.providers` carries `timeout` (the read/write/pool budget, sized for the slowest response) and `connect_timeout` (default 5 s, the TCP connect alone, TLS handshake included). Each adapter hands its client or SDK `httpx.Timeout(timeout, connect=connect_timeout)` rather than a bare float, so a host that no longer accepts connections is given up on in seconds rather than after the read budget: with one float for both, the kernel exhausts its SYN retries first, about two minutes per attempt, whatever the value.
+Every httpx-backed provider config in `roomkit.providers` carries `timeout` (the read/write/pool budget, sized for the slowest response) and `connect_timeout` (default 5 s, the TCP connect alone, TLS handshake included). Each adapter hands its client or SDK a `Timeout(timeout, connect=connect_timeout)` (httpx's, or the SDK's own where it runs on httpx2: the `openai` SDK and Anthropic's) rather than a bare float, so a host that no longer accepts connections is given up on in seconds rather than after the read budget: with one float for both, the kernel exhausts its SYN retries first, about two minutes per attempt, whatever the value.
 
 ```python
 from roomkit.providers.polargrid import PolarGridConfig

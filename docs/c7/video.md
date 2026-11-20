@@ -101,7 +101,7 @@ from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider
 vision = OpenAIVisionProvider(OpenAIVisionConfig(
     api_key="sk-...", base_url="https://api.openai.com/v1",
     model="gpt-6.2-sol", detail="low", max_tokens=25000,
-))  # transport=httpx.AsyncBaseTransport: every request goes through it, for a
+))  # transport=httpx2.AsyncBaseTransport: every request goes through it, for a
     # policy on a user-named base_url (as on OpenAIAIProvider)
 # GeminiVisionProvider(GeminiVisionConfig(api_key="AIza...", model="gemini-3.8-flash"))
 ```

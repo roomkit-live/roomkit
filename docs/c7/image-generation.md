@@ -43,12 +43,15 @@ vendor knobs — OpenAI's `quality`/`background`/`output_format`, Gemini's
 `azure_endpoint`/`api_version`. The `generate()` call is identical everywhere.
 
 The OpenAI, Azure, xAI and Meta providers run on the `openai` SDK and take
-`transport=` (an `httpx.AsyncBaseTransport`) as the OpenAI AI provider does;
-`OpenRouterImageProvider`, on httpx alone, takes it too. Every request, an
-edit's included, goes through it, the seam for a policy that judges the
-address dialled when users name `base_url`
-(`examples/openai_outbound_policy.py`). A policy that refuses by raising
-`httpx.ConnectError` or a subclass is read as a request that never left:
+`transport=` (an `httpx2.AsyncBaseTransport`: openai 3.x runs on httpx2, and
+an httpx transport raises `TypeError`) as the OpenAI AI provider does;
+`OpenRouterImageProvider`, on httpx alone, takes an
+`httpx.AsyncBaseTransport`. Every request, an edit's included, goes through
+it, the seam for a policy that judges the address dialled when users name
+`base_url` (`examples/openai_outbound_policy.py`). A policy that refuses by
+raising its client's `ConnectError` (`httpx2.ConnectError`, or
+`httpx.ConnectError` on OpenRouter) or a subclass is read as a request that
+never left:
 OpenAI's and Azure's attempt is `failed`, not `unknown` (possibly billed),
 and xAI's, Meta's and OpenRouter's error is retryable, as for any connect
 failure. Any other exception reads as a request that may have left. So does
