@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-turn-whose-end-is-owed-as-the-kit-closes-stays-incomplete",
+  "title": "A cut turn already over, its end owed, when the kit's close gives up the turns still open keeps its cleanup incomplete",
+  "rules": [
+    "§10.6.8 Cancellation",
+    "§10.1 Explicit delivery cancellation",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-10.6.8-027"
+  ],
+  "notes": "The kit's turns are cancelled within 100 ms (cancel_ms). The close cuts the agent's turn at once (a cancel, kit_closed) while its end is held at end-held: the cancel's bound passes first, the delivery's cleanup reporting itself incomplete, so the turn is over, its end owed, before the kit's turn backend closes and gives up the turns still open. That close leaves it as it was: the deferred handle's wait reports the cleanup incomplete, and still does once the end comes, unread (turn_ends read: false). Not observed: a cleanup still waiting as the backend closes (turn work slow to honour its cut), whose turn, already over, the close must leave owed too; Python: tests/test_turns_cleanup.py::test_a_turn_whose_end_is_owed_stays_owed_when_its_owner_closes reaches it.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "holds_end": "end-held",
+        "model": {
+          "rounds": [
+            {
+              "gate": "turn-runs",
+              "text": "never read"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "d1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "wait_for": "turn-runs"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "open": "end-held"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "cancel",
+          "read": false
+        }
+      ]
+    }
+  }
+}
