@@ -133,6 +133,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `ollama_ai.py` | Ollama | AI-powered assistant using Ollama's native API (proper thinking support) |
 | `llamacpp_tools.py` | llama.cpp | A local model RoomKit downloads and runs itself, calling tools (nothing to install beside it) |
 | `ollama_cli.py` | Ollama | Interactive CLI test bed — `--think`/`--no-think`, `--stream`/`--no-stream`, `--mcp <url>` |
+| `ovhcloud_olala.py` | OVHcloud Olala | Interactive CLI with Olala 1.0 mini on OVHcloud AI Endpoints (OpenAI-compatible API), reasoning shown and tools called |
 | `azure_ai.py` | Azure | Azure AI Foundry with OpenAI-compatible API |
 | `multichannel_bridge.py` | Multi-channel | WebSocket + SMS + Email + HTTP + AI bridged together |
 | `teams_bot.py` | Teams | Microsoft Teams bot via Bot Framework |
