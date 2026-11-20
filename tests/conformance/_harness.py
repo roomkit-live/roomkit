@@ -389,13 +389,22 @@ class Harness:
     def record_context(
         self, room_id: str, channel_id: str, call: str, context: RoomContext
     ) -> None:
-        """The context a scripted channel's ``deliver`` or ``on_event`` was
-        handed: the ids of its events, lifecycle records left out."""
+        """The context a scripted channel's ``parse``, ``deliver`` or
+        ``on_event`` was handed (README, ``contexts``): its events, the ids
+        alone and whole, lifecycle records left out, its room, its bindings
+        and its participants."""
         if not self._recording:
             return
         per_room = self.observed.contexts.setdefault(room_id, {})
         per_room.setdefault(channel_id, []).append(
-            {"call": call, "recent_events": _recent_ids(context)}
+            {
+                "call": call,
+                "recent_events": _recent_ids(context),
+                "events": _context_events(context),
+                "room": context.room.model_dump(mode="json"),
+                "bindings": [b.model_dump(mode="json") for b in context.bindings],
+                "participants": [p.model_dump(mode="json") for p in context.participants],
+            }
         )
 
     def record_streamed(self, room_id: str, channel_id: str, item: dict[str, Any]) -> None:
@@ -475,6 +484,9 @@ class Harness:
             "event": event,
             "context_room": context.room.model_dump(mode="json"),
             "recent_events": _recent_ids(context),
+            "context_events": _context_events(context),
+            "context_bindings": [b.model_dump(mode="json") for b in context.bindings],
+            "context_participants": [p.model_dump(mode="json") for p in context.participants],
         }
         if trigger in {"before_tts", "after_tts"} and isinstance(payload, str):
             call["voice"] = {"text": payload}
@@ -1172,8 +1184,13 @@ def _literal_rooms(scenario: Mapping[str, Any]) -> set[str]:
     return found
 
 
-def _recent_ids(context: RoomContext) -> list[str]:
-    """The ids of *context*'s events, lifecycle records left out: what a
+def _context_events(context: RoomContext) -> list[dict[str, Any]]:
+    """*context*'s events, lifecycle records left out: what a parse, a
     delivery and a hook read of the room (README, ``contexts``, ``hooks``)."""
     events = [event.model_dump(mode="json") for event in context.recent_events]
-    return [event["id"] for event in events if not is_lifecycle_record(event)]
+    return [event for event in events if not is_lifecycle_record(event)]
+
+
+def _recent_ids(context: RoomContext) -> list[str]:
+    """The ids of *context*'s events, lifecycle records left out."""
+    return [event["id"] for event in _context_events(context)]

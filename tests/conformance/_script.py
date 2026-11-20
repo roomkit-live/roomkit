@@ -328,6 +328,7 @@ class ScriptedChannel(Channel):
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         room_id = context.room.id
+        self._harness.record_context(room_id, self.channel_id, "parse", context)
         reaction = self._parse.pick(message_subject(message, room_id)) or {}
         await perform(self._harness, reaction, {"room": room_id})
         event = RoomEvent(
