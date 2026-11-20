@@ -315,6 +315,7 @@ TOOL = {
     "declared",
     "returns_json",
     "returns_allowed_names",
+    "returns_actor",
     "returns_requester",
     "posts_progress",
     "report_claim_probe",

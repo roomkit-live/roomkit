@@ -70,6 +70,7 @@ from roomkit.providers.utils import _aclose_stream
 from roomkit.tasks import CancelTaskTool, TaskStatusTool, post_task_progress
 from roomkit.tools import (
     current_response_metadata,
+    current_tool_actor_id,
     current_tool_allowed_names,
     current_tool_call,
     current_tool_requester,
@@ -625,6 +626,8 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates, kit: RoomKit | N
             return await call_from_tool(tool["host_calls"], gates)
         if tool.get("returns_requester"):
             return json.dumps(current_tool_requester(), ensure_ascii=False)
+        if tool.get("returns_actor"):
+            return json.dumps(current_tool_actor_id(), ensure_ascii=False)
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:
