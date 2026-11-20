@@ -245,9 +245,10 @@ class TestIdentity:
         assert provider.full_duplex is True
         assert provider.supports_mid_session_reconfigure is False
         assert isinstance(provider.delegation, IntegratorReasoning)
-        assert "gpt-live-1" in {m.id for m in OpenAILiveProvider.available_models()}
+        models = {m.id for m in OpenAILiveProvider.available_models()}
+        assert {"gpt-live-1", "gpt-live-1.1"} <= models
         voices = {v.id for v in OpenAILiveProvider.available_voices()}
-        assert {"marin", "cedar", "vesper", "bossa"} <= voices
+        assert {"marin", "cedar", "vesper", "bossa", "brise", "noeul"} <= voices
         assert len(voices) == len(OpenAILiveProvider.available_voices())  # unique ids
 
     def test_rejects_bad_timing(self) -> None:

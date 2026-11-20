@@ -54,6 +54,15 @@ _VOICES: list[VoiceInfo] = [
     VoiceInfo(id="beacon", name="Beacon", language="en-PH", gender="male"),
     VoiceInfo(id="bossa", name="Bossa", language="pt-BR", gender="female"),
     VoiceInfo(id="tempo", name="Tempo", language="pt-BR", gender="male"),
+    VoiceInfo(id="nuri", name="Nuri", language="de", gender="female"),
+    VoiceInfo(id="juni", name="Juni", language="de", gender="female"),
+    VoiceInfo(id="flitz", name="Flitz", language="de", gender="male"),
+    VoiceInfo(id="brise", name="Brise", language="fr", gender="female"),
+    VoiceInfo(id="sillage", name="Sillage", language="fr", gender="male"),
+    VoiceInfo(id="nira", name="Nira", language="hi", gender="female"),
+    VoiceInfo(id="harema", name="Harema", language="ja", gender="female"),
+    VoiceInfo(id="shida", name="Shida", language="ja", gender="male"),
+    VoiceInfo(id="noeul", name="Noeul", language="ko", gender="female"),
 ]
 
 

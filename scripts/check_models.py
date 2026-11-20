@@ -189,7 +189,7 @@ UNMIRRORED_CATALOGS: dict[str, str] = {
     "openai-live": (
         "the gpt-live-* lineup lives on the Live API (/v1/live/sessions), which no "
         "aggregator mirrors; the live model bills session seconds, a unit the mirror's "
-        "token rates cannot express (checked 2026-09-11). Ids come from OpenAI's Live "
+        "token rates cannot express (checked 2026-11-20). Ids come from OpenAI's Live "
         "API docs."
     ),
     "gemini-realtime": (

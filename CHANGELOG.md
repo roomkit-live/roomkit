@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GPT-Live 1.1 (`gpt-live-1.1`) in the `OpenAILiveProvider` model catalog. It takes the session `gpt-live-1` takes and bills the same seconds: pass `model="gpt-live-1.1"`. The voice catalog gains the nine voices OpenAI added for German, French, Hindi, Japanese and Korean: `nuri`, `juni`, `flitz`, `brise`, `sillage`, `nira`, `harema`, `shida` and `noeul`.
+
 ### Fixed
 
 - A phone channel reads a number written with `+` after an opening parenthesis, `(+44) 20 7946 0958`, as international, `+442079460958`: it was kept as written, or read as a national number and given the channel's country code, another person's number (RFC §5.7).
