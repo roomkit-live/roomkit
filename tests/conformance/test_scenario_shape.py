@@ -54,3 +54,10 @@ def test_a_hook_left_unnamed_is_labelled_where_it_is_registered_for_the_kit_or_a
     if call != "register_hook" and not call.startswith("kit_executor.hook"):
         step["room_id"] = "room-1"
     assert unknown_members({"steps": [step]}) == problems
+
+
+@pytest.mark.parametrize("member", ["hooks", "room_hooks"])
+def test_an_executor_defines_its_hooks_by_name(member: str) -> None:
+    hook = {"as": "audit", "trigger": "on_tool_call"}
+    scenario = {"setup": {"executors": [{"id": "w1", member: [hook]}]}}
+    assert unknown_members(scenario) == [f"setup.executors[0].{member}[0]: as"]

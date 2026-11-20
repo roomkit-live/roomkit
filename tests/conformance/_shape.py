@@ -679,7 +679,8 @@ def _executors(setup: Mapping[str, Any], found: list[str]) -> None:
         _members(executor, EXECUTOR, path, found)
         for member in ("hooks", "room_hooks"):
             for index, hook in enumerate(executor.get(member, [])):
-                _hook(hook, f"{path}.{member}[{index}]", found)
+                # An executor defines its hooks by name (RFC §10.6.6).
+                _hook(hook, f"{path}.{member}[{index}]", found, HOOK - {"as"})
 
 
 def _event_handlers(setup: Mapping[str, Any], found: list[str]) -> None:
