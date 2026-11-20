@@ -1,0 +1,268 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-ranked-label-cuts-the-name-it-disclaims-to-24-characters",
+  "title": "The name a ranked label says its sender is not is whole within 24 characters, else cut at a word when a space comes after its thirteenth character, inside its word otherwise, and ended with an ellipsis",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-025"
+  ],
+  "notes": "Three names of more than 24 characters, each signed by two senders, so each second sender is ranked. 'Jean-Sébastien Tremblay-Lafontaine': the last space of its first 23 characters is its fifteenth, so the name is cut there. 'Bartholomew-Maximilian-Fitzgerald' holds no space: cut after 23 characters. 'Alexandria Ocasio-Tremblay': its only space is its eleventh character, too early to cut at, so 23 characters are kept. Each cut ends with '…'. Python: roomkit/_text.py bounded_text, channels/_speaker.py _ranked; tests/test_external_text.py::test_a_ranked_label_keeps_the_name_it_disclaims_within_24_characters.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            },
+            {
+              "text": "Seen 4."
+            },
+            {
+              "text": "Seen 5."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Message 1."
+        },
+        "metadata": {
+          "sender_name": "Jean-Sébastien Tremblay-Lafontaine"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Message 2."
+        },
+        "metadata": {
+          "sender_name": "Jean-Sébastien Tremblay-Lafontaine"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "Message 3."
+        },
+        "metadata": {
+          "sender_name": "Bartholomew-Maximilian-Fitzgerald"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000004",
+        "content": {
+          "type": "text",
+          "body": "Message 4."
+        },
+        "metadata": {
+          "sender_name": "Bartholomew-Maximilian-Fitzgerald"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000005",
+        "content": {
+          "type": "text",
+          "body": "Message 5."
+        },
+        "metadata": {
+          "sender_name": "Alexandria Ocasio-Tremblay"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000006",
+        "content": {
+          "type": "text",
+          "body": "Message 6."
+        },
+        "metadata": {
+          "sender_name": "Alexandria Ocasio-Tremblay"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Jean-Sébastien Tremblay-Lafontaine: \"Message 1.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "Jean-Sébastien Tremblay-Lafontaine (2, not Jean-Sébastien…): \"Message 2.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "Bartholomew-Maximilian-Fitzgerald: \"Message 3.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "Bartholomew-Maximilian-Fitzgerald (2, not Bartholomew-Maximilian-…): \"Message 4.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 3."
+            },
+            {
+              "role": "user",
+              "text": "Alexandria Ocasio-Tremblay: \"Message 5.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 4."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Alexandria Ocasio-Tremblay (2, not Alexandria Ocasio-Tremb…): \"Message 6.\"\n\n[Notes kept by the assistant's runtime"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

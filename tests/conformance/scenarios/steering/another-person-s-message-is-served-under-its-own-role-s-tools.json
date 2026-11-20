@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/another-person-s-message-is-served-under-its-own-role-s-tools",
+  "title": "With steer_room_turns, a member's message that comes while an owner's turn runs is answered by a turn of its own, in which the member's role is refused send_email",
+  "rules": [
+    "§6.4",
+    "§21.3",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-036"
+  ],
+  "notes": "The channel's tool policy denies send_email to members, and is resolved for the role of a turn's author. The owner's turn holds a tool when a member asks for the email: read inside the owner's turn, the member's request ran under the owner's tools, and send_email went out (RMK-1840). A running turn reads its own author's messages only; the member's waits its turn, in which the model's send_email call is refused by the policy. Four generations: two for the owner's turn, two for the member's. Python: core/_room_turns.py RoomTurns._steered; tests/test_steering_during_turn.py::test_another_person_s_message_waits_a_turn_of_its_own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "tool_policy": {
+          "role_overrides": {
+            "member": {
+              "deny": [
+                "send_email"
+              ]
+            }
+          }
+        },
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the project's files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          },
+          {
+            "name": "send_email",
+            "description": "Send an email.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "sent"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "send_email"
+                }
+              ]
+            },
+            {
+              "text": "Only the owner may ask for that."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "olga",
+            "channel_id": "ws",
+            "role": "owner"
+          },
+          {
+            "id": "mel",
+            "channel_id": "ws",
+            "role": "member"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "olga",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "mel",
+        "content": {
+          "type": "text",
+          "body": "Send the email."
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "a.py b.txt",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "a.py b.txt",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "not permitted by the agent's tool policy"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

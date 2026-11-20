@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/another-person-s-message-waits-a-turn-of-its-own",
+  "title": "With steer_room_turns, a message another person sends while a turn runs is not read by that turn: it is answered by a turn of its own, whose tools read that person as who asked",
+  "rules": [
+    "§6.4",
+    "§21.3",
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-6.4-036"
+  ],
+  "notes": "Alice's turn calls who (current_tool_requester(): Alice) and a tool that holds; Bob's message comes meanwhile. A turn runs in its author's name: read inside Alice's turn, Bob's request ran under her id and her role's tools, and a gate that let her requests through let his through (RMK-1840). The room's owner hands a running turn a message from its own author only; Bob's waits, and its own turn's who answers Bob. Four generations: two for Alice's turn, two for Bob's. Python: core/_room_turns.py RoomTurns._steered; tests/test_steering_during_turn.py::test_another_person_s_message_waits_a_turn_of_its_own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "tools": [
+          {
+            "name": "who",
+            "description": "Who asked.",
+            "returns_requester": true
+          },
+          {
+            "name": "list_files",
+            "description": "List the project's files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "who",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "who",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Only a.py."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"Alice\""
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "a.py b.txt"
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"Alice\""
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "a.py b.txt"
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "\"Bob\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
