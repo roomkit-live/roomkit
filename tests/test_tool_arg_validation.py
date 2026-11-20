@@ -146,6 +146,12 @@ def test_every_violation_is_named_in_one_answer() -> None:
     )
 
 
+def test_a_required_name_listed_twice_is_named_once() -> None:
+    # One argument missing reads as it always has, whatever the schema repeats.
+    schema = {"type": "object", "required": ["city", "city"]}
+    assert validate_tool_arguments(schema, {}) == "missing required argument 'city'"
+
+
 def test_an_open_schema_names_what_it_checks_and_passes_the_rest() -> None:
     # Nothing closes ``_SCHEMA``: the unknown argument passes, the missing
     # one and the one of another type are both named.
@@ -282,8 +288,10 @@ def test_params_supplied_as_a_non_object_is_left_to_the_type_check() -> None:
     folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
     assert (folded, err) == (None, None)
     type_error = validate_tool_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
-    assert type_error is not None
-    assert "object" in type_error
+    assert type_error == (
+        "unknown argument 'b' (this tool accepts: action, params); "
+        "argument 'params' must be of type object"
+    )
 
 
 # -- Primitives a server quoted ----------------------------------------------

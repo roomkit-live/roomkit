@@ -78,11 +78,14 @@ def _named(what: str, names: list[str]) -> str:
 
 def _missing_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     """The ``required`` arguments the call lacks, as one violation, in the
-    schema's order."""
+    schema's order; a name ``required`` lists twice is named once."""
     required = parameters.get("required")
     if not isinstance(required, list):
         return []
-    missing = [field for field in required if field not in arguments]
+    missing: list[Any] = []
+    for field in required:
+        if field not in arguments and field not in missing:
+            missing.append(field)
     return [_named("missing required argument", missing)] if missing else []
 
 
