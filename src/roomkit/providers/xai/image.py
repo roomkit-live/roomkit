@@ -10,6 +10,7 @@ absorb it.
 
 from __future__ import annotations
 
+from importlib import import_module
 from math import gcd
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +30,7 @@ from roomkit.providers.image.base import (
     payload_mime_type,
     to_data_uri,
 )
-from roomkit.providers.utils import openai_http_client, openai_timeout
+from roomkit.providers.utils import import_openai, openai_http_client, openai_timeout
 from roomkit.providers.xai.config import XAIImageConfig
 from roomkit.providers.xai.image_models import MODELS
 
@@ -79,18 +80,12 @@ class XAIImageProvider(ImageProvider):
     ) -> None:
         """*transport* carries every request, edits included, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`."""
-        try:
-            import httpx2 as _httpx2
-            import openai as _openai
-        except ImportError as exc:
-            raise ImportError(
-                "openai is required for XAIImageProvider. "
-                "Install it with: pip install roomkit[xai]"
-            ) from exc
+        _openai = import_openai("XAIImageProvider", "xai")
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
-        self._httpx2 = _httpx2
+        # The client openai 3.x runs on, installed with it: its errors are read.
+        self._httpx2 = import_module("httpx2")
         self._sdk_retries = config.max_retries
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(

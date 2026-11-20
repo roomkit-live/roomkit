@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
-from roomkit.providers.utils import openai_http_client, openai_timeout
+from roomkit.providers.utils import import_openai, openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
     import httpx2
@@ -27,13 +27,7 @@ class AzureAIProvider(OpenAIAIProvider):
         self, config: AzureAIConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIAIProvider`."""
-        try:
-            import openai as _openai
-        except ImportError as exc:
-            raise ImportError(
-                "openai is required for AzureAIProvider. "
-                "Install it with: pip install roomkit[azure]"
-            ) from exc
+        _openai = import_openai("AzureAIProvider", "azure")
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError

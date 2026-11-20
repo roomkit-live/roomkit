@@ -433,6 +433,22 @@ def test_an_httpx_transport_is_refused_when_the_client_is_built(kind: str) -> No
         _ON_THE_SDK[kind](_recording(httpx, []))
 
 
+@pytest.mark.parametrize("kind", list(_ON_THE_SDK))
+async def test_an_openai_sdk_older_than_3_is_refused_with_its_version(
+    kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RoomKit installed without its extra can sit over openai 2.x, which runs
+    on httpx: there a client built, and its requests through an httpx2
+    transport failed as a lost connection. It is refused where the SDK is
+    imported, by a message naming the installed version and the extra."""
+    monkeypatch.setattr(openai, "__version__", "2.54.0")
+
+    with pytest.raises(ImportError, match=r"openai 2\.54\.0 is installed.*'roomkit\[\w+\]'"):
+        provider = _ON_THE_SDK[kind](_recording(httpx2, []))
+        if kind in _CALLS:  # the vision provider imports the SDK on first use
+            await _CALLS[kind].call(provider)
+
+
 async def test_a_transport_of_both_packages_is_taken() -> None:
     """One class serving both clients is an httpx2 transport too: not refused."""
 

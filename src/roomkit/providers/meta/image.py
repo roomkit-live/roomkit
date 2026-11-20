@@ -23,6 +23,7 @@ default format is WebP.
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from roomkit.providers.ai.base import (
@@ -44,7 +45,7 @@ from roomkit.providers.image.base import (
 from roomkit.providers.image.options import ImageModelInfo, ImageOptions
 from roomkit.providers.meta.config import MetaImageConfig
 from roomkit.providers.meta.image_models import MODELS
-from roomkit.providers.utils import openai_http_client, openai_timeout
+from roomkit.providers.utils import import_openai, openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
     import httpx2
@@ -60,18 +61,12 @@ class MetaImageProvider(ImageProvider):
     ) -> None:
         """*transport* carries every request, edits included, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`."""
-        try:
-            import httpx2 as _httpx2
-            import openai as _openai
-        except ImportError as exc:
-            raise ImportError(
-                "openai is required for MetaImageProvider. "
-                "Install it with: pip install roomkit[meta]"
-            ) from exc
+        _openai = import_openai("MetaImageProvider", "meta")
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
-        self._httpx2 = _httpx2
+        # The client openai 3.x runs on, installed with it: its errors are read.
+        self._httpx2 = import_module("httpx2")
         self._sdk_retries = config.max_retries
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(

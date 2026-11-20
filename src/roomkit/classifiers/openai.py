@@ -39,21 +39,10 @@ from roomkit.classifiers.base import (
     check_answers,
 )
 from roomkit.providers.ai.openai_dialect import status_error_text
+from roomkit.providers.utils import import_openai
 
 DEFAULT_MODEL = "gpt-6-luna"
 """The one model the Decisions API takes in its beta."""
-
-
-def _import_sdk() -> Any:
-    """The OpenAI SDK, or a clear error naming the extra."""
-    try:
-        import openai
-
-        return openai
-    except ImportError as exc:
-        raise ImportError(
-            "openai is required for OpenAIClassifier. Install it with: pip install roomkit[openai]"
-        ) from exc
 
 
 class OpenAIClassifier(Classifier):
@@ -76,7 +65,7 @@ class OpenAIClassifier(Classifier):
         timeout: float = 3.0,
         client: Any | None = None,
     ) -> None:
-        self._sdk = _import_sdk()
+        self._sdk = import_openai("OpenAIClassifier", "openai")
         self._model = model
         self._timeout = timeout
         self._owns_client = client is None

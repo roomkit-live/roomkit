@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureImageConfig
 from roomkit.providers.openai.image import OpenAIImageProvider
-from roomkit.providers.utils import openai_http_client, openai_timeout
+from roomkit.providers.utils import import_openai, openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
     import httpx2
@@ -30,16 +31,10 @@ class AzureImageProvider(OpenAIImageProvider):
         self, config: AzureImageConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIImageProvider`."""
-        try:
-            import httpx2 as _httpx2
-            import openai as _openai
-        except ImportError as exc:
-            raise ImportError(
-                "openai is required for AzureImageProvider. "
-                "Install it with: pip install roomkit[azure]"
-            ) from exc
+        _openai = import_openai("AzureImageProvider", "azure")
         self._config = config
-        self._httpx2 = _httpx2
+        # The client openai 3.x runs on, installed with it: its errors are read.
+        self._httpx2 = import_module("httpx2")
         self._sdk_retries = config.max_retries
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError

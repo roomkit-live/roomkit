@@ -89,6 +89,34 @@ def parse_data_uri(url: str, *, fallback_mime: str | None = None) -> tuple[str, 
     return mime_type, data
 
 
+def import_openai(owner: str, extra: str) -> Any:
+    """The ``openai`` SDK for the client *owner* builds, or an ``ImportError``
+    naming the RoomKit *extra* that installs it: when the SDK is missing, and
+    when it is older than 3.
+
+    The SDK is an optional dependency, imported where a client is built.
+    RoomKit's extras install 3.x, which runs on httpx2; an environment that
+    installed RoomKit without one can hold 2.x, which runs on httpx. There a
+    client built, a request through an httpx2 transport failed as a lost
+    connection, retried, and an httpx transport was refused for a reason
+    that is not true of that SDK (measured on openai 2.54.0).
+    """
+    try:
+        import openai
+    except ImportError as exc:
+        raise ImportError(
+            f"openai is required for {owner}. Install it with: pip install roomkit[{extra}]"
+        ) from exc
+    version = getattr(openai, "__version__", None)
+    major = version.partition(".")[0] if isinstance(version, str) else ""
+    if major.isdigit() and int(major) < 3:
+        raise ImportError(
+            f"openai {version} is installed, and {owner} needs openai 3 or later. "
+            f"Upgrade it with: pip install 'roomkit[{extra}]'"
+        )
+    return openai
+
+
 def openai_http_client(
     openai_module: Any, transport: httpx2.AsyncBaseTransport | None
 ) -> httpx2.AsyncClient | None:

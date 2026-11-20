@@ -40,7 +40,12 @@ from roomkit.providers.ai.openai_dialect import (
 )
 from roomkit.providers.ai.response_schema import check_schema_answer, check_schema_request
 from roomkit.providers.openai.config import refuses_custom_temperature, refuses_max_tokens
-from roomkit.providers.utils import openai_http_client, openai_timeout, refuse_httpx_transport
+from roomkit.providers.utils import (
+    import_openai,
+    openai_http_client,
+    openai_timeout,
+    refuse_httpx_transport,
+)
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import DEFAULT_VISION_PROMPT, VisionProvider, VisionResult
 from roomkit.video.vision.encode import frame_to_jpeg_base64
@@ -138,13 +143,7 @@ class OpenAIVisionProvider(VisionProvider):
     def _get_client(self) -> Any:
         """Lazy-init the AsyncOpenAI client."""
         if self._client is None:
-            try:
-                import openai
-            except ImportError as exc:
-                raise ImportError(
-                    "openai is required for OpenAIVisionProvider. "
-                    "Install with: pip install roomkit[openai]"
-                ) from exc
+            openai = import_openai("OpenAIVisionProvider", "openai")
             self._client = openai.AsyncOpenAI(
                 api_key=self._config.api_key,
                 base_url=self._config.base_url,

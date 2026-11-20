@@ -10,7 +10,7 @@ from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openrouter.config import OpenRouterConfig
 from roomkit.providers.openrouter.models import MODELS
-from roomkit.providers.utils import openai_http_client, openai_timeout
+from roomkit.providers.utils import import_openai, openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
     import httpx2
@@ -35,13 +35,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
         self, config: OpenRouterConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIAIProvider`."""
-        try:
-            import openai as _openai
-        except ImportError as exc:
-            raise ImportError(
-                "openai is required for OpenRouterAIProvider. "
-                "Install it with: pip install roomkit[openrouter]"
-            ) from exc
+        _openai = import_openai("OpenRouterAIProvider", "openrouter")
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError

@@ -64,7 +64,12 @@ from roomkit.providers.ai.response_schema import (
 from roomkit.providers.ai.tool_declaration import ToolNameRule, chat_tool_declarations
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
-from roomkit.providers.utils import _aclose_stream, openai_http_client, openai_timeout
+from roomkit.providers.utils import (
+    _aclose_stream,
+    import_openai,
+    openai_http_client,
+    openai_timeout,
+)
 from roomkit.providers.vendor_endpoint import OPENAI_BASE_URL, is_vendor_endpoint
 
 if TYPE_CHECKING:
@@ -142,14 +147,7 @@ class OpenAIAIProvider(AIProvider):
         transport owns its connection pool and limits, and environment proxies
         are not read (httpx2 reads none beside a transport). It is closed with
         the provider. ``None`` leaves the SDK its default client."""
-        try:
-            import openai as _openai
-        except ImportError as exc:
-            cls = type(self)
-            raise ImportError(
-                f"openai is required for {cls.__name__}. "
-                f"Install it with: pip install roomkit[{cls._install_extra}]"
-            ) from exc
+        _openai = import_openai(type(self).__name__, type(self)._install_extra)
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
