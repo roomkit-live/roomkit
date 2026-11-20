@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import functools
 import gc
 import os
 import traceback
@@ -53,13 +54,26 @@ def advance() -> Callable[[int], Coroutine[Any, Any, None]]:
     return _advance
 
 
+def kits_close_with(monkeypatch: pytest.MonkeyPatch, grace: float) -> None:
+    """Builds every kit from now on with *grace* as its ``close_grace``, but
+    one built with its own: a test's helpers build them without it."""
+    built = framework.RoomKit.__init__
+
+    @functools.wraps(built)
+    def build(self: framework.RoomKit, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("close_grace", grace)
+        built(self, *args, **kwargs)
+
+    monkeypatch.setattr(framework.RoomKit, "__init__", build)
+
+
 @pytest.fixture
 def close_grace(monkeypatch: pytest.MonkeyPatch) -> float:
     """The grace the kit's close gives its running work, 50 ms under test:
     work a test leaves running as the kit closes is cut then, not after the
-    production 5 s (RFC §12.10.4)."""
+    production 5 s (RFC §12.10.4). A kit built before this fixture keeps 5 s."""
     grace = 0.05
-    monkeypatch.setattr(framework, "CLOSE_GRACE_S", grace)
+    kits_close_with(monkeypatch, grace)
     return grace
 
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `RoomKit(close_grace=5.0)`: the seconds of the one grace the kit's `close()` gives its running work (a hook, a store write, a transport send) before it cuts it (RFC §12.10.4, RMK-1866), where it was a fixed 5 s.
+
 ### Changed
 
 - **BREAKING — a sender whose name reads like an earlier sender's is labelled `Alice (2, not Alice)`**, where the label was `Alice (2)` (RFC §6.4, RMK-1835). Measured on a tool-calling model told that only Alice may ask for emails: under `Alice (2)` it sent the impostor's email 61 times out of 112, under the new label 5 times out of 280. The name after `not` is the label's own, cut within 24 characters. The second nameless sender of a channel keeps `@sms1 (2)`, and the speaker note is unchanged. Migration: code that reads a label (`SpeakTurn.speakers`, `current_tool_requester()`) and strips its rank matches `(2, not Name)`; a label stored before (a discussion's queue, a knowledge index) keeps the rank alone.

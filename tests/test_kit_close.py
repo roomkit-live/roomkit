@@ -85,6 +85,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.stt.mock import MockSTTProvider
 from tests import redis_turn_mode
+from tests.conftest import kits_close_with
 from tests.loop_clock import HeldClock
 from tests.test_framework import AILikeChannel, SimpleChannel
 from tests.test_kit_close_doors import _STORES
@@ -689,7 +690,7 @@ async def test_a_delivery_placed_in_an_idle_lane_runs_one_queued_behind_is_never
 def long_grace(monkeypatch: pytest.MonkeyPatch) -> None:
     """A grace no test waits out: work the close cuts at once is seen cut
     while the grace still runs, the test ending the work it holds."""
-    monkeypatch.setattr(framework, "CLOSE_GRACE_S", 30.0)
+    kits_close_with(monkeypatch, 30.0)
 
 
 _LOCKED_CALLS: dict[str, Callable[[RoomKit], Awaitable[Any]]] = {
@@ -1911,8 +1912,32 @@ async def test_a_cut_call_carries_the_answers_already_stored(
 def test_the_close_gives_five_seconds_of_grace_and_one_second_of_unwind() -> None:
     """The production bound, pinned once: every other test runs on the
     ``close_grace`` and ``cut_unwind`` fixtures."""
-    assert (task_utils.CLOSE_GRACE_S, task_utils.CUT_UNWIND_S) == (5.0, 1.0)
-    assert (framework.CLOSE_GRACE_S, framework.CUT_UNWIND_S) == (5.0, 1.0)
+    assert inspect.signature(RoomKit).parameters["close_grace"].default == 5.0
+    assert (task_utils.CUT_UNWIND_S, framework.CUT_UNWIND_S) == (1.0, 1.0)
+
+
+async def test_the_grace_is_the_one_the_kit_is_built_with(cut_unwind: float) -> None:
+    """``close_grace`` sets the grace: a hook still running once it is over
+    is cut then, the close returning long before the default 5 s."""
+    kit = await _kit(_Transport("ws"), close_grace=0.05)
+    started = asyncio.Event()
+    steps: list[str] = []
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: RoomEvent, ctx: Any) -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            steps.append("cut")
+            raise
+
+    await kit.process_inbound(_message("hi"), room_id="r")
+    await started.wait()
+    async with asyncio.timeout(1):
+        await kit.close()
+
+    assert steps == ["cut"]
 
 
 async def test_the_close_takes_its_grace_with_every_kind_of_work_stuck(

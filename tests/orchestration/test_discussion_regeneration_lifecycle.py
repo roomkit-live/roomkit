@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 import pytest
 
 from roomkit import HookExecution, HookTrigger, RoomKit
-from roomkit.core import framework
 from roomkit.core.locks import InMemoryLockManager
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
@@ -21,9 +20,8 @@ from tests.orchestration.test_strategy_discussion import _provider, _settle
 
 
 @pytest.fixture
-async def kit(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[RoomKit]:
-    monkeypatch.setattr(framework, "CLOSE_GRACE_S", 0.02)
-    kit = RoomKit()
+async def kit() -> AsyncIterator[RoomKit]:
+    kit = RoomKit(close_grace=0.02)
     try:
         async with asyncio.timeout(5):
             await _room(kit, {"a": _provider("first", "second")})

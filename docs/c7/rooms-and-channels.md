@@ -751,7 +751,8 @@ shutdown, whoever calls it and however often:
    turn does after the close is refused quietly. A call that awaits a close
    it started on a task of its own is cut with its turn, and the close runs
    on.
-4. **Other running work gets one grace of five seconds**: a hook, a store
+4. **Other running work gets one grace**, `RoomKit(close_grace=...)`, five
+   seconds by default: a hook, a store
    write, a room change, a transport send, the kit's own steps that wait on
    your code (a source's `stop()`, a delegation's `on_complete`, run side by
    side, every source's task cut whatever its `stop()` does, no source

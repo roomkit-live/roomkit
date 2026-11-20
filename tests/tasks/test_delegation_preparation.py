@@ -10,12 +10,11 @@ from typing import Any
 
 import pytest
 
-import roomkit.core.framework as framework
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.models.room import Room
 from roomkit.tasks.status import room_task_lines
 from roomkit.telemetry.mock import MockTelemetryProvider
-from tests.conftest import make_event
+from tests.conftest import kits_close_with, make_event
 from tests.tasks.test_cancelled_delegation import _delegation_spans, _kit
 
 
@@ -246,7 +245,7 @@ async def test_failed_creation_never_marks_another_tasks_room(
 async def test_close_past_grace_preserves_original_preparation_error(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, cut: str
 ) -> None:
-    monkeypatch.setattr(framework, "CLOSE_GRACE_S", 0.01)
+    kits_close_with(monkeypatch, 0.01)
     async with _preparing(monkeypatch) as preparing:
         entered = asyncio.Event()
 

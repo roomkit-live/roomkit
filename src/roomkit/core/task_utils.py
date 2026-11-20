@@ -29,8 +29,9 @@ class _HoldsRuns(Protocol):
 # scheduled tasks) before it goes on and says what is still running.
 CLOSE_WAIT_S = 5.0
 
-# The one grace the kit's close gives its running work (a hook, a store
-# write, a transport send) before it cuts it (RFC §12.10.4).
+# The default of the kit's ``close_grace``: the one grace its close gives its
+# running work (a hook, a store write, a transport send) before it cuts it
+# (RFC §12.10.4).
 CLOSE_GRACE_S = 5.0
 
 # How long the kit's close lets the work it cut unwind (a turn storing what it

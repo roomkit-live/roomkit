@@ -304,6 +304,7 @@ class RoomKit(
         attached_media: AttachedMedia | None = None,
         turn_backend: TurnBackend | None = None,
         error_classes: Iterable[type[Exception]] = (),
+        close_grace: float = CLOSE_GRACE_S,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -416,6 +417,10 @@ class RoomKit(
                 multi-process deployments: a claim is held for the length of
                 a delivery set — provider round trips included — and must
                 not starve the room-lock pool that commits depend on.
+            close_grace: Seconds of the one grace :meth:`close` gives the
+                running work (a hook, a store write, a transport send), from
+                the close's start, before it cuts it (RFC §12.10.4). 5 by
+                default.
         """
         from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
         from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
@@ -439,6 +444,7 @@ class RoomKit(
         self._verification_inbound = verification_policy is not None
         self._verification_timers: dict[str, asyncio.Task[None]] = {}
         self._process_timeout = process_timeout
+        self._close_grace = close_grace
         self._channels: dict[str, Channel] = {}
         self._start_turns(turn_backend, error_classes)
         # A strategy's runner takes an agent's turns on this owner (RFC §10.6.1).
@@ -1058,8 +1064,8 @@ class RoomKit(
         tool calls; what it streamed is stored marked cancelled, an open
         tool call gets its end row). The work still running (a hook, a
         store write, a room change, a transport send, the kit's own steps
-        that wait on integrator code) gets one grace of
-        :data:`CLOSE_GRACE_S` seconds; then what is left is cut. A call the
+        that wait on integrator code) gets one grace, the kit's
+        ``close_grace`` (5 seconds by default); then what is left is cut. A call the
         close cuts returns one result, its ``cancellation_reason``
         ``kit_closed``, with the answers already stored and each target's
         delivery (a send cut mid-way ``failed``, code ``kit_closed``,
@@ -1144,7 +1150,7 @@ class RoomKit(
         their closes started is cut, then what they shared is released; the
         channels' failures raised last."""
         loop = asyncio.get_running_loop()
-        grace_until = loop.time() + CLOSE_GRACE_S
+        grace_until = loop.time() + self._close_grace
         # The kit's own work stops within the grace too, its steps waiting
         # on integrator code (a source's stop, a delegation's on_complete).
         self._stop_kit_work()

@@ -580,7 +580,7 @@ class TestDroppedSetSideEffects:
         assert (result.cancellation_reason, tasks, created) == ("delivery_stale", ["t1"], ["t1"])
 
     async def test_a_dropped_set_s_task_is_stored_while_its_call_outlasts_the_close_s_grace(
-        self, kit: RoomKit, close_grace: float, cut_unwind: float
+        self, close_grace: float, cut_unwind: float, kit: RoomKit
     ) -> None:
         """RFC §10.1 step 15, §12.10.4 (RMK-1514): hello's off-lock hook makes
         two deferred calls into its room, "Hold on", whose transport never

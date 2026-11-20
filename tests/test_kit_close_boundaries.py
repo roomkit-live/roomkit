@@ -5,7 +5,6 @@ from typing import Any
 
 import pytest
 
-from roomkit.core import framework
 from roomkit.models import Task
 from roomkit.store.memory import InMemoryStore
 from tests.test_kit_close import _closing, _kit, _message, _Transport
@@ -41,15 +40,12 @@ class HeldCursor(InMemoryStore):
 
 
 @pytest.mark.parametrize("busy", [False, True])
-async def test_a_place_held_on_its_cursor_gets_grace_but_its_neighbor_does_not(
-    busy: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_place_held_on_its_cursor_gets_grace_but_its_neighbor_does_not(busy: bool) -> None:
     """RFC §12.10.4: placement, before a slow cursor read, owns the grace."""
-    monkeypatch.setattr(framework, "CLOSE_GRACE_S", 30.0)
     release = asyncio.Event()
     target = _Transport("ws", holds={"held": release})
     store = HeldCursor()
-    kit = await _kit(target, store=store)
+    kit = await _kit(target, store=store, close_grace=30.0)
     skipped: list[Any] = []
     kit.on("delivery_skipped")(lambda event: skipped.append(event))
     first = await asyncio.wait_for(
