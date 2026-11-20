@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-speaker-change-identifies-the-dominant-participant",
+  "title": "The active-speaker observer receives the participant named by each change at the SFU",
+  "rules": [
+    "§9.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-9.2-096"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "active_speaker_changed",
+        "trigger": "on_active_speaker_changed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.active_speaker",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.active_speaker",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "active_speaker_changed": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "bob"
+                }
+              }
+            }
+          },
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "alice"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

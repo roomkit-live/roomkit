@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-camera-toggle-reaches-the-mute-and-unmute-observers",
+  "title": "Muting then unmuting a camera reports the track and its publisher to the corresponding observers",
+  "rules": [
+    "§9.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-9.2-094",
+    "RK-9.2-095"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "conference_track_muted",
+        "trigger": "on_conference_track_muted",
+        "execution": "async"
+      },
+      {
+        "name": "conference_track_unmuted",
+        "trigger": "on_conference_track_unmuted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "camera",
+      "kind": "video"
+    },
+    {
+      "call": "conference.mute",
+      "channel_id": "conf",
+      "track_id": "camera"
+    },
+    {
+      "call": "conference.unmute",
+      "channel_id": "conf",
+      "track_id": "camera"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "conference_track_muted": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice",
+                "track_id": "camera",
+                "kind": "video"
+              }
+            }
+          }
+        }
+      ],
+      "conference_track_unmuted": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice",
+                "track_id": "camera",
+                "kind": "video"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

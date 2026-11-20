@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-screen-track-announces-the-start-and-end-of-sharing",
+  "title": "Each publication and withdrawal reports its track, and only the shared screen announces the start and end of sharing",
+  "rules": [
+    "§9.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-9.2-087",
+    "RK-9.2-088",
+    "RK-9.2-092",
+    "RK-9.2-093"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "conference_track_published",
+        "trigger": "on_conference_track_published",
+        "execution": "async"
+      },
+      {
+        "name": "conference_track_unpublished",
+        "trigger": "on_conference_track_unpublished",
+        "execution": "async"
+      },
+      {
+        "name": "screen_share_started",
+        "trigger": "on_screen_share_started",
+        "execution": "async"
+      },
+      {
+        "name": "screen_share_stopped",
+        "trigger": "on_screen_share_stopped",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "camera",
+      "kind": "video"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "slides",
+      "kind": "screen_share"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "camera"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "slides"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "conference_track_published": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "alice",
+                  "track_id": "camera",
+                  "kind": "video"
+                }
+              }
+            }
+          },
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "alice",
+                  "track_id": "slides",
+                  "kind": "screen_share"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "conference_track_unpublished": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "alice",
+                  "track_id": "camera",
+                  "kind": "video"
+                }
+              }
+            }
+          },
+          {
+            "room_id": "r1",
+            "event": {
+              "content": {
+                "data": {
+                  "channel_id": "conf",
+                  "participant_id": "alice",
+                  "track_id": "slides",
+                  "kind": "screen_share"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "screen_share_started": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice",
+                "track_id": "slides"
+              }
+            }
+          }
+        }
+      ],
+      "screen_share_stopped": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice",
+                "track_id": "slides"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

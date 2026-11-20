@@ -1,0 +1,68 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-quality-report-identifies-the-affected-participant",
+  "title": "The connection-quality observer receives the participant and quality reported by the SFU",
+  "rules": [
+    "§9.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-9.2-097"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "connection_quality_changed",
+        "trigger": "on_connection_quality_changed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.connection_quality",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "quality": "poor"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "connection_quality_changed": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice",
+                "quality": "poor"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
