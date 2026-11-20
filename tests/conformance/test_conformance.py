@@ -124,8 +124,9 @@ _ON_EACH_STORE = (
 # the identities, their addresses and a room's participant records (§5.5, §5.6),
 # the depth a turn's framework-event handlers send at, which raced the store's
 # awaits, beside an ASYNC hook on the turn's trigger doing the same (§8.3, RMK-1699),
-# and every scenario with other processes, whose kits each open their own store and
-# advisory lock manager there.
+# every scenario with other processes, whose kits each open their own store and
+# advisory lock manager there, and every scenario whose steps make the store's
+# operations fail or hold (``setup.kit.store_faults``).
 _ON_POSTGRES = (
     "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
     "idempotency/",
@@ -171,10 +172,20 @@ def _runs_in_processes(scenario: dict[str, Any]) -> bool:
     return bool(scenario.get("setup", {}).get("processes"))
 
 
+def _faults_the_store(scenario: dict[str, Any]) -> bool:
+    """Whether the scenario makes the kit's store fail or hold
+    (``setup.kit.store_faults``): its outcome is each store's reads and writes."""
+    return bool(scenario.get("setup", {}).get("kit", {}).get("store_faults"))
+
+
 def _stores(scenario_id: str, scenario: dict[str, Any]) -> tuple[str, ...]:
     if scenario_id in _MEMORY_ONLY:
         return ("memory",)
-    if scenario_id.startswith(_ON_POSTGRES) or _runs_in_processes(scenario):
+    if (
+        scenario_id.startswith(_ON_POSTGRES)
+        or _runs_in_processes(scenario)
+        or _faults_the_store(scenario)
+    ):
         return (*_STORES, "postgres")
     if (
         scenario_id.startswith(_ON_EACH_STORE)

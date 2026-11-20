@@ -18,6 +18,7 @@ from pydantic_core import to_jsonable_python
 
 from roomkit import (
     HumanInputHandler,
+    InMemoryStore,
     RoomKit,
     RoomLockManager,
     ThinkingEvent,
@@ -108,6 +109,7 @@ from tests.conformance._script import (
 from tests.conformance._skill_registry import SKILL_REGISTRY_CALLS
 from tests.conformance._speaking import decision_record
 from tests.conformance._store import STORE_CALLS
+from tests.conformance._store_faults import FaultingStore, StoreFaults
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
     kit_orchestration,
@@ -283,6 +285,8 @@ class Harness:
         self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
         self.executors = Executors(self)
+        # The faults the steps arm on the kit's store (README, "Steps").
+        self.store_faults = StoreFaults(self.gates.hold)
         self.kit = RoomKit(**self._kit_arguments(setup.get("kit", {}), store))
         self._publications = Publications()
         self._publications.watch(self.kit)
@@ -305,6 +309,10 @@ class Harness:
             kwargs["persistence_policy"] = PersistencePolicy(**kit_setup["persistence_policy"])
         if store is not None:
             kwargs["store"] = store
+        if kit_setup.get("store_faults"):
+            kwargs["store"] = FaultingStore(
+                kwargs.get("store") or InMemoryStore(), self.store_faults
+            )
         if self._lock_manager is not None:
             kwargs["lock_manager"] = self._lock_manager
         if "router" in kit_setup:
@@ -617,6 +625,8 @@ class Harness:
             for position, step in enumerate(self.scenario["steps"]):
                 await self._step(step, f"steps[{position}]")
             await self.idle()
+            # A fault no call took tested nothing (README, "Steps").
+            self._problems.extend(self.store_faults.untaken())
             await self._thinking_read()
             await self._observe()
         finally:
@@ -734,10 +744,24 @@ class Harness:
             await self.acp_transports[step["acp_disconnect"]].close()
         elif "under_lock" in step:
             await self._under_lock(step, path)
+        elif "store_fault" in step:
+            await self._arm_store_fault(step, path)
         elif "open" in step:
             self.gates.open(step["open"])
         elif "idle" in step:
             await self.idle()
+
+    async def _arm_store_fault(self, step: Mapping[str, Any], path: str) -> None:
+        """Arms a fault on the kit's store for the next call it matches
+        (README, "Steps", ``store_fault``)."""
+        if not isinstance(self.kit.store, FaultingStore):
+            self._problems.append(f"{path}: a store_fault step needs setup.kit.store_faults")
+            return
+        room_id = await self.resolve(step["room_id"], {}) if "room_id" in step else None
+        try:
+            self.store_faults.arm(step, path, room_id)
+        except ValueError as error:
+            self._problems.append(str(error))
 
     async def _under_lock(self, step: Mapping[str, Any], path: str) -> None:
         """Make the step's calls under the room lock the host takes from the

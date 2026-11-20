@@ -130,6 +130,7 @@ KIT = {
     "inbound_rate_limit",
     "persistence_policy",
     "turn_timeouts",
+    "store_faults",
 }
 LOCK_MANAGER = {"kind", "release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
@@ -622,6 +623,7 @@ STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock",
 STEPS |= {"lock_releases": {"lock_releases"}}
 STEPS |= {"acp_disconnect": {"acp_disconnect"}}
 STEPS |= {"under_lock": {"under_lock", "do"}}
+STEPS |= {"store_fault": {"store_fault", "fail", "gate", "room_id"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:

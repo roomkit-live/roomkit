@@ -68,6 +68,7 @@ from tests.conformance._script import (
     complete_participant,
     hook_handler,
 )
+from tests.conformance._store_faults import StoreFaultError
 from tests.conformance._strategies import room_orchestration
 
 if TYPE_CHECKING:
@@ -105,6 +106,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (TurnLinkError, "turn_link"),
     (ValueError, "invalid_argument"),
     (HandleWaitsForItselfError, "waits_for_itself"),
+    (StoreFaultError, "store_failed"),
 )
 
 
