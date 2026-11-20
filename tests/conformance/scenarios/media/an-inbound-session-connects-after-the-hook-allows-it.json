@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/an-inbound-session-connects-after-the-hook-allows-it",
+  "title": "Only the message admitted by the hook connects its session to the selected room and binding",
+  "rules": [
+    "§5.12",
+    "§10.1 step 12"
+  ],
+  "requirements": [
+    "RK-5.12-006",
+    "RK-10.1-075"
+  ],
+  "requires_features": [
+    "message_session"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "voice",
+        "type": "voice"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "voice"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "admit",
+        "trigger": "before_broadcast",
+        "execution": "sync",
+        "reactions": [
+          {
+            "when": {
+              "text": "refuse"
+            },
+            "result": {
+              "action": "block",
+              "reason": "declined"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "voice",
+        "sender_id": "alice",
+        "session": {
+          "id": "refused",
+          "room_id": "pending",
+          "participant_id": "alice",
+          "channel_id": "voice",
+          "metadata": {
+            "caller": "original",
+            "language": "fr"
+          }
+        },
+        "content": {
+          "type": "text",
+          "body": "refuse"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "declined"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "voice",
+        "sender_id": "alice",
+        "session": {
+          "id": "accepted",
+          "room_id": "pending",
+          "participant_id": "alice",
+          "channel_id": "voice",
+          "metadata": {
+            "caller": "original",
+            "language": "fr"
+          }
+        },
+        "content": {
+          "type": "text",
+          "body": "allow"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "admit",
+      "admit",
+      "voice.connect_session"
+    ],
+    "room_callbacks": {
+      "r1": {
+        "voice": [
+          {
+            "call": "connect_session",
+            "session": {
+              "id": "accepted",
+              "room_id": "pending",
+              "participant_id": "alice",
+              "channel_id": "voice",
+              "metadata": {
+                "caller": "original",
+                "language": "fr"
+              }
+            },
+            "binding": {
+              "channel_id": "voice",
+              "room_id": "r1"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

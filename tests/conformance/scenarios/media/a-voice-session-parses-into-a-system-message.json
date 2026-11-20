@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/a-voice-session-parses-into-a-system-message",
+  "title": "A voice session becomes a system message carrying the session and merged metadata",
+  "rules": [
+    "§5.12"
+  ],
+  "requirements": [
+    "RK-5.12-008"
+  ],
+  "requires_features": [
+    "message_session"
+  ],
+  "steps": [
+    {
+      "call": "parse_voice_session",
+      "session": {
+        "id": "session-1",
+        "room_id": "pending",
+        "participant_id": "alice",
+        "channel_id": "voice",
+        "metadata": {
+          "caller": "original",
+          "language": "fr"
+        }
+      },
+      "channel_id": "voice-in",
+      "metadata": {
+        "caller": "override",
+        "source": "adapter"
+      },
+      "expect": {
+        "result": {
+          "channel_id": "voice-in",
+          "sender_id": "alice",
+          "event_type": "system",
+          "session": {
+            "id": "session-1",
+            "room_id": "pending",
+            "participant_id": "alice",
+            "channel_id": "voice",
+            "metadata": {
+              "caller": "original",
+              "language": "fr"
+            }
+          },
+          "content": {
+            "type": "system",
+            "body": "Voice session started",
+            "code": "session_started",
+            "data": {
+              "session_id": "session-1",
+              "channel_id": "voice-in",
+              "caller": "original"
+            }
+          },
+          "metadata": {
+            "caller": "override",
+            "source": "adapter",
+            "language": "fr"
+          }
+        }
+      }
+    }
+  ]
+}

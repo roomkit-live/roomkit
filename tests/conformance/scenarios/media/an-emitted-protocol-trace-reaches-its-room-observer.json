@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/an-emitted-protocol-trace-reaches-its-room-observer",
+  "title": "A channel emits a timestamped protocol trace and its room observer can finish after emission",
+  "rules": [
+    "§5.14",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-5.14-006",
+    "RK-9.2-058"
+  ],
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "capture",
+        "trigger": "on_protocol_trace",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "reading"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "r1",
+        "direction": "inbound",
+        "protocol": "ws",
+        "summary": "Text frame",
+        "raw": {
+          "base64": "AP8="
+        },
+        "metadata": {
+          "opcode": 1
+        },
+        "session_id": "stream-2"
+      }
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "open": "reading"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "capture": [
+        {
+          "trigger": "on_protocol_trace",
+          "room_id": "r1",
+          "trace": {
+            "channel_id": "wire",
+            "room_id": "r1",
+            "direction": "inbound",
+            "protocol": "ws",
+            "summary": "Text frame",
+            "raw": {
+              "base64": "AP8="
+            },
+            "metadata": {
+              "opcode": 1
+            },
+            "session_id": "stream-2",
+            "timestamp": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
