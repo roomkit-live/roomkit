@@ -741,8 +741,18 @@ def test_two_names_reading_as_the_agent_s_label_keep_their_ranks() -> None:
         ("Bartholomew-Maximilian-Fitzgerald", "Bartholomew-Maximilian-…"),
         ("Alexandria Ocasio-Tremblay", "Alexandria Ocasio-Tremb…"),
         ("Alice Martin", "Alice Martin"),
+        (
+            "Maximilienne-Alexandrine de Rochechouart de Mortemart de Tonnay",
+            "Maximilienne-Alexandrin…",
+        ),
     ],
-    ids=["cut at a word", "one long word", "its only space before the middle", "whole"],
+    ids=[
+        "cut at a word",
+        "one long word",
+        "its only space before the middle",
+        "whole",
+        "a label of 97 characters",
+    ],
 )
 def test_a_ranked_label_keeps_the_name_it_disclaims_within_24_characters(
     name: str, is_not: str

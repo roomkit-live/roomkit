@@ -385,12 +385,20 @@ async def test_a_steered_message_carries_its_speaker_when_the_room_has_several(
 
 @pytest.mark.parametrize("where", ["live", "declared"])
 @pytest.mark.parametrize(
-    ("sender", "requester"),
-    [("+15550002", "Bob"), ("+15550001", None)],
-    ids=["another sender", "the same sender id under another name"],
+    ("sender", "name", "requester"),
+    [
+        ("+15550002", "Bob", "Bob"),
+        ("+15550001", "Bob", None),
+        ("+15550002", "Alice", "Alice (2, not Alice)"),
+    ],
+    ids=[
+        "another sender",
+        "the same sender id under another name",
+        "another sender under the author's name",
+    ],
 )
 async def test_another_person_s_message_waits_a_turn_of_its_own(
-    streaming: bool, where: str, sender: str, requester: str | None
+    streaming: bool, where: str, sender: str, name: str, requester: str | None
 ) -> None:
     """A turn runs in its author's name: its tools and its tool gate read
     them as who asked (RFC §21.4), and its channel's tool policy is resolved
@@ -398,8 +406,8 @@ async def test_another_person_s_message_waits_a_turn_of_its_own(
     it, where their request would run under that name: it is answered by a
     turn of its own, whose author they are. One sender id that signs another
     name (a bridge, a shared microphone) is someone else too, though the
-    room, which counts its speakers by source, labels no one then
-    (RMK-1840)."""
+    room, which counts its speakers by source, labels no one then; and so
+    is another sender who signs the author's own name (RMK-1840)."""
     again = AIResponse(
         content="", tool_calls=[AIToolCall(id="c2", name="wait_here", arguments={})]
     )
@@ -421,7 +429,7 @@ async def test_another_person_s_message_waits_a_turn_of_its_own(
         await asyncio.wait_for(tool.started.wait(), 2)
 
         second = asyncio.create_task(
-            kit.process_inbound(_said(sender, "Bob", STEERED), room_id="r1")
+            kit.process_inbound(_said(sender, name, STEERED), room_id="r1")
         )
         tool.release.set()
         await asyncio.wait_for(asyncio.gather(first, second), 5)
