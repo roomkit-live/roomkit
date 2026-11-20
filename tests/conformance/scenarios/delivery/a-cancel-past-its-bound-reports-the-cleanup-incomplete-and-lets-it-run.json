@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancel-past-its-bound-reports-the-cleanup-incomplete-and-lets-it-run",
+  "title": "A handle's cancel that outlives its bound reports the cleanup incomplete; a second cancel does not interrupt it, and the turn's end is still joined",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.1-118",
+    "RK-10.1-119"
+  ],
+  "notes": "The agent's turn answers with a stream whose round holds at turn-runs, so the cut finds it read; once cut, the turn holds its end at end-owed: its executor ends the work, and its end reaches the owner only once that gate opens, well within the default 5 s cancel bound. Each cancel's 200 ms bound expires first: the cleanup is reported incomplete, not done (RK-10.1-119), and the first cancel's reason stays. The cleanup runs on past both: the owner still reads the turn's end once the gate opens (turn_ends read: true), and the wait then reports the delivery cancelled, its cleanup done (RK-10.1-118, RK-10.1-119). A second cancel that interrupted the cleanup, giving the turn up, would leave its end unread and the cleanup incomplete for good. Python: tests/test_turns_cleanup.py::test_a_handle_whose_unread_stream_is_closing_is_not_done, tests/test_delivery_cancellation.py::test_cancel_timeout_reports_incomplete_cleanup_and_can_be_joined.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "holds_end": "end-owed",
+        "model": {
+          "rounds": [
+            {
+              "gate": "turn-runs",
+              "text": "never read"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "d1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          },
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "wait_for": "turn-runs"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "reason": "stopped",
+      "timeout_ms": 200,
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "reason": "again",
+      "timeout_ms": 200,
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "background": true,
+      "as": "w"
+    },
+    {
+      "open": "end-owed"
+    },
+    {
+      "await": "w",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [],
+          "cancellation_reason": "stopped"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "cancel",
+          "read": true
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

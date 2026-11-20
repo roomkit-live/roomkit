@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-turn-whose-end-misses-its-cancel-bound-leaves-its-cleanup-incomplete",
+  "title": "A cut turn whose end does not come within cancel_timeout leaves its cleanup incomplete for good: the owner drops the end that comes later",
+  "rules": [
+    "§10.6.8 Cancellation",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "requirements": [
+    "RK-10.6.8-023"
+  ],
+  "notes": "The kit's turns are cancelled within 100 ms (cancel_ms). The agent's turn answers with a stream whose round holds at turn-runs, so the cut finds it read, then holds its end at end-owed: the bound passes first, and the cancel, whose own bound is the default 5 s, reports the cleanup incomplete. The end that comes once the gate opens finds the owner gone from the turn: it is not read (turn_ends read: false), and a wait after it still reports the cleanup incomplete, nothing reporting it done. Not observed here: a turn cut before it answered, whose cleanup both implementations report done, and the turn ending failed (no ON_ERROR fires in either), both left open (RMK-1855). Python: tests/test_turns_cleanup.py::test_a_cancelled_cascade_reports_its_cleanup_incomplete_while_an_end_is_owed.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "holds_end": "end-owed",
+        "model": {
+          "rounds": [
+            {
+              "gate": "turn-runs",
+              "text": "never read"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "d1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "wait_for": "turn-runs"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "open": "end-owed"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "cancel",
+          "read": false
+        }
+      ]
+    }
+  }
+}

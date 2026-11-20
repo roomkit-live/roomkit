@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancel-joins-the-close-of-a-stream-nobody-read",
+  "title": "A cut closes a stream its turn answered that nobody began to read, and joins its end with no bound of its own: until that end comes, the handle is not done",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.6.8 Cancellation",
+    "§10.6.4"
+  ],
+  "requirements": [
+    "RK-10.1-103"
+  ],
+  "notes": "The agent answers with a stream, handed to the cascade with the other agent's answer, whose delivery to sms holds at answer-held: nobody reads the stream yet. The cut closes it (turn_ends cut: close) and joins its end, which the agent's turn holds at end-owed: each cancel's own bound expires first, the cleanup incomplete, the second after the answer's delivery was let go, which the cancel does not join; the 100 ms cancel_ms bounds a cancel, not that close, so the owner still reads the end once the gate opens, and the wait then reports the delivery cancelled, its cleanup done. The stream was never read: the model was asked nothing. The awaited path is not exercised here: the handle's wait is the form observed. The other agent's answer is visible to transports alone, so the agent is not asked again. Python: tests/test_turns_cleanup.py::test_an_awaited_call_cut_while_an_answer_s_set_runs_waits_for_its_unread_stream, ::test_a_handle_whose_unread_stream_is_closing_is_not_done.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "deliver": [
+          {
+            "when": {
+              "source_channel_id": "answering"
+            },
+            "gate": "answer-held"
+          }
+        ]
+      },
+      {
+        "id": "answering",
+        "type": "ai",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                },
+                "visibility": "transport"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "holds_end": "end-owed",
+        "model": {
+          "rounds": [
+            {
+              "text": "Streamed."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "answering"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "d1"
+    },
+    {
+      "wait_for": "answer-held"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "timeout_ms": 300,
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "background": true,
+      "as": "w"
+    },
+    {
+      "open": "answer-held"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "timeout_ms": 300,
+      "expect": {
+        "error": "cleanup_incomplete"
+      }
+    },
+    {
+      "open": "end-owed"
+    },
+    {
+      "await": "w",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "Done."
+          },
+          "index": 1
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Done."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": []
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "close",
+          "read": true
+        }
+      ]
+    }
+  }
+}
