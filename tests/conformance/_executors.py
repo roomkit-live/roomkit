@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from roomkit import RoomKit, current_turn_id
+from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType
@@ -270,9 +270,11 @@ def _record_calls(
 
 def _keep_turn(item: dict[str, Any] | None, turns: dict[str, dict[str, Any]]) -> None:
     """Keeps a turn's record under the turn's id, to gather its ``tools``."""
+    if item is None:
+        return
+    item["tools"] = []
     turn_id = current_turn_id()
-    if item is not None and turn_id is not None:
-        item["tools"] = []
+    if turn_id is not None:
         turns[turn_id] = item
 
 
@@ -280,9 +282,9 @@ def _record_tools(channel: Channel, scripted: set[str], turns: dict[str, dict[st
     """Has *channel*, a scripted agent, note each call of one of its own
     *scripted* tools its handler runs, under the turn it serves (README,
     ``executors``: ``tools``): the AI channel's ``tool_handler`` serves them."""
-    handler = getattr(channel, "tool_handler", None)
-    if handler is None:
+    if not isinstance(channel, AIChannel) or channel.tool_handler is None:
         return
+    handler = channel.tool_handler
 
     async def noting(name: str, arguments: dict[str, Any]) -> Any:
         turn_id = current_turn_id()
@@ -290,7 +292,7 @@ def _record_tools(channel: Channel, scripted: set[str], turns: dict[str, dict[st
             turns[turn_id]["tools"].append(name)
         return await handler(name, arguments)
 
-    channel.tool_handler = noting  # ty: ignore[invalid-assignment]
+    channel.tool_handler = noting
 
 
 async def _start(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
