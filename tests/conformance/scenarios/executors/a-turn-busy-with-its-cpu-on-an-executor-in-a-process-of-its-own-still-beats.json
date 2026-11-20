@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-busy-with-its-cpu-on-an-executor-in-a-process-of-its-own-still-beats",
+  "title": "A turn that keeps its thread busy for three times the heartbeat timeout, once its executor in a process of its own was accepted, is not lost: the executor beats from a context the turn's work cannot stall, and the turn's answer reaches the room",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-010"
+  ],
+  "notes": "Python: turns/_redis_beat.py BeatThread, tests/test_turns_redis.py; roomkit-rs: turns/redis/process.rs. The executor runs on a thread and a loop of its own, over a node of its own of the backend. The turn first asks the owner for the room's context, whose answer shows the owner read the executor's accepted, then holds that thread for 1.5 seconds, three times heartbeat_timeout, its loop running nothing else. The owner, whose own loop runs on, counts the executor's beat from its thread meanwhile (RK-10.6.8-011) and does not fail the turn executor_lost: the turn's answer is stored and the caller reads no error. In memory, where the executor's CPU is the owner's stall, the case is RK-10.6.8-009's, which this scenario does not test.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 100,
+        "heartbeat_timeout_ms": 500,
+        "accept_ms": 2000,
+        "cancel_ms": 100
+      }
+    },
+    "executors": [
+      {
+        "id": "apart",
+        "hosts": [
+          "agent"
+        ],
+        "own_process": true
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "host.room_context"
+              }
+            ],
+            "holds_cpu_ms": 1500,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Work hard."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Work hard."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "apart": [
+        {
+          "call": "built",
+          "channel_id": "agent",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

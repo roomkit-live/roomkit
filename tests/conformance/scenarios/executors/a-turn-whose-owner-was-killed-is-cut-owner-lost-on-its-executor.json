@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-whose-owner-was-killed-is-cut-owner-lost-on-its-executor",
+  "title": "An executor whose turn's owner was killed, silent for the heartbeat timeout, cuts the turn owner_lost: a call of the turn waiting on the owner fails owner_lost, the turn's work stops, and the dead owner is sent no output, error or end",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-008"
+  ],
+  "notes": "Python: tests/test_turns_redis.py::test_a_turn_whose_owner_s_process_died_is_cut_owner_lost kills an owner's process. The turn asks the owner for the room's context, whose answer shows the owner read what the turn sent so far, then waits at its gate, a task it began held at its own. The owner is killed, then the task asks the owner for the room's context, which nobody answers. Silent for heartbeat_timeout, the owner is lost: the executor cuts the turn owner_lost, which fails that call owner_lost, and the turn's work, opened afterwards, never answers. What reached the dead owner's links is beats and the call: no output, error or end. What the killed kit does of its turn afterwards is not observed. Left uncovered of RK-10.6.8-008: an ACP session's next prompt not held behind a turn nobody reads (§6.4); a beat sent after the cut, which killed_owner_frames does not tell from one sent before it; and a call the turn's work would start after the cut.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 20,
+        "heartbeat_timeout_ms": 1000,
+        "accept_ms": 2000,
+        "cancel_ms": 100
+      }
+    },
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "on_event": [
+          {
+            "spawn": {
+              "gate": "ask",
+              "do": [
+                {
+                  "call": "host.room_context",
+                  "expect": {
+                    "error": {
+                      "name": "turn_link",
+                      "reason": "owner_lost"
+                    }
+                  }
+                }
+              ],
+              "after_do_gate": "asked"
+            },
+            "do": [
+              {
+                "call": "host.room_context"
+              }
+            ],
+            "after_do_gate": "turn",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Nobody reads this."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "turn"
+    },
+    {
+      "call": "owner.kill"
+    },
+    {
+      "open": "ask"
+    },
+    {
+      "wait_for": "asked"
+    },
+    {
+      "open": "turn"
+    },
+    {
+      "open": "asked"
+    }
+  ],
+  "expect": {
+    "killed_owner_frames": [
+      "heartbeat",
+      "host_call"
+    ],
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "agent",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
