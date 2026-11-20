@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-committed-event-leaves-the-room-s-previous-turn-as-it-is",
+  "title": "A committed event given to the executor holding the room's state names no previous turn and is none: the agent's next turn names its last turn, and the executor keeps the state",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-10.6.3-023"
+  ],
+  "notes": "The message nobody addresses is a committed event of ana (§19.7.5), which first, holding the room's state since ana's first turn, applies to her memory (RK-10.6.3-022, -024). Ana's next turn names her first turn: first drops nothing (RK-10.6.2-036). An owner that named the committed event as the previous turn, or an executor that recorded it as what left the state, would make first drop the room's state before the second turn. Not observed: the owner and the executor both taking the committed event for the last turn, which no drop shows (no runner reads a request's previous_turn on the executor); and that the committed event never makes its executor the holder: a committed event reaches the holder when there is one, and with none, which executor takes the next turn is the backend's choice. Python: tests/test_turns_between.py test_a_committed_event_goes_where_the_room_s_turns_would.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            }
+          ]
+        },
+        "memory": {}
+      },
+      {
+        "id": "bob",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "bob here."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "ana"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "ana",
+            "bob"
+          ],
+          "addressed_only": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the customer is Acme"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "ingested": {
+      "r1": {
+        "ana": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana hi"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the customer is Acme"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@ana again"
+            }
+          }
+        ]
+      }
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "ana",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "ana",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "ana",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,217 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-s-plan-and-person-s-tools-run-on-its-executor",
+  "title": "The plan tool and the human-input tool of a turn apart run on its executor: the plan's and the request's triggers fire there",
+  "rules": [
+    "§10.6.5",
+    "§10.6.6",
+    "§6.4",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-10.6.5-018"
+  ],
+  "notes": "ON_PLAN_UPDATED and ON_USER_INPUT_REQUIRED fire where the work they observe runs (§10.6.6): hooks defined on first alone record the plan the plan tool wrote and the request the human-input tool opened, and the request's answer, given there, reaches the model. Both tools are the implementation's: neither is a scripted tool of the agent (tools). Python: tests/test_turns_inputs.py test_the_owner_answers_a_turns_request; tests/test_turns_wiring.py test_directly_wired_thinking_and_plan_updates_reach_the_executor.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "enable_planning": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "plan_tasks",
+                  "arguments": {
+                    "tasks": [
+                      {
+                        "title": "Read the logs",
+                        "status": "pending"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "ask_user",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Thanks."
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ],
+        "hooks": [
+          {
+            "name": "planned",
+            "trigger": "on_plan_updated"
+          },
+          {
+            "name": "asked",
+            "trigger": "on_user_input_required",
+            "reactions": [
+              {
+                "do": [
+                  {
+                    "call": "answer_input",
+                    "request_id": "$request",
+                    "value": "Blue"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "planned": [
+        {
+          "trigger": "on_plan_updated",
+          "room_id": "r1",
+          "plan": {
+            "room_id": "r1",
+            "channel_id": "coder",
+            "tasks": [
+              {
+                "title": "Read the logs",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      ],
+      "asked": [
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "r1",
+          "request": {
+            "tool_name": "ask_user",
+            "tool_call_id": "c2",
+            "room_id": "r1",
+            "channel_id": "coder"
+          }
+        }
+      ]
+    },
+    "models": {
+      "coder": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "Blue"
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "tools": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-handed-to-an-executor-that-never-answered-stays-the-previous-one",
+  "title": "A turn handed to an executor that never answered stays the room's previous turn once it failed: the executor that held the room's state before drops it at the next turn",
+  "rules": [
+    "§10.6.2",
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.2-034"
+  ],
+  "notes": "Observes the second case of RK-10.6.2-034: the second turn was handed to mute, which may have begun it, so it stays named after its accept bound failed it. The third turn, on first, names it, and first drops the state it held since the first turn (an on_room_detached before the third on_event, RK-10.6.2-036). A backend that took the mark back on the failure would leave the third naming the first, and first would drop nothing. Not observed: the cancel of a handed turn, and a transport whose process never answers the handing itself (mute's process answers it; only the turn's accept never comes). Python: tests/test_turns_channel_control.py test_a_turn_the_owner_stopped_submitting_once_taken_is_the_previous_one.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 1000,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "mute",
+        "hosts": [
+          "coder"
+        ],
+        "answers": false,
+        "gate": "taken",
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "executor.pause",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "mute"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "taken"
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.close",
+      "executor": "mute"
+    },
+    {
+      "call": "executor.resume",
+      "executor": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "C."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_room_detached",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "mute": []
+    }
+  }
+}

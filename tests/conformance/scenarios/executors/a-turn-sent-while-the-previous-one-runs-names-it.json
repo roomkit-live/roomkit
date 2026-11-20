@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-sent-while-the-previous-one-runs-names-it",
+  "title": "A turn sent while the room's previous turn of the channel still runs names it, so the executor running both keeps the state the first left",
+  "rules": [
+    "§10.6.2"
+  ],
+  "requirements": [
+    "RK-10.6.2-033"
+  ],
+  "notes": "The first turn's generation holds at its gate while the second message starts a turn of its own beside it. The executor drops the state it holds for a room before a turn that names another previous turn (RK-10.6.2-036): the second turn names the first, still running, so first lets go of nothing. A turn recorded as the previous one only once it ended would leave the second naming none, and first would drop the room's state (an on_room_detached before the second on_event). Not observed here: the same defect on the owner and the executor at once, which no drop shows; executors/work-an-earlier-turn-began-writes-nothing-once-a-later-turn-was-sent shows that the owner records a turn as it sends it (RK-10.6.3-036). Python: tests/test_turns_channel_control.py test_a_turn_is_the_previous_one_from_the_moment_it_is_sent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "gate": "first-turn",
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "first-turn"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "first-turn"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-no-executor-took-is-never-the-previous-one",
+  "title": "A turn that failed because no executor declared its channel is never the room's previous turn: the next names the one before it, and the executor holding its state keeps it",
+  "rules": [
+    "§10.6.2",
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.2-034"
+  ],
+  "notes": "Observes the first case of RK-10.6.2-034, a turn that failed before it was handed (no executor declares it), through the drop of RK-10.6.2-036: the third turn names the first, which first left, so first drops nothing. A failed turn marked handed would be named, and first would drop the room's state before the third. The other failures before a handing (a closed backend, a request that cannot be serialized, a failed placement) and the refusal that takes the mark back are not observed. Python: tests/test_turns_channel_control.py test_a_turn_no_executor_took_is_no_previous_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "executor.pause",
+      "executor": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "coder"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.resume",
+      "executor": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "C."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-runs-the-host-s-tool-on-its-executor",
+  "title": "A host's tool of a turn apart runs on the executor running the turn: its handler runs there, and the model reads its answer",
+  "rules": [
+    "§10.6.5",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-10.6.5-019"
+  ],
+  "notes": "The scripted tool's handler is the one the executor's factory gave its build of the channel; tools records the calls the turn ran it for on first. The kit holds coder by its declaration alone and serves no tool of it. Python: tests/test_turns_host.py test_a_host_tool_reads_the_turns_host_and_it_ends_with_the_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "key": "order"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a key up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "42"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "42"
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "tools": [
+            "lookup"
+          ]
+        }
+      ],
+      "second": []
+    }
+  }
+}
