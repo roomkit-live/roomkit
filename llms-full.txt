@@ -5236,7 +5236,7 @@ provider = OpenAIRealtimeProvider(api_key="sk-...")  # defaults to gpt-realtime-
 from roomkit.providers.openai import HostedReasoning, OpenAILiveProvider
 
 provider = OpenAILiveProvider(
-    api_key="sk-...",  # defaults to gpt-live-1
+    api_key="sk-...",  # defaults to gpt-live-1.1
     delegation=HostedReasoning(model="gpt-5.6-terra"),  # backend runs at OpenAI
 )
 # IntegratorReasoning() (the default) serves delegations through

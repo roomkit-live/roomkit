@@ -4350,7 +4350,7 @@
     "supports_editing": ["property"]
   },
   "roomkit.providers.openai.OpenAILiveProvider": {
-    "__init__": ["def", "*", "api_key", "model='gpt-live-1'", "base_url=None", "delegation=None", "turn_gap_ms=800", "close_timeout_s=5.0"],
+    "__init__": ["def", "*", "api_key", "model='gpt-live-1.1'", "base_url=None", "delegation=None", "turn_gap_ms=800", "close_timeout_s=5.0"],
     "available_models": ["classmethod"],
     "available_voices": ["classmethod"],
     "close": ["async def"],

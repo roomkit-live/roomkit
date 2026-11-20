@@ -21,7 +21,7 @@ from roomkit.voice.realtime.provider import VoiceInfo
 
 _DEFAULT_BASE_URL = "wss://api.openai.com/v1/live/sessions"
 
-_DEFAULT_MODEL = "gpt-live-1"
+_DEFAULT_MODEL = "gpt-live-1.1"
 
 _CONNECT_TIMEOUT = 30.0
 

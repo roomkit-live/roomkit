@@ -241,7 +241,7 @@ class TestIdentity:
     def test_capabilities(self) -> None:
         provider = _provider()
         assert provider.name == "OpenAILiveProvider"
-        assert provider.model_name == "gpt-live-1"
+        assert provider.model_name == "gpt-live-1.1"
         assert provider.full_duplex is True
         assert provider.supports_mid_session_reconfigure is False
         assert isinstance(provider.delegation, IntegratorReasoning)
@@ -276,7 +276,7 @@ class TestSessionStart:
         assert connect.call_args[1]["additional_headers"] == {"Authorization": "Bearer sk-test"}
         assert ws.types() == ["session.start"]
         cfg = ws.sent[0]["session"]
-        assert cfg["model"] == "gpt-live-1"
+        assert cfg["model"] == "gpt-live-1.1"
         assert cfg["instructions"] == "front rules"
         assert cfg["audio"] == {
             "format": {"type": "audio/pcm", "rate": 24000},

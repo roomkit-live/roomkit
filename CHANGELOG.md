@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- GPT-Live 1.1 (`gpt-live-1.1`) in the `OpenAILiveProvider` model catalog. It takes the session `gpt-live-1` takes and bills the same seconds: pass `model="gpt-live-1.1"`. The voice catalog gains the nine voices OpenAI added for German, French, Hindi, Japanese and Korean: `nuri`, `juni`, `flitz`, `brise`, `sillage`, `nira`, `harema`, `shida` and `noeul`.
+- GPT-Live 1.1 (`gpt-live-1.1`) in the `OpenAILiveProvider` model catalog. The voice catalog gains the nine voices OpenAI added for German, French, Hindi, Japanese and Korean: `nuri`, `juni`, `flitz`, `brise`, `sillage`, `nira`, `harema`, `shida` and `noeul`.
+
+### Changed
+
+- **BREAKING — `OpenAILiveProvider` opens its sessions on `gpt-live-1.1` by default**, where it opened them on `gpt-live-1`. The two take the same session, send the same events and bill the same seconds; OpenAI counts their concurrent sessions separately. Migration: pass `model="gpt-live-1"` to stay on it.
 
 ### Fixed
 
