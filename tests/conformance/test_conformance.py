@@ -21,6 +21,7 @@ import pytest
 
 from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.store.sqlite import SQLiteStore
+from tests import redis_turn_mode
 from tests.conformance._harness import Harness
 from tests.conformance._shape import unknown_members
 
@@ -77,6 +78,17 @@ _LOCAL_TURN_CONTEXT = {
         "acp/handler-before-tool-use-observer-after-turn-independent",
     )
 }
+
+
+# An executor in a process of its own runs on a node of its own of a
+# distributed backend: the in-memory one has none (README, an executor's
+# own_process).
+_OWN_PROCESS = "an executor in a process of its own needs the Redis turn mode"
+
+
+def _runs_an_executor_apart(scenario: dict[str, Any]) -> bool:
+    """Whether an executor of the setup runs in a process of its own."""
+    return any(e.get("own_process") for e in scenario.get("setup", {}).get("executors", []))
 
 
 def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
@@ -230,6 +242,8 @@ def _marks(scenario_id: str, scenario: dict[str, Any]) -> list[Any]:
         marks.append(pytest.mark.in_process(_LOCAL_TURN_CONTEXT[scenario_id]))
     if _turn_calls_the_kit(scenario):
         marks.append(pytest.mark.in_process(_IN_PROCESS))
+    if _runs_an_executor_apart(scenario) and not redis_turn_mode.ENABLED:
+        marks.append(pytest.mark.skip(reason=_OWN_PROCESS))
     if scenario_id in KNOWN_FAILURES:
         marks.append(
             pytest.mark.xfail(

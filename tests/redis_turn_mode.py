@@ -38,11 +38,14 @@ SESSION_PREFIX = f"roomkit:test:{uuid4().hex[:12]}"
 _built: list[RedisTurnBackend] = []
 
 
-def backend(timeouts: TurnTimeouts | None = None) -> RedisTurnBackend:
-    """A backend of this session's, keeping *timeouts* when given."""
+def backend(
+    timeouts: TurnTimeouts | None = None, *, key_prefix: str | None = None
+) -> RedisTurnBackend:
+    """A backend of this session's, keeping *timeouts* when given, under
+    *key_prefix*, where other backends meet it, or under a new one."""
     built = RedisTurnBackend(
         os.environ["REDIS_URL"],
-        key_prefix=f"{SESSION_PREFIX}:{uuid4().hex[:12]}",
+        key_prefix=key_prefix or f"{SESSION_PREFIX}:{uuid4().hex[:12]}",
         timeouts=timeouts,
         _loop_back=True,
     )

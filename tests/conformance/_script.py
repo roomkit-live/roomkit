@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -149,6 +150,8 @@ async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[
         await asyncio.sleep(delay / 1000)
     for action in reaction.get("do", []):
         await harness.run_action(action, scope)
+    if held := reaction.get("holds_cpu_ms"):
+        _hold_cpu(held / 1000)
     if (gate := reaction.get("after_do_gate")) is not None:
         await harness.gates.hold(gate)
     if (later := reaction.get("after_turn")) is not None:
@@ -164,6 +167,14 @@ async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[
                 metadata={key: refusal[key] for key in ("code", "retryable") if key in refusal},
             )
         )
+
+
+def _hold_cpu(seconds: float) -> None:
+    """Keep the calling thread busy for *seconds*, yielding nothing to its
+    event loop meanwhile, as a turn busy with its CPU does (RFC §10.6.8)."""
+    until = time.perf_counter() + seconds
+    while time.perf_counter() < until:
+        pass
 
 
 def _now() -> str:

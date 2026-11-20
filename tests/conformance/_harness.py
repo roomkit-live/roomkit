@@ -1175,6 +1175,7 @@ class Harness:
         self.observed.turn_ends = {
             channel_id: list(ends) for channel_id, ends in self.executors.held_ends.ends.items()
         }
+        self.observed.killed_owner_frames = sorted(self.executors.owner_kill.frames)
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)

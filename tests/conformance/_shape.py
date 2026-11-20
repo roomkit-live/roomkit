@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._acp import AFTER_REPLY as ACP_AFTER_REPLY
 from tests.conformance._acp import AGENT as ACP_AGENT
 from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
@@ -122,6 +123,7 @@ EXECUTOR = {
     "started",
     "answers",
     "gate",
+    "own_process",
 }
 TURN_TIMEOUTS = {"accept_ms", "heartbeat_interval_ms", "heartbeat_timeout_ms", "cancel_ms"}
 VERB = {"raises_class", "result", "keeps", "reads", "forgets", "gate", "fail", "do"}
@@ -433,6 +435,7 @@ REACTION = {
     "gate",
     "after_do_gate",
     "delay_ms",
+    "holds_cpu_ms",
     "do",
     "fail",
     "respond",
@@ -510,6 +513,7 @@ EXPECT = {
     "session_audit",
     "executors",
     "turn_ends",
+    "killed_owner_frames",
     "script_executors",
     "sandbox_executors",
     "continuations",
@@ -869,6 +873,9 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.append(f"{path}.agent.initialize.mcp_capabilities: expected http/sse booleans")
     for index, prompt in enumerate(agent.get("prompts", [])):
         _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
+        after = prompt.get("after_reply", {})
+        _members(after, ACP_AFTER_REPLY, f"{path}.agent.prompts[{index}].after_reply", found)
+        found.extend(permission_problems(after, f"{path}.agent.prompts[{index}].after_reply"))
         if "meta" in prompt and not isinstance(prompt["meta"], dict):
             found.append(f"{path}.agent.prompts[{index}].meta: expected an object")
         found.extend(permission_problems(prompt, f"{path}.agent.prompts[{index}]"))

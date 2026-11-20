@@ -29,6 +29,8 @@ from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
 from tests.conformance._held_ends import HeldEnds
 from tests.conformance._media import media_options
+from tests.conformance._own_process import Apart, apart_problems
+from tests.conformance._owner_kill import OwnerKill
 from tests.conformance._owner_nodes import (
     FaultingPresence,
     OwnerFaults,
@@ -129,6 +131,12 @@ class Executors:
         self._published = asyncio.Semaphore(0)
         self.held_ends = HeldEnds(setup.get("channels", []), harness.gates.hold)
         """The channels whose turns hold their end once cut (README, ``holds_end``)."""
+        self.owner_kill = OwnerKill()
+        """The kit killed as its turns' owner (README, ``owner.kill``)."""
+        self._kills_owner = any(
+            step.get("call") == "owner.kill" for step in harness.scenario.get("steps", [])
+        )
+        self._apart: dict[str, Apart] = {}
 
     def site_options(self, site: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         options: dict[str, Any] = {}
@@ -144,13 +152,15 @@ class Executors:
 
     def kit_options(self) -> dict[str, Any]:
         """The turn backend the kit is built with, when the scenario has
-        executors of its own, bounds a turn or holds a turn's end; the kit's
-        default otherwise."""
-        if not self._specs and self._bounds is None and not self.held_ends:
+        executors of its own, bounds a turn, holds a turn's end or kills the
+        owner; the kit's default otherwise."""
+        if not (self._specs or self._bounds is not None or self.held_ends or self._kills_owner):
             return {}
         self._backend = self._node("main")
         if self.held_ends:
             self.held_ends.wrap(self._backend)
+        if self._kills_owner:
+            self.owner_kill.wrap(self._backend)
         return self.process_options("main")
 
     def _node(self, name: str | None) -> TurnBackend:
@@ -162,7 +172,7 @@ class Executors:
                     os.environ["REDIS_URL"], key_prefix=self._prefix, timeouts=self._bounds
                 )
             else:
-                backend = _backend(self._bounds)
+                backend = _backend(self._bounds, self._prefix)
             if self._settings.get("turn_backend_faults"):
                 backend = FaultingPresence(backend, self.faults)
             if self._settings.get("executor_catalogue") is False:
@@ -216,10 +226,36 @@ class Executors:
         await asyncio.wait_for(self._published.acquire(), GATE_BOUND_S)
 
     async def start(self, executor_id: str) -> None:
-        """Serves one executor of the setup on the kit's backend."""
+        """Serves one executor of the setup on the kit's backend, or as in a
+        process of its own (README, an executor's ``own_process``)."""
         if executor_id not in self._specs or self._backend is None:
             raise UnreadableError(f"no executor {executor_id!r} in setup.executors")
         spec = self._specs[executor_id]
+        if spec.get("own_process"):
+            await self._start_apart(executor_id, spec)
+            return
+        executor = self._executor(executor_id, spec)
+        name = spec.get("kit")
+        if name is not None and name != "main" and name not in self._process_ids:
+            raise UnreadableError(f"no process {name!r} for executor {executor_id!r}")
+        node = self._node(name) if self._distributed else self._backend
+        await node.serve(executor)
+        self._running[executor_id] = executor
+
+    async def _start_apart(self, executor_id: str, spec: Mapping[str, Any]) -> None:
+        """Serves one executor as in a process of its own, over a node of its
+        own of the Redis turn backend the kit's meets under the run's prefix."""
+        if not (redis_turn_mode.ENABLED or self._distributed):
+            raise UnreadableError(
+                f"executor {executor_id!r}: a process of its own needs the Redis turn mode"
+            )
+        if problems := apart_problems(spec, self._channels.values()):
+            raise UnreadableError("; ".join(problems))
+        make = partial(self._executor, executor_id, spec)
+        self._apart[executor_id] = await Apart.start(make, self._prefix, self._bounds)
+
+    def _executor(self, executor_id: str, spec: Mapping[str, Any]) -> _ScenarioExecutor:
+        """The executor *spec* describes, its hooks registered."""
         bound = {"max_channels": spec["max_channels"]} if "max_channels" in spec else {}
         executor = _ScenarioExecutor(
             partial(self._build, executor_id),
@@ -238,12 +274,7 @@ class Executors:
             **bound,
         )
         self._add_hooks(executor, spec)
-        name = spec.get("kit")
-        if name is not None and name != "main" and name not in self._process_ids:
-            raise UnreadableError(f"no process {name!r} for executor {executor_id!r}")
-        node = self._node(name) if self._distributed else self._backend
-        await node.serve(executor)
-        self._running[executor_id] = executor
+        return executor
 
     def _add_hooks(self, executor: TurnExecutor, spec: Mapping[str, Any]) -> None:
         """Registers the hooks and defines the room hooks of *spec* (§10.6.6)."""
@@ -277,13 +308,20 @@ class Executors:
         return channel
 
     def running(self, executor_id: str) -> _ScenarioExecutor:
-        """The executor a step names, which must be serving."""
+        """The executor a step names, which must be serving here."""
+        if executor_id in self._apart:
+            raise UnreadableError(
+                f"executor {executor_id!r} runs in a process of its own: steps start or close it"
+            )
         if executor_id not in self._running:
             raise UnreadableError(f"executor {executor_id!r} is not running")
         return self._running[executor_id]
 
     async def close(self, executor_id: str) -> None:
         """Closes one executor: it takes no more turns and ends those it runs."""
+        if executor_id in self._apart:
+            await self._apart.pop(executor_id).close()
+            return
         await self.running(executor_id).close()
         self._running.pop(executor_id)
 
@@ -293,14 +331,21 @@ class Executors:
         self.running(executor_id).killed = True
 
     async def close_all(self) -> None:
-        """Closes the executors a scenario left running."""
-        for executor in self._running.values():
-            await executor.close()
-        self._running.clear()
-        if None in self._nodes:
-            await self._nodes[None].close()
-        if self._shared_realtime is not None:
-            await self._shared_realtime.close()
+        """Closes the executors a scenario left running, those in a process
+        of their own whatever fails before, and stops reading for a killed
+        owner."""
+        try:
+            for executor in self._running.values():
+                await executor.close()
+            self._running.clear()
+            if None in self._nodes:
+                await self._nodes[None].close()
+            if self._shared_realtime is not None:
+                await self._shared_realtime.close()
+        finally:
+            while self._apart:
+                await self._apart.popitem()[1].close()
+            await self.owner_kill.close()
 
 
 def _trigger(hook: Mapping[str, Any]) -> tuple[HookTrigger, HookExecution]:
@@ -324,10 +369,12 @@ def _bounds(spec: Mapping[str, Any] | None) -> TurnTimeouts | None:
     )
 
 
-def _backend(bounds: TurnTimeouts | None) -> TurnBackend:
-    """The turn backend of the suite's mode (tests/redis_turn_mode.py)."""
+def _backend(bounds: TurnTimeouts | None, key_prefix: str) -> TurnBackend:
+    """The turn backend of the suite's mode (tests/redis_turn_mode.py), under
+    *key_prefix* across Redis, where an executor in a process of its own
+    meets it."""
     if redis_turn_mode.ENABLED:
-        return redis_turn_mode.backend(bounds)
+        return redis_turn_mode.backend(bounds, key_prefix=key_prefix)
     backend = InMemoryTurnBackend()
     backend.timeouts = bounds
     return backend
@@ -404,6 +451,10 @@ async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any
 
 async def _kill(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     harness.executors.kill(spec["executor"])
+
+
+async def _kill_owner(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    harness.executors.owner_kill.kill()
 
 
 async def _pause(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
@@ -529,6 +580,7 @@ EXECUTOR_CALLS: dict[str, Call] = {
     "executor.start": _start,
     "executor.close": _close,
     "executor.kill": _kill,
+    "owner.kill": _kill_owner,
     "executor.pause": _pause,
     "executor.resume": _resume,
     "executor.calls": _calls_so_far,
@@ -547,6 +599,7 @@ EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "executor.start": {"executor"},
     "executor.close": {"executor"},
     "executor.kill": {"executor"},
+    "owner.kill": set(),
     "executor.pause": {"executor"},
     "executor.resume": {"executor"},
     "executor.calls": {"executor"},

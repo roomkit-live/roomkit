@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 HOST_ARGUMENTS = {
     "declare_host_verb": {"name", "handler", "between_turns"},
     "host.call": {"verb", "arguments", "record_keys", "inspect_error"},
+    "current_turn_host": set(),
 }
 HOST_HANDLER = {
     "returns",
@@ -193,4 +194,13 @@ async def call_from_tool(spec: Mapping[str, Any], gates: Gates) -> str:
     return json.dumps(answer, ensure_ascii=False, sort_keys=True)
 
 
-HOST_CALLS = {"declare_host_verb": _declare, "host.call": _host_call}
+async def _current_turn_host(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bool:
+    """Whether a turn's host is bound where the action runs (RFC §10.6.5)."""
+    return current_turn_host() is not None
+
+
+HOST_CALLS = {
+    "declare_host_verb": _declare,
+    "host.call": _host_call,
+    "current_turn_host": _current_turn_host,
+}

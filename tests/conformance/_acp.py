@@ -34,7 +34,11 @@ PROMPT = {
     "meta",
     "error",
     "permission_steps",
+    "after_reply",
 }
+# What the agent does on its own once it answered a prompt (README, "Scripted
+# ACP agents"): activity between two prompts.
+AFTER_REPLY = {"gate", "updates", "permission_steps"}
 SESSION_REPLY = {"gate", "result", "error"}
 REFUSAL = {"reason", "recovery_authorized", "after_prompt"}
 SESSION_METHODS = {
@@ -121,6 +125,21 @@ class ScriptedACPAgent:
         else:
             answer["result"] = result
         _send(writer, answer)
+        if method == "session/prompt" and prompt is not None and "after_reply" in prompt:
+            await self._after_reply(params["sessionId"], prompt["after_reply"], writer)
+
+    async def _after_reply(
+        self, session: str, after: Mapping[str, Any], writer: asyncio.StreamWriter
+    ) -> None:
+        """The agent's own activity once it answered a prompt, held first at
+        its gate: its updates, then its permission steps, each as a prompt's,
+        for the prompt's session, outside any prompt."""
+        if "gate" in after:
+            await self._gates.hold(after["gate"])
+        self._updates(session, after.get("updates", []), writer)
+        for step in after.get("permission_steps", []):
+            await self.permissions.exchange(session, step["request"], writer)
+            self._updates(session, step.get("updates", []), writer)
 
     async def _prompt_reply(
         self, message: Mapping[str, Any], prompt: Mapping[str, Any], writer: asyncio.StreamWriter
