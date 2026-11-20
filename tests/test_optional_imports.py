@@ -6,6 +6,7 @@ import the Gemini client helper: one ``import httpx`` at the top of that
 module broke ``import roomkit`` for every install without the ``httpx`` extra.
 The openai SDK 3.x runs on httpx2 and installs no ``httpx`` either, so the
 clients RoomKit builds on it must not need one.
+Nor must the helpers every example imports (``examples/shared``).
 The checks run in a fresh interpreter, because this one has httpx loaded.
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_roomkit_imports_without_httpx() -> None:
@@ -22,6 +24,21 @@ def test_roomkit_imports_without_httpx() -> None:
     )
     assert proc.returncode == 0, proc.stderr[-1200:]
     assert proc.stdout.strip(), "the interpreter printed no version"
+
+
+def test_the_examples_helpers_import_without_httpx() -> None:
+    """Every example starts with ``from shared import ...``; one run in an
+    environment holding ``roomkit[openai]`` alone has no httpx."""
+    code = "import sys; sys.modules['httpx'] = None; import shared; print(shared.setup_logging)"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=Path(__file__).parents[1] / "examples",
+    )
+    assert proc.returncode == 0, proc.stderr[-1200:]
 
 
 _CLIENTS_ON_THE_OPENAI_SDK = """

@@ -23,8 +23,6 @@ import os
 from typing import Any
 from urllib.parse import quote
 
-import httpx
-
 logger = logging.getLogger("roomkit.examples.tools")
 
 _TOOL_NAME = "web_search"
@@ -32,6 +30,18 @@ _UA = "roomkit-example/1.0 (https://github.com/roomkit-live/roomkit)"
 _WIKI_API = "https://en.wikipedia.org/w/api.php"
 _WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 _TAVILY_API = "https://api.tavily.com/search"
+
+
+def _import_httpx() -> Any:
+    """httpx, imported when a search runs: every example imports this package,
+    and one on an SDK that runs on httpx2 (openai, anthropic) has no httpx."""
+    try:
+        import httpx
+    except ImportError as exc:
+        raise ImportError(
+            "httpx is required for WebSearchTool. Install it with: pip install roomkit[httpx]"
+        ) from exc
+    return httpx
 
 
 class WebSearchTool:
@@ -79,6 +89,7 @@ class WebSearchTool:
         if not query:
             return "No query provided."
 
+        httpx = _import_httpx()
         if self._tavily_key:
             try:
                 return await self._search_tavily(query)
@@ -90,6 +101,7 @@ class WebSearchTool:
 
     async def _search_tavily(self, query: str) -> str:
         """Real web search via Tavily (requires TAVILY_API_KEY)."""
+        httpx = _import_httpx()
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(
                 _TAVILY_API,
@@ -117,6 +129,7 @@ class WebSearchTool:
 
     async def _search_wikipedia(self, query: str) -> str:
         """Key-free encyclopedic lookup: full-text search then summary."""
+        httpx = _import_httpx()
         async with httpx.AsyncClient(timeout=self._timeout, headers={"User-Agent": _UA}) as client:
             try:
                 search = await client.get(
