@@ -672,10 +672,11 @@ class Harness:
             self._problems.extend(self.executors.faults.untaken())
             await self._thinking_read()
             await self._observe()
-            # Fixture shutdown can publish its own offline events.
-            return self._problems + compare(
-                self.scenario.get("expect", {}), self.observed, self._checks
-            )
+            # A subscriber records the scenario's events. Closing the fixture can
+            # publish additional offline events after the final idle wait.
+            self.observed.subscribers = {
+                name: list(events) for name, events in self.observed.subscribers.items()
+            }
         finally:
             for kit in self._open_kits():
                 await kit.close()
@@ -684,6 +685,9 @@ class Harness:
                 await handler.close()
             await self.mcp.close()
             self.auditors.close()
+        return self._problems + compare(
+            self.scenario.get("expect", {}), self.observed, self._checks
+        )
 
     async def _set_room_status(self, room: Mapping[str, Any]) -> None:
         transitions = {
