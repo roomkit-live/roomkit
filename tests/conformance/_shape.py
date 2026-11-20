@@ -301,7 +301,7 @@ TOOL = {
 }
 RAISES = {"kind", "message"}
 MCP_SERVER = {"label", "gate_discovery", "declare", "tools"}
-MCP_TOOL = {"name", "description", "input_schema", "returns"}
+MCP_TOOL = {"name", "description", "input_schema", "returns", "is_error"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
 TURN_CONFIG = {
     "tool_timeouts_ms",
@@ -612,6 +612,7 @@ STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for":
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
 STEPS |= {"acp_disconnect": {"acp_disconnect"}}
+STEPS |= {"under_lock": {"under_lock", "do"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
@@ -1187,6 +1188,8 @@ def _step(step: Mapping[str, Any], path: str, found: list[str]) -> None:
         _outcome(step["expect"], f"{path}.expect", found)
     for index, call in enumerate(step.get("concurrent", [])):
         _call(call, {"as", "expect", "kit"}, f"{path}.concurrent[{index}]", found)
+    for index, call in enumerate(step.get("do", [])):
+        _call(call, {"as", "expect", "kit"}, f"{path}.do[{index}]", found)
 
 
 def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str]) -> None:

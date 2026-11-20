@@ -694,10 +694,22 @@ class Harness:
             set_lock_releases(self.kit, step["lock_releases"])
         elif "acp_disconnect" in step:
             await self.acp_transports[step["acp_disconnect"]].close()
+        elif "under_lock" in step:
+            await self._under_lock(step, path)
         elif "open" in step:
             self.gates.open(step["open"])
         elif "idle" in step:
             await self.idle()
+
+    async def _under_lock(self, step: Mapping[str, Any], path: str) -> None:
+        """Make the step's calls under the room lock the host takes from the
+        kit's lock manager, outside any pass (README, "Steps", RFC §13.5)."""
+        room_id = await self.resolve(step["under_lock"], {})
+        async with self.kit.lock_manager.locked(room_id):
+            for position, call in enumerate(step["do"]):
+                outcome = await self.invoke(call, {})
+                self._step_outcomes.append(outcome)
+                self._checks.append((f"{path}.do[{position}]", call.get("expect"), outcome))
 
     async def run_action(self, action: Mapping[str, Any], scope: Mapping[str, str]) -> None:
         """A call a hook or a channel makes while it runs; its outcome is kept."""

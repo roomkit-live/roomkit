@@ -13,6 +13,14 @@ class ReportClaims:
     def __init__(self) -> None:
         self._first: Callable[[], bool] | None = None
 
+    def claim(self) -> bool:
+        """Claim the report of the call running now: the claim's result."""
+        call = current_tool_call()
+        assert call is not None
+        claim = turn_report_claim(call.tool_call_id, call.channel_id)
+        assert claim is not None
+        return claim()
+
     def answer(self, mode: str) -> list[bool | None]:
         call = current_tool_call()
         assert call is not None

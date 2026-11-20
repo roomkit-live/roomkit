@@ -611,6 +611,12 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates, kit: RoomKit | N
         if "posts_progress" in tool:
             assert kit is not None, "a tool posting progress needs the kit"
             await post_task_progress(kit, tool["posts_progress"])
+        if tool.get("report_claim_probe") == "claim_then_gate":
+            # The report claimed before the gate: a cut while the call is
+            # held cuts it between its report and its end row (RFC §9.3).
+            claimed = claims.claim()
+            await gates.hold(tool["gate"])
+            return [claimed]
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
         if "report_claim_probe" in tool:

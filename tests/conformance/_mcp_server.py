@@ -2,7 +2,8 @@
 
 Started as ``python _mcp_server.py <server spec as JSON>``: it lists the
 spec's ``tools`` as written (README, "Scripted agents") and answers every
-call of one with its ``returns``.
+call of one with its ``returns``, a result that says ``isError`` when the
+tool's ``is_error`` is true.
 """
 
 from __future__ import annotations
@@ -34,9 +35,12 @@ def _server(spec: dict[str, Any]) -> Server:
         ]
 
     @server.call_tool(validate_input=False)
-    async def _call(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
-        returns = next(tool["returns"] for tool in tools if tool["name"] == name)
-        return [types.TextContent(type="text", text=returns)]
+    async def _call(name: str, arguments: dict[str, Any]) -> types.CallToolResult:
+        tool = next(tool for tool in tools if tool["name"] == name)
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=tool["returns"])],
+            isError=tool.get("is_error", False),
+        )
 
     return server
 
