@@ -1351,11 +1351,13 @@ turn hook to that agent's turns, and `channel_types` to agents of a type when
 the trigger's payload carries it (a tool call, an input request).
 
 **Who asked.** A tool hook of an `AIChannel` runs under the call's turn, so it
-reads the turn's author with `roomkit.tools.current_tool_actor_id()`: the id
-of the participant who wrote the message the turn answers, never a name the
-model was shown. It names the turn and authenticates no one: resolve the
-participant before trusting it. `None` is a turn with no author (a system
-injection, a scheduled run), which a gate on a person's request refuses:
+reads the turn's author with `roomkit.tools.current_tool_actor_id()`: the
+sender id of the message the turn answers, a participant's id when the room
+knows them, never a name the model was shown. It names the turn and
+authenticates no one: resolve the participant before trusting it. Compare it
+with the id you expect and never test it for absence: a turn the host opened
+with `kit.deliver()` reads `"system"`, and `None` is a sender the room does
+not name (a participant's id on a channel that does not reach them):
 
 ```python
 from roomkit.tools import current_tool_actor_id
@@ -2496,9 +2498,9 @@ coder = Agent("coder", provider=provider, tools=[list_files], steer_room_turns=T
 - Only the author of the message the turn answers writes to it. A turn runs in
   its author's name (`current_tool_actor_id()`, the role its `tool_policy` is
   resolved for), so someone else's message is not read inside it: it waits and
-  is answered by a turn of its own, as without the option. Someone else is
-  another sender, or the same sender id under another name (a bridge, a
-  shared microphone).
+  is answered by a turn of its own, as with `serialize_room_turns` alone.
+  Someone else is another sender, or the same sender id under another name (a
+  bridge, a shared microphone).
 - An agent the kit holds by its declaration says so with
   `ChannelDeclaration(..., steers_room_turns=True)`.
 

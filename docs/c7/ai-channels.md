@@ -380,9 +380,9 @@ coder = Agent("coder", provider=provider, tools=[list_files], steer_room_turns=T
 - Only the author of the message the turn answers writes to it. A turn runs in
   its author's name (`current_tool_actor_id()`, the role its `tool_policy` is
   resolved for), so someone else's message is not read inside it: it waits and
-  is answered by a turn of its own, as without the option. Someone else is
-  another sender, or the same sender id under another name (a bridge, a
-  shared microphone).
+  is answered by a turn of its own, as with `serialize_room_turns` alone.
+  Someone else is another sender, or the same sender id under another name (a
+  bridge, a shared microphone).
 - An agent the kit holds by its declaration says so with
   `ChannelDeclaration(..., steers_room_turns=True)`.
 

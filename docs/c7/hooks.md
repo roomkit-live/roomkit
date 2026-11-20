@@ -40,11 +40,13 @@ turn hook to that agent's turns, and `channel_types` to agents of a type when
 the trigger's payload carries it (a tool call, an input request).
 
 **Who asked.** A tool hook of an `AIChannel` runs under the call's turn, so it
-reads the turn's author with `roomkit.tools.current_tool_actor_id()`: the id
-of the participant who wrote the message the turn answers, never a name the
-model was shown. It names the turn and authenticates no one: resolve the
-participant before trusting it. `None` is a turn with no author (a system
-injection, a scheduled run), which a gate on a person's request refuses:
+reads the turn's author with `roomkit.tools.current_tool_actor_id()`: the
+sender id of the message the turn answers, a participant's id when the room
+knows them, never a name the model was shown. It names the turn and
+authenticates no one: resolve the participant before trusting it. Compare it
+with the id you expect and never test it for absence: a turn the host opened
+with `kit.deliver()` reads `"system"`, and `None` is a sender the room does
+not name (a participant's id on a channel that does not reach them):
 
 ```python
 from roomkit.tools import current_tool_actor_id
