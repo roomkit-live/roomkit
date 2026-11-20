@@ -53,6 +53,7 @@ from roomkit.providers.ai.openai_dialect import (
     message_refusal,
     message_tool_calls,
     overflow_fact,
+    status_error_text,
 )
 from roomkit.providers.ai.reasoning import floored_effort, reasoning_floor
 from roomkit.providers.ai.response_schema import (
@@ -667,14 +668,15 @@ class OpenAIAIProvider(AIProvider):
         """The provider error an SDK failure reads as, on both modes
         (:func:`provider_error`): the SDK's connection error is a lost
         connection, and a status error carries what it says of the context
-        window."""
+        window and the whole body the server answered with
+        (:func:`status_error_text`)."""
+        status_error = isinstance(exc, self._api_status_error)
         return provider_error(
             exc,
             provider=self._provider_name,
             transport=isinstance(exc, self._api_connection_error),
-            context_overflow=(
-                overflow_fact(exc) if isinstance(exc, self._api_status_error) else None
-            ),
+            context_overflow=overflow_fact(exc) if status_error else None,
+            message=status_error_text(exc) if status_error else None,
         )
 
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:

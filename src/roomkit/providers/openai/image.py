@@ -10,6 +10,7 @@ from roomkit.providers.ai.base import (
     ModelInfo,
     ProviderError,
 )
+from roomkit.providers.ai.openai_dialect import status_error_text
 from roomkit.providers.image.base import (
     ImageAttempt,
     ImageGenerationError,
@@ -197,16 +198,21 @@ class OpenAIImageProvider(ImageProvider):
             raise
         except Exception as exc:
             attempt.status = self._failure_status(exc)
-            attempt.error = str(exc)
+            attempt.error = self._error_text(exc)
             attempt.status_code = getattr(exc, "status_code", None)
             if on_progress:
                 await notify_image_progress(on_progress, attempt, provider=self._provider_name)
             raise ImageGenerationError(
-                str(exc), provider=self._provider_name, attempts=[attempt]
+                attempt.error, provider=self._provider_name, attempts=[attempt]
             ) from exc
         if on_progress:
             await notify_image_progress(on_progress, attempt, provider=self._provider_name)
         return attempt.results
+
+    def _error_text(self, exc: Exception) -> str:
+        """What *exc* says: for a status error, the whole body the server
+        answered with, on every SDK release (:func:`status_error_text`)."""
+        return status_error_text(exc) if isinstance(exc, self._api_status_error) else str(exc)
 
     def _failure_status(self, exc: Exception) -> Literal["failed", "unknown"]:
         """``unknown`` when the vendor may have run, and billed, the request: a

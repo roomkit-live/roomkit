@@ -18,6 +18,7 @@ from roomkit.providers.ai.base import (
     ModelInfo,
     ProviderError,
 )
+from roomkit.providers.ai.openai_dialect import status_error_text
 from roomkit.providers.image.base import (
     PAID_GENERATION_RETRYABLE,
     ImageProvider,
@@ -167,7 +168,7 @@ class XAIImageProvider(ImageProvider):
             ) from exc
         except self._api_status_error as exc:
             raise ProviderError(
-                str(exc),
+                status_error_text(exc),
                 # The SDK retries 408, 409, 429 and 5xx itself: with retries, a
                 # final one follows an attempt that may have run (RFC §25.2).
                 retryable=exc.status_code in PAID_GENERATION_RETRYABLE and self._sdk_retries == 0,

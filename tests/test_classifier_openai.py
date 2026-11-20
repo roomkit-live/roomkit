@@ -23,6 +23,7 @@ from roomkit import (
 )
 
 openai = pytest.importorskip("openai")
+httpx2 = pytest.importorskip("httpx2")
 
 QUESTIONS = {
     "addressed": YesNoQuestion("Is the last message addressed to Nova?"),
@@ -157,6 +158,22 @@ async def test_an_sdk_error_or_the_wait_is_a_classifier_error() -> None:
     slow = FakeClient(delay=1)
     with pytest.raises(ClassifierError, match="within 0.05 s"):
         await OpenAIClassifier(client=slow, timeout=0.05).classify("x", QUESTIONS)
+
+
+async def test_a_status_error_says_what_the_api_answered() -> None:
+    """Through the SDK itself, whose own text holds ``error.message`` alone
+    (3.57.0): the error carries the body the API answered with."""
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(403, json={"detail": "Decision API is not enabled for this user"})
+
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(answer))
+    client = openai.AsyncOpenAI(api_key="k", max_retries=0, http_client=http)
+    try:
+        with pytest.raises(ClassifierError, match="not enabled for this user"):
+            await OpenAIClassifier(client=client).classify("x", QUESTIONS)
+    finally:
+        await client.close()
 
 
 async def test_close_closes_only_the_client_it_made(monkeypatch: pytest.MonkeyPatch) -> None:

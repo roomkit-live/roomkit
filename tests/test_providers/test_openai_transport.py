@@ -393,6 +393,27 @@ async def test_a_model_listing_that_is_not_json_raises(kind: str) -> None:
         await provider.close()
 
 
+@pytest.mark.parametrize("kind", ["openai image", "azure image", "xai image", "meta image"])
+async def test_an_image_status_error_says_what_the_server_answered(kind: str) -> None:
+    """The openai SDK's own text holds ``error.message`` alone (3.57.0, where
+    3.0.0 wrote the whole body): the image providers' error carries the body,
+    so what a server words elsewhere in it can be read."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(402, json={"detail": "Image credit exhausted"})
+
+    client = _CALLS[kind]
+    provider = client.build("https://models.example", httpx2.MockTransport(handler))
+    try:
+        with pytest.raises(ProviderError, match="Image credit exhausted") as caught:
+            await client.call(provider)
+    finally:
+        await provider.close()
+
+    if isinstance(caught.value, ImageGenerationError):
+        assert "Image credit exhausted" in (caught.value.attempts[0].error or "")
+
+
 _ON_THE_SDK: dict[str, Callable[[Any], Any]] = {
     **_PROVIDERS,
     **{

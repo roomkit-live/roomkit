@@ -132,3 +132,22 @@ async def test_a_200_json_error_object_reads_as_its_status(wire: HttpWire) -> No
     error = await _failure(provider, "generate")
 
     assert (error.retryable, error.status_code) == (True, 503)
+
+
+@pytest.mark.parametrize("mode", ["generate", "stream"])
+@pytest.mark.parametrize(
+    "wire",
+    [wire for wire in WIRES if wire.label in OPENAI_LABELS],
+    ids=sorted(OPENAI_LABELS),
+)
+async def test_a_status_error_says_what_the_server_answered(wire: HttpWire, mode: str) -> None:
+    """The openai SDK's own text holds ``error.message`` alone (3.57.0, where
+    3.0.0 wrote the whole body): the provider's error carries the body, so
+    what a server words elsewhere in it, and an error's code, can be read."""
+    body = {"detail": "Model m is not deployed here", "code": "model_not_found"}
+    provider = wire.build(lambda request: httpx.Response(404, json=body))
+
+    error = await _failure(provider, mode)
+
+    assert "Model m is not deployed here" in str(error)
+    assert "model_not_found" in str(error)

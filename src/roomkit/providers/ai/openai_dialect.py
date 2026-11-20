@@ -162,6 +162,36 @@ def overflow_fact(exc: object) -> bool | None:
     return None
 
 
+def status_error_text(exc: BaseException) -> str:
+    """What a status error of the ``openai`` SDK says, the same on every
+    release of the SDK: the whole body the server answered with.
+
+    The SDK wrote that body into the error's text through 3.0.0. 3.57.0
+    keeps ``error.message`` alone there: an error code is gone from the
+    text, and a body shaped otherwise (prose under ``detail``, under an
+    ``error`` that is a string, nested by a router under its own error, or a
+    plain text body) leaves nothing of itself. The text is what reads a
+    context-window refusal nobody classified
+    (:func:`~roomkit.providers.ai.base.is_context_overflow_message`), and
+    what a host matches. So it is written here as the SDK wrote it through
+    3.0.0, from the response the error carries: ``Error code: <status> -
+    <body>`` for a JSON body, the body itself for any other text. An error
+    whose response was not read, or carries no body, keeps the SDK's text.
+    """
+    response: Any = getattr(exc, "response", None)
+    try:
+        text = response.text.strip()
+    except (AttributeError, RuntimeError):  # no response, or one never read
+        return str(exc)
+    if not text:
+        return str(exc)
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return text
+    return f"Error code: {response.status_code} - {body}"
+
+
 def fold_tool_call_fragment(
     slot: dict[str, str], index: int, name: str | None, fragment: str
 ) -> StreamToolCallDelta | None:

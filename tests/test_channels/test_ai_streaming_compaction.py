@@ -22,6 +22,7 @@ list in ``is_context_overflow_message`` decides only when the flag is
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -47,6 +48,8 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.ai.openai_dialect import overflow_fact
+from roomkit.providers.openai.ai import OpenAIAIProvider
+from roomkit.providers.openai.config import OpenAIConfig
 from tests.routed_generation import routed_generation
 
 
@@ -125,7 +128,7 @@ def _ctx() -> AIContext:
 
 
 def _channel(
-    provider: _ScriptedStreamProvider,
+    provider: Any,
     *,
     retry_policy: RetryPolicy | None = None,
     fallback: Any | None = None,
@@ -429,3 +432,62 @@ async def test_openai_status_errors_carry_the_typed_fact() -> None:
     assert overflow_fact(await _sdk_status_error("invalid_request_error")) is None
     assert overflow_fact(await _sdk_status_error(400)) is None
     assert overflow_fact(RuntimeError("no body")) is None
+
+
+_REFUSAL = "This model's maximum context length is 8192 tokens. However, you requested 9000."
+_NESTED = json.dumps({"error": {"message": _REFUSAL}})
+# A context-window refusal, by where the server's 400 words it.
+_REFUSED_AS: dict[str, Any] = {
+    "error.message and code": {
+        "error": {"message": _REFUSAL, "type": "invalid_request_error"}
+        | {"code": "context_length_exceeded"}
+    },
+    "error.message": {"error": {"message": _REFUSAL, "type": "BadRequestError", "code": 400}},
+    "code alone": {"error": {"message": "Bad request", "code": "context_length_exceeded"}},
+    "top-level message": {"object": "error", "message": _REFUSAL, "code": 400},
+    "nested by a router": {
+        "error": {"message": "Provider returned error", "code": 400, "metadata": {"raw": _NESTED}}
+    },
+    "detail": {"detail": _REFUSAL},
+    "error as text": {"error": _REFUSAL},
+    "plain text": _REFUSAL,
+}
+_DONE = (
+    'data: {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m", '
+    '"choices": [{"index": 0, "delta": {"content": "Done"}, "finish_reason": "stop"}]}\n\n'
+    "data: [DONE]\n\n"
+)
+
+
+@pytest.mark.parametrize("shape", list(_REFUSED_AS))
+async def test_a_refusal_worded_anywhere_in_the_body_compacts_the_turn(shape: str) -> None:
+    """Through the openai SDK itself: its error's text holds ``error.message``
+    alone (3.57.0, where 3.0.0 wrote the whole body), so the provider's error
+    carries the body, and a refusal the server words elsewhere in it is still
+    read: the turn is compacted and replayed."""
+    sent: list[dict[str, Any]] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        sent.append(json.loads(request.content))
+        if len(sent) > 1:
+            return httpx2.Response(
+                200, headers={"content-type": "text/event-stream"}, content=_DONE.encode()
+            )
+        refusal = _REFUSED_AS[shape]
+        if isinstance(refusal, str):
+            return httpx2.Response(400, text=refusal)
+        return httpx2.Response(400, json=refusal)
+
+    config = OpenAIConfig(
+        api_key="k", model="m", base_url="https://models.example/v1", max_retries=0
+    )
+    provider = OpenAIAIProvider(config, transport=httpx2.MockTransport(answer))
+    try:
+        items = await _drain(_channel(provider)._run_streaming_tool_loop(_ctx()))
+    finally:
+        await provider.close()
+
+    assert _texts(items) == "Done"
+    [refused, replayed] = sent
+    assert len(replayed["messages"]) < len(refused["messages"])
+    assert "[Context compacted" in json.dumps(replayed["messages"])

@@ -38,6 +38,7 @@ from roomkit.classifiers.base import (
     YesNoQuestion,
     check_answers,
 )
+from roomkit.providers.ai.openai_dialect import status_error_text
 
 DEFAULT_MODEL = "gpt-6-luna"
 """The one model the Decisions API takes in its beta."""
@@ -93,6 +94,9 @@ class OpenAIClassifier(Classifier):
             )
         except TimeoutError as exc:
             raise ClassifierError(f"no answer within {self._timeout} s") from exc
+        except self._sdk.APIStatusError as exc:
+            # The whole body the API answered with, on every SDK release.
+            raise ClassifierError(status_error_text(exc)) from exc
         except self._sdk.OpenAIError as exc:
             raise ClassifierError(str(exc)) from exc
         return check_answers(questions, _answers(questions, payload))

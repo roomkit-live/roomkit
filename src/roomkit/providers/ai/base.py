@@ -421,6 +421,7 @@ def provider_error(
     status: int | None = None,
     transport: bool = False,
     context_overflow: bool | None = None,
+    message: str | None = None,
 ) -> ProviderError:
     """The :class:`ProviderError` an SDK failure reads as, on every provider
     (RFC §6.7). Its status is *status* when the SDK's class names one, else
@@ -429,7 +430,8 @@ def provider_error(
     connection (*transport*, or :func:`is_transport_failure`) is retried and
     an answer that could not be read is final; anything else is retried only
     when its message names a transient failure. A :class:`ProviderError` is
-    already read."""
+    already read. Its text is *message* where the SDK's own leaves out what
+    the server said, else the SDK's."""
     if isinstance(exc, ProviderError):
         return exc
     if status is None:
@@ -443,7 +445,7 @@ def provider_error(
     else:
         retryable = _names_transient(str(exc))
     return ProviderError(
-        str(exc),
+        str(exc) if message is None else message,
         retryable=retryable,
         provider=provider,
         status_code=status,
