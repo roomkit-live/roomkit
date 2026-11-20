@@ -20,22 +20,37 @@ from typing import Any
 from roomkit.turns import TurnExecutor, TurnTimeouts
 from roomkit.turns.redis import RedisTurnBackend
 
-# What a reaction of a channel such an executor hosts may hold: nothing that
-# waits on the run's loop.
+# What a channel such an executor hosts may hold, and one of its reactions:
+# nothing that waits on the run's loop.
+_CHANNEL = {
+    "id",
+    "type",
+    "category",
+    "direction",
+    "capabilities",
+    "recipient_key",
+    "recent_events_window",
+    "declared",
+    "on_event",
+}
 _REACTION = {"when", "repeat", "delay_ms", "holds_cpu_ms", "do", "respond", "output", "fail"}
 
 
 def apart_problems(spec: Mapping[str, Any], channels: Iterable[Mapping[str, Any]]) -> list[str]:
-    """Why the executor *spec* cannot run in a process of its own: each
-    channel it hosts that is no scripted channel, or whose reactions hold a
-    gate or make an action other than a host verb (README, ``own_process``)."""
+    """Why the executor *spec* cannot run in a process of its own: hooks of
+    its own or a turn it holds, each channel it hosts that holds more than a
+    scripted channel's turn, or whose reactions hold a gate or make an action
+    other than a host verb (README, ``own_process``)."""
     problems = []
+    held = [member for member in ("hooks", "room_hooks", "gate") if spec.get(member)]
+    if held or spec.get("answers", True) is False:
+        problems.append(f"executor {spec['id']!r}: it answers and holds no hook apart")
     for channel in channels:
         if not channel.get("declared") or not _hosts(spec, channel["id"]):
             continue
         where = f"executor {spec['id']!r}, channel {channel['id']!r}"
-        if "model" in channel or "acp" in channel:
-            problems.append(f"{where}: a process of its own hosts scripted channels alone")
+        if extra := sorted(set(channel) - _CHANNEL):
+            problems.append(f"{where}: a process of its own hosts no {extra}")
         for reaction in channel.get("on_event", []):
             extra = set(reaction) - _REACTION
             actions = reaction.get("do", [])

@@ -160,6 +160,9 @@ class Executors:
         if self.held_ends:
             self.held_ends.wrap(self._backend)
         if self._kills_owner:
+            settings = self._settings
+            if settings.get("turn_backend_faults") or settings.get("executor_catalogue") is False:
+                raise UnreadableError("owner.kill takes no presence fixture of the kit")
             self.owner_kill.wrap(self._backend)
         return self.process_options("main")
 
