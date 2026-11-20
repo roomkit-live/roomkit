@@ -76,6 +76,7 @@ TOP = {
     "title",
     "rules",
     "requirements",
+    "requires_features",
     "reentrancy",
     "notes",
     "setup",
@@ -496,6 +497,8 @@ NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 # Each call's arguments, beside `call` and `organization_id`.
 CALLS: dict[str, set[str]] = {
     "process_inbound": {"message", "room_id", "defer_delivery"},
+    "parse_voice_session": {"session", "channel_id", "metadata"},
+    "emit_protocol_trace": {"trace"},
     "delivery.cancel": {"of", "reason", "timeout_ms"},
     "delivery.wait": {"of"},
     "regenerate_response": {"room_id", "trigger_id"},

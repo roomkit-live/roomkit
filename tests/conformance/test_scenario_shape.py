@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conformance import test_conformance as runner
 from tests.conformance._shape import unknown_members
+
+
+def test_a_missing_feature_skips_before_reading_the_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runner, "PROVIDED_FEATURES", {"message_session"})
+    scenario = {"requires_features": ["message_session", "voice"], "setup": {"channels": [{}]}}
+    marks = runner._marks("media/example", scenario)
+    assert len(marks) == 1
+    assert marks[0].name == "skip"
+    assert marks[0].kwargs["reason"] == "missing scenario features: voice"
 
 
 @pytest.mark.parametrize(

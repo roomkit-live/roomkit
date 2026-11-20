@@ -134,19 +134,20 @@ class Normalizer:
     def value(self, value: Any, key: str | None = None) -> Any:
         """*value* with its ids, indexes and instants normalized."""
         if isinstance(value, dict):
-            return self._object(value)
+            return self._object(value, key)
         if isinstance(value, list):
             return [self.value(item, key) for item in value]
         if isinstance(value, str):
             return self._string(value, key)
         return value
 
-    def _object(self, value: dict[str, Any]) -> dict[str, Any]:
+    def _object(self, value: dict[str, Any], member: str | None) -> dict[str, Any]:
         indexes = self._indexes_of(value)
         # A participant's or an identity's id is the scenario's own (§5.5,
-        # §5.6), and an ACP option's id, are not event ids.
+        # §5.6), as are a voice session's id and an ACP option's id.
         own_id = (
-            "identification" in value
+            (member == "session" and "participant_id" in value and "channel_id" in value)
+            or "identification" in value
             or "channel_addresses" in value
             or (value.get("type") in ("select", "boolean") and "currentValue" in value)
         )

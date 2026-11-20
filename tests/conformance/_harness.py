@@ -9,6 +9,7 @@ scenario's expectations.
 from __future__ import annotations
 
 import asyncio
+import base64
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any
@@ -31,6 +32,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolRoundEvent,
 )
+from roomkit.models.trace import ProtocolTrace
 from roomkit.orchestration import DispatchDecisionEvent, HandoffHandler, SpeakQueueEvent
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
@@ -383,13 +385,18 @@ class Harness:
         per_room.setdefault(channel_id, []).append(item)
 
     def record_room_callback(
-        self, room_id: str, channel_id: str, call: str, binding: ChannelBinding | None
+        self,
+        room_id: str,
+        channel_id: str,
+        call: str,
+        binding: ChannelBinding | None,
+        **details: Any,
     ) -> None:
         """One room callback a scripted channel was called with (§6.1), also
         named in the hooks' order as ``<channel_id>.<call>``."""
         if not self._recording:
             return
-        item: dict[str, Any] = {"call": call}
+        item: dict[str, Any] = {"call": call, **details}
         if binding is not None:
             item["binding"] = binding.model_dump(mode="json")
         per_room = self.observed.room_callbacks.setdefault(room_id, {})
@@ -435,6 +442,21 @@ class Harness:
             "context_room": context.room.model_dump(mode="json"),
             "recent_events": _recent_ids(context),
         }
+        if isinstance(payload, ProtocolTrace):
+            raw = payload.raw
+            call["trace"] = {
+                "channel_id": payload.channel_id,
+                "room_id": payload.room_id,
+                "session_id": payload.session_id,
+                "direction": payload.direction,
+                "protocol": payload.protocol,
+                "summary": payload.summary,
+                "raw": {"base64": base64.b64encode(raw).decode("ascii")}
+                if isinstance(raw, bytes)
+                else raw,
+                "metadata": dict(payload.metadata),
+                "timestamp": payload.timestamp.isoformat(),
+            }
         if isinstance(payload, ToolCallEvent):
             call["tool_call"] = tool_call_record(payload)
         if isinstance(payload, DeliveryStatus):

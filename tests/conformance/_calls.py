@@ -8,6 +8,7 @@ serialized form, and an error it raises is named by its RFC meaning
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -50,8 +51,10 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventContent, EventSource, RoomEvent
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.steering import SteeringDirective
+from roomkit.models.trace import ProtocolTrace
 from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
+from roomkit.voice import VoiceSession, parse_voice_session
 from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import ScriptedAIRouter, scripted_agent
 from tests.conformance._extra_tools import read as read_extra_tools
@@ -217,8 +220,27 @@ def _org(spec: Mapping[str, Any]) -> dict[str, Any]:
     return {"organization_id": spec["organization_id"]} if "organization_id" in spec else {}
 
 
+async def _parse_voice_session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    session = read(lambda: VoiceSession(**spec["session"]))
+    return parse_voice_session(session, spec["channel_id"], metadata=spec.get("metadata"))
+
+
+async def _emit_protocol_trace(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    fields = dict(spec["trace"])
+    if isinstance(raw := fields.get("raw"), dict):
+        fields["raw"] = read(lambda: base64.b64decode(raw["base64"], validate=True))
+    trace = read(lambda: ProtocolTrace(**fields))
+    channel = kit.get_channel(trace.channel_id)
+    if channel is None:
+        raise UnreadableError(f"no registered channel for trace: {trace.channel_id}")
+    channel.emit_trace(trace)
+
+
 async def _process_inbound(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    message = read(lambda: InboundMessage.model_validate(spec["message"]))
+    fields = dict(spec["message"])
+    if isinstance(session := fields.get("session"), dict):
+        fields["session"] = read(lambda: VoiceSession(**session))
+    message = read(lambda: InboundMessage.model_validate(fields))
     if not spec.get("defer_delivery"):
         return await kit.process_inbound(message, room_id=spec.get("room_id"), **_org(spec))
     result = await kit.process_inbound(
@@ -654,6 +676,8 @@ CALLS: dict[str, Call] = {
     ),
     "close": _close,
     "process_inbound": _process_inbound,
+    "parse_voice_session": _parse_voice_session,
+    "emit_protocol_trace": _emit_protocol_trace,
     "send_event": _send_event,
     "post": _post,
     "commit_event": _commit_event,

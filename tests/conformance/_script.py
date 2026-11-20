@@ -426,6 +426,21 @@ class ScriptedChannel(Channel):
         cut = {"cut": None if row is None else row.model_dump(mode="json")}
         self._harness.record_streamed(binding.room_id, self.channel_id, cut)
 
+    async def connect_session(self, session: Any, room_id: str, binding: ChannelBinding) -> None:
+        self._harness.record_room_callback(
+            room_id,
+            self.channel_id,
+            "connect_session",
+            binding,
+            session={
+                "id": session.id,
+                "channel_id": session.channel_id,
+                "room_id": session.room_id,
+                "participant_id": session.participant_id,
+                "metadata": dict(session.metadata),
+            },
+        )
+
     def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
         """Record the synchronous callback when its fixture is enabled."""
         if self._binding_update is None:

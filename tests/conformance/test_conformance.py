@@ -26,6 +26,8 @@ from tests.conformance._shape import unknown_members
 HERE = Path(__file__).parent
 SCENARIOS = HERE / "scenarios"
 
+PROVIDED_FEATURES = {"message_session", "protocol_trace"}
+
 # Scenario id → the rule this implementation breaks (roomkit-specs
 # conformance/README.md, "Known failures").
 KNOWN_FAILURES: dict[str, str] = {}
@@ -173,9 +175,33 @@ def _stores(scenario_id: str, scenario: dict[str, Any]) -> tuple[str, ...]:
         return ("memory",)
     if scenario_id.startswith(_ON_POSTGRES) or _runs_in_processes(scenario):
         return (*_STORES, "postgres")
-    if scenario_id.startswith(_ON_EACH_STORE) or scenario_id in _WORKER_DEADLINES:
+    if (
+        scenario_id.startswith(_ON_EACH_STORE)
+        or scenario_id in _WORKER_DEADLINES
+        or scenario.get("requires_features")
+    ):
         return _STORES
     return ("memory",)
+
+
+def _marks(scenario_id: str, scenario: dict[str, Any]) -> list[Any]:
+    missing = [
+        name for name in scenario.get("requires_features", []) if name not in PROVIDED_FEATURES
+    ]
+    if missing:
+        return [pytest.mark.skip(reason="missing scenario features: " + ", ".join(missing))]
+    marks = []
+    if scenario_id in _LOCAL_TURN_CONTEXT:
+        marks.append(pytest.mark.in_process(_LOCAL_TURN_CONTEXT[scenario_id]))
+    if _turn_calls_the_kit(scenario):
+        marks.append(pytest.mark.in_process(_IN_PROCESS))
+    if scenario_id in KNOWN_FAILURES:
+        marks.append(
+            pytest.mark.xfail(
+                reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
+            )
+        )
+    return marks
 
 
 def _cases(stores: tuple[str, ...] = _STORES) -> list[Any]:
@@ -184,17 +210,7 @@ def _cases(stores: tuple[str, ...] = _STORES) -> list[Any]:
     for path in _scenarios():
         scenario_id = path.relative_to(SCENARIOS).with_suffix("").as_posix()
         scenario = _load(path)
-        marks = []
-        if scenario_id in _LOCAL_TURN_CONTEXT:
-            marks.append(pytest.mark.in_process(_LOCAL_TURN_CONTEXT[scenario_id]))
-        if _turn_calls_the_kit(scenario):
-            marks.append(pytest.mark.in_process(_IN_PROCESS))
-        if scenario_id in KNOWN_FAILURES:
-            marks.append(
-                pytest.mark.xfail(
-                    reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
-                )
-            )
+        marks = _marks(scenario_id, scenario)
         for store in (s for s in _stores(scenario_id, scenario) if s in stores):
             name = scenario_id if store == "memory" else f"{scenario_id}[{store}]"
             cases.append(pytest.param(path, store, id=name, marks=marks))
