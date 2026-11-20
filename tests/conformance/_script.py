@@ -64,6 +64,7 @@ class Gates:
     def __init__(self) -> None:
         self._opened: dict[str, asyncio.Event] = {}
         self._reached: dict[str, asyncio.Event] = {}
+        self._order: dict[str, int] = {}
 
     def _pair(self, name: str) -> tuple[asyncio.Event, asyncio.Event]:
         return (
@@ -72,13 +73,17 @@ class Gates:
         )
 
     async def hold(self, name: str) -> None:
-        opened, reached = self._pair(name)
-        reached.set()
+        opened, _ = self._pair(name)
+        self.reach(name)
         await opened.wait()
 
     def reach(self, name: str) -> None:
         """Says a call reached the gate, holding nothing there."""
+        self._order.setdefault(name, len(self._order))
         self._pair(name)[1].set()
+
+    def reached_after(self, name: str, earlier: str) -> bool:
+        return earlier in self._order and self._order[earlier] < self._order[name]
 
     async def wait_for(self, name: str) -> None:
         _, reached = self._pair(name)
@@ -410,6 +415,22 @@ class ScriptedChannel(Channel):
                 elif isinstance(item, RoomEvent):
                     row = {"row": item.model_dump(mode="json")}
                     self._harness.record_streamed(room_id, self.channel_id, row)
+                    abandon = reaction.get("close_while_reading")
+                    if abandon is not None and item.type == "tool_call_start":
+                        pending = asyncio.ensure_future(anext(text_stream))
+                        try:
+                            await self._harness.gates.wait_for(abandon["running"])
+                            if pending.done():
+                                raise AssertionError("tool read finished before its gate opened")
+                        finally:
+                            pending.cancel()
+                            await asyncio.gather(pending, return_exceptions=True)
+                            close = getattr(text_stream, "aclose", None)
+                            if close is None:
+                                raise AssertionError("the target's stream cannot be closed")
+                            await close()
+                        self._harness.gates.reach(abandon["closed"])
+                        break
                     if rows_left is not None:
                         rows_left -= 1
                         if rows_left == 0:

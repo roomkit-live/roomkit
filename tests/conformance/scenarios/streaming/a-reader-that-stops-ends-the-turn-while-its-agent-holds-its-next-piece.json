@@ -9,7 +9,7 @@
   "requirements": [
     "RK-10.6.4-010"
   ],
-  "notes": "Python: turns/_executor_turn.py _cut_read, which a close runs when turns/_executor_pulls.py PullGate.close finds the executor reading ahead past a delta. The scripted ACP agent sends one text piece, then holds at a gate no step opens: past that piece, which the reader stops at, the executor reads ahead and waits for the agent. A close that let that read go on would wait for the gate, and the turn would never end. A read only a later pull let start, a call running past its start, is not shown: no fixture has a reader close while a read it asked for is pending.",
+  "notes": "Python: turns/_executor_turn.py _cut_read, which a close runs when turns/_executor_pulls.py PullGate.close finds the executor reading ahead past a delta. The scripted ACP agent sends one text piece, then holds at a gate no step opens: past that piece, which the reader stops at, the executor reads ahead and waits for the agent. A close that let that read go on would wait for the gate, and the turn would never end. The later pull that starts a running call is exercised by streaming/a-gated-reader-leaves-while-its-pulled-call-runs.",
   "setup": {
     "channels": [
       {

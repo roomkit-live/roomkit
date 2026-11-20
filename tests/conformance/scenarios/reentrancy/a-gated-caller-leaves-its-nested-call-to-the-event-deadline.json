@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-gated-caller-leaves-its-nested-call-to-the-event-deadline",
+  "title": "The event deadline refuses an unfinished nested call after its caller leaves, and reports neither timeout",
+  "rules": [
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-9.5.1-043"
+  ],
+  "reentrancy": [
+    "inject@locked"
+  ],
+  "notes": "The outer and inner hook gates stay closed. The nested action signals when it returns. The next arrival starts only after that signal, so its own deadline is independent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "parent",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "spawn": {
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "nested"
+                  },
+                  "as": "nested"
+                }
+              ],
+              "after_do_gate": "nested-ended"
+            },
+            "gate": "outer"
+          }
+        ]
+      },
+      {
+        "name": "nested",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "nested"
+            },
+            "gate": "inner"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "process_timeout_ms": 2000
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "caller"
+    },
+    {
+      "wait_for": "outer"
+    },
+    {
+      "wait_for": "inner"
+    },
+    {
+      "cancel": "caller"
+    },
+    {
+      "wait_for": "nested-ended"
+    },
+    {
+      "open": "nested-ended"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "followup"
+        }
+      },
+      "background": true,
+      "as": "followup"
+    },
+    {
+      "await": "followup",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "followup"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "actions": {
+      "nested": [
+        {
+          "error": "process_timeout"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  }
+}

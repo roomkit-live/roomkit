@@ -276,8 +276,8 @@ class Harness:
         self.handles: dict[str, DeliveryHandle] = {}
         self._background: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._after_turn: list[asyncio.Task[None]] = []
-        # The tasks reactions started and did not wait for (README, Reactions).
-        self._spawned: list[asyncio.Task[None]] = []
+        # The tasks still unwinding or started by reactions (README, Steps and Reactions).
+        self._spawned: list[asyncio.Task[Any]] = []
         self.tasks: dict[str, DelegatedTask] = {}
         self._checks: list[Check] = []
         self._step_outcomes: list[dict[str, Any]] = []
@@ -755,13 +755,30 @@ class Harness:
             register_channel(kit, self, channel, process=True)
         return kit
 
+    async def _start_background(self, label: str, call: Mapping[str, Any]) -> None:
+        self._background[label] = asyncio.create_task(self.invoke(call, {}))
+        # The call runs to its first wait before the next step (README, Steps).
+        await asyncio.sleep(0)
+
     async def _step(self, step: Mapping[str, Any], path: str) -> None:
+        if "cancel" in step or "close_while_pending" in step:
+            label = step["cancel"] if "cancel" in step else step["close_while_pending"]
+            caller = self._background.get(label)
+            if caller is None or caller.done():
+                self._problems.append(f"{path}: no pending background call {label}")
+                return
+            if "cancel" in step:
+                self._spawned.append(self._background.pop(label))
+                caller.cancel()
+                # Let the caller receive cancellation. A nested call it owns can
+                # still be waiting for a gate a later step will open.
+                await asyncio.sleep(0)
+                return
+            await self._start_background(step["as"], {"call": "close"})
+            return
         if "call" in step:
             if step.get("background"):
-                self._background[step["as"]] = asyncio.create_task(self.invoke(step, {}))
-                # The call runs to its first wait before the next step (README,
-                # "Steps"): the loop runs its first step before this one goes on.
-                await asyncio.sleep(0)
+                await self._start_background(step["as"], step)
                 return
             outcome = await self.invoke(step, {})
             self._step_outcomes.append(outcome)
@@ -789,7 +806,16 @@ class Harness:
                 )
         elif "wait_for" in step:
             try:
-                await self.gates.wait_for(step["wait_for"])
+                gate = step["wait_for"]
+                await self.gates.wait_for(gate)
+                if "after" in step and not self.gates.reached_after(gate, step["after"]):
+                    self._problems.append(f"{path}: {gate} did not follow {step['after']}")
+                if "pending" in step:
+                    caller = self._background.get(step["pending"])
+                    if caller is None or caller.done():
+                        self._problems.append(
+                            f"{path}: no pending background call {step['pending']}"
+                        )
             except TimeoutError:
                 self._problems.append(f"{path}: no call reached the gate {step['wait_for']}")
         elif "wait_for_lock" in step:

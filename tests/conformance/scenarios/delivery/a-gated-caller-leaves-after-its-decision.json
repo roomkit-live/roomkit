@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-gated-caller-leaves-after-its-decision",
+  "title": "A caller leaving after the decision lets its delivery finish and the next arrival follow",
+  "rules": [
+    "§10.1"
+  ],
+  "requirements": [
+    "RK-10.1-109"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "gate": "delivering",
+            "after_do_gate": "delivery-finished"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "caller"
+    },
+    {
+      "wait_for": "delivering"
+    },
+    {
+      "cancel": "caller"
+    },
+    {
+      "open": "delivering"
+    },
+    {
+      "wait_for": "delivery-finished"
+    },
+    {
+      "open": "delivery-finished"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "first"
+          }
+        },
+        {
+          "content": {
+            "body": "second"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "first"
+            }
+          },
+          {
+            "content": {
+              "body": "second"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

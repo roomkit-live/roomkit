@@ -132,8 +132,7 @@
       "wait_for": "bot-runs"
     },
     {
-      "call": "close",
-      "background": true,
+      "close_while_pending": "h",
       "as": "closing"
     },
     {

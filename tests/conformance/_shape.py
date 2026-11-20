@@ -440,6 +440,7 @@ REACTION = {
     "invalid_result",
     "stop_after",
     "stop_after_rows",
+    "close_while_reading",
     "hold_after",
     "hold_gate",
     "writes_record",
@@ -642,7 +643,13 @@ CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
-STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
+STEPS = {
+    "await": {"await", "expect"},
+    "concurrent": {"concurrent"},
+    "wait_for": {"wait_for", "after", "pending"},
+}
+STEPS["cancel"] = {"cancel"}
+STEPS["close_while_pending"] = {"close_while_pending", "as"}
 STEPS["restart_process"] = {"restart_process"}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -1180,6 +1187,16 @@ def _reaction(
     invalid_return: frozenset[str] = frozenset(),
 ) -> None:
     _members(reaction, REACTION, path, found)
+    if "close_while_reading" in reaction:
+        abandon = reaction["close_while_reading"]
+        at = f"{path}.close_while_reading"
+        if not isinstance(abandon, Mapping):
+            found.append(f"{at}: expected gate names")
+        else:
+            _members(abandon, {"running", "closed"}, at, found)
+            for key in ("running", "closed"):
+                if not isinstance(abandon.get(key), str):
+                    found.append(f"{at}.{key}: expected a gate name")
     if "invalid_result" in reaction:
         _invalid_return(reaction, path, found, kinds=invalid_return)
     if "spawn" in reaction:

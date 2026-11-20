@@ -141,6 +141,8 @@ _ON_EACH_STORE = (
 _ON_POSTGRES = (
     "executors/a-failed-state-discard-is-retried-before-the-next-turn",
     "executors/the-kit-s-own-executor-serves-every-organization",
+    "reentrancy/a-gated-caller-",
+    "streaming/a-gated-reader-",
     "executors/a-built-channel-",
     "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
     "idempotency/",

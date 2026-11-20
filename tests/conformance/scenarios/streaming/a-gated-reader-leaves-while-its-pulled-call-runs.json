@@ -1,0 +1,188 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-gated-reader-leaves-while-its-pulled-call-runs",
+  "title": "A target closing its pending read lets the tool finish and waits for the turn to end",
+  "rules": [
+    "§10.6.4",
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.4-010",
+    "RK-10.6.8-024"
+  ],
+  "notes": "The target pulls past the start row and closes its stream while the handler waits at tool-running. The result hook first reaches tool-served after reader-closed, then the link first receives end after tool-served. The owner is still pending there and reads the held end. The scenario observes normal completion within the tool’s bound. It does not count heartbeat frames or exercise a tool exceeding its own bound.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver_stream": [
+          {
+            "close_while_reading": {
+              "running": "tool-running",
+              "closed": "reader-closed"
+            }
+          }
+        ],
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            },
+            "gate": "tool-running"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "unread"
+            }
+          ]
+        },
+        "holds_end": "end-owed"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "result",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "gate": "tool-served"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "reader-closed"
+    },
+    {
+      "open": "tool-running"
+    },
+    {
+      "wait_for": "tool-served",
+      "after": "reader-closed",
+      "pending": "turn"
+    },
+    {
+      "open": "tool-served"
+    },
+    {
+      "wait_for": "end-owed",
+      "after": "tool-served",
+      "pending": "turn"
+    },
+    {
+      "open": "end-owed"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served",
+            "result": "page text"
+          }
+        }
+      ]
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "close",
+          "read": true
+        }
+      ]
+    }
+  }
+}

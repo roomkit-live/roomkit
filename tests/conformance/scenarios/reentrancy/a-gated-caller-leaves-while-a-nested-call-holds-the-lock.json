@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-gated-caller-leaves-while-a-nested-call-holds-the-lock",
+  "title": "A nested call outlives the caller of its outer event and keeps the room locked until its own commit",
+  "rules": [
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-9.5.1-043"
+  ],
+  "reentrancy": [
+    "inject@locked"
+  ],
+  "notes": "The competing commit waits on the room lock after the outer caller leaves. The nested call completes before the event deadline.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "parent",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "spawn": {
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "nested"
+                  },
+                  "as": "nested"
+                }
+              ]
+            },
+            "gate": "outer"
+          }
+        ]
+      },
+      {
+        "name": "nested",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "nested"
+            },
+            "gate": "inner"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "background": true,
+      "as": "caller"
+    },
+    {
+      "wait_for": "outer"
+    },
+    {
+      "wait_for": "inner"
+    },
+    {
+      "cancel": "caller"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "next"
+        },
+        "status": "delivered",
+        "visibility": "none"
+      },
+      "background": true,
+      "as": "contender"
+    },
+    {
+      "wait_for_lock": "room-1"
+    },
+    {
+      "open": "inner"
+    },
+    {
+      "open": "outer"
+    },
+    {
+      "await": "contender"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "nested"
+          }
+        },
+        {
+          "content": {
+            "body": "next"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "nested": [
+        {
+          "result": {
+            "index": 0
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  }
+}
