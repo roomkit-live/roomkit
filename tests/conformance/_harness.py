@@ -48,6 +48,7 @@ from roomkit.speaking import SpeakDecisionEvent, ThoughtEvent
 from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
+from roomkit.voice.realtime.events import RealtimeDelegationEvent
 from tests import redis_turn_mode
 from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
 from tests.conformance._acp_context import ScriptedContextContributor
@@ -98,6 +99,7 @@ from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._publications import Publications
+from tests.conformance._realtime_session import REALTIME_CALLS, ScriptedRealtimeSession
 from tests.conformance._routing import ROUTING_CALLS
 from tests.conformance._script import (
     GATE_BOUND_S,
@@ -269,6 +271,7 @@ class Harness:
         self._step_outcomes: list[dict[str, Any]] = []
         self._problems: list[str] = []
         self.models: dict[str, ScriptedModel] = {}
+        self.realtime_sessions: dict[str, ScriptedRealtimeSession] = {}
         self.ai_routers: dict[str, ScriptedAIRouter] = {}
         self.acp_agents: dict[str, ScriptedACPAgent] = {}
         self.acp_handlers: dict[str, ScriptedExternalHandler] = {}
@@ -467,6 +470,8 @@ class Harness:
             call["voice"] = {"text": payload}
         elif (voice := voice_payload(payload)) is not None:
             call["voice"] = voice
+        if isinstance(payload, RealtimeDelegationEvent):
+            call["delegation"] = {"delegation_id": payload.delegation_id, "target": payload.target}
         if isinstance(payload, ProtocolTrace):
             raw = payload.raw
             call["trace"] = {
@@ -834,6 +839,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
+        calls |= REALTIME_CALLS
         calls |= ADDRESSING_CALLS
         calls |= MCP_HOST_CALLS
         calls |= SKILL_REGISTRY_CALLS
@@ -939,6 +945,8 @@ class Harness:
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
         tasks.extend(self._task_runs())
+        for fixture in self.realtime_sessions.values():
+            tasks.extend(task for task in fixture.channel._scheduled_tasks if not task.done())
         if after_turn:
             tasks.extend(task for task in self._after_turn if not task.done())
             tasks.extend(task for task in self._spawned if not task.done())

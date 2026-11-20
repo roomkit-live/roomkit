@@ -84,7 +84,11 @@ async def _conversation_pipeline(
 async def _install_pipeline(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     priority = {"hook_priority": spec["hook_priority"]} if "hook_priority" in spec else {}
     _router, handler = _pipeline_of(spec).install(
-        kit, spec["agents"], agent_aliases=spec.get("agent_aliases"), **priority
+        kit,
+        spec["agents"],
+        agent_aliases=spec.get("agent_aliases"),
+        voice_channel_id=spec.get("voice_channel_id"),
+        **priority,
     )
     harness.handoff_handlers[spec["handler"]] = handler
 
@@ -146,6 +150,7 @@ HANDOFF_ARGUMENTS: dict[str, set[str]] = {
     },
     "conversation_pipeline": {"stages", "default_phase", "supervisor_id"},
     "install_pipeline": {
+        "voice_channel_id",
         "handler",
         "stages",
         "default_phase",

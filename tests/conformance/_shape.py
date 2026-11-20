@@ -44,6 +44,7 @@ from tests.conformance._mcp_shape import MCP_HOST_ARGUMENTS
 from tests.conformance._mcp_shape import mcp_problems as host_mcp_problems
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
+from tests.conformance._realtime_session import REALTIME_ARGUMENTS
 from tests.conformance._routing import (
     CONDITIONS,
     ROUTER,
@@ -154,6 +155,7 @@ CHANNEL = {
     "direction",
     "capabilities",
     "recipient_key",
+    "realtime",
     "parse",
     "on_event",
     "deliver",
@@ -616,6 +618,7 @@ CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS | VOICE_ARGUMENTS
+CALLS |= REALTIME_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
@@ -862,6 +865,11 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     ):
         for index, reaction in enumerate(channel.get(kind, [])):
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
+    if "realtime" in channel:
+        realtime = channel["realtime"]
+        _members(realtime, {"tools", "reasoning_error"}, f"{path}.realtime", found)
+        for name, tool in realtime.get("tools", {}).items():
+            _members(tool, {"gate", "result", "reconnect"}, f"{path}.realtime.tools.{name}", found)
     if "model" in channel:
         _model(channel["model"], f"{path}.model", found)
     if "acp" in channel:

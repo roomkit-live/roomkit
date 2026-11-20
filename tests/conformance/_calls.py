@@ -59,6 +59,7 @@ from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import ScriptedAIRouter, scripted_agent
 from tests.conformance._extra_tools import read as read_extra_tools
 from tests.conformance._extra_tools import replace as replace_extra_tool
+from tests.conformance._realtime_session import ScriptedRealtimeSession
 from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
@@ -520,6 +521,10 @@ def scripted_channel(
         if context is not None:
             harness.acp_context[channel["id"]] = context
         return acp_channel
+    if "realtime" in channel:
+        session = ScriptedRealtimeSession(channel["id"], channel["realtime"], harness.gates)
+        harness.realtime_sessions[channel["id"]] = session
+        return session.channel
     if "model" in channel:
         agent, models = read(
             lambda: scripted_agent(
