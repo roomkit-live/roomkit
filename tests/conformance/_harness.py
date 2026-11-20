@@ -339,6 +339,7 @@ class Harness:
         kwargs |= verification_options(kit_setup)
         kwargs |= media_options(kit_setup, self)
         kwargs |= kit_orchestration(kit_setup, self)
+        kwargs |= self.executors.site_options("owner", kit_setup)
         kwargs |= self.executors.kit_options()
         if "text_events" in self.scenario.get("expect", {}):
             kwargs["realtime"] = _TextRecorder(self.observed.text_events)

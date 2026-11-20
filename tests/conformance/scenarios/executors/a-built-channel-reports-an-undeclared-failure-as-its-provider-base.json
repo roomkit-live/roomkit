@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-reports-an-undeclared-failure-as-its-provider-base",
+  "title": "An undeclared provider failure reads as a generic provider error with its original kind, ancestry and attributes",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-047"
+  ],
+  "notes": "Python: tests/test_turns_error_classes.py, error_record and RemoteTurnError. A scripted channel on a standalone executor raises a synthetic application exception through the per-room verb. The owner inspects the received exception itself.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "inspect": {
+            "raises_class": "HostProviderError"
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "error_classes": [
+          "HostProviderError"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "error_classes": []
+    }
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "inspect",
+      "capture_error": "first",
+      "expect": {
+        "result": {
+          "kind": "HostProviderError",
+          "message": "fixture (429): provider unavailable",
+          "generic": true,
+          "reads_as": "ProviderError",
+          "bases": [
+            "ProviderError"
+          ],
+          "attributes": {
+            "status_code": 429,
+            "provider": "fixture"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

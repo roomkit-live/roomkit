@@ -17,12 +17,17 @@ from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType
+from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.config import TelemetryConfig
+from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts
 from roomkit.turns.base import ExecutorLink, TurnBackend
 from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
 from tests.conformance._held_ends import HeldEnds
+from tests.conformance._media import media_options
 from tests.conformance._script import GATE_BOUND_S, hook_handler
+from tests.conformance._turn_errors import ERROR_CLASSES, inspect_failure
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
@@ -88,6 +93,8 @@ class Executors:
     def __init__(self, harness: Harness) -> None:
         setup = harness.scenario.get("setup", {})
         self._harness = harness
+        self.telemetry: dict[str, MockTelemetryProvider] = {}
+        self.captured_errors: dict[str, Exception] = {}
         self._bounds = _bounds(setup.get("kit", {}).get("turn_timeouts"))
         self._specs: dict[str, Mapping[str, Any]] = {
             e["id"]: e for e in setup.get("executors", [])
@@ -101,6 +108,18 @@ class Executors:
         self._published = asyncio.Semaphore(0)
         self.held_ends = HeldEnds(setup.get("channels", []), harness.gates.hold)
         """The channels whose turns hold their end once cut (README, ``holds_end``)."""
+
+    def site_options(self, site: str, spec: Mapping[str, Any]) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        if spec.get("telemetry"):
+            recorder = MockTelemetryProvider()
+            self.telemetry[site] = recorder
+            options["telemetry"] = (
+                TelemetryConfig(provider=recorder) if site == "owner" else recorder
+            )
+        if "error_classes" in spec:
+            options["error_classes"] = [ERROR_CLASSES[name] for name in spec["error_classes"]]
+        return options
 
     def kit_options(self) -> dict[str, Any]:
         """The turn backend the kit is built with, when the scenario has
@@ -152,6 +171,8 @@ class Executors:
             organizations=spec.get("organizations"),
             executor_id=executor_id,
             timeouts=self._bounds,
+            **self.site_options(f"executor/{executor_id}", spec),
+            **media_options(spec, self._harness),
             **bound,
         )
         self._add_hooks(executor, spec)
@@ -347,7 +368,28 @@ async def _channel_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
     arguments = dict(spec.get("arguments", {}))
     if "organization_id" in spec:
         arguments["organization_id"] = spec["organization_id"]
-    return await kit.channel_call(spec["channel_id"], spec["room_id"], spec["verb"], **arguments)
+    try:
+        return await kit.channel_call(
+            spec["channel_id"], spec["room_id"], spec["verb"], **arguments
+        )
+    except Exception as error:
+        if "capture_error" not in spec:
+            raise
+        harness.executors.captured_errors[spec["capture_error"]] = error
+        return inspect_failure(error)
+
+
+async def _spans(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    spans = harness.executors.telemetry[spec["site"]].get_spans(SpanKind(spec["kind"]))
+    attributes = spec.get("attributes", {})
+    return [
+        {"name": span.name, "span_id": span.id, "parent_id": span.parent_id}
+        for span in spans
+        if all(
+            key in span.attributes and span.attributes[key] == value
+            for key, value in attributes.items()
+        )
+    ]
 
 
 async def _release_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
@@ -388,6 +430,7 @@ async def _agent_presence(kit: RoomKit, harness: Harness, spec: Mapping[str, Any
 
 
 EXECUTOR_CALLS: dict[str, Call] = {
+    "telemetry.spans": _spans,
     "executor.start": _start,
     "executor.close": _close,
     "executor.kill": _kill,
@@ -404,6 +447,7 @@ EXECUTOR_CALLS: dict[str, Call] = {
 
 # Each call's arguments, beside `call` and `organization_id`.
 EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
+    "telemetry.spans": {"site", "kind", "attributes"},
     "executor.start": {"executor"},
     "executor.close": {"executor"},
     "executor.kill": {"executor"},
@@ -411,7 +455,7 @@ EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "executor.resume": {"executor"},
     "executor.calls": {"executor"},
     "channel.publish": {"executor", "channel_id", "room_id", "kind", "data", "gate"},
-    "channel_call": {"channel_id", "room_id", "verb", "arguments"},
+    "channel_call": {"channel_id", "room_id", "verb", "arguments", "capture_error"},
     "release_channel": {"channel_id"},
     "enable_room_hook": {"room_id", "name"},
     "executors": set(),

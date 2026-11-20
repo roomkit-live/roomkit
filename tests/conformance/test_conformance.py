@@ -27,6 +27,7 @@ HERE = Path(__file__).parent
 SCENARIOS = HERE / "scenarios"
 
 PROVIDED_FEATURES = {
+    "executor_media",
     "conference",
     "message_session",
     "protocol_trace",
@@ -136,6 +137,7 @@ _ON_EACH_STORE = (
 # advisory lock manager there, and every scenario whose steps make the store's
 # operations fail or hold (``setup.kit.store_faults``).
 _ON_POSTGRES = (
+    "executors/a-built-channel-",
     "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
     "idempotency/",
     "routing/",

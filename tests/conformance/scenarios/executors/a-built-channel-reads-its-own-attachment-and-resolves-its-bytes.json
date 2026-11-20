@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-reads-its-own-attachment-and-resolves-its-bytes",
+  "title": "A built agent reads attachments with its executor’s reader and passes the executor’s resolved image to the model",
+  "rules": [
+    "§10.6.2",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.6.2-023"
+  ],
+  "notes": "Python: TurnExecutor(media_resolver=, attached_media=), turns/_wiring.py. Different owner and executor keys and different bytes for the same reference distinguish both readers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "attached_media": {
+          "key": "worker_files"
+        },
+        "media_resolver": {
+          "media": {
+            "app-media://sample": "AQID"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "attached_media": {
+        "key": "owner_files"
+      },
+      "media_resolver": {
+        "media": {
+          "app-media://sample": "CQ=="
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Look."
+      },
+      "metadata": {
+        "worker_files": [
+          {
+            "type": "media",
+            "url": "app-media://sample",
+            "mime_type": "image/png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "Look."
+                },
+                {
+                  "image": "data:image/png;base64,AQID",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "requires_features": [
+    "executor_media"
+  ]
+}

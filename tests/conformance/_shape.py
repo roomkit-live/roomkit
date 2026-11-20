@@ -105,6 +105,10 @@ PROCESS = {"id"}
 EVENT_HANDLER = {"event", "reactions"}
 EVENT_HANDLER_REACTION = {"when", "repeat", "gate", "do"}
 EXECUTOR = {
+    "error_classes",
+    "telemetry",
+    "attached_media",
+    "media_resolver",
     "id",
     "hosts",
     "builds",
@@ -117,8 +121,10 @@ EXECUTOR = {
     "gate",
 }
 TURN_TIMEOUTS = {"accept_ms", "heartbeat_interval_ms", "heartbeat_timeout_ms", "cancel_ms"}
-VERB = {"result", "keeps", "reads", "forgets", "gate", "fail", "do"}
+VERB = {"raises_class", "result", "keeps", "reads", "forgets", "gate", "fail", "do"}
 KIT = {
+    "error_classes",
+    "telemetry",
     "max_chain_depth",
     "process_timeout_ms",
     "router",
@@ -692,6 +698,12 @@ def _executors(setup: Mapping[str, Any], found: list[str]) -> None:
     for position, executor in enumerate(setup.get("executors", [])):
         path = f"setup.executors[{position}]"
         _members(executor, EXECUTOR, path, found)
+        for key, members in (
+            ("attached_media", ATTACHED_MEDIA),
+            ("media_resolver", MEDIA_RESOLVER),
+        ):
+            if key in executor:
+                _members(executor[key], members, f"{path}.{key}", found)
         for member in ("hooks", "room_hooks"):
             for index, hook in enumerate(executor.get(member, [])):
                 # An executor defines its hooks by name (RFC §10.6.6).

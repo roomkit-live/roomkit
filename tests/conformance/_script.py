@@ -39,6 +39,7 @@ from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
 from tests.conformance._speaking import patched_decision
+from tests.conformance._turn_errors import failure as turn_failure
 from tests.conformance._video import patched_video_event
 
 if TYPE_CHECKING:
@@ -477,6 +478,8 @@ class ScriptedChannel(Channel):
             self._kept.pop(room_id, None)
         for action in spec.get("do", []):
             await self._harness.run_action(action, {"room": room_id})
+        if "raises_class" in spec:
+            raise turn_failure(spec["raises_class"])
         if (failure := spec.get("fail")) is not None:
             raise ScriptedFailureError(failure)
         if spec.get("keeps") or spec.get("reads"):

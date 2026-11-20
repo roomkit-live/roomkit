@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-receives-the-original-error-again-from-the-owner",
+  "title": "A generic failure raised again by an owner-served callback crosses with its original kind and classes",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-048"
+  ],
+  "notes": "Python: tests/test_turns_error_classes.py, error_record and RemoteTurnError. A scripted channel on a standalone executor raises a synthetic application exception through the per-room verb. The owner inspects the received exception itself. The owner callback rethrows that very instance. The declaring worker reconstructs its native application class.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "inspect": {
+            "raises_class": "HostProviderError"
+          }
+        },
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "host.call",
+                "verb": "app.relay",
+                "inspect_error": true,
+                "as": "second"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "error_classes": [
+          "HostProviderError"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "error_classes": []
+    }
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "inspect",
+      "capture_error": "first",
+      "expect": {
+        "result": {
+          "kind": "HostProviderError",
+          "message": "fixture (429): provider unavailable",
+          "generic": true,
+          "reads_as": "ProviderError",
+          "bases": [
+            "ProviderError"
+          ],
+          "attributes": {
+            "status_code": 429,
+            "provider": "fixture"
+          }
+        }
+      }
+    },
+    {
+      "call": "declare_host_verb",
+      "name": "app.relay",
+      "handler": {
+        "raises_captured": "first"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Please check."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "second": [
+        {
+          "result": {
+            "error": {
+              "kind": "HostProviderError",
+              "message": "fixture (429): provider unavailable",
+              "generic": false,
+              "reads_as": "HostProviderError",
+              "bases": [
+                "ProviderError"
+              ],
+              "attributes": {
+                "status_code": 429,
+                "provider": "fixture"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-keeps-the-message-of-a-declared-error-with-a-local-field",
+  "title": "A declared error whose message needs a process-local detail still reads as that class with its complete message",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-046"
+  ],
+  "notes": "Python: tests/test_turns_error_classes.py, error_record and RemoteTurnError. A scripted channel on a standalone executor raises a synthetic application exception through the per-room verb. The owner inspects the received exception itself.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "inspect": {
+            "raises_class": "DetailError"
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "error_classes": [
+          "DetailError"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "error_classes": [
+        "DetailError"
+      ]
+    }
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "inspect",
+      "capture_error": "first",
+      "expect": {
+        "result": {
+          "kind": "DetailError",
+          "message": "detail from worker",
+          "generic": true,
+          "reads_as": "DetailError",
+          "bases": []
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-reads-the-owner-s-task-in-the-model-input",
+  "title": "A remote agent reads its own room’s background task and its latest progress from the owner into the generation",
+  "rules": [
+    "§10.6.2",
+    "§23.4"
+  ],
+  "requirements": [
+    "RK-10.6.2-022"
+  ],
+  "notes": "Python: turns/_wiring.py build_room_tasks_loader, core/_turn_host.py room_tasks. The status exists only on the owning kit. The executor’s recorded generation and its actual model input identify the build that read the task. This exercises the background-task reader; the vision last-frame reader is outside this text scenario.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Ready."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "telemetry": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "status.post",
+      "agent_id": "reader",
+      "action": "task",
+      "status": "pending",
+      "detail": "Unrelated notes",
+      "metadata": {
+        "room_id": "elsewhere",
+        "task_id": "t1",
+        "child_room_id": "elsewhere::t1"
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "reader",
+      "action": "task",
+      "status": "pending",
+      "detail": "Check archive",
+      "metadata": {
+        "room_id": "r1",
+        "task_id": "t1",
+        "child_room_id": "r1::t1"
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "reader",
+      "action": "task",
+      "status": "info",
+      "detail": "Twelve files",
+      "metadata": {
+        "room_id": "r1",
+        "task_id": "t1",
+        "child_room_id": "r1::t1"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Please check."
+        }
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "executor/worker",
+      "kind": "llm.generate",
+      "expect": {
+        "result": [
+          {
+            "span_id": {
+              "$as": "generation"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "asked “Check archive”",
+                  "at “Twelve files”"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

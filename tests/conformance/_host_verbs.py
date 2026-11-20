@@ -20,6 +20,7 @@ from roomkit.tools import (
     current_tool_room_id,
 )
 from roomkit.turns._error_codec import error_record
+from tests.conformance._turn_errors import inspect_failure
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -29,11 +30,12 @@ if TYPE_CHECKING:
 
 HOST_ARGUMENTS = {
     "declare_host_verb": {"name", "handler", "between_turns"},
-    "host.call": {"verb", "arguments", "record_keys"},
+    "host.call": {"verb", "arguments", "record_keys", "inspect_error"},
 }
 HOST_HANDLER = {
     "returns",
     "returns_context",
+    "raises_captured",
     "returns_arguments",
     "raises",
     "as",
@@ -118,6 +120,8 @@ async def _declare(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> N
         if "record_keys" in script:
             context["record_after_gate"] = _record(script["record_keys"])
         _change_record(script)
+        if "raises_captured" in script:
+            raise harness.executors.captured_errors.pop(script["raises_captured"])
         if "raises" in script:
             failure = script["raises"]
             raise _ERRORS[failure["kind"]](failure["message"])
@@ -138,6 +142,8 @@ async def _call(spec: Mapping[str, Any]) -> dict[str, Any]:
         options = {"arguments": deepcopy(spec["arguments"])} if "arguments" in spec else {}
         result = await host.call(spec["verb"], **options)
     except Exception as error:
+        if spec.get("inspect_error"):
+            return {"result": None, "error": inspect_failure(error)}
         recorded = error_record(error)
         return {"result": None, "error": {"kind": recorded.kind, "message": recorded.message}}
     return {"result": result, "error": None}

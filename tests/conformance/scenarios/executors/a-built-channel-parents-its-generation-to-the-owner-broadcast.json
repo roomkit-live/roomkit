@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-built-channel-parents-its-generation-to-the-owner-broadcast",
+  "title": "A standalone executor traces its generation, hook and tool call under the owning broadcast",
+  "rules": [
+    "§10.6.9"
+  ],
+  "requirements": [
+    "RK-10.6.9-001"
+  ],
+  "notes": "Python: tests/test_turns_wiring.py::test_a_turn_in_a_context_of_its_own_continues_the_owner_s_span. Distinct site recorders observe the generation and before-generation hook under the incoming broadcast, and the tool call under that generation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": ""
+            }
+          ]
+        },
+        "max_empty_retries": 0,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Read a sample.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "sample"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "agent"
+        ],
+        "telemetry": true,
+        "hooks": [
+          {
+            "name": "observe",
+            "trigger": "before_ai_generation",
+            "execution": "sync"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "telemetry": true
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Please check."
+        }
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "framework.broadcast",
+      "expect": {
+        "result": [
+          {
+            "span_id": {
+              "$as": "broadcast"
+            }
+          }
+        ]
+      },
+      "attributes": {
+        "channel_id": "ws"
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "executor/worker",
+      "kind": "llm.generate",
+      "expect": {
+        "result": [
+          {
+            "parent_id": {
+              "$as": "broadcast"
+            },
+            "span_id": {
+              "$as": "generation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "executor/worker",
+      "kind": "hook.sync",
+      "expect": {
+        "result": [
+          {
+            "name": "hook.sync.observe",
+            "parent_id": {
+              "$as": "broadcast"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "executor/worker",
+      "kind": "llm.tool_call",
+      "expect": {
+        "result": [
+          {
+            "name": "tool.lookup",
+            "parent_id": {
+              "$as": "generation"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}
