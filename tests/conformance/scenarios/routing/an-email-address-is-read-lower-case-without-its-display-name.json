@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-email-address-is-read-lower-case-without-its-display-name",
+  "title": "An email channel compares and stores an address lower-case and without its display name: the sender, the correspondent an attach names and its recipient alike",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-035"
+  ],
+  "notes": "The email channel takes its type's addressing: its recipient key is email_address. Alice's room is prepared with her address as a mail client writes it; each spelling of it reaches that room. Bob opens a room of his own, recorded in the same form.",
+  "setup": {
+    "channels": [
+      {
+        "id": "mail",
+        "type": "email",
+        "addressing": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "alice-room"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "mail",
+      "metadata": {
+        "email_address": "Alice Martin <Alice@Example.com>"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "alice@example.com",
+          "metadata": {
+            "email_address": "alice@example.com"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "mail",
+        "sender_id": "ALICE@EXAMPLE.COM",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "alice@example.com"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "mail",
+        "sender_id": "Alice <alice@example.com>",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "alice@example.com"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "mail",
+        "sender_id": "Bob <Bob@Example.COM>",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "bob@example.com"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "alice-room": {
+        "mail": {
+          "participant_id": "alice@example.com",
+          "metadata": {
+            "email_address": "alice@example.com"
+          }
+        }
+      },
+      "$r1": {
+        "mail": {
+          "participant_id": "bob@example.com",
+          "metadata": {
+            "email_address": "bob@example.com"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "alice-room": [
+        {
+          "content": {
+            "body": "one"
+          }
+        },
+        {
+          "content": {
+            "body": "two"
+          }
+        }
+      ]
+    }
+  }
+}

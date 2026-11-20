@@ -1,0 +1,246 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-country-code-that-is-none-is-refused",
+  "title": "A country code that is not one to three digits, the first not 0, is refused as the channel is configured and as a number is written with it; a code of one to three digits is one, written with its + or not",
+  "rules": [
+    "§5.7"
+  ],
+  "requirements": [
+    "RK-5.7-034"
+  ],
+  "notes": "A refused channel is not registered: a message on it fails channel_not_registered. The code is refused whatever the channel's type, an email channel's too. The call addressing_of.normalize writes a number with the addressing the implementation gives an SMS channel by default.",
+  "setup": {
+    "channels": []
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "zero",
+        "type": "sms",
+        "addressing": {
+          "country_code": "012"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "four",
+        "type": "sms",
+        "addressing": {
+          "country_code": "1234"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "plus",
+        "type": "sms",
+        "addressing": {
+          "country_code": "+"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "empty",
+        "type": "sms",
+        "addressing": {
+          "country_code": ""
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "letter",
+        "type": "sms",
+        "addressing": {
+          "country_code": "4a"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "plus-zero",
+        "type": "whatsapp",
+        "addressing": {
+          "country_code": "+0"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "mail",
+        "type": "email",
+        "addressing": {
+          "country_code": "0"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "zero",
+        "sender_id": "0612345678",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "uk",
+        "type": "sms",
+        "addressing": {
+          "country_code": "+44"
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "uk",
+        "sender_id": "020 7946 0958",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+442079460958"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "ie",
+        "type": "sms",
+        "addressing": {
+          "country_code": "353"
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ie",
+        "sender_id": "087 123 4567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+353871234567"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "0612345678",
+      "country_code": "012",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "0612345678",
+      "country_code": "3333",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "0612345678",
+      "country_code": "+",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "0612345678",
+      "country_code": "33",
+      "expect": {
+        "result": "+33612345678"
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "0612345678",
+      "country_code": "+33",
+      "expect": {
+        "result": "+33612345678"
+      }
+    },
+    {
+      "call": "addressing_of.normalize",
+      "channel_type": "sms",
+      "address": "087 123 4567",
+      "country_code": "+353",
+      "expect": {
+        "result": "+353871234567"
+      }
+    }
+  ]
+}

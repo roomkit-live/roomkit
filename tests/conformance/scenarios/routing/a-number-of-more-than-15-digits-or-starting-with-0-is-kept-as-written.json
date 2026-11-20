@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-number-of-more-than-15-digits-or-starting-with-0-is-kept-as-written",
+  "title": "A number whose result holds more than 15 digits, or starts with 0, is kept as written, with or without a country code; 15 digits are a number",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-033"
+  ],
+  "notes": "Both channels take their type's addressing: plain declares no country code, fr the code 33. 0612345678901234 on fr would be 33612345678901234, 17 digits.",
+  "setup": {
+    "channels": [
+      {
+        "id": "plain",
+        "type": "sms",
+        "addressing": {}
+      },
+      {
+        "id": "fr",
+        "type": "sms",
+        "addressing": {
+          "country_code": "33"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "+1234567890123456",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+1234567890123456"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "+12 3456 7890 123456",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+12 3456 7890 123456"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "+0612345678",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "+0612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "00 0612 345 678",
+        "content": {
+          "type": "text",
+          "body": "four"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "00 0612 345 678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "fr",
+        "sender_id": "0612345678901234",
+        "content": {
+          "type": "text",
+          "body": "five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "0612345678901234"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "+123 456 789 012 345",
+        "content": {
+          "type": "text",
+          "body": "six"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r6",
+            "source": {
+              "participant_id": "+123456789012345"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "plain": {
+          "participant_id": "+1234567890123456"
+        }
+      },
+      "$r2": {
+        "plain": {
+          "participant_id": "+12 3456 7890 123456"
+        }
+      },
+      "$r3": {
+        "plain": {
+          "participant_id": "+0612345678"
+        }
+      },
+      "$r4": {
+        "plain": {
+          "participant_id": "00 0612 345 678"
+        }
+      },
+      "$r5": {
+        "fr": {
+          "participant_id": "0612345678901234"
+        }
+      },
+      "$r6": {
+        "plain": {
+          "participant_id": "+123456789012345",
+          "metadata": {
+            "phone_number": "+123456789012345"
+          }
+        }
+      }
+    }
+  }
+}

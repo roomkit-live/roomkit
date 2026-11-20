@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-number-written-with-plus-or-00-is-international",
+  "title": "A number written with + or with the international prefix 00 is international, + and its digits, on a channel that declares no country code",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-030"
+  ],
+  "notes": "The SMS channel takes its type's addressing, with no country code: the international form needs none. However few its digits, a number written with + or 00 is + and its digits: a short code is digits written without either (§5.7).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addressing": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "0033612345678",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+33612345678",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "00 44 20 7946 0958",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+442079460958"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+44 20 7946 0958",
+        "content": {
+          "type": "text",
+          "body": "four"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+442079460958"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+12 34 56",
+        "content": {
+          "type": "text",
+          "body": "five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "+123456"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "001234",
+        "content": {
+          "type": "text",
+          "body": "six"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "+1234"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+33612345678",
+          "metadata": {
+            "phone_number": "+33612345678"
+          }
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+442079460958",
+          "metadata": {
+            "phone_number": "+442079460958"
+          }
+        }
+      },
+      "$r3": {
+        "sms": {
+          "participant_id": "+123456"
+        }
+      },
+      "$r4": {
+        "sms": {
+          "participant_id": "+1234"
+        }
+      }
+    }
+  }
+}

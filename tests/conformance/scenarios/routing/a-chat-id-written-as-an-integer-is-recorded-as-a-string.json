@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-chat-id-written-as-an-integer-is-recorded-as-a-string",
+  "title": "A chat id a message carries as an integer is recorded as a string, as the correspondent and the recipient, and the same id written as a string reaches that room",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-022",
+    "RK-5.7-023"
+  ],
+  "notes": "The Telegram channel takes its type's addressing: its chat key is chat_id, its recipient key telegram_chat_id. A provider hands Telegram's chat ids as integers. An attach naming its recipient as an integer names its correspondent as a string too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "tg",
+        "type": "telegram",
+        "addressing": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "prepared"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": 12345
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        },
+        "metadata": {
+          "chat_id": "12345"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "1002"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "prepared",
+      "channel_id": "tg",
+      "metadata": {
+        "telegram_chat_id": 777
+      },
+      "expect": {
+        "result": {
+          "participant_id": "777"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "2001",
+        "content": {
+          "type": "text",
+          "body": "hey"
+        },
+        "metadata": {
+          "chat_id": "777"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "prepared",
+            "source": {
+              "participant_id": "2001"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "tg": {
+          "participant_id": "12345",
+          "metadata": {
+            "telegram_chat_id": "12345"
+          }
+        }
+      },
+      "prepared": {
+        "tg": {
+          "participant_id": "777"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "hi"
+          }
+        }
+      ],
+      "prepared": [
+        {
+          "content": {
+            "body": "hey"
+          }
+        }
+      ]
+    }
+  }
+}

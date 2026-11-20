@@ -1,0 +1,528 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-chat-key-holding-no-chat-is-no-chat",
+  "title": "A message whose chat key holds no value, or a value that is not a recipient, does not carry its chat: on WhatsApp Personal it is its sender's, on Telegram it has no address",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-025"
+  ],
+  "notes": "Both channels take their type's addressing. No value: null, an empty or a blank string. Not a recipient: a boolean, a float, a whole one included, a list, an object. On WhatsApp Personal, whose replies go to the sender, each such message reaches its sender's room; the group id as a string is the group's. On Telegram, whose replies go to a chat only, each opens a room of its own naming the framework's name and no recipient (§10.4).",
+  "setup": {
+    "channels": [
+      {
+        "id": "wap",
+        "type": "whatsapp_personal",
+        "addressing": {}
+      },
+      {
+        "id": "tg",
+        "type": "telegram",
+        "addressing": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": null
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": ""
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": "   "
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": true
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": 4.5
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": 42.0
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": [
+            "120363025@g.us"
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": {
+            "jid": "120363025@g.us"
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "to the group"
+        },
+        "metadata": {
+          "group_jid": "120363025@g.us"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": null
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": ""
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "   "
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": false
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r6",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": 1.5
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r7",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": [
+            5
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r8",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": {
+            "chat": 5
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r9",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "wap": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r2": {
+        "wap": {
+          "participant_id": "120363025@g.us",
+          "metadata": {
+            "phone_number": "120363025@g.us"
+          }
+        }
+      },
+      "$r3": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r4": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r5": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r6": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r7": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r8": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r9": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-sender-resolves-to-the-address-linked-in-the-channel-s-form",
+  "title": "A sender's address is resolved in its channel's form and compared as stored: an address linked in E.164 finds its identity whatever the spelling written, one linked in another form finds no one",
+  "rules": [
+    "§5.6",
+    "§5.7",
+    "§10.4",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.6-008"
+  ],
+  "notes": "The SMS channel takes its type's addressing, with the country code 1. Alice's address is linked in E.164, Bob's as a person types it. Each identity's room has a binding naming it, which routing finds through the identity the sender's address resolves to (§10.4). Bob, written +15550000002 in the channel's form, resolves to no one: a room is opened for him, his own room left alone. The store compares an address as stored, a spelling being no address of its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addressing": {
+          "country_code": "1"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "alice-room"
+      },
+      {
+        "id": "bob-room"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-alice",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-bob"
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-bob",
+      "channel_type": "sms",
+      "address": "555-000-0002",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "alice-room",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {},
+        "participant_id": "id-alice"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "bob-room",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {},
+        "participant_id": "id-bob"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "(555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+1 555 000 0001",
+        "content": {
+          "type": "text",
+          "body": "alice again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "555-000-0002",
+        "content": {
+          "type": "text",
+          "body": "bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000002"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "555-000-0002",
+      "expect": {
+        "result": {
+          "id": "id-bob"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "alice-room": {
+        "sms": {
+          "participant_id": "id-alice",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "bob-room": {
+        "sms": {
+          "participant_id": "id-bob",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "alice-room": [
+        {
+          "content": {
+            "body": "alice here"
+          }
+        },
+        {
+          "content": {
+            "body": "alice again"
+          }
+        }
+      ],
+      "bob-room": []
+    }
+  }
+}

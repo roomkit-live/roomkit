@@ -1,0 +1,564 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/each-channel-type-writes-its-addresses-in-its-own-form-under-its-own-keys",
+  "title": "A channel taking its type's addressing writes a sender in the type's form and records them under the type's recipient key, a chat read under the type's chat key, as §5.7's table says",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-013"
+  ],
+  "notes": "Each channel takes the implementation's own address methods for its type, with no country code. Each message opens a room of its own, whose binding records the conversation as its correspondent and, where the type has a recipient key, as its recipient. A phone type writes E.164, email lower-case without its display name, Messenger, Telegram, Teams, webhook and any other type as written. WhatsApp Personal's group message is its group's, a private one its sender's. A type with no chat key routes by the sender whatever the message carries under another type's chat key (SMS's chat_id, WhatsApp's group_jid). Telegram and Teams keep an author written as a number or as an email address as written. VOICE, WEBHOOK and WEBSOCKET have no recipient key: nothing is written under any of the table's keys. The event's author stays the message's sender, in the type's form.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addressing": {}
+      },
+      {
+        "id": "mms",
+        "type": "mms",
+        "addressing": {}
+      },
+      {
+        "id": "rcs",
+        "type": "rcs",
+        "addressing": {}
+      },
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "addressing": {}
+      },
+      {
+        "id": "wap",
+        "type": "whatsapp_personal",
+        "addressing": {}
+      },
+      {
+        "id": "voice",
+        "type": "voice",
+        "addressing": {}
+      },
+      {
+        "id": "mail",
+        "type": "email",
+        "addressing": {}
+      },
+      {
+        "id": "fb",
+        "type": "messenger",
+        "addressing": {}
+      },
+      {
+        "id": "tg",
+        "type": "telegram",
+        "addressing": {}
+      },
+      {
+        "id": "teams",
+        "type": "teams",
+        "addressing": {}
+      },
+      {
+        "id": "hook",
+        "type": "webhook",
+        "addressing": {}
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "addressing": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+1 (555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "-100500"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "mms",
+        "sender_id": "+1 555-000-0002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+15550000002"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "rcs",
+        "sender_id": "tel:+1.555.000.0003",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "+15550000003"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "whatsapp:+1 555 000 0004",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": "120363025@g.us"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "+15550000004"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+1 (555) 000-0005",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "group_jid": "120363025@g.us"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "+15550000005"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wap",
+        "sender_id": "+1 (555) 000-0006",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r6",
+            "source": {
+              "participant_id": "+15550000006"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "voice",
+        "sender_id": "+1 (555) 000-0007",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r7",
+            "source": {
+              "participant_id": "+15550000007"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "mail",
+        "sender_id": "Alice Martin <Alice@Example.com>",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r8",
+            "source": {
+              "participant_id": "alice@example.com"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "fb",
+        "sender_id": "+1 (555) 000-0008",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r9",
+            "source": {
+              "participant_id": "+1 (555) 000-0008"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "+1 (555) 000-0011",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "-100500"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r10",
+            "source": {
+              "participant_id": "+1 (555) 000-0011"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "Alice <Alice@Example.com>",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "-100600"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r11",
+            "source": {
+              "participant_id": "Alice <Alice@Example.com>"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "teams",
+        "sender_id": "+1 (555) 000-0012",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "conversation_id": "19:Meeting_Abc@thread.v2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r12",
+            "source": {
+              "participant_id": "+1 (555) 000-0012"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "hook",
+        "sender_id": "+1 (555) 000-0009",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r13",
+            "source": {
+              "participant_id": "+1 (555) 000-0009"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+1 (555) 000-0010",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r14",
+            "source": {
+              "participant_id": "+1 (555) 000-0010"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r2": {
+        "mms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      },
+      "$r3": {
+        "rcs": {
+          "participant_id": "+15550000003",
+          "metadata": {
+            "phone_number": "+15550000003"
+          }
+        }
+      },
+      "$r4": {
+        "wa": {
+          "participant_id": "+15550000004",
+          "metadata": {
+            "phone_number": "+15550000004"
+          }
+        }
+      },
+      "$r5": {
+        "wap": {
+          "participant_id": "120363025@g.us",
+          "metadata": {
+            "phone_number": "120363025@g.us"
+          }
+        }
+      },
+      "$r6": {
+        "wap": {
+          "participant_id": "+15550000006",
+          "metadata": {
+            "phone_number": "+15550000006"
+          }
+        }
+      },
+      "$r7": {
+        "voice": {
+          "participant_id": "+15550000007",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            },
+            "email_address": {
+              "$absent": true
+            },
+            "facebook_user_id": {
+              "$absent": true
+            },
+            "telegram_chat_id": {
+              "$absent": true
+            },
+            "teams_conversation_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r8": {
+        "mail": {
+          "participant_id": "alice@example.com",
+          "metadata": {
+            "email_address": "alice@example.com"
+          }
+        }
+      },
+      "$r9": {
+        "fb": {
+          "participant_id": "+1 (555) 000-0008",
+          "metadata": {
+            "facebook_user_id": "+1 (555) 000-0008"
+          }
+        }
+      },
+      "$r10": {
+        "tg": {
+          "participant_id": "-100500",
+          "metadata": {
+            "telegram_chat_id": "-100500"
+          }
+        }
+      },
+      "$r11": {
+        "tg": {
+          "participant_id": "-100600",
+          "metadata": {
+            "telegram_chat_id": "-100600"
+          }
+        }
+      },
+      "$r12": {
+        "teams": {
+          "participant_id": "19:Meeting_Abc@thread.v2",
+          "metadata": {
+            "teams_conversation_id": "19:Meeting_Abc@thread.v2"
+          }
+        }
+      },
+      "$r13": {
+        "hook": {
+          "participant_id": "+1 (555) 000-0009",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            },
+            "email_address": {
+              "$absent": true
+            },
+            "facebook_user_id": {
+              "$absent": true
+            },
+            "telegram_chat_id": {
+              "$absent": true
+            },
+            "teams_conversation_id": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r14": {
+        "ws": {
+          "participant_id": "+1 (555) 000-0010",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            },
+            "email_address": {
+              "$absent": true
+            },
+            "facebook_user_id": {
+              "$absent": true
+            },
+            "telegram_chat_id": {
+              "$absent": true
+            },
+            "teams_conversation_id": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

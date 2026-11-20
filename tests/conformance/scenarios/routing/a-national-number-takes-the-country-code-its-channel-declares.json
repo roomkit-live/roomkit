@@ -1,0 +1,292 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-national-number-takes-the-country-code-its-channel-declares",
+  "title": "On a channel declaring a country code, digits written without + or 00 take it: a number starting with the code and longer than 10 digits already carries it, any other takes it in place of its trunk 0 or before its digits, and six digits or fewer are a short code kept as written",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-031",
+    "RK-5.7-034"
+  ],
+  "notes": "Both channels take their type's addressing: the WhatsApp channel declares the code 1, the SMS channel +33, written with its +. On the code 1, whatsapp:+15550000001, 15550000001 and +1 (555) 000-0001 are one person (§5.7's example), and so is the national (555) 000-0001. 1555000000 has 10 digits, so it does not carry its code: it takes it. 1234567 has seven digits, so it is no short code.",
+  "setup": {
+    "channels": [
+      {
+        "id": "us",
+        "type": "whatsapp",
+        "addressing": {
+          "country_code": "1"
+        }
+      },
+      {
+        "id": "fr",
+        "type": "sms",
+        "addressing": {
+          "country_code": "+33"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "whatsapp:+15550000001",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "15550000001",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "+1 (555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "(555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "four"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "1555000000",
+        "content": {
+          "type": "text",
+          "body": "five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+11555000000"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "123456",
+        "content": {
+          "type": "text",
+          "body": "six"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "123456"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "1234567",
+        "content": {
+          "type": "text",
+          "body": "seven"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "+11234567"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "fr",
+        "sender_id": "06 12 34 56 78",
+        "content": {
+          "type": "text",
+          "body": "eight"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "fr",
+        "sender_id": "33612345678",
+        "content": {
+          "type": "text",
+          "body": "nine"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "fr",
+        "sender_id": "612345678",
+        "content": {
+          "type": "text",
+          "body": "ten"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "us": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r2": {
+        "us": {
+          "participant_id": "+11555000000"
+        }
+      },
+      "$r3": {
+        "us": {
+          "participant_id": "123456",
+          "metadata": {
+            "phone_number": "123456"
+          }
+        }
+      },
+      "$r4": {
+        "us": {
+          "participant_id": "+11234567"
+        }
+      },
+      "$r5": {
+        "fr": {
+          "participant_id": "+33612345678",
+          "metadata": {
+            "phone_number": "+33612345678"
+          }
+        }
+      }
+    }
+  }
+}

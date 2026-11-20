@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-chat-message-without-its-chat-has-no-address",
+  "title": "On a channel whose replies go to a chat only, a message that does not carry its chat records no one: its room names no recipient and no sender, and its deliveries are refused no_recipient until the integrator names one",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.2 step 3d",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-027"
+  ],
+  "notes": "The Telegram channel takes its type's addressing: it reads a message's chat under chat_id and replies to the chat only. A message with no chat_id is routed as a message with no address: the binding names the framework's name, and the author's next message without its chat opens another room. The author is the event's sender either way. Once the integrator writes a chat under the recipient key, deliveries reach it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "tg",
+        "type": "telegram",
+        "addressing": {}
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "$r1",
+      "channel_id": "tg",
+      "expect": {
+        "result": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "1001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "$r1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent",
+        "content": {
+          "type": "text",
+          "body": "a reply"
+        }
+      },
+      "room_id": "$r1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          },
+          "delivery_results": {
+            "tg": {
+              "channel_id": "tg",
+              "status": "failed",
+              "error": {
+                "code": "no_recipient"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "$r1",
+      "channel_id": "tg",
+      "metadata": {
+        "telegram_chat_id": "1001"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent",
+        "content": {
+          "type": "text",
+          "body": "a reply that arrives"
+        }
+      },
+      "room_id": "$r1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          },
+          "delivery_results": {
+            "tg": {
+              "channel_id": "tg",
+              "status": {
+                "$present": true
+              },
+              "error": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "tg": {
+          "participant_id": "1001",
+          "metadata": {
+            "telegram_chat_id": "1001"
+          }
+        }
+      },
+      "$r2": {
+        "tg": {
+          "participant_id": "system",
+          "metadata": {
+            "telegram_chat_id": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "$r1": {
+        "tg": [
+          {
+            "content": {
+              "body": "a reply that arrives"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

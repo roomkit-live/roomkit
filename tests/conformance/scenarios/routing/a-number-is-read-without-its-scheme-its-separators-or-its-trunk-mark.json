@@ -1,0 +1,335 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-number-is-read-without-its-scheme-its-separators-or-its-trunk-mark",
+  "title": "A phone channel reads a number without its URI scheme, the separators people type, parentheses included, and the trunk prefix written (0) after a country code, and keeps anything that is not digits as written",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-029"
+  ],
+  "notes": "Both channels take their type's addressing: sms declares no country code, us the code 1. Four spellings of +33612345678 reach one room, recorded in E.164, the (0) dropped after + and after 00. Parentheses are separators: (+44) 20 7946 0958 is written with +, so it is +442079460958 on either channel, never a national number taking the code 1 (HITL 9c089ae9). An email address, a group's id and a number holding a letter are no number: each is kept as written, separators included.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addressing": {}
+      },
+      {
+        "id": "us",
+        "type": "sms",
+        "addressing": {
+          "country_code": "1"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "tel:+33 6 12 34 56 78",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+33 (0)6 12-34.56.78",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "whatsapp:+33612345678",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "0033 (0)6 12 34 56 78",
+        "content": {
+          "type": "text",
+          "body": "four"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "+33612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+1 (555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "(+44) 20 7946 0958",
+        "content": {
+          "type": "text",
+          "body": "six"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "+442079460958"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "us",
+        "sender_id": "(+44) 20 7946 0958",
+        "content": {
+          "type": "text",
+          "body": "seven"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "+442079460958"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice@example.com",
+        "content": {
+          "type": "text",
+          "body": "eight"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r5",
+            "source": {
+              "participant_id": "alice@example.com"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "120363025@g.us",
+        "content": {
+          "type": "text",
+          "body": "nine"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r6",
+            "source": {
+              "participant_id": "120363025@g.us"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+33 6 12 34 56 7X",
+        "content": {
+          "type": "text",
+          "body": "ten"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r7",
+            "source": {
+              "participant_id": "+33 6 12 34 56 7X"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+33612345678",
+          "metadata": {
+            "phone_number": "+33612345678"
+          }
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r3": {
+        "sms": {
+          "participant_id": "+442079460958",
+          "metadata": {
+            "phone_number": "+442079460958"
+          }
+        }
+      },
+      "$r4": {
+        "us": {
+          "participant_id": "+442079460958",
+          "metadata": {
+            "phone_number": "+442079460958"
+          }
+        }
+      },
+      "$r5": {
+        "sms": {
+          "participant_id": "alice@example.com",
+          "metadata": {
+            "phone_number": "alice@example.com"
+          }
+        }
+      },
+      "$r6": {
+        "sms": {
+          "participant_id": "120363025@g.us",
+          "metadata": {
+            "phone_number": "120363025@g.us"
+          }
+        }
+      },
+      "$r7": {
+        "sms": {
+          "participant_id": "+33 6 12 34 56 7X",
+          "metadata": {
+            "phone_number": "+33 6 12 34 56 7X"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "one"
+          }
+        },
+        {
+          "content": {
+            "body": "two"
+          }
+        },
+        {
+          "content": {
+            "body": "three"
+          }
+        },
+        {
+          "content": {
+            "body": "four"
+          }
+        }
+      ]
+    }
+  }
+}

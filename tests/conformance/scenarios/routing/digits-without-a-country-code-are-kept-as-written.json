@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/digits-without-a-country-code-are-kept-as-written",
+  "title": "On a channel that declares no country code, digits written without + or 00 are kept as written: 13800138000 is not merged with +13800138000",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.7-032"
+  ],
+  "notes": "The SMS channel takes its type's addressing, with no country code. A router must not guess the country: each spelling without + or 00 is a conversation of its own, its separators kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addressing": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "13800138000",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "13800138000"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+13800138000",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "+13800138000"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "0612345678",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3",
+            "source": {
+              "participant_id": "0612345678"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "06 12 34 56 78",
+        "content": {
+          "type": "text",
+          "body": "four"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r4",
+            "source": {
+              "participant_id": "06 12 34 56 78"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "13800138000",
+        "content": {
+          "type": "text",
+          "body": "five"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "13800138000"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "13800138000",
+          "metadata": {
+            "phone_number": "13800138000"
+          }
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+13800138000",
+          "metadata": {
+            "phone_number": "+13800138000"
+          }
+        }
+      },
+      "$r3": {
+        "sms": {
+          "participant_id": "0612345678",
+          "metadata": {
+            "phone_number": "0612345678"
+          }
+        }
+      },
+      "$r4": {
+        "sms": {
+          "participant_id": "06 12 34 56 78",
+          "metadata": {
+            "phone_number": "06 12 34 56 78"
+          }
+        }
+      }
+    }
+  }
+}
