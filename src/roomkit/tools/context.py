@@ -557,15 +557,25 @@ def current_tool_actor_id() -> str | None:
     when that distinction matters. ``ParticipantRole.AGENT`` is a human
     advisor, a person (RFC §5).
 
-    ``None`` outside a tool loop, and ``None`` when the turn has no
-    participant behind it (a system injection, a webhook, a scheduled run).
-    ``None`` too when the sender's id is a participant's the room reached
-    through other channels only: an id names its participant only on a
-    channel they are reached through (RFC §5.5), so the turn's author is not
-    them, and the id read back would name them.
-    A caller that needs a person then decides for itself — refuse, or fall
-    back to a principal it configured on purpose — rather than borrow whoever
-    spoke last.
+    ``"system"`` for an event the framework writes under its own name (a
+    ``deliver()``, RFC §10.4). A message under that name is refused when it
+    is routed and enters only a room its host names, so the name is the
+    host's as far as the host sets the sender itself, never from what a
+    client sent.
+
+    ``None`` outside a tool loop, and when the waking event names no
+    participant: one the host commits with ``send_event()`` or ``post()``
+    without naming one, another agent's message. ``None`` too when the
+    sender's id is a participant's the room reached through other channels
+    only: an id names its participant only on a channel they are reached
+    through (RFC §5.5), so the turn's author is not them, and the id read
+    back would name them.
+
+    So ``None`` is not the host: a sender can produce it. A gate compares the
+    value with the id it expects and never reads its absence as a leave. A
+    caller that needs a person decides for itself — refuse, or fall back to a
+    principal it configured on purpose — rather than borrow whoever spoke
+    last.
     """
     ctx = _current_loop_ctx.get()
     return ctx.actor_id if ctx is not None else None
