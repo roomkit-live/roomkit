@@ -4,9 +4,11 @@ The wire drivers of this suite stand behind the SDK, as its objects; a
 failure, though, is the SDK's own reading of what the server sent (an error
 event in a 200 stream, a gateway's HTML page), so the failure scenarios need
 the SDK itself in the path. Each :class:`HttpWire` builds one provider whose
-client talks to a mock transport of the HTTP client its SDK runs on (``httpx``,
-or ``httpx2`` for Anthropic and Mistral), no network, and answers one way: an
-error status, an overload written into a 200 stream, or an HTML page.
+client talks to a mock transport of the HTTP client its SDK runs on (``httpx2``
+for OpenAI, Anthropic and Mistral, ``httpx`` for Gemini and Ollama), no
+network, and answers one way: an error status, an overload written into a 200
+stream, or an HTML page. A handler answers with an ``httpx`` response, which
+an httpx2 transport passes on as its own.
 """
 
 from __future__ import annotations
@@ -107,13 +109,26 @@ class HttpWire:
         return self.build(_status(status, self.status_body(status)))
 
 
-# -- OpenAI wire (OpenAI and its ten derivatives) ----------------------------------
+def _httpx2_transport(handler: Callable[[Any], Any]) -> httpx2.MockTransport:
+    """An httpx2 transport answering what the handler's httpx response says, for
+    the SDKs that run on httpx2 (OpenAI, Anthropic, Mistral)."""
+
+    def answer(request: Any) -> Any:
+        response = handler(request)
+        return httpx2.Response(
+            response.status_code, headers=dict(response.headers), content=response.content
+        )
+
+    return httpx2.MockTransport(answer)
+
+
+# -- OpenAI wire (OpenAI and its ten derivatives, httpx2) ---------------------------
 
 
 def _openai(build: Callable[[], AIProvider]) -> Callable[[Callable[[Any], Any]], AIProvider]:
     def provider(handler: Callable[[Any], Any]) -> AIProvider:
         built = build()
-        http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        http = httpx2.AsyncClient(transport=_httpx2_transport(handler))
         built._client = openai.AsyncOpenAI(  # type: ignore[attr-defined]
             api_key="k", base_url="http://wire.test/v1", http_client=http, max_retries=0
         )
@@ -140,19 +155,6 @@ def _openai_wires() -> list[HttpWire]:
 
 
 # -- Anthropic (httpx2) --------------------------------------------------------------
-
-
-def _httpx2_transport(handler: Callable[[Any], Any]) -> httpx2.MockTransport:
-    """An httpx2 transport answering what the handler's httpx response says, for
-    the SDKs that run on httpx2 (Anthropic, Mistral)."""
-
-    def answer(request: Any) -> Any:
-        response = handler(request)
-        return httpx2.Response(
-            response.status_code, headers=dict(response.headers), content=response.content
-        )
-
-    return httpx2.MockTransport(answer)
 
 
 def _anthropic(handler: Callable[[Any], Any]) -> AIProvider:

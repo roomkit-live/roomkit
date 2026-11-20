@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, StreamDone
@@ -61,8 +61,8 @@ def test_the_openai_family_asks_for_stream_usage_by_default(
 
 def _stream(
     requests: list[dict[str, Any]], usage: dict[str, Any] = _USAGE
-) -> Callable[[httpx.Request], httpx.Response]:
-    def handle(request: httpx.Request) -> httpx.Response:
+) -> Callable[[httpx2.Request], httpx2.Response]:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         requests.append(body)
         frames = [
@@ -73,7 +73,7 @@ def _stream(
             frames.append({"choices": [], "usage": usage})
         chunk = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": _MODEL}
         payload = "".join(f"data: {json.dumps({**chunk, **f})}\n\n" for f in frames)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=payload + "data: [DONE]\n\n",
@@ -84,11 +84,11 @@ def _stream(
 
 @asynccontextmanager
 async def _provider(
-    handler: Callable[[httpx.Request], httpx.Response], **config: Any
+    handler: Callable[[httpx2.Request], httpx2.Response], **config: Any
 ) -> AsyncIterator[OpenAIAIProvider]:
     pytest.importorskip("openai")
     provider = OpenAIAIProvider(
-        OpenAIConfig(api_key="k", model=_MODEL, **config), transport=httpx.MockTransport(handler)
+        OpenAIConfig(api_key="k", model=_MODEL, **config), transport=httpx2.MockTransport(handler)
     )
     try:
         yield provider

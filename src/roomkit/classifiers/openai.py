@@ -7,8 +7,9 @@ level's and the expected level. All the questions of one call are answered
 together, ~0.4 s for four. A structured state is sent as its JSON. OpenAI
 advises calibrating thresholds on labelled data.
 
-The OpenAI SDK 2.x has no ``decisions`` resource: the call goes through its
-generic ``post``, with the client's key, retries and errors.
+The call goes through the OpenAI SDK's generic ``post``, with the client's
+key, retries and errors: its ``decisions`` resource came during the 3.x line
+(3.0.0 has none), and every 3.x has ``post``.
 
 Requires the ``openai`` extra::
 

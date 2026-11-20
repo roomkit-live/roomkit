@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 
@@ -203,7 +203,11 @@ class TestErrors:
 
     @pytest.mark.parametrize(
         ("cause", "retryable"),
-        [(httpx.ConnectError("refused"), True), (httpx.ReadTimeout("slow"), False), (None, False)],
+        [
+            (httpx2.ConnectError("refused"), True),
+            (httpx2.ReadTimeout("slow"), False),
+            (None, False),
+        ],
         ids=["connect-error", "read-timeout", "unknown"],
     )
     async def test_connection_errors_are_retryable_only_unsent(

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 
@@ -142,10 +142,11 @@ class TestLiteLLMAIProvider:
 
             LiteLLMAIProvider(_config())
 
+            mock_mod.Timeout.assert_called_once_with(30.0, connect=5.0)
             mock_mod.AsyncOpenAI.assert_called_once_with(
                 api_key="sk-virtual-key",
                 base_url="http://localhost:4000",
-                timeout=httpx.Timeout(30.0, connect=5.0),
+                timeout=mock_mod.Timeout.return_value,
                 max_retries=0,
                 default_headers=None,
                 http_client=None,
@@ -263,14 +264,14 @@ class TestLiteLLMMetadata:
                 {"litellm_params": {"model": "entry-without-a-name"}},
             ]
         }
-        seen: list[httpx.Request] = []
+        seen: list[httpx2.Request] = []
 
-        def proxy(request: httpx.Request) -> httpx.Response:
+        def proxy(request: httpx2.Request) -> httpx2.Response:
             seen.append(request)
-            return httpx.Response(200, json=payload)
+            return httpx2.Response(200, json=payload)
 
         provider = LiteLLMAIProvider(
-            _config(base_url="https://gateway.example"), transport=httpx.MockTransport(proxy)
+            _config(base_url="https://gateway.example"), transport=httpx2.MockTransport(proxy)
         )
         try:
             models = {m.id: m for m in await provider.list_models()}

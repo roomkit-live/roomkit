@@ -11,7 +11,7 @@ from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.vllm.config import VLLMConfig
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 __all__ = ["VLLMConfig", "create_vllm_provider"]
 
@@ -108,7 +108,7 @@ class _VLLMProvider(OpenAIAIProvider):
 
 
 def create_vllm_provider(
-    config: VLLMConfig, *, transport: httpx.AsyncBaseTransport | None = None
+    config: VLLMConfig, *, transport: httpx2.AsyncBaseTransport | None = None
 ) -> OpenAIAIProvider:
     """Create an OpenAI-compatible AI provider pointed at a local vLLM server.
 

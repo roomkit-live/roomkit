@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 
@@ -261,12 +261,12 @@ def test_a_call_round_s_required_reasoning_field_is_the_assistants_alone(
     assert {k: v for k, v in rendered.items() if k == "reasoning_content"} == field
 
 
-def _answer(captured: list[dict[str, Any]]) -> httpx.MockTransport:
+def _answer(captured: list[dict[str, Any]]) -> httpx2.MockTransport:
     """A server keeping each request's body, answering every one in a word."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         captured.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "chatcmpl-test",
@@ -283,7 +283,7 @@ def _answer(captured: list[dict[str, Any]]) -> httpx.MockTransport:
             },
         )
 
-    return httpx.MockTransport(handler)
+    return httpx2.MockTransport(handler)
 
 
 async def _sent_round(**config: Any) -> dict[str, Any]:

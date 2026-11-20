@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 
@@ -193,10 +193,11 @@ class TestOpenRouterAIProvider:
 
             OpenRouterAIProvider(_config(site_url="https://myapp.example", app_name="My App"))
 
+            mock_mod.Timeout.assert_called_once_with(30.0, connect=5.0)
             mock_mod.AsyncOpenAI.assert_called_once_with(
                 api_key="or-test-key",
                 base_url="https://openrouter.ai/api/v1",
-                timeout=httpx.Timeout(30.0, connect=5.0),
+                timeout=mock_mod.Timeout.return_value,
                 max_retries=0,
                 default_headers={
                     "HTTP-Referer": "https://myapp.example",
@@ -295,13 +296,13 @@ class TestOpenRouterCatalog:
                 {"id": "some/unknown-model"},
             ]
         }
-        seen: list[httpx.Request] = []
+        seen: list[httpx2.Request] = []
 
-        def openrouter(request: httpx.Request) -> httpx.Response:
+        def openrouter(request: httpx2.Request) -> httpx2.Response:
             seen.append(request)
-            return httpx.Response(200, json=payload)
+            return httpx2.Response(200, json=payload)
 
-        provider = OpenRouterAIProvider(_config(), transport=httpx.MockTransport(openrouter))
+        provider = OpenRouterAIProvider(_config(), transport=httpx2.MockTransport(openrouter))
         try:
             models = {m.id: m for m in await provider.list_models()}
         finally:

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.ai.base import AIImagePart, ProviderError
@@ -317,10 +317,10 @@ async def test_usage_is_empty_when_the_vendor_reports_none() -> None:
 @pytest.mark.parametrize(
     ("cause", "retryable"),
     [
-        (httpx.ConnectError("refused"), True),
-        (httpx.ConnectTimeout("no route"), True),
-        (httpx.ReadTimeout("slow"), False),
-        (httpx.RemoteProtocolError("dropped"), False),
+        (httpx2.ConnectError("refused"), True),
+        (httpx2.ConnectTimeout("no route"), True),
+        (httpx2.ReadTimeout("slow"), False),
+        (httpx2.RemoteProtocolError("dropped"), False),
         (None, False),
     ],
     ids=["connect-error", "connect-timeout", "read-timeout", "dropped", "unknown"],

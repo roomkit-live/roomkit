@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit import AIChannel, ChannelCategory, EventType, InboundMessage, RoomKit, TextContent
@@ -1225,12 +1225,12 @@ class _Server:
     def __init__(self, *streams: bytes) -> None:
         self._streams = list(streams)
         self.requests: list[dict[str, Any]] = []
-        self.transport = httpx.MockTransport(self._answer)
+        self.transport = httpx2.MockTransport(self._answer)
 
-    def _answer(self, request: httpx.Request) -> httpx.Response:
+    def _answer(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(json.loads(request.content))
         headers = {"content-type": "text/event-stream"}
-        return httpx.Response(200, headers=headers, content=self._streams.pop(0))
+        return httpx2.Response(200, headers=headers, content=self._streams.pop(0))
 
 
 async def _lookup(name: str, arguments: dict[str, Any]) -> str:

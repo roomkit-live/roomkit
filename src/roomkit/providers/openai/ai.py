@@ -63,11 +63,11 @@ from roomkit.providers.ai.response_schema import (
 from roomkit.providers.ai.tool_declaration import ToolNameRule, chat_tool_declarations
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
-from roomkit.providers.utils import _aclose_stream, http_timeout, openai_http_client
+from roomkit.providers.utils import _aclose_stream, openai_http_client, openai_timeout
 from roomkit.providers.vendor_endpoint import OPENAI_BASE_URL, is_vendor_endpoint
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 logger = logging.getLogger("roomkit.providers.openai.ai")
 
@@ -130,16 +130,17 @@ class OpenAIAIProvider(AIProvider):
     provider, set on the instance by the first warning."""
 
     def __init__(
-        self, config: OpenAIConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: OpenAIConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request the SDK makes, inside the SDK's own
         default client, which keeps following redirects (each hop through the
         transport) and applies the per-request timeout: the seam for an
         outbound policy that judges the address actually dialled, or a
-        ``MockTransport`` in a test. The transport owns its connection pool and
-        limits, and environment proxies are not read (httpx reads none beside
-        a transport). It is closed with the provider. ``None`` leaves the SDK
-        its default client."""
+        ``MockTransport`` in a test. It is an httpx2 transport, the client the
+        SDK runs on; one built on ``httpx`` raises ``TypeError`` here. The
+        transport owns its connection pool and limits, and environment proxies
+        are not read (httpx2 reads none beside a transport). It is closed with
+        the provider. ``None`` leaves the SDK its default client."""
         try:
             import openai as _openai
         except ImportError as exc:
@@ -154,7 +155,7 @@ class OpenAIAIProvider(AIProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=config.max_retries,
             default_headers=config.default_headers,
             http_client=openai_http_client(_openai, transport),

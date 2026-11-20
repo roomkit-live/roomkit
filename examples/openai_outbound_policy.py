@@ -5,7 +5,8 @@ model, a gateway) must not let that URL reach its own network: a cloud
 metadata address, a loopback service. The policy belongs where the address is
 dialled, so it judges every request, redirects included. Shows:
 - OpenAIAIProvider(config, transport=...): every request of the SDK goes
-  through the transport, inside the SDK's own default client
+  through the transport, inside the SDK's own default client. The SDK runs
+  on httpx2 (openai 3.x), so the transport is an httpx2 one
 - a transport wrapper that refuses a private address before a byte leaves
 - the same seam on AzureAIProvider, OpenRouterAIProvider, create_vllm_provider
 - the same transport on the clients that draw or look: OpenAIImageProvider
@@ -21,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
+import httpx2
 from shared import setup_logging
 
 from roomkit.providers import validate_public_url
@@ -59,24 +60,24 @@ IMAGES = {
 }
 
 
-class PublicOnly(httpx.AsyncBaseTransport):
+class PublicOnly(httpx2.AsyncBaseTransport):
     """Refuses a request to a private or reserved address, then hands it on.
 
     The demo skips DNS (``resolve_dns=False``) to run offline; a production
     policy resolves the name and connects to the address it judged. The
-    refusal is raised as ``httpx.ConnectError``, which the providers read as
+    refusal is raised as ``httpx2.ConnectError``, which the providers read as
     a request that never left: an image attempt is reported ``failed``, not
     ``unknown`` (possibly billed).
     """
 
-    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+    def __init__(self, inner: httpx2.AsyncBaseTransport) -> None:
         self._inner = inner
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         try:
             validate_public_url(str(request.url), resolve_dns=False)
         except ValueError as refusal:
-            raise httpx.ConnectError(str(refusal), request=request) from refusal
+            raise httpx2.ConnectError(str(refusal), request=request) from refusal
         return await self._inner.handle_async_request(request)
 
 
@@ -88,7 +89,7 @@ def root_cause(exc: BaseException) -> BaseException:
 
 
 async def ask(base_url: str) -> None:
-    endpoint = httpx.MockTransport(lambda request: httpx.Response(200, json=COMPLETION))
+    endpoint = httpx2.MockTransport(lambda request: httpx2.Response(200, json=COMPLETION))
     config = OpenAIConfig(api_key="user-key", model="local-model", base_url=base_url)
     provider = OpenAIAIProvider(config, transport=PublicOnly(endpoint))
     try:
@@ -101,7 +102,7 @@ async def ask(base_url: str) -> None:
 
 
 async def draw(base_url: str) -> None:
-    endpoint = httpx.MockTransport(lambda request: httpx.Response(200, json=IMAGES))
+    endpoint = httpx2.MockTransport(lambda request: httpx2.Response(200, json=IMAGES))
     config = OpenAIImageConfig(api_key="user-key", model="gpt-image-2", base_url=base_url)
     images = OpenAIImageProvider(config, transport=PublicOnly(endpoint))
     try:

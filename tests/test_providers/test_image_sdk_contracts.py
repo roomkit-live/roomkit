@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.ai.base import AIImagePart
@@ -76,15 +77,15 @@ async def test_real_openai_sdk_edit_moderation_multipart() -> None:
     sdk = pytest.importorskip("openai")
     calls = []
 
-    async def respond(request: httpx.Request) -> httpx.Response:
+    async def respond(request: httpx2.Request) -> httpx2.Response:
         calls.append(request)
-        return httpx.Response(200, json={"data": [{"b64_json": PNG_B64}]})
+        return httpx2.Response(200, json={"data": [{"b64_json": PNG_B64}]})
 
     provider = openai()
     provider._client = sdk.AsyncOpenAI(
         api_key="test",
         max_retries=0,
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(respond)),
     )
     try:
         [result] = await provider.generate_with_options(
@@ -153,7 +154,7 @@ async def test_stream_network_loss_keeps_request_id_and_unknown_status() -> None
 
         async def __aiter__(self):
             yield SimpleNamespace(type="image_generation.partial_image", b64_json=PNG_B64)
-            raise httpx.ReadError("connection lost")
+            raise httpx2.ReadError("connection lost")
 
         async def close(self):
             pass

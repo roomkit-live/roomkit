@@ -26,10 +26,10 @@ from roomkit.providers.image.usage import openai_image_usage
 from roomkit.providers.openai.config import OpenAIImageConfig
 from roomkit.providers.openai.image_models import MODELS
 from roomkit.providers.openai.image_stream import consume_image_stream
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 _EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
@@ -43,13 +43,13 @@ class OpenAIImageProvider(ImageProvider):
     """
 
     def __init__(
-        self, config: OpenAIImageConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: OpenAIImageConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`: the seam for a
         policy that judges the address dialled when users name ``base_url``."""
         try:
-            import httpx as _httpx
+            import httpx2 as _httpx2
             import openai as _openai
         except ImportError as exc:
             raise ImportError(
@@ -57,15 +57,15 @@ class OpenAIImageProvider(ImageProvider):
                 "Install it with: pip install roomkit[openai]"
             ) from exc
         self._config = config
-        self._httpx = _httpx
+        self._httpx2 = _httpx2
         # No SDK retry: a paid generation is never retried automatically (RFC §25.2).
         self._sdk_retries = 0
         self._api_status_error = _openai.APIStatusError
-        self._api_connection_error = (_openai.APIConnectionError, _httpx.TransportError)
+        self._api_connection_error = (_openai.APIConnectionError, _httpx2.TransportError)
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=self._sdk_retries,
             default_headers=config.default_headers,
             http_client=openai_http_client(_openai, transport),
@@ -218,7 +218,7 @@ class OpenAIImageProvider(ImageProvider):
             return "unknown"
         if not isinstance(exc, self._api_connection_error):
             return "failed"
-        return "failed" if never_sent(exc, self._httpx, retries=0) else "unknown"
+        return "failed" if never_sent(exc, self._httpx2, retries=0) else "unknown"
 
     @staticmethod
     def _validated_size(size: str) -> str:

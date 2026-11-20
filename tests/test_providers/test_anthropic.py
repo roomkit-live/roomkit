@@ -1504,9 +1504,9 @@ class TestAgainstInstalledSDK:
         assert (raised.value.retryable, len(attempts)) == (True, 1)
 
     def test_it_builds_in_a_process_that_never_imported_openai(self) -> None:
-        """The openai SDK rewrites ``httpx.Timeout.__module__`` on import, which
-        let an httpx object past anthropic's httpx2 check. Only a fresh process
-        without openai shows what a host using Anthropic alone gets."""
+        """The openai SDK 2.x rewrote ``httpx.Timeout.__module__`` on import,
+        which let an httpx object past anthropic's httpx2 check. Only a fresh
+        process without openai shows what a host using Anthropic alone gets."""
         pytest.importorskip("anthropic")
         code = (
             "import sys\n"

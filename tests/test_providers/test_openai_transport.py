@@ -7,8 +7,10 @@ own SDK client included (Azure, OpenRouter) and ``create_vllm_provider``; and
 by the other clients built on the ``openai`` SDK, whose endpoint a host's
 users name too: the OpenAI, Azure, xAI and Meta image providers and
 ``OpenAIVisionProvider``; and by the requests beside a completion, such as
-LiteLLM's and OpenRouter's model listings. ``OpenRouterImageProvider``, on
-httpx alone, takes the same keyword (RMK-453).
+LiteLLM's and OpenRouter's model listings. The SDK runs on httpx2 (openai
+3.x), so these take an httpx2 transport and refuse an httpx one.
+``OpenRouterImageProvider``, on httpx alone, takes the same keyword with an
+httpx transport (RMK-453).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, NamedTuple
 
 import httpx
+import httpx2
 import openai
 import pytest
 
@@ -55,7 +58,7 @@ _COMPLETION = {
     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
 }
 
-Factory = Callable[[httpx.AsyncBaseTransport], Any]
+Factory = Callable[[httpx2.AsyncBaseTransport], Any]
 
 _PROVIDERS: dict[str, Factory] = {
     "openai": lambda t: OpenAIAIProvider(
@@ -79,13 +82,13 @@ _PROVIDERS: dict[str, Factory] = {
 
 @pytest.mark.parametrize("kind", list(_PROVIDERS))
 async def test_every_request_goes_through_the_transport(kind: str) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json=_COMPLETION)
+        return httpx2.Response(200, json=_COMPLETION)
 
-    provider = _PROVIDERS[kind](httpx.MockTransport(handler))
+    provider = _PROVIDERS[kind](httpx2.MockTransport(handler))
     try:
         response = await provider.generate(
             AIContext(messages=[AIMessage(role="user", content="hello")])
@@ -103,13 +106,13 @@ async def test_the_sdk_defaults_stay_redirects_followed_through_the_transport() 
     still followed, each hop through the transport, where a policy judges it."""
     seen: list[str] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request.url.path)
         if request.url.path == "/v1/chat/completions":
-            return httpx.Response(307, headers={"location": "https://llm.example/v2/chat"})
-        return httpx.Response(200, json=_COMPLETION)
+            return httpx2.Response(307, headers={"location": "https://llm.example/v2/chat"})
+        return httpx2.Response(200, json=_COMPLETION)
 
-    provider = _PROVIDERS["openai"](httpx.MockTransport(handler))
+    provider = _PROVIDERS["openai"](httpx2.MockTransport(handler))
     try:
         response = await provider.generate(
             AIContext(messages=[AIMessage(role="user", content="hello")])
@@ -128,14 +131,15 @@ _PNG_B64 = (
 _IMAGES = {"created": 0, "data": [{"b64_json": _PNG_B64}]}
 
 
-def _answer(request: httpx.Request) -> httpx.Response:
-    """The endpoint's answer: an image to an images call, an empty model
-    listing to a listing, a completion otherwise."""
+def _answer(http: Any, request: Any) -> Any:
+    """The endpoint's answer, as a response of the *http* package: an image
+    to an images call, an empty model listing to a listing, a completion
+    otherwise."""
     if request.url.path.endswith(("/images/generations", "/images")):
-        return httpx.Response(200, json=_IMAGES)
+        return http.Response(200, json=_IMAGES)
     if request.url.path.endswith(("/model/info", "/models")):
-        return httpx.Response(200, json={"data": []})
-    return httpx.Response(200, json=_COMPLETION)
+        return http.Response(200, json={"data": []})
+    return http.Response(200, json=_COMPLETION)
 
 
 class _Client(NamedTuple):
@@ -145,6 +149,9 @@ class _Client(NamedTuple):
     """``(origin, transport, **config)``: the client for an endpoint at this
     origin, over this transport, its config's other fields overridden."""
     call: Callable[[Any], Awaitable[object]]
+    http: Any = httpx2
+    """The package its HTTP client is of, whose transports it takes: httpx2
+    under the openai SDK."""
 
 
 def _draw(provider: Any) -> Awaitable[object]:
@@ -207,6 +214,7 @@ _CALLS: dict[str, _Client] = {
             transport=t,
         ),
         _draw,
+        http=httpx,
     ),
     "openrouter models": _Client(
         lambda origin, t, **c: OpenRouterAIProvider(
@@ -218,59 +226,65 @@ _CALLS: dict[str, _Client] = {
 }
 
 
-class _PublicOnly(httpx.AsyncBaseTransport):
-    """A host's policy: refuses a private or reserved address, then hands on.
+def _recording(http: Any, seen: list[Any]) -> Any:
+    """A mock transport of the *http* package that answers, and keeps each request."""
+
+    def handler(request: Any) -> Any:
+        seen.append(request)
+        return _answer(http, request)
+
+    return http.MockTransport(handler)
+
+
+def _public_only(http: Any, inner: Any) -> Any:
+    """A host's policy, as a transport of the *http* package: refuses a
+    private or reserved address, then hands on to *inner*.
 
     The refusal is raised as a connect failure, which the clients read as a
     request that never left."""
 
-    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
-        self._inner = inner
+    class PublicOnly(http.AsyncBaseTransport):
+        async def handle_async_request(self, request: Any) -> Any:
+            try:
+                validate_public_url(str(request.url), resolve_dns=False)
+            except ValueError as refusal:
+                raise http.ConnectError(str(refusal), request=request) from refusal
+            return await inner.handle_async_request(request)
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        try:
-            validate_public_url(str(request.url), resolve_dns=False)
-        except ValueError as refusal:
-            raise httpx.ConnectError(str(refusal), request=request) from refusal
-        return await self._inner.handle_async_request(request)
+    return PublicOnly()
 
 
-class _Scripted(httpx.AsyncBaseTransport):
+class _Scripted(httpx2.AsyncBaseTransport):
     """Fails each request with the next step of *script*, a transport error
     raised or an error status answered, then answers."""
 
-    def __init__(self, *script: type[httpx.TransportError] | int) -> None:
+    def __init__(self, *script: type[httpx2.TransportError] | int) -> None:
         self._script = list(script)
         self.requests = 0
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         self.requests += 1
         if not self._script:
-            return _answer(request)
+            return _answer(httpx2, request)
         step = self._script.pop(0)
         if isinstance(step, int):
-            return httpx.Response(step, json={"error": {"message": "scripted"}})
+            return httpx2.Response(step, json={"error": {"message": "scripted"}})
         raise step("scripted", request=request)
 
 
-def _refusing() -> httpx.AsyncBaseTransport:
-    return _PublicOnly(httpx.MockTransport(_answer))
+def _refusing() -> httpx2.AsyncBaseTransport:
+    return _public_only(httpx2, _recording(httpx2, []))
 
 
-def _timing_out() -> httpx.AsyncBaseTransport:
-    return _Scripted(httpx.ReadTimeout)
+def _timing_out() -> httpx2.AsyncBaseTransport:
+    return _Scripted(httpx2.ReadTimeout)
 
 
 @pytest.mark.parametrize("kind", list(_CALLS))
 async def test_each_call_sends_its_request_through_the_transport(kind: str) -> None:
-    seen: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return _answer(request)
-
+    seen: list[Any] = []
     client = _CALLS[kind]
-    provider = client.build("https://models.example", httpx.MockTransport(handler))
+    provider = client.build("https://models.example", _recording(client.http, seen))
     try:
         await client.call(provider)
     finally:
@@ -286,14 +300,10 @@ async def test_a_policy_in_the_transport_refuses_a_private_endpoint_before_any_r
     # The vision client keeps the SDK's default retries, each one refused by
     # the policy too; none waits here.
     monkeypatch.setattr("openai._base_client.INITIAL_RETRY_DELAY", 0.0)
-    sent: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return _answer(request)
-
+    sent: list[Any] = []
     client = _CALLS[kind]
-    provider = client.build("https://169.254.169.254", _PublicOnly(httpx.MockTransport(handler)))
+    policy = _public_only(client.http, _recording(client.http, sent))
+    provider = client.build("https://169.254.169.254", policy)
     try:
         with pytest.raises((ProviderError, openai.APIConnectionError)) as caught:
             await client.call(provider)
@@ -319,7 +329,7 @@ async def test_a_policy_in_the_transport_refuses_a_private_endpoint_before_any_r
     ids=["openai-refused", "azure-refused", "openai-timed-out", "azure-timed-out"],
 )
 async def test_an_image_attempt_is_unknown_once_its_request_may_have_left(
-    kind: str, transport: Callable[[], httpx.AsyncBaseTransport], status: str
+    kind: str, transport: Callable[[], httpx2.AsyncBaseTransport], status: str
 ) -> None:
     """A request the policy refused reached nothing, so nothing ran or was
     billed: ``failed``. One that timed out may have run: ``unknown``
@@ -338,11 +348,11 @@ async def test_an_image_attempt_is_unknown_once_its_request_may_have_left(
 
 
 @pytest.mark.parametrize(
-    "last", [httpx.ConnectError, 429, 503, 500], ids=["connect-error", "429", "503", "500"]
+    "last", [httpx2.ConnectError, 429, 503, 500], ids=["connect-error", "429", "503", "500"]
 )
 @pytest.mark.parametrize("kind", ["azure image", "xai image", "meta image"])
 async def test_a_retried_image_request_stays_ambiguous_whatever_its_last_failure(
-    kind: str, last: type[httpx.TransportError] | int, monkeypatch: pytest.MonkeyPatch
+    kind: str, last: type[httpx2.TransportError] | int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With the SDK's retries (``max_retries``), the error raised is the last
     attempt's: the first timed out, and may have run and been billed. A last
@@ -350,7 +360,7 @@ async def test_a_retried_image_request_stays_ambiguous_whatever_its_last_failure
     make the request unbilled: the attempt is ``unknown`` and the error is
     not retryable (RFC §25.2)."""
     monkeypatch.setattr("openai._base_client.INITIAL_RETRY_DELAY", 0.0)
-    transport = _Scripted(httpx.ReadTimeout, last)
+    transport = _Scripted(httpx2.ReadTimeout, last)
     client = _CALLS[kind]
     provider = client.build("https://models.example", transport, max_retries=1)
     try:
@@ -369,15 +379,52 @@ async def test_a_retried_image_request_stays_ambiguous_whatever_its_last_failure
 async def test_a_model_listing_that_is_not_json_raises(kind: str) -> None:
     """A 200 carrying a login page is no listing: an error, not an empty one."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, text="<html>Sign in</html>", headers={"content-type": "text/html"}
         )
 
     client = _CALLS[kind]
-    provider = client.build("https://models.example", httpx.MockTransport(handler))
+    provider = client.build("https://models.example", httpx2.MockTransport(handler))
     try:
         with pytest.raises(json.JSONDecodeError):
             await client.call(provider)
     finally:
         await provider.close()
+
+
+_ON_THE_SDK: dict[str, Callable[[Any], Any]] = {
+    **_PROVIDERS,
+    **{
+        kind: (lambda t, client=client: client.build("https://models.example", t))
+        for kind, client in _CALLS.items()
+        if client.http is httpx2
+    },
+}
+
+
+@pytest.mark.parametrize("kind", list(_ON_THE_SDK))
+def test_an_httpx_transport_is_refused_when_the_client_is_built(kind: str) -> None:
+    """The SDK's client is an httpx2 one. Given an httpx transport it lets the
+    request out and fails on the response with a bare ``AssertionError``, so
+    the transport is refused before any request, by a message naming httpx2."""
+    with pytest.raises(TypeError, match="httpx2.AsyncBaseTransport"):
+        _ON_THE_SDK[kind](_recording(httpx, []))
+
+
+async def test_a_transport_of_both_packages_is_taken() -> None:
+    """One class serving both clients is an httpx2 transport too: not refused."""
+
+    class Both(httpx.AsyncBaseTransport, httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request: Any) -> Any:
+            return httpx2.Response(200, json=_COMPLETION)
+
+    provider = _PROVIDERS["openai"](Both())
+    try:
+        response = await provider.generate(
+            AIContext(messages=[AIMessage(role="user", content="hello")])
+        )
+    finally:
+        await provider.close()
+
+    assert response.content == "ok"

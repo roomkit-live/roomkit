@@ -15,6 +15,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
@@ -86,6 +87,16 @@ def _sdk_module() -> MagicMock:
     return mod
 
 
+async def _openai_sdk_timeout(provider: Any) -> Any:
+    """The timeout of the client *provider* built on the installed ``openai``
+    SDK, which the SDK applies to each request: its own ``Timeout``, httpx2's
+    in openai 3.x."""
+    try:
+        return provider._client.timeout
+    finally:
+        await provider.close()
+
+
 # ---------------------------------------------------------------------------
 # Builders: one per client construction site in ``providers/``
 # ---------------------------------------------------------------------------
@@ -154,62 +165,48 @@ async def _openrouter_image() -> Any:
 
 
 async def _openai() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         OpenAIAIProvider(OpenAIConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _azure() -> Any:
-    mod = _sdk_module()
     cfg = AzureAIConfig(
         api_key="k", azure_endpoint="https://p.services.ai.azure.com", model="m", **_TIMEOUTS
     )
-    with patch.dict("sys.modules", {"openai": mod}):
-        AzureAIProvider(cfg)
-    return mod.AsyncAzureOpenAI.call_args.kwargs["timeout"]
+    return await _openai_sdk_timeout(AzureAIProvider(cfg))
 
 
 async def _openrouter() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         OpenRouterAIProvider(OpenRouterConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _litellm() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         LiteLLMAIProvider(LiteLLMConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _xai() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
-        XAIAIProvider(XAIConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    return await _openai_sdk_timeout(XAIAIProvider(XAIConfig(api_key="k", model="m", **_TIMEOUTS)))
 
 
 async def _deepseek() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         DeepSeekAIProvider(DeepSeekConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _qwen() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         QwenAIProvider(QwenConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _vllm() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
-        create_vllm_provider(VLLMConfig(model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    return await _openai_sdk_timeout(create_vllm_provider(VLLMConfig(model="m", **_TIMEOUTS)))
 
 
 async def _ollama() -> Any:
@@ -249,27 +246,20 @@ async def _polargrid_autorouted() -> Any:
 
 
 async def _openai_image() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
+    return await _openai_sdk_timeout(
         OpenAIImageProvider(OpenAIImageConfig(api_key="k", model="m", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    )
 
 
 async def _azure_image() -> Any:
-    mod = _sdk_module()
     cfg = AzureImageConfig(
         api_key="k", azure_endpoint="https://paint.openai.azure.com", model="m", **_TIMEOUTS
     )
-    with patch.dict("sys.modules", {"openai": mod}):
-        AzureImageProvider(cfg)
-    return mod.AsyncAzureOpenAI.call_args.kwargs["timeout"]
+    return await _openai_sdk_timeout(AzureImageProvider(cfg))
 
 
 async def _xai_image() -> Any:
-    mod = _sdk_module()
-    with patch.dict("sys.modules", {"openai": mod}):
-        XAIImageProvider(XAIImageConfig(api_key="k", **_TIMEOUTS))
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    return await _openai_sdk_timeout(XAIImageProvider(XAIImageConfig(api_key="k", **_TIMEOUTS)))
 
 
 CASES: dict[str, Builder] = {
@@ -312,7 +302,8 @@ CASES: dict[str, Builder] = {
 async def test_client_timeout_splits_connect_from_read(build: Builder) -> None:
     timeout = await build()
 
-    assert isinstance(timeout, httpx.Timeout), f"a bare {type(timeout).__name__} was passed"
+    kinds = (httpx.Timeout, httpx2.Timeout)
+    assert isinstance(timeout, kinds), f"a bare {type(timeout).__name__} was passed"
     assert timeout.connect == CONNECT
     assert timeout.read == TIMEOUT
     assert timeout.write == TIMEOUT

@@ -7,8 +7,8 @@ answered then dropped before the first event, is the same failure whichever
 SDK surfaces it, so each provider says it is worth retrying, through
 ``generate()`` and through the stream; a 400 stays final everywhere. Each
 provider is driven as its SDK surfaces the failure: a client over a mock
-transport of the HTTP client the SDK runs on, where it takes one (httpx for the
-OpenAI wire and Ollama, httpx2 for Mistral), and the SDK's own errors otherwise.
+transport of the HTTP client the SDK runs on, where it takes one (httpx2 for
+the OpenAI wire and Mistral, httpx for Ollama), and the SDK's own errors otherwise.
 """
 
 from __future__ import annotations
@@ -74,8 +74,10 @@ def _transport(
 
 
 def _openai(failure: Failure) -> AIProvider:
+    """openai 3.x runs on httpx2: its client raises its own connection error
+    from httpx2's, and lets an error of the stream's read through."""
     config = OpenAIConfig(api_key="k", model="gpt-4.1", max_retries=0)
-    return OpenAIAIProvider(config, transport=_transport(failure))
+    return OpenAIAIProvider(config, transport=_transport(failure, httpx2))
 
 
 def _mistral(failure: Failure) -> AIProvider:

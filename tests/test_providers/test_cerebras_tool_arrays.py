@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.ai.base import (
@@ -73,7 +73,7 @@ async def test_only_schema_declared_arrays_are_decoded(
     context = _context(tools=[tool])
     original = context.model_dump()
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         # Declared as given, a root without a type typed an object (RMK-398).
         assert body["tools"][0]["function"]["parameters"] == declared_parameters(tool.parameters)
@@ -105,7 +105,7 @@ async def test_only_schema_declared_arrays_are_decoded(
 async def test_undeclared_tools_are_not_repaired(streaming: bool) -> None:
     args = {"blocks": json.dumps(_BLOCKS)}
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         call = {
             "id": "call-1",
             "type": "function",

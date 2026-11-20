@@ -10,10 +10,10 @@ from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openrouter.config import OpenRouterConfig
 from roomkit.providers.openrouter.models import MODELS
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 # OpenRouter's ``reasoning`` object that turns reasoning off.
 _REASONING_OFF: dict[str, Any] = {"enabled": False}
@@ -32,7 +32,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
     _config: OpenRouterConfig
 
     def __init__(
-        self, config: OpenRouterConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: OpenRouterConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIAIProvider`."""
         try:
@@ -48,7 +48,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=config.max_retries,
             default_headers=self._merged_headers(config),
             http_client=openai_http_client(_openai, transport),

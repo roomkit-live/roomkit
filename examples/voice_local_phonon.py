@@ -120,7 +120,9 @@ from roomkit.voice.stt import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts import PhononTTSConfig, PhononTTSProvider, StripEmoji
 
 logger = setup_logging("voice_local_phonon")
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Request lines: httpx2 under the model client (openai 3.x), httpx under the server check.
+for _noisy in ("httpx", "httpx2"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 MIC_RATE = 16000
 BLOCK_MS = 20

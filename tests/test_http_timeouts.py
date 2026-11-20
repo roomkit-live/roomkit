@@ -25,6 +25,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import httpx2
 import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage
@@ -68,10 +69,12 @@ async def _grok_tts() -> Any:
 
 
 async def _openai_vision() -> Any:
-    mod = MagicMock()
-    with patch.dict("sys.modules", {"openai": mod}):
-        OpenAIVisionProvider(OpenAIVisionConfig(**_TIMEOUTS))._get_client()
-    return mod.AsyncOpenAI.call_args.kwargs["timeout"]
+    """On the installed ``openai`` SDK: its own ``Timeout``, httpx2's in openai 3.x."""
+    provider = OpenAIVisionProvider(OpenAIVisionConfig(**_TIMEOUTS))
+    try:
+        return provider._get_client().timeout
+    finally:
+        await provider.close()
 
 
 async def _avatar_start() -> Any:
@@ -209,7 +212,8 @@ CASES: dict[str, tuple[Builder, float | None]] = {
 async def test_client_timeout_splits_connect_from_read(build: Builder, read: float | None) -> None:
     timeout = await build()
 
-    assert isinstance(timeout, httpx.Timeout), f"a bare {type(timeout).__name__} was passed"
+    kinds = (httpx.Timeout, httpx2.Timeout)
+    assert isinstance(timeout, kinds), f"a bare {type(timeout).__name__} was passed"
     assert timeout.connect == CONNECT
     assert timeout.read == read
     assert timeout.write == TIMEOUT

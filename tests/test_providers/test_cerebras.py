@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit import CerebrasAIProvider, CerebrasConfig
@@ -43,8 +43,8 @@ _USAGE = {
 }
 
 
-def _response(**message: Any) -> httpx.Response:
-    return httpx.Response(
+def _response(**message: Any) -> httpx2.Response:
+    return httpx2.Response(
         200,
         json={
             "id": "chatcmpl-test",
@@ -63,7 +63,7 @@ def _response(**message: Any) -> httpx.Response:
     )
 
 
-def _stream_response(*deltas: dict[str, Any], finish: str = "stop") -> httpx.Response:
+def _stream_response(*deltas: dict[str, Any], finish: str = "stop") -> httpx2.Response:
     frames = [
         {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]} for delta in deltas
     ]
@@ -87,7 +87,7 @@ def _stream_response(*deltas: dict[str, Any], finish: str = "stop") -> httpx.Res
         + "\n\n"
         for frame in frames
     )
-    return httpx.Response(
+    return httpx2.Response(
         200,
         headers={"content-type": "text/event-stream"},
         content=payload + "data: [DONE]\n\n",
@@ -96,12 +96,12 @@ def _stream_response(*deltas: dict[str, Any], finish: str = "stop") -> httpx.Res
 
 @asynccontextmanager
 async def _provider(
-    handler: Callable[[httpx.Request], httpx.Response], **config: Any
+    handler: Callable[[httpx2.Request], httpx2.Response], **config: Any
 ) -> AsyncIterator[CerebrasAIProvider]:
     pytest.importorskip("openai")
     provider = CerebrasAIProvider(
         CerebrasConfig(**{"api_key": "test-key", "model": _MODEL, **config}),
-        transport=httpx.MockTransport(handler),
+        transport=httpx2.MockTransport(handler),
     )
     try:
         yield provider
@@ -132,7 +132,7 @@ class TestCerebrasRequests:
     async def test_reasoning_sampling_and_usage_on_wire(
         self, streaming: bool, tools: list[AITool]
     ) -> None:
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             assert str(request.url) == "https://api.cerebras.ai/v1/chat/completions"
             assert request.headers["authorization"] == "Bearer test-key"
             assert request.extensions["timeout"]["connect"] == 3.0
@@ -191,7 +191,7 @@ class TestCerebrasRequests:
     async def test_tool_round_preserves_reasoning_and_call_results(self, streaming: bool) -> None:
         requests: list[dict[str, Any]] = []
 
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             body = json.loads(request.content)
             requests.append(body)
             if len(requests) == 1:
@@ -273,7 +273,7 @@ class TestCerebrasRequests:
             assert context.model_dump() == original
 
     async def test_qwen_options_image_and_plain_assistant_history(self) -> None:
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             body = json.loads(request.content)
             assert str(request.url).startswith("https://proxy.example/v1/")
             assert request.headers["x-routing"] == "cerebras"
@@ -329,7 +329,7 @@ class TestCerebrasRequests:
             )
 
     async def test_unconfigured_effort_and_extra_body(self) -> None:
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             body = json.loads(request.content)
             assert "reasoning_effort" not in body
             assert body["reasoning_format"] == "hidden"
@@ -355,10 +355,10 @@ class TestCerebrasErrors:
     ) -> None:
         calls = 0
 
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             nonlocal calls
             calls += 1
-            return httpx.Response(status, json={"error": {"message": "Request failed"}})
+            return httpx2.Response(status, json={"error": {"message": "Request failed"}})
 
         async with _provider(handle) as provider:
             with pytest.raises(ProviderError) as exc:
@@ -372,8 +372,8 @@ class TestCerebrasErrors:
             assert calls == 1
 
     async def test_connection_failure_is_retryable(self) -> None:
-        def handle(request: httpx.Request) -> httpx.Response:
-            raise httpx.ConnectError("Unavailable", request=request)
+        def handle(request: httpx2.Request) -> httpx2.Response:
+            raise httpx2.ConnectError("Unavailable", request=request)
 
         async with _provider(handle) as provider:
             with pytest.raises(ProviderError) as exc:
@@ -384,9 +384,9 @@ class TestCerebrasErrors:
 
 class TestCerebrasModels:
     async def test_live_discovery_uses_account_and_backfills_only_known_ids(self) -> None:
-        def handle(request: httpx.Request) -> httpx.Response:
+        def handle(request: httpx2.Request) -> httpx2.Response:
             assert str(request.url) == "https://api.cerebras.ai/v1/models"
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "object": "list",

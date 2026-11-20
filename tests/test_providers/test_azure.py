@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -302,11 +301,12 @@ class TestAzureAIProvider:
             cfg = _config()
             AzureAIProvider(cfg)
 
+            mock_mod.Timeout.assert_called_once_with(30.0, connect=5.0)
             mock_mod.AsyncAzureOpenAI.assert_called_once_with(
                 api_key="azure-test-key",
                 azure_endpoint="https://my-project.services.ai.azure.com",
                 api_version="2024-12-01-preview",
-                timeout=httpx.Timeout(30.0, connect=5.0),
+                timeout=mock_mod.Timeout.return_value,
                 max_retries=0,
                 http_client=None,
             )

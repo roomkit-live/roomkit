@@ -13,7 +13,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -127,22 +127,22 @@ ANSWERS = {
 
 
 def _provider(response: dict[str, Any], chunks: list[dict[str, Any]]) -> OpenAIAIProvider:
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         if json.loads(request.content).get("stream"):
             lines = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
                 content=(lines + "data: [DONE]\n\n").encode(),
             )
-        return httpx.Response(200, json=response)
+        return httpx2.Response(200, json=response)
 
     config = OpenAIConfig(api_key="k", model="gpt-4.1-mini", include_stream_usage=True)
     provider = OpenAIAIProvider(config)
     provider._client = openai.AsyncOpenAI(
         api_key="k",
         base_url="http://wire.test/v1",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(answer)),
         max_retries=0,
     )
     return provider

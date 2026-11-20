@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import binascii
+import sys
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     import httpx
+    import httpx2
 
     from roomkit.models.event import RoomEvent
 
@@ -88,8 +90,8 @@ def parse_data_uri(url: str, *, fallback_mime: str | None = None) -> tuple[str, 
 
 
 def openai_http_client(
-    openai_module: Any, transport: httpx.AsyncBaseTransport | None
-) -> httpx.AsyncClient | None:
+    openai_module: Any, transport: httpx2.AsyncBaseTransport | None
+) -> httpx2.AsyncClient | None:
     """The OpenAI SDK's default HTTP client over *transport*; ``None`` without one.
 
     The AI, image and vision clients RoomKit builds on the ``openai`` SDK for
@@ -97,20 +99,60 @@ def openai_http_client(
     host's ``transport=`` reaches each the same way: the seam for an outbound
     policy that judges the address actually dialled. (``OpenAIClassifier``,
     on OpenAI's own endpoint, takes a ``client=`` of the caller's instead.)
-    The SDK's own class, not a bare ``httpx.AsyncClient``, so redirects are
+    The SDK's own class, not a bare ``httpx2.AsyncClient``, so redirects are
     still followed, each hop through the transport. Its timeout is the one
     the SDK client is built with, applied per request.
-    The pool and its limits are the transport's; httpx reads no environment
+    The pool and its limits are the transport's; httpx2 reads no environment
     proxy beside a transport. Closing the SDK client closes it, and the
     transport with it.
+
+    The SDK runs on httpx2 (openai 3.x), so the transport is an httpx2 one;
+    one built on ``httpx`` raises ``TypeError`` (:func:`refuse_httpx_transport`).
 
     *openai_module* is the ``openai`` module the caller imported: the SDK is
     an optional dependency, imported where it is needed.
     """
     if transport is None:
         return None
-    client: httpx.AsyncClient = openai_module.DefaultAsyncHttpxClient(transport=transport)
+    refuse_httpx_transport(transport)
+    client: httpx2.AsyncClient = openai_module.DefaultAsyncHttpxClient(transport=transport)
     return client
+
+
+def refuse_httpx_transport(transport: object) -> None:
+    """Raise ``TypeError`` for a transport built on ``httpx`` alone, where the
+    client it is for runs on httpx2.
+
+    An httpx2 client takes any object as its transport. Handed an httpx one,
+    it lets the request out through it, then fails on the response with a
+    bare ``AssertionError`` (measured with ``httpx.MockTransport`` on openai
+    3.57.0): the caller is told nothing, after the vendor may have run the
+    request. Either package is read only if already imported: a transport of
+    its cannot exist otherwise.
+    """
+    legacy, current = sys.modules.get("httpx"), sys.modules.get("httpx2")
+    if legacy is None or not isinstance(transport, legacy.AsyncBaseTransport):
+        return
+    if current is not None and isinstance(transport, current.AsyncBaseTransport):
+        return
+    raise TypeError(
+        f"transport is an httpx transport ({type(transport).__name__}), and the openai SDK "
+        "runs on httpx2: build it on httpx2.AsyncBaseTransport instead"
+    )
+
+
+def openai_timeout(openai_module: Any, config: HTTPTimeouts) -> httpx2.Timeout:
+    """The OpenAI SDK's own ``Timeout`` for a client, from its config.
+
+    The connect/read split of :func:`http_timeout_from`, on the type the SDK
+    runs on: openai 3.x is built on httpx2 and installs no ``httpx``, so an
+    ``httpx.Timeout`` is not there to build in a host that installed the SDK
+    alone.
+
+    *openai_module* is the ``openai`` module the caller imported.
+    """
+    timeout: httpx2.Timeout = openai_module.Timeout(config.timeout, connect=config.connect_timeout)
+    return timeout
 
 
 def http_timeout(config: HTTPTimeouts) -> httpx.Timeout:

@@ -43,10 +43,10 @@ from roomkit.providers.image.base import (
 from roomkit.providers.image.options import ImageModelInfo, ImageOptions
 from roomkit.providers.meta.config import MetaImageConfig
 from roomkit.providers.meta.image_models import MODELS
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 _REASONING = {"minimal": "low", "high": "high"}
 
@@ -55,12 +55,12 @@ class MetaImageProvider(ImageProvider):
     """Image provider on Meta's Muse Image."""
 
     def __init__(
-        self, config: MetaImageConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: MetaImageConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, edits included, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`."""
         try:
-            import httpx as _httpx
+            import httpx2 as _httpx2
             import openai as _openai
         except ImportError as exc:
             raise ImportError(
@@ -70,13 +70,13 @@ class MetaImageProvider(ImageProvider):
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
-        self._httpx = _httpx
+        self._httpx2 = _httpx2
         self._sdk_retries = config.max_retries
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=self._sdk_retries,
             http_client=openai_http_client(_openai, transport),
         )
@@ -211,7 +211,7 @@ class MetaImageProvider(ImageProvider):
         except self._api_connection_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=never_sent(exc, self._httpx, retries=self._sdk_retries),
+                retryable=never_sent(exc, self._httpx2, retries=self._sdk_retries),
                 provider="meta",
             ) from exc
         except self._api_status_error as exc:

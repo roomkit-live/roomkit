@@ -163,7 +163,7 @@ from roomkit.voice.tts import PocketTTSConfig, PocketTTSProvider, StripEmoji
 
 logger = setup_logging("voice_local_pocket_fr")
 # Keep the terminal readable: request lines and Pocket's per-sentence timers.
-for _noisy in ("httpx", "pocket_tts"):
+for _noisy in ("httpx", "httpx2", "pocket_tts"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 MIC_RATE = 16000

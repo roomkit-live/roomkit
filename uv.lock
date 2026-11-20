@@ -4183,21 +4183,19 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.54.0"
+version = "3.57.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "jiter" },
     { name = "pydantic" },
     { name = "sniffio" },
-    { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/9a/8c75e8c8a5b407a0586faeb2afac91674ff955c191ecc1d6d3b6669f6788/openai-2.54.0.tar.gz", hash = "sha256:e3e6f8bc1ba30ddf381ace1a14340eed381cb984a1a59bd0f34b5be3b5d49cfa", size = 1100285, upload-time = "2026-08-11T18:46:59.035Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/b2/97780581dab39384d1de4bc15f1f6cbaff26ce965a46c23a10bd948b71a8/openai-3.57.0.tar.gz", hash = "sha256:5a0a89d6a542efc85e2a8cec701ca9265b795d578c777828e10fafdf80e333b6", size = 2425150, upload-time = "2026-11-20T01:28:43.575Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/a8/bb76c7356de8ad57f59d5ff993d434df0607f07f08bcc9c9a5c275e399c0/openai-2.54.0-py3-none-any.whl", hash = "sha256:89089789197ccdb87f173a03145ed1598d00795220c93e96cf712b1cbf5e5f2b", size = 1660351, upload-time = "2026-08-11T18:46:56.684Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/40/0475208a470f90a1d3e94b41382678b44f311c2ea2a317228531e2193567/openai-3.57.0-py3-none-any.whl", hash = "sha256:f97bc74024c06ced8428b56c4a3594066709d3082779bf9d0b4b6092fbf587a8", size = 2451809, upload-time = "2026-11-20T01:28:41.48Z" },
 ]
 
 [[package]]
@@ -6097,6 +6095,7 @@ openai = [
     { name = "openai" },
 ]
 openrouter = [
+    { name = "httpx" },
     { name = "openai" },
 ]
 opentelemetry = [
@@ -6246,6 +6245,7 @@ whatsapp-personal = [
     { name = "neonize" },
 ]
 xai = [
+    { name = "httpx" },
     { name = "openai" },
 ]
 yolo = [
@@ -6323,11 +6323,13 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'llamacpp'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'meta-stt'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'mistral-voice'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'openrouter'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'providers'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'rime'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'sources'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'sse'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'xai'", specifier = ">=0.27" },
     { name = "httpx-sse", marker = "extra == 'all'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sources'", specifier = ">=0.4" },
@@ -6376,24 +6378,23 @@ requires-dist = [
     { name = "ollama", marker = "extra == 'providers'", specifier = ">=0.4,<0.7" },
     { name = "onnxruntime", marker = "extra == 'all'", specifier = ">=1.20" },
     { name = "onnxruntime", marker = "extra == 'smart-turn'", specifier = ">=1.20" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=2.28" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'cerebras'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'deepseek'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'dev'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'kimi'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'litellm'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'llamacpp'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'meta'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'minimax'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'qwen-ai'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.28" },
-    { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.28,<3" },
-    { name = "openai", marker = "extra == 'xai'", specifier = ">=2.28,<3" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'azure'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'cerebras'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'deepseek'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'dev'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'kimi'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'litellm'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'llamacpp'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'meta'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'minimax'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'providers'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'qwen-ai'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'vllm'", specifier = ">=3,<4" },
+    { name = "openai", marker = "extra == 'xai'", specifier = ">=3,<4" },
     { name = "opencv-python-headless", marker = "extra == 'all'", specifier = ">=4.8" },
     { name = "opencv-python-headless", marker = "extra == 'local-video'", specifier = ">=4.8" },
     { name = "opentelemetry-api", marker = "extra == 'all'", specifier = ">=1.20" },

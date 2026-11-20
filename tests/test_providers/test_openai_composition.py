@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit import AIChannel, RoomKit
@@ -40,19 +40,19 @@ def _chunk(delta: dict, finish: str | None = None) -> dict:
 def _provider(
     replies: list[list[dict]], requests: list[dict[str, Any]] | None = None
 ) -> OpenAIAIProvider:
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         payload = json.loads(request.content)
         assert payload["stream"] is True
         if requests is not None:
             requests.append(payload)
         body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in replies.pop(0))
-        return httpx.Response(
+        return httpx2.Response(
             200, text=body + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"}
         )
 
     return OpenAIAIProvider(
         OpenAIConfig(api_key="test", model="fake", max_retries=0),
-        transport=httpx.MockTransport(answer),
+        transport=httpx2.MockTransport(answer),
     )
 
 

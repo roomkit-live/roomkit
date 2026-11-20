@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureImageConfig
 from roomkit.providers.openai.image import OpenAIImageProvider
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 
 class AzureImageProvider(OpenAIImageProvider):
@@ -27,11 +27,11 @@ class AzureImageProvider(OpenAIImageProvider):
     _config: AzureImageConfig
 
     def __init__(
-        self, config: AzureImageConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: AzureImageConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIImageProvider`."""
         try:
-            import httpx as _httpx
+            import httpx2 as _httpx2
             import openai as _openai
         except ImportError as exc:
             raise ImportError(
@@ -39,7 +39,7 @@ class AzureImageProvider(OpenAIImageProvider):
                 "Install it with: pip install roomkit[azure]"
             ) from exc
         self._config = config
-        self._httpx = _httpx
+        self._httpx2 = _httpx2
         self._sdk_retries = config.max_retries
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
@@ -47,7 +47,7 @@ class AzureImageProvider(OpenAIImageProvider):
             api_key=config.api_key.get_secret_value(),
             azure_endpoint=config.azure_endpoint,
             api_version=config.api_version,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=self._sdk_retries,
             http_client=openai_http_client(_openai, transport),
         )

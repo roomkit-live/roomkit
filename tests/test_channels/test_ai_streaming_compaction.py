@@ -25,7 +25,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -405,14 +405,14 @@ async def _sdk_status_error(code: Any) -> Exception:
     built by the SDK itself: its ``body`` is the server's ``error`` object,
     not the whole response."""
 
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         error = {"message": "maximum context length", "type": "invalid_request_error"}
-        return httpx.Response(400, json={"error": {**error, "code": code}})
+        return httpx2.Response(400, json={"error": {**error, "code": code}})
 
     client = openai.AsyncOpenAI(
         api_key="k",
         max_retries=0,
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(answer)),
     )
     with pytest.raises(openai.BadRequestError) as caught:
         await client.chat.completions.create(

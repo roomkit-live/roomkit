@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
+import httpx2
 import openai
 
 from roomkit.providers.ai.base import AIProvider
@@ -223,15 +223,15 @@ def _response(script: Script, vendor: _Vendor) -> dict[str, Any]:
 def _client(script: Script, vendor: _Vendor, requests: list[Any]) -> openai.AsyncOpenAI:
     """The ``openai`` client whose HTTP transport answers *script*."""
 
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         requests.append(body)
         if body.get("stream"):
             headers = {"content-type": "text/event-stream"}
-            return httpx.Response(200, headers=headers, content=_stream(script, vendor))
-        return httpx.Response(200, json=_response(script, vendor))
+            return httpx2.Response(200, headers=headers, content=_stream(script, vendor))
+        return httpx2.Response(200, json=_response(script, vendor))
 
-    http = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(answer))
     return openai.AsyncOpenAI(
         api_key="k", base_url="http://wire.test/v1", http_client=http, max_retries=0
     )

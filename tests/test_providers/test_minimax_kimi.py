@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit import (
@@ -39,12 +39,12 @@ _BOTH = sorted(_VENDORS)
 
 def _provider(vendor: str, *, handler: Callable[..., Any] | None = None, **config: Any) -> Any:
     cls, config_cls, model, _ = _VENDORS[vendor]
-    transport = httpx.MockTransport(handler) if handler is not None else None
+    transport = httpx2.MockTransport(handler) if handler is not None else None
     settings = {"api_key": "k", "model": model, **config}
     return cls(config_cls(**settings), transport=transport)
 
 
-def _stream(*deltas: dict[str, Any], finish: str = "stop") -> httpx.Response:
+def _stream(*deltas: dict[str, Any], finish: str = "stop") -> httpx2.Response:
     frames = [{"index": 0, "delta": delta, "finish_reason": None} for delta in deltas]
     frames.append({"index": 0, "delta": {}, "finish_reason": finish})
     lines = [
@@ -61,7 +61,7 @@ def _stream(*deltas: dict[str, Any], finish: str = "stop") -> httpx.Response:
         + "\n\n"
         for frame in frames
     ]
-    return httpx.Response(
+    return httpx2.Response(
         200,
         headers={"content-type": "text/event-stream"},
         content="".join(lines) + "data: [DONE]\n\n",
@@ -101,7 +101,7 @@ async def _two_turns(provider_for: Callable[[Callable[..., Any]], Any]) -> list[
     with its two tool rounds, as an integrator drives it."""
     requests: list[dict[str, Any]] = []
 
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         requests.append(json.loads(request.content))
         return _ROUNDS[len(requests) - 1]
 
@@ -165,7 +165,7 @@ async def test_a_host_selects_the_dialect_by_the_class_on_a_server_of_its_own(
     assert not any("<think>" in str(m["content"]) for m in in_progress + later)
 
 
-def _completion(request: httpx.Request) -> httpx.Response:
+def _completion(request: httpx2.Request) -> httpx2.Response:
     choice = {
         "index": 0,
         "message": {"role": "assistant", "content": "Hello."},
@@ -178,14 +178,14 @@ def _completion(request: httpx.Request) -> httpx.Response:
         "model": "m",
         "choices": [choice],
     }
-    return httpx.Response(200, json=body)
+    return httpx2.Response(200, json=body)
 
 
-async def _sent(vendor: str, *, config: dict[str, Any], **turn: Any) -> httpx.Request:
+async def _sent(vendor: str, *, config: dict[str, Any], **turn: Any) -> httpx2.Request:
     """The request one generation sends through the vendor's provider."""
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def answer(request: httpx.Request) -> httpx.Response:
+    def answer(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
         return _completion(request)
 
@@ -197,7 +197,7 @@ async def _sent(vendor: str, *, config: dict[str, Any], **turn: Any) -> httpx.Re
     return seen[0]
 
 
-def _body(request: httpx.Request, *keys: str) -> dict[str, Any]:
+def _body(request: httpx2.Request, *keys: str) -> dict[str, Any]:
     body = json.loads(request.content)
     return {key: body[key] for key in keys if key in body}
 

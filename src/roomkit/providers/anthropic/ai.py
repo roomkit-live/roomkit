@@ -93,10 +93,8 @@ class AnthropicAIProvider(AIProvider):
             "api_key": api_key,
             # The SDK's own ``Timeout``, with the connect/read split of
             # ``http_timeout_from``: anthropic 1.x runs on httpx2 and refuses
-            # any object from the ``httpx`` package. Its check reads the class's
-            # ``__module__``, which the openai SDK rewrites on import, so an
-            # ``httpx.Timeout`` passes it only in a process that imported
-            # openai first. This one needs no ``httpx`` installed at all.
+            # any object from the ``httpx`` package. This one needs no
+            # ``httpx`` installed at all.
             "timeout": self._anthropic.Timeout(
                 self._config.timeout, connect=self._config.connect_timeout
             ),

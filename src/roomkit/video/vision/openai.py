@@ -40,13 +40,13 @@ from roomkit.providers.ai.openai_dialect import (
 )
 from roomkit.providers.ai.response_schema import check_schema_answer, check_schema_request
 from roomkit.providers.openai.config import refuses_custom_temperature, refuses_max_tokens
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout, refuse_httpx_transport
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import DEFAULT_VISION_PROMPT, VisionProvider, VisionResult
 from roomkit.video.vision.encode import frame_to_jpeg_base64
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 logger = logging.getLogger("roomkit.video.vision.openai")
 
@@ -119,12 +119,14 @@ class OpenAIVisionProvider(VisionProvider):
         self,
         config: OpenAIVisionConfig | None = None,
         *,
-        transport: httpx.AsyncBaseTransport | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         """*transport* carries every request, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`: the seam for a
         policy that judges the address dialled when users name ``base_url``.
-        It goes into the client built on first use, and closes with it."""
+        It goes into the client built on first use, and closes with it. One
+        built on ``httpx`` raises ``TypeError`` here."""
+        refuse_httpx_transport(transport)
         self._config = config or OpenAIVisionConfig()
         self._transport = transport
         self._client: Any = None
@@ -146,7 +148,7 @@ class OpenAIVisionProvider(VisionProvider):
             self._client = openai.AsyncOpenAI(
                 api_key=self._config.api_key,
                 base_url=self._config.base_url,
-                timeout=http_timeout(self._config),
+                timeout=openai_timeout(openai, self._config),
                 http_client=openai_http_client(openai, self._transport),
             )
         return self._client

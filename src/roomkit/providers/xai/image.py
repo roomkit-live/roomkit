@@ -28,12 +28,12 @@ from roomkit.providers.image.base import (
     payload_mime_type,
     to_data_uri,
 )
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 from roomkit.providers.xai.config import XAIImageConfig
 from roomkit.providers.xai.image_models import MODELS
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 _MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in MODELS}
 
@@ -74,12 +74,12 @@ class XAIImageProvider(ImageProvider):
     """Image provider using xAI's Grok Imagine images API."""
 
     def __init__(
-        self, config: XAIImageConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: XAIImageConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, edits included, as for
         :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`."""
         try:
-            import httpx as _httpx
+            import httpx2 as _httpx2
             import openai as _openai
         except ImportError as exc:
             raise ImportError(
@@ -89,13 +89,13 @@ class XAIImageProvider(ImageProvider):
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
-        self._httpx = _httpx
+        self._httpx2 = _httpx2
         self._sdk_retries = config.max_retries
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=self._sdk_retries,
             http_client=openai_http_client(_openai, transport),
         )
@@ -162,7 +162,7 @@ class XAIImageProvider(ImageProvider):
         except self._api_connection_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=never_sent(exc, self._httpx, retries=self._sdk_retries),
+                retryable=never_sent(exc, self._httpx2, retries=self._sdk_retries),
                 provider="xai",
             ) from exc
         except self._api_status_error as exc:

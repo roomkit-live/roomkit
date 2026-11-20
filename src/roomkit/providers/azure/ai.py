@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
-from roomkit.providers.utils import http_timeout, openai_http_client
+from roomkit.providers.utils import openai_http_client, openai_timeout
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2
 
 
 class AzureAIProvider(OpenAIAIProvider):
@@ -24,7 +24,7 @@ class AzureAIProvider(OpenAIAIProvider):
     _config: AzureAIConfig
 
     def __init__(
-        self, config: AzureAIConfig, *, transport: httpx.AsyncBaseTransport | None = None
+        self, config: AzureAIConfig, *, transport: httpx2.AsyncBaseTransport | None = None
     ) -> None:
         """*transport* carries every request, as for :class:`OpenAIAIProvider`."""
         try:
@@ -41,7 +41,7 @@ class AzureAIProvider(OpenAIAIProvider):
             api_key=config.api_key.get_secret_value(),
             azure_endpoint=config.azure_endpoint,
             api_version=config.api_version,
-            timeout=http_timeout(config),
+            timeout=openai_timeout(_openai, config),
             max_retries=config.max_retries,
             http_client=openai_http_client(_openai, transport),
         )

@@ -46,10 +46,13 @@ billed, so it stays final, and the host decides (RFC §25.2)."""
 
 def never_sent(exc: BaseException, httpx: Any, *, retries: int) -> bool:
     """Whether a transport failure *exc* happened before its request left:
-    the *httpx* client could not connect (a connect error, a connect or pool
+    the HTTP client could not connect (a connect error, a connect or pool
     timeout), here or on its cause chain. The vendor ran nothing, so the
     failure may be retried; a timeout or a connection lost once the request
     went out is ambiguous, and final (RFC §25.2).
+
+    *httpx* is the module of the client that raised: ``httpx``, or ``httpx2``
+    for a client of the openai SDK.
 
     *retries* is the retry count of the client that raised *exc* (an SDK's
     ``max_retries``). A client that retries raises its last attempt's error,
