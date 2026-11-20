@@ -1,0 +1,282 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-address-belongs-to-one-identity-of-an-organization-per-channel-type",
+  "title": "An address another identity of the organization holds on the channel type is refused at a creation and at a link, writing nothing; moving it is an unlink then a link",
+  "rules": [
+    "§5.6",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.6-003"
+  ],
+  "notes": "Python: tests/test_store_identity_scoping.py::TestOneIdentityPerAddress and TestUnlinkingAnAddress::test_an_unlinked_address_moves_to_another_identity. The refused creation names a free address before the held one, and that address still resolves to no one once id-bob exists, so a store that filed it before refusing shows it. The same address on another channel type, or in another organization, belongs to another identity; the identities of no organization hold their addresses alike.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001",
+            "+15550000009"
+          ]
+        }
+      },
+      {
+        "id": "id-erin",
+        "channel_addresses": {
+          "sms": [
+            "+15550000004"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-bob",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002",
+            "+15550000001"
+          ]
+        }
+      },
+      "expect": {
+        "error": "address_linked"
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-bob",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000003"
+          ],
+          "whatsapp": [
+            "+15550000001"
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "id-bob"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-bob",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "error": "address_linked"
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-alice"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "whatsapp",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-bob"
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-bob",
+      "expect": {
+        "result": {
+          "id": "id-bob",
+          "channel_addresses": {
+            "sms": [
+              "+15550000003"
+            ],
+            "whatsapp": [
+              "+15550000001"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-finn",
+        "channel_addresses": {
+          "sms": [
+            "+15550000004"
+          ]
+        }
+      },
+      "expect": {
+        "error": "address_linked"
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-finn"
+      },
+      "expect": {
+        "result": {
+          "id": "id-finn"
+        }
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-finn",
+      "channel_type": "sms",
+      "address": "+15550000004",
+      "expect": {
+        "error": "address_linked"
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000004",
+      "expect": {
+        "result": {
+          "id": "id-erin"
+        }
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-carol",
+        "organization_id": "beta",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "id-carol"
+        }
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-bob",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-bob"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "beta",
+      "expect": {
+        "result": {
+          "id": "id-carol"
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "channel_addresses": {
+            "sms": [
+              "+15550000009"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-bob",
+      "expect": {
+        "result": {
+          "id": "id-bob",
+          "channel_addresses": {
+            "sms": {
+              "$unordered": [
+                "+15550000003",
+                "+15550000001"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/unlink-address-removes-an-address-the-identity-holds-in-its-organization",
+  "title": "unlink_address removes an address from the identity it names in its organization, refuses an unknown identity or another organization's, and changes nothing for an address the identity does not hold",
+  "rules": [
+    "§5.6",
+    "§14.1",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-5.6-006"
+  ],
+  "notes": "Python: tests/test_store_identity_scoping.py::TestUnlinkingAnAddress::test_an_address_the_identity_does_not_hold_changes_nothing and test_an_unknown_or_another_organizations_identity_is_refused. Bob's address unlinked from Alice stays Bob's.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001",
+            "+15550000002"
+          ]
+        }
+      },
+      {
+        "id": "id-bob",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000003"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "channel_addresses": {
+            "sms": [
+              "+15550000002"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-bob"
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-bob",
+      "expect": {
+        "result": {
+          "id": "id-bob",
+          "channel_addresses": {
+            "sms": [
+              "+15550000003"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000009",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-nobody",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "beta",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-alice"
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "channel_addresses": {
+            "sms": [
+              "+15550000002"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

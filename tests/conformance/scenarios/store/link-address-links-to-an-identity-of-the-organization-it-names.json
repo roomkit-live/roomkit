@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/link-address-links-to-an-identity-of-the-organization-it-names",
+  "title": "link_address links an address to an identity of the organization it names, refuses an unknown identity or another organization's writing nothing, and changes nothing for an address the identity holds",
+  "rules": [
+    "§5.6",
+    "§14.1",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-5.6-005"
+  ],
+  "notes": "Python: tests/test_store_identity_scoping.py::TestOneIdentityPerAddress::test_linking_an_address_the_identity_holds_changes_nothing, test_another_organizations_identity_is_refused, test_an_unknown_identity_is_refused. No organization counts as another: an identity of acme is not linked for none, and one of no organization is linked for none.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      },
+      {
+        "id": "id-gus"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.link_address",
+      "identity_id": "id-gus",
+      "channel_type": "sms",
+      "address": "+15550000004",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000004",
+      "expect": {
+        "result": {
+          "id": "id-gus"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000004",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-gus",
+      "expect": {
+        "result": {
+          "id": "id-gus",
+          "organization_id": null,
+          "channel_addresses": {
+            "sms": [
+              "+15550000004"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-alice"
+        }
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "channel_addresses": {
+            "sms": {
+              "$unordered": [
+                "+15550000001",
+                "+15550000002"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-nobody",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "acme",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "beta",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.link_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "organization_id": "beta",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000003",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "organization_id": "acme",
+          "channel_addresses": {
+            "sms": {
+              "$unordered": [
+                "+15550000001",
+                "+15550000002"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-identity-is-read-back-with-each-of-its-fields",
+  "title": "An identity is read back by its id with each field it was stored with, the setup's alike, none for an id the store lacks",
+  "rules": [
+    "§5.6",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.6-002"
+  ],
+  "notes": "Python: the Identity model of src/roomkit/models/identity.py, which the stores write and read whole (tests/test_store_memory.py, tests/test_store_sqlite.py). An identity with only an id reads its nullable fields as null.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-setup",
+        "organization_id": "acme",
+        "display_name": "Seeded",
+        "channel_addresses": {
+          "sms": [
+            "+15550000009"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "display_name": "Alice",
+        "email": "alice@example.com",
+        "phone": "+15550000001",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ],
+          "email": [
+            "alice@example.com"
+          ]
+        },
+        "external_id": "crm-17",
+        "external_ids": {
+          "billing": "b-7"
+        },
+        "metadata": {
+          "tier": "gold"
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "organization_id": "acme",
+          "display_name": "Alice",
+          "email": "alice@example.com",
+          "phone": "+15550000001",
+          "channel_addresses": {
+            "sms": [
+              "+15550000001"
+            ],
+            "email": [
+              "alice@example.com"
+            ]
+          },
+          "external_id": "crm-17",
+          "external_ids": {
+            "billing": "b-7"
+          },
+          "metadata": {
+            "tier": "gold"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "id": "id-alice",
+          "organization_id": "acme",
+          "display_name": "Alice",
+          "email": "alice@example.com",
+          "phone": "+15550000001",
+          "channel_addresses": {
+            "sms": [
+              "+15550000001"
+            ],
+            "email": [
+              "alice@example.com"
+            ]
+          },
+          "external_id": "crm-17",
+          "external_ids": {
+            "billing": "b-7"
+          },
+          "metadata": {
+            "tier": "gold"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_identity",
+      "identity": {
+        "id": "id-bare"
+      },
+      "expect": {
+        "result": {
+          "id": "id-bare"
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-bare",
+      "expect": {
+        "result": {
+          "id": "id-bare",
+          "organization_id": null,
+          "display_name": null,
+          "email": null,
+          "phone": null,
+          "external_id": null
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-setup",
+      "expect": {
+        "result": {
+          "id": "id-setup",
+          "organization_id": "acme",
+          "display_name": "Seeded",
+          "channel_addresses": {
+            "sms": [
+              "+15550000009"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_identity",
+      "identity_id": "id-nobody",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

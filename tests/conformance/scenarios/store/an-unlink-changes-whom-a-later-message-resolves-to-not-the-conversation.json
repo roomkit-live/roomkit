@@ -1,0 +1,188 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-unlink-changes-whom-a-later-message-resolves-to-not-the-conversation",
+  "title": "An unlink changes which identity a later message resolves to, and leaves the room, bindings and participants that named the address as they are",
+  "rules": [
+    "§5.6",
+    "§10.4",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-5.6-007"
+  ],
+  "notes": "Python: tests/test_store_identity_scoping.py::TestUnlinkingAnAddress::test_the_conversations_that_named_the_address_stay_as_they_are. The scripted router reads the identity the kit resolved the sender's address to (§10.4), before and after the unlink.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "identities": [
+      {
+        "id": "id-alice",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "+15550000001",
+            "channel_id": "sms",
+            "display_name": "Alice",
+            "identification": "identified",
+            "identity_id": "id-alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Before"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.unlink_address",
+      "identity_id": "id-alice",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms",
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "room-1",
+      "include_left": true,
+      "expect": {
+        "result": [
+          {
+            "id": "+15550000001",
+            "channel_id": "sms",
+            "display_name": "Alice",
+            "identification": "identified",
+            "identity_id": "id-alice"
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "After"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "router_calls": [
+      {
+        "channel_id": "sms",
+        "participant_id": "+15550000001",
+        "identity_id": "id-alice"
+      },
+      {
+        "channel_id": "sms",
+        "participant_id": "+15550000001",
+        "identity_id": null
+      }
+    ],
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Before"
+          }
+        },
+        {
+          "content": {
+            "body": "After"
+          }
+        }
+      ]
+    }
+  }
+}

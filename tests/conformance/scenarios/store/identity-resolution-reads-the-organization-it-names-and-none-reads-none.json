@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/identity-resolution-reads-the-organization-it-names-and-none-reads-none",
+  "title": "Identity resolution reads the identities of the organization it names, and with none the identities of no organization only",
+  "rules": [
+    "§5.6",
+    "§14.1",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-5.6-004"
+  ],
+  "notes": "Python: tests/test_store_identity_scoping.py::TestInMemory and TestSQLite. One address is held in acme and by an identity of no organization; another in acme alone.",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-acme",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      },
+      {
+        "id": "id-none",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      },
+      {
+        "id": "id-acme-only",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-acme",
+          "organization_id": "acme"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "expect": {
+        "result": {
+          "id": "id-none",
+          "organization_id": null
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000001",
+      "organization_id": "beta",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "id-acme-only"
+        }
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.resolve_identity",
+      "channel_type": "sms",
+      "address": "+15550000002",
+      "organization_id": "beta",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

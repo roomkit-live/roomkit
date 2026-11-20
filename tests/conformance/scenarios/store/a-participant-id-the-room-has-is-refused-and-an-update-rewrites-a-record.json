@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-participant-id-the-room-has-is-refused-and-an-update-rewrites-a-record",
+  "title": "A store refuses a participant under an id the room has, keeping the record it holds, and update_participant rewrites a record whole",
+  "rules": [
+    "§5.5",
+    "§14.1",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-5.5-029"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py::test_a_participant_is_added_once. The refused addition names another channel and name, so a store that replaced or merged the record shows it; the update leaves out the metadata the record held, so a store that merged shows it. An update is no creation: a record the room does not hold is refused (participant not found, §14.3), and the room keeps two participants.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "p1",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "display_name": "Ann",
+        "metadata": {
+          "seat": 1
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "p1",
+          "display_name": "Ann"
+        }
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "p1",
+        "room_id": "room-1",
+        "channel_id": "ws",
+        "display_name": "Bob"
+      },
+      "expect": {
+        "error": "participant_exists"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "p2",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "display_name": "Cleo",
+        "metadata": {
+          "seat": 2
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "p2",
+          "display_name": "Cleo"
+        }
+      }
+    },
+    {
+      "call": "store.update_participant",
+      "participant": {
+        "id": "p2",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "display_name": "Dan"
+      },
+      "expect": {
+        "result": {
+          "id": "p2",
+          "display_name": "Dan",
+          "metadata": {
+            "seat": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.update_participant",
+      "participant": {
+        "id": "p3",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "display_name": "Eve"
+      },
+      "expect": {
+        "error": "participant_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "p1",
+            "room_id": "room-1",
+            "channel_id": "sms",
+            "display_name": "Ann",
+            "connected_via": [
+              "sms"
+            ],
+            "metadata": {
+              "seat": 1
+            }
+          },
+          {
+            "id": "p2",
+            "room_id": "room-1",
+            "channel_id": "sms",
+            "display_name": "Dan",
+            "metadata": {
+              "seat": {
+                "$absent": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
