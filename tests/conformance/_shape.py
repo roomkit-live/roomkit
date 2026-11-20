@@ -68,6 +68,7 @@ from tests.conformance._strategies import (
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._thinking import channel_problems as thinking_problems
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
+from tests.conformance._voice import VOICE_ARGUMENTS
 
 # `rules` and `requirements` cite the RFC for the checker; the runner ignores them.
 TOP = {
@@ -614,7 +615,7 @@ CALLS |= ROUTING_ARGUMENTS | ADDRESSING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
-CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS
+CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS | VOICE_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS

@@ -124,6 +124,7 @@ from tests.conformance._verification import (
     opened_labels,
     verification_options,
 )
+from tests.conformance._voice import VOICE_CALLS, VoiceFixture, voice_payload
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
 LEVEL_0_EVENTS = (
@@ -253,6 +254,7 @@ class Harness:
         self._lock_manager = lock_manager
         self._open_process = open_process
         self.gates = Gates()
+        self.voice_fixtures: dict[str, VoiceFixture] = {}
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
         self._labels: dict[str, str | None] = {}
@@ -461,6 +463,10 @@ class Harness:
             "context_room": context.room.model_dump(mode="json"),
             "recent_events": _recent_ids(context),
         }
+        if trigger in {"before_tts", "after_tts"} and isinstance(payload, str):
+            call["voice"] = {"text": payload}
+        elif (voice := voice_payload(payload)) is not None:
+            call["voice"] = voice
         if isinstance(payload, ProtocolTrace):
             raw = payload.raw
             call["trace"] = {
@@ -833,7 +839,7 @@ class Harness:
         calls |= SKILL_REGISTRY_CALLS
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS
-        calls |= BELOW_KIT_CALLS
+        calls |= BELOW_KIT_CALLS | VOICE_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

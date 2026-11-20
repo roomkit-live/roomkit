@@ -32,6 +32,7 @@ from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
 from roomkit.speaking import SpeakDecisionEvent
 from roomkit.tools import current_response_metadata
+from roomkit.voice.events import TranscriptionEvent
 from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
@@ -694,7 +695,7 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
             data["event"] = patched_generation(payload, data["event"])
         elif isinstance(payload, ToolRoundEvent):
             data["event"] = patched_tool_round(payload, data["event"])
-        elif isinstance(payload, PendingInputEvent):
+        elif isinstance(payload, PendingInputEvent | TranscriptionEvent):
             data["event"] = dataclasses.replace(payload, **data["event"])
     data["injected_events"] = [
         InjectedEvent(
