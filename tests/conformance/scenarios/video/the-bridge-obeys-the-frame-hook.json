@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/the-bridge-obeys-the-frame-hook",
+  "title": "A bridge drops the blocked frame and forwards the replacement to its peer",
+  "rules": [
+    "§9.2",
+    "§12.8"
+  ],
+  "requirements": [
+    "RK-9.2-081"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "filter",
+        "trigger": "before_bridge_video",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "private frame"
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "frame": {
+                  "data": "BwgJ"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "bob": [
+              "BwgJ"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "filter": [
+        {
+          "video": {
+            "participant_id": "alice",
+            "sequence": 1
+          }
+        },
+        {
+          "video": {
+            "participant_id": "alice",
+            "sequence": 2
+          }
+        }
+      ]
+    }
+  }
+}

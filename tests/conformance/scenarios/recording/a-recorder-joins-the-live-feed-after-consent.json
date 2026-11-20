@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-recorder-joins-the-live-feed-after-consent",
+  "title": "An existing feed reaches the new recorder only after its start observer finishes",
+  "rules": [
+    "§9.2",
+    "§9.3",
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-9.2-053",
+    "RK-9.3-037"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "consent",
+        "trigger": "on_recording_started",
+        "execution": "async",
+        "reactions": [
+          {},
+          {
+            "gate": "consent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "first"
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic"
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "second",
+      "background": true,
+      "as": "starting"
+    },
+    {
+      "wait_for": "consent"
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.read",
+      "recorder": "first",
+      "expect": {
+        "result": [
+          "AQI="
+        ]
+      }
+    },
+    {
+      "call": "recording.read",
+      "recorder": "second",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "open": "consent"
+    },
+    {
+      "await": "starting"
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AwQ="
+    },
+    {
+      "call": "recording.read",
+      "recorder": "second",
+      "expect": {
+        "result": [
+          "AwQ="
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "consent": [
+        {
+          "recording": {
+            "recording_id": "first",
+            "room_id": "r1"
+          }
+        },
+        {
+          "recording": {
+            "recording_id": "second",
+            "room_id": "r1"
+          }
+        }
+      ]
+    }
+  }
+}

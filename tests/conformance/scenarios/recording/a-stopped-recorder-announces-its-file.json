@@ -1,0 +1,75 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-stopped-recorder-announces-its-file",
+  "title": "Stopping a room recording announces the result while its observer can still be running",
+  "rules": [
+    "§9.2",
+    "§9.3",
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-9.2-054"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "review",
+        "trigger": "on_recording_stopped",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "review"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "meeting"
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "meeting",
+            "url": "mock://meeting"
+          }
+        ]
+      }
+    },
+    {
+      "wait_for": "review"
+    },
+    {
+      "open": "review"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "review": [
+        {
+          "recording": {
+            "recording_id": "meeting",
+            "room_id": "r1",
+            "urls": [
+              "mock://meeting"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

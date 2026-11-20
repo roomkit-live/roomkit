@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-vision-hook-controls-the-result-that-is-published",
+  "title": "Only the vision analysis admitted by the hook is published with its edits",
+  "rules": [
+    "§9.2",
+    "§12.8"
+  ],
+  "requirements": [
+    "RK-9.2-086"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "screen",
+        "trigger": "on_vision_result",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "private frame"
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "description": "public view",
+                "confidence": 0.7,
+                "text": "public text",
+                "labels": [
+                  "public"
+                ],
+                "faces": [
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "confidence": 0.9
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "secret",
+        "draft"
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "vision": [
+            {
+              "description": "public view",
+              "confidence": 0.7,
+              "text": "public text",
+              "labels": [
+                "public"
+              ],
+              "faces": 1
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "screen": [
+        {
+          "video": {
+            "participant_id": "alice",
+            "description": "secret"
+          }
+        },
+        {
+          "video": {
+            "participant_id": "alice",
+            "description": "draft"
+          }
+        }
+      ]
+    }
+  }
+}

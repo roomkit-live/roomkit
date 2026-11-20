@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-video-session-announces-its-start-and-end",
+  "title": "Starting and ending the video transport announces the same participant",
+  "rules": [
+    "§9.2",
+    "§12.8"
+  ],
+  "requirements": [
+    "RK-9.2-082",
+    "RK-9.2-083"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "began",
+        "trigger": "on_video_session_started",
+        "execution": "async",
+        "reactions": []
+      },
+      {
+        "name": "ended",
+        "trigger": "on_video_session_ended",
+        "execution": "async",
+        "reactions": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "video.disconnect",
+      "channel_id": "camera",
+      "participant_id": "alice"
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "began",
+      "ended"
+    ],
+    "hooks": {
+      "began": [
+        {
+          "video": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "ended": [
+        {
+          "video": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

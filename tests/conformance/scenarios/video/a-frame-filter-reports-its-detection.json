@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-frame-filter-reports-its-detection",
+  "title": "A filter detection names the session and frame that produced it",
+  "rules": [
+    "§9.2",
+    "§12.8"
+  ],
+  "requirements": [
+    "RK-9.2-089"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "detected",
+        "trigger": "on_video_detection",
+        "execution": "async",
+        "reactions": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "detections": [
+        {
+          "frame_sequence": 2,
+          "kind": "face_touch",
+          "labels": [
+            "cheek"
+          ],
+          "confidence": 0.9,
+          "metadata": {
+            "side": "left"
+          }
+        }
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "detected": [
+        {
+          "video": {
+            "participant_id": "alice",
+            "frame_sequence": 2,
+            "kind": "face_touch",
+            "labels": [
+              "cheek"
+            ],
+            "confidence": 0.9,
+            "metadata": {
+              "side": "left"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
