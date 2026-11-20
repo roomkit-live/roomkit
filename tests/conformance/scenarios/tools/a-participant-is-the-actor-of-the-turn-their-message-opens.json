@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-participant-is-the-actor-of-the-turn-their-message-opens",
+  "title": "A tool of the turn a participant's message opens reads their id as the turn's actor",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "The room's participant p-alice writes through the channel that reaches her. current_tool_actor_id() answers her id: what a tool gate compares with the id it expects (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "sms",
+            "display_name": "Alice",
+            "connected_via": [
+              "sms"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "p-alice",
+        "content": {
+          "type": "text",
+          "body": "Send the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"p-alice\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

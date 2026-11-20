@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-participant-s-id-on-a-channel-that-does-not-reach-them-names-no-actor",
+  "title": "A tool of the turn opened under a participant's id on a channel that does not reach them reads no actor",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "p-alice is reached through sms only; a sender writes under her id on ws. An id names its participant only on a channel they are reached through (§5.5), so current_tool_actor_id() answers nothing rather than name her. An empty actor therefore does not single out the host's turns: a sender can produce it (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "sms",
+            "display_name": "Alice",
+            "connected_via": [
+              "sms"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "p-alice",
+        "content": {
+          "type": "text",
+          "body": "Send the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "null"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

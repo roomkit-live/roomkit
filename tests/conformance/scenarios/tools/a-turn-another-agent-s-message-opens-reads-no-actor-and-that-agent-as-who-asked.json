@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-another-agent-s-message-opens-reads-no-actor-and-that-agent-as-who-asked",
+  "title": "A tool of the turn another agent's answer opens reads no actor, and that agent's label as who asked",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "The agent first answers a person; its answer wakes the agent second. The kit's chains stop at depth 3, so second's own answer wakes no one and first is asked once. An agent's event names no participant, so second's turn reads an empty actor, while current_tool_requester() names the agent whose message it answers, @first. An empty actor therefore does not single out the host's turns (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "first",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Over to you."
+            }
+          ]
+        }
+      },
+      {
+        "id": "second",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          },
+          {
+            "name": "who",
+            "description": "Who asked.",
+            "returns_requester": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "who",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "first",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "second",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Send the report."
+        },
+        "addressed_to": [
+          "first"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "first": [
+        {}
+      ],
+      "second": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "null"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "\"@first\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

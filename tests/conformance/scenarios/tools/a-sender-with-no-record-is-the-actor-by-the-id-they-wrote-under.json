@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-sender-with-no-record-is-the-actor-by-the-id-they-wrote-under",
+  "title": "A tool of the turn opened by a sender the room has no record of reads the id they wrote under as the turn's actor",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "The room holds no participant for +15550001. current_tool_actor_id() answers the id the message came under: it names the turn's sender and authenticates no one (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001",
+        "content": {
+          "type": "text",
+          "body": "Send the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"+15550001\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

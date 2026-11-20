@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-the-host-opens-with-send-event-reads-no-actor",
+  "title": "A tool of the turn opened by an event the host commits with send_event, naming no participant, reads no actor",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "send_event() commits an event from a channel with no sender unless the host names one. The turn it opens reads an empty actor, where a deliver()'s reads system (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Send the report."
+      },
+      "addressed_to": [
+        "agent"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "null"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

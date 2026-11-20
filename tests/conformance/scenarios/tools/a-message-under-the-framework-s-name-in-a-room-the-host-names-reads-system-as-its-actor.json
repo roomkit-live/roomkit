@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-message-under-the-framework-s-name-in-a-room-the-host-names-reads-system-as-its-actor",
+  "title": "A tool of the turn opened by a message under the sender system, in a room its host names, reads system as the turn's actor, as a turn deliver opens does",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-001"
+  ],
+  "notes": "A message under the framework's own sender is refused when it is routed (routing/a-routed-message-under-the-framework-s-name-is-refused) and enters when its host names the room: the room is the host's choice, and the host sets the sender itself, never from what a client sent (§10.4). Its turn reads system as its actor, as a deliver()'s does, so the name is the host's only as far as that rule is kept (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "Send the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"system\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
