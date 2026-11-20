@@ -161,6 +161,10 @@ def error_of(error: Exception) -> dict[str, Any]:
         # A verb of the turn's host refused once the turn is over (RFC
         # §10.6.5), its error naming the verb first.
         return {"name": "needs_turn", "reason": str(error).split(" needs a turn: ", 1)[0]}
+    if isinstance(error, RuntimeError) and str(error) == "Released before an answer arrived":
+        # A human-input request given up before an answer, as its waiter
+        # reads it: withdrawn with its turn, or released (RFC §10.6.5).
+        return {"name": "input_released"}
     if isinstance(error, TypeError) and "not a strategy stored with the room" in str(error):
         return {"name": "kind_not_stored"}
     if isinstance(error, ChannelNotBoundError):

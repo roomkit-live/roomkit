@@ -70,12 +70,13 @@ _LOCAL_TURN_CONTEXT = {
 
 def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
     """Whether an intelligence channel's turn makes a kit call while it runs;
-    a verb of its turn's host (``host.*``) and a read of what an executor did
-    (``executor.calls``) are none."""
+    a verb of its turn's host (``host.*``), a read of what an executor did
+    (``executor.calls``) and a method of a human-input handler the runner
+    holds (``human_input.*``) are none."""
     for channel in scenario.get("setup", {}).get("channels", []):
         intelligence = channel.get("category", "intelligence" if channel["type"] == "ai" else "")
         if intelligence == "intelligence" and any(
-            not action["call"].startswith(("host.", "executor.calls"))
+            not action["call"].startswith(("host.", "executor.calls", "human_input."))
             for reaction in channel.get("on_event", [])
             for action in reaction.get("do", [])
         ):

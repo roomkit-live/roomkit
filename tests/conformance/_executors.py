@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from roomkit import RoomKit
+from roomkit import RoomKit, current_turn_id
 from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType
@@ -176,7 +176,9 @@ class Executors:
         self._builds[(executor_id, channel_id)] = build
         note = partial(harness.record_executor, executor_id, channel_id, build)
         note("built", None)
-        _record_calls(channel, note)
+        turns: dict[str, dict[str, Any]] = {}
+        _record_calls(channel, note, turns)
+        _record_tools(channel, turns)
         return channel
 
     def running(self, executor_id: str) -> _ScenarioExecutor:
@@ -232,10 +234,15 @@ def _backend(bounds: TurnTimeouts | None) -> TurnBackend:
     return backend
 
 
-def _record_calls(channel: Channel, note: Callable[..., None]) -> None:
+def _record_calls(
+    channel: Channel,
+    note: Callable[..., dict[str, Any] | None],
+    turns: dict[str, dict[str, Any]],
+) -> None:
     """Has *channel* report each call its executor makes on it, as it starts;
     a detach from a room this build never saw let go of nothing, and is not
-    reported (RFC §10.6.2)."""
+    reported (RFC §10.6.2). A turn's record, kept in *turns* by its id,
+    gathers the calls its host's tool handler is handed (``tools``)."""
     seen: set[str | None] = set()
 
     def recorded(
@@ -246,7 +253,9 @@ def _record_calls(channel: Channel, note: Callable[..., None]) -> None:
         async def reporting(*args: Any) -> Any:
             room_id = room_of(*args)
             if name != "on_room_detached" or room_id in seen:
-                note(name, room_id, **{key: reader(*args) for key, reader in details.items()})
+                item = note(name, room_id, **{key: of(*args) for key, of in details.items()})
+                if name == "on_event":
+                    _keep_turn(item, turns)
             seen.add(room_id)
             return await call(*args)
 
@@ -257,6 +266,31 @@ def _record_calls(channel: Channel, note: Callable[..., None]) -> None:
     recorded("on_room_detached", lambda room_id, *_: room_id)
     recorded("channel_call", lambda room_id, *_: room_id, verb=lambda _, verb, *__: verb)
     recorded("close", lambda: None)
+
+
+def _keep_turn(item: dict[str, Any] | None, turns: dict[str, dict[str, Any]]) -> None:
+    """Keeps a turn's record under the turn's id, to gather its ``tools``."""
+    turn_id = current_turn_id()
+    if item is not None and turn_id is not None:
+        item["tools"] = []
+        turns[turn_id] = item
+
+
+def _record_tools(channel: Channel, turns: dict[str, dict[str, Any]]) -> None:
+    """Has the host's tool handler of *channel*, an AI channel's
+    ``tool_handler``, note each call it is handed under the turn it serves
+    (README, ``executors``: ``tools``)."""
+    handler = getattr(channel, "tool_handler", None)
+    if handler is None:
+        return
+
+    async def noting(name: str, arguments: dict[str, Any]) -> Any:
+        turn_id = current_turn_id()
+        if turn_id is not None and turn_id in turns:
+            turns[turn_id]["tools"].append(name)
+        return await handler(name, arguments)
+
+    channel.tool_handler = noting  # ty: ignore[invalid-assignment]
 
 
 async def _start(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:

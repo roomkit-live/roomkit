@@ -16,7 +16,13 @@ from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from roomkit import RoomKit, RoomLockManager, ThinkingEvent, current_turn_host
+from roomkit import (
+    HumanInputHandler,
+    RoomKit,
+    RoomLockManager,
+    ThinkingEvent,
+    current_turn_host,
+)
 from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
@@ -270,6 +276,9 @@ class Harness:
         self.mcp = MCPServers()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
+        # The human-input handler the runner holds per channel id (README,
+        # `human_input.create`), made at the first call naming it.
+        self.human_inputs: dict[str, HumanInputHandler] = {}
         setup = scenario.get("setup", {})
         self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
@@ -411,14 +420,16 @@ class Harness:
         call: str,
         room_id: str | None,
         **details: Any,
-    ) -> None:
-        """One call an executor made on a channel it built (README, ``executors``)."""
+    ) -> dict[str, Any] | None:
+        """One call an executor made on a channel it built (README,
+        ``executors``): its record, None before the steps."""
         if not self._recording:
-            return
+            return None
         item = {"call": call, "channel_id": channel_id, "build": build, **details}
         if room_id is not None:
             item["room_id"] = room_id
         self.executors.calls.setdefault(executor_id, []).append(item)
+        return item
 
     def executor_calls(self, executor_id: str) -> list[dict[str, Any]]:
         """What an executor did so far (README, ``executors``)."""
@@ -612,6 +623,8 @@ class Harness:
             for kit in self._open_kits():
                 await kit.close()
             await self.executors.close_all()
+            for handler in self.human_inputs.values():
+                await handler.close()
             await self.mcp.close()
             self.auditors.close()
         return self._problems + compare(
