@@ -81,6 +81,7 @@ class Observed:
     acp_mcp_requests: dict[str, list[Any]] = field(default_factory=dict)
     acp_context_requests: dict[str, list[Any]] = field(default_factory=dict)
     executors: dict[str, list[Any]] = field(default_factory=dict)
+    turn_ends: dict[str, list[Any]] = field(default_factory=dict)
     participants: dict[str, list[Any]] = field(default_factory=dict)
     resolver: list[dict[str, Any]] = field(default_factory=list)
     router_calls: list[dict[str, Any]] = field(default_factory=list)

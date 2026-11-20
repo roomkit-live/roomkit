@@ -234,6 +234,7 @@ CHANNEL = {
     "memory",
     "agent",
     "declared",
+    "holds_end",
     "verbs",
 }
 ADDRESSES = {"normalizes", "conversation_key", "recipient_at"}
@@ -492,6 +493,7 @@ EXPECT = {
     "tool_audit",
     "session_audit",
     "executors",
+    "turn_ends",
     "script_executors",
     "sandbox_executors",
     "continuations",

@@ -149,6 +149,9 @@ class _Comparison:
         for executor_id, expected in self.expect.get("executors", {}).items():
             actual = self.observed.executors.get(executor_id, [])
             self._check(expected, actual, f"executors.{executor_id}")
+        for channel_id, expected in self.expect.get("turn_ends", {}).items():
+            actual = self.observed.turn_ends.get(channel_id, [])
+            self._check(expected, actual, f"turn_ends.{channel_id}")
         for channel_id, expected in self.expect.get("script_executors", {}).items():
             actual = self.observed.script_executors.get(channel_id, MISSING)
             self._check(expected, actual, f"script_executors.{channel_id}")

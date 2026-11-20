@@ -21,6 +21,7 @@ from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts
 from roomkit.turns.base import ExecutorLink, TurnBackend
 from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
+from tests.conformance._held_ends import HeldEnds
 from tests.conformance._script import GATE_BOUND_S, hook_handler
 
 if TYPE_CHECKING:
@@ -98,13 +99,18 @@ class Executors:
         self.calls: dict[str, list[dict[str, Any]]] = {}
         """What each executor did, in order (README, ``executors``)."""
         self._published = asyncio.Semaphore(0)
+        self.held_ends = HeldEnds(setup.get("channels", []), harness.gates.hold)
+        """The channels whose turns hold their end once cut (README, ``holds_end``)."""
 
     def kit_options(self) -> dict[str, Any]:
         """The turn backend the kit is built with, when the scenario has
-        executors of its own or bounds a turn; the kit's default otherwise."""
-        if not self._specs and self._bounds is None:
+        executors of its own, bounds a turn or holds a turn's end; the kit's
+        default otherwise."""
+        if not self._specs and self._bounds is None and not self.held_ends:
             return {}
         self._backend = _backend(self._bounds)
+        if self.held_ends:
+            self.held_ends.wrap(self._backend)
         return {"turn_backend": self._backend}
 
     async def start_all(self) -> None:

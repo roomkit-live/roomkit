@@ -84,6 +84,10 @@ class HandleWaitsForItselfError(Exception):
     """A handle's cancel from where its cleanup would wait for its caller."""
 
 
+class CleanupIncompleteError(Exception):
+    """A handle's cancel or wait that finds its cleanup not known to be done."""
+
+
 # The Python class of each error the suite names (README, "Errors").
 _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (KitClosedError, "kit_closed"),
@@ -107,6 +111,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (TurnLinkError, "turn_link"),
     (ValueError, "invalid_argument"),
     (HandleWaitsForItselfError, "waits_for_itself"),
+    (CleanupIncompleteError, "cleanup_incomplete"),
     (StoreFaultError, "store_failed"),
 )
 
@@ -269,10 +274,15 @@ async def _delivery_cancel(kit: RoomKit, harness: Harness, spec: Mapping[str, An
         return await handle.cancel(**options)
     except RuntimeError as error:
         raise HandleWaitsForItselfError(str(error)) from error
+    except TimeoutError as error:
+        raise CleanupIncompleteError(str(error)) from error
 
 
 async def _delivery_wait(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    return await harness.handles[spec["of"]].wait()
+    try:
+        return await harness.handles[spec["of"]].wait()
+    except TimeoutError as error:
+        raise CleanupIncompleteError(str(error)) from error
 
 
 _SEND_ARGS = (

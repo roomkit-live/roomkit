@@ -1124,6 +1124,9 @@ class Harness:
         self.observed.executors = {
             executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
         }
+        self.observed.turn_ends = {
+            channel_id: list(ends) for channel_id, ends in self.executors.held_ends.ends.items()
+        }
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)
