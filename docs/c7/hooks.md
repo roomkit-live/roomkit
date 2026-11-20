@@ -39,6 +39,27 @@ The channel filters read the turn's agent: `channel_ids={"support"}` keeps a
 turn hook to that agent's turns, and `channel_types` to agents of a type when
 the trigger's payload carries it (a tool call, an input request).
 
+**Who asked.** A tool hook of an `AIChannel` runs under the call's turn, so it
+reads the turn's author with `roomkit.tools.current_tool_actor_id()`: the id
+of the participant who wrote the message the turn answers, never a name the
+model was shown. It names the turn and authenticates no one: resolve the
+participant before trusting it. `None` is a turn with no author (a system
+injection, a scheduled run), which a gate on a person's request refuses:
+
+```python
+from roomkit.tools import current_tool_actor_id
+
+@kit.hook(HookTrigger.BEFORE_TOOL_USE, name="email_gate")
+async def email_gate(event, ctx) -> HookResult:
+    if event.name == "send_email" and current_tool_actor_id() != "p-alice":
+        return HookResult.block("Only Alice may ask for an email.")
+    return HookResult.allow()
+```
+
+In the gate of a realtime voice channel it answers `None` today (the tool's
+handler reads the session's participant): read `event.session.participant_id`
+there.
+
 An agent the kit holds by its declaration alone
 (`kit.register_channel(ChannelDeclaration(...))`) runs its turns on another
 executor, where a hook on the kit never fires. So the kit refuses, with a
