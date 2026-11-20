@@ -112,10 +112,45 @@ def test_closed_schema_still_accepts_its_own_arguments() -> None:
 
 def test_closed_schema_reports_missing_required_before_unknown() -> None:
     # A call that is both incomplete and polluted names the missing argument
-    # first: supplying it is what unblocks the call.
+    # first: supplying it is what unblocks the call. The unknown one follows
+    # in the same answer: it is often the missing one under another name.
     err = validate_tool_arguments(_CLOSED_SCHEMA, {"web_search_depth": "2"})
-    assert err is not None
-    assert "query" in err
+    assert err == (
+        "missing required argument 'query'; unknown argument 'web_search_depth' "
+        "(this tool accepts: max_results, query, region)"
+    )
+
+
+def test_every_violation_is_named_in_one_answer() -> None:
+    # RMK-1848: a model sent ``objective_title`` for ``title`` three times,
+    # reading each time that ``title`` was missing and never that its own
+    # name was unknown. Several of a kind share one segment, and the accepted
+    # names are given once.
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "title": {"type": "string"},
+            "steps": {"type": "array"},
+            "count": {"type": "integer"},
+            "draft": {"type": "boolean"},
+        },
+        "required": ["title", "steps"],
+    }
+    call = {"name": "Ship", "draft": "maybe", "goal": "Ship it", "count": "many"}
+    assert validate_tool_arguments(schema, call) == (
+        "missing required arguments 'title', 'steps'; "
+        "unknown arguments 'name', 'goal' (this tool accepts: count, draft, steps, title); "
+        "argument 'draft' must be of type boolean; "
+        "argument 'count' must be of type integer"
+    )
+
+
+def test_an_open_schema_names_what_it_checks_and_passes_the_rest() -> None:
+    # Nothing closes ``_SCHEMA``: the unknown argument passes, the missing
+    # one and the one of another type are both named.
+    err = validate_tool_arguments(_SCHEMA, {"days": "three", "extra": 9})
+    assert err == "missing required argument 'city'; argument 'days' must be of type integer"
 
 
 # A hub tool: one tool per domain, ``{action, params}``, closed by the schema

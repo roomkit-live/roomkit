@@ -106,7 +106,8 @@ async def test_a_call_to_an_orchestration_tool_is_checked_against_its_server() -
         await asyncio.sleep(0.01)
     await kit.close()
 
-    assert "missing required argument 'target'" in provider.tool_results[0][2]
+    refused = "missing required arguments 'target', 'reason', 'summary'"
+    assert refused in provider.tool_results[0][2]
 
 
 ORDER = AITool(

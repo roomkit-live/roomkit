@@ -52,41 +52,70 @@ def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any
     when the schema declares ``additionalProperties: false`` — that no unknown
     argument was supplied.
 
-    Returns a human-readable error string on the first violation, or ``None`` if
-    the arguments pass (or the schema is empty / not enforceable).
+    Returns a human-readable error string naming every violation, or ``None``
+    if the arguments pass (or the schema is empty / not enforceable). The
+    violations come in one answer, joined by ``"; "``: the required arguments
+    missing, the unknown ones, then each argument of another type. A model
+    that renamed an argument reads the missing name and its own beside it;
+    told of the first alone, it re-issues the call with the same wrong name.
     """
     if not isinstance(parameters, dict):
         return None
     if not isinstance(arguments, dict):
         return f"expected an object of arguments, got {type(arguments).__name__}"
+    violations = [
+        *_missing_arguments(parameters, arguments),
+        *_unfit_arguments(parameters, arguments),
+    ]
+    return "; ".join(violations) or None
 
+
+def _named(what: str, names: list[str]) -> str:
+    """*what* said of the quoted *names*: ``what 'a'``, or ``whats 'a', 'b'``."""
+    quoted = ", ".join(f"'{name}'" for name in names)
+    return f"{what}{'s' if len(names) > 1 else ''} {quoted}"
+
+
+def _missing_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
+    """The ``required`` arguments the call lacks, as one violation, in the
+    schema's order."""
     required = parameters.get("required")
-    if isinstance(required, list):
-        for field in required:
-            if field not in arguments:
-                return f"missing required argument '{field}'"
+    if not isinstance(required, list):
+        return []
+    missing = [field for field in required if field not in arguments]
+    return [_named("missing required argument", missing)] if missing else []
 
+
+def _unfit_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
+    """The supplied arguments the schema's ``properties`` do not take: the
+    unknown ones as one violation, then one per argument of another type, each
+    in the call's order."""
     properties = parameters.get("properties")
-    if isinstance(properties, dict):
-        closed = parameters.get("additionalProperties") is False
-        for key, value in arguments.items():
-            spec = properties.get(key)
-            if not isinstance(spec, dict):
-                # An unknown argument is a violation only when the schema
-                # closed itself (``additionalProperties: false`` — what FastMCP
-                # emits for a typed tool function). Answering here is what makes
-                # the failure actionable: the model invented the argument, so
-                # the reply has to name the real ones. Left to the tool, the
-                # same call comes back as an opaque framework error the model
-                # cannot correct from, and it re-issues the call unchanged.
-                if closed:
-                    known = ", ".join(sorted(properties)) or "none"
-                    return f"unknown argument '{key}' (this tool accepts: {known})"
-                continue  # open schema — additional properties are allowed
-            json_type = spec.get("type")
-            if isinstance(json_type, str) and not _matches_type(value, json_type):
-                return f"argument '{key}' must be of type {json_type}"
-    return None
+    if not isinstance(properties, dict):
+        return []
+    closed = parameters.get("additionalProperties") is False
+    unknown: list[str] = []
+    mistyped: list[str] = []
+    for key, value in arguments.items():
+        spec = properties.get(key)
+        if not isinstance(spec, dict):
+            # An unknown argument is a violation only when the schema
+            # closed itself (``additionalProperties: false`` — what FastMCP
+            # emits for a typed tool function). Answering here is what makes
+            # the failure actionable: the model invented the argument, so
+            # the reply has to name the real ones. Left to the tool, the
+            # same call comes back as an opaque framework error the model
+            # cannot correct from, and it re-issues the call unchanged.
+            if closed:
+                unknown.append(key)
+            continue  # open schema — additional properties are allowed
+        json_type = spec.get("type")
+        if isinstance(json_type, str) and not _matches_type(value, json_type):
+            mistyped.append(f"argument '{key}' must be of type {json_type}")
+    if not unknown:
+        return mistyped
+    known = ", ".join(sorted(properties)) or "none"
+    return [f"{_named('unknown argument', unknown)} (this tool accepts: {known})", *mistyped]
 
 
 # The container property a hub tool declares for its own arguments. A hub tool
