@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-use-an-undeclared-worker-only-on-its-process",
+  "title": "Only the serving process can place a turn on an undeclared worker",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-007"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Local answer."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "kit": "peer"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Remote"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "coder"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Local"
+        }
+      },
+      "kit": "peer"
+    }
+  ],
+  "expect": {
+    "executors": {
+      "worker": [
+        {
+          "call": "built",
+          "channel_id": "coder"
+        },
+        {
+          "call": "on_event",
+          "room_id": "room"
+        }
+      ]
+    },
+    "timeline": {
+      "room": [
+        {
+          "content": {
+            "body": "Remote"
+          }
+        },
+        {
+          "content": {
+            "body": "Local"
+          }
+        },
+        {
+          "content": {
+            "body": "Local answer."
+          }
+        }
+      ]
+    }
+  }
+}

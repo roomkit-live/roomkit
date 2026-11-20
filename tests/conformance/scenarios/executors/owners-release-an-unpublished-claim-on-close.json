@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-release-an-unpublished-claim-on-close",
+  "title": "A new owner publishes the presence its predecessor claimed but could not publish",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-033"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ],
+        "kit": "main"
+      },
+      {
+        "id": "look_peer",
+        "hosts": [],
+        "started": false,
+        "kit": "peer"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ],
+    "kit": {
+      "turn_backend_faults": true,
+      "shared_realtime": true
+    }
+  },
+  "steps": [
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "room",
+      "types": [
+        "presence_online"
+      ],
+      "gate": "delivered"
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "publish_presence",
+      "enabled": true,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room",
+      "channel_id": "coder",
+      "category": "intelligence",
+      "kit": "peer"
+    },
+    {
+      "call": "close",
+      "kit": "peer"
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "publish_presence",
+      "enabled": false,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "restart_process": "peer"
+    },
+    {
+      "call": "executor.start",
+      "executor": "look_peer"
+    },
+    {
+      "wait_for": "delivered"
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "room": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}

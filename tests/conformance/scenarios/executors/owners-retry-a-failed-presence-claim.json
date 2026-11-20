@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-retry-a-failed-presence-claim",
+  "title": "The owner retries failed claims and publications at later looks",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-033"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ],
+        "kit": "main"
+      },
+      {
+        "id": "look_main",
+        "hosts": [],
+        "started": false
+      },
+      {
+        "id": "look_again",
+        "hosts": [],
+        "started": false,
+        "kit": "main"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "turn_backend_faults": true
+    }
+  },
+  "steps": [
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "room",
+      "types": [
+        "presence_online"
+      ],
+      "gate": "delivered"
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "claim_presence",
+      "enabled": true,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "publish_presence",
+      "enabled": true,
+      "gate": "failed_publication",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "claim_presence",
+      "enabled": false,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "look_main"
+    },
+    {
+      "wait_for": "failed_publication"
+    },
+    {
+      "call": "turn_backend.fault",
+      "operation": "publish_presence",
+      "enabled": false,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "look_again"
+    },
+    {
+      "wait_for": "delivered"
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "room": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}

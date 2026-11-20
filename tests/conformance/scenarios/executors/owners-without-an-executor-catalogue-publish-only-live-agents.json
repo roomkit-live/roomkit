@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-without-an-executor-catalogue-publish-only-live-agents",
+  "title": "A backend without an executor catalogue leaves declared presence unknown",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-035"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true
+      },
+      {
+        "id": "local",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "executor_catalogue": false
+    }
+  },
+  "steps": [
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "room",
+      "types": [
+        "presence_online"
+      ]
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "room",
+      "types": [
+        "presence_offline"
+      ]
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room",
+      "channel_id": "local",
+      "category": "intelligence"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "room": [
+        {
+          "type": "presence_online",
+          "user_id": "local"
+        }
+      ]
+    }
+  }
+}

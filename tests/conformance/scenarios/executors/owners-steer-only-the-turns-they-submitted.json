@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-steer-only-the-turns-they-submitted",
+  "title": "Only the submitting owner can steer an active model turn",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-041"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "gate": "model",
+              "text": "Late."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Say hello"
+        }
+      },
+      "background": true,
+      "as": "delivery"
+    },
+    {
+      "wait_for": "model"
+    },
+    {
+      "call": "steer",
+      "room_id": "room",
+      "channel_id": "coder",
+      "directive": {
+        "type": "cancel"
+      },
+      "kit": "peer",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "call": "steer",
+      "room_id": "room",
+      "channel_id": "coder",
+      "directive": {
+        "type": "cancel"
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "model"
+    },
+    {
+      "await": "delivery"
+    }
+  ],
+  "expect": {
+    "executors": {
+      "worker": [
+        {
+          "call": "built"
+        },
+        {
+          "call": "on_event",
+          "room_id": "room"
+        }
+      ]
+    }
+  }
+}

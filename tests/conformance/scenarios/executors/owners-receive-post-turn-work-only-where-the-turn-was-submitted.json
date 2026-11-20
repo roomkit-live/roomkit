@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-receive-post-turn-work-only-where-the-turn-was-submitted",
+  "title": "A publication after the turn reaches its submitting owner alone",
+  "rules": [
+    "§10.6.9",
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-10.6.9-008"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "on_event": [
+          {
+            "after_turn": [
+              {
+                "call": "channel.publish",
+                "executor": "worker",
+                "channel_id": "coder",
+                "room_id": "room",
+                "kind": "thinking_delta",
+                "data": {
+                  "round": 0,
+                  "channel_id": "coder"
+                },
+                "gate": "later"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "submitted",
+      "types": [
+        "thinking_delta"
+      ]
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "other",
+      "types": [
+        "thinking_delta"
+      ],
+      "kit": "peer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "wait_for": "later"
+    },
+    {
+      "open": "later"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "submitted": [
+        {
+          "type": "thinking_delta",
+          "user_id": "coder"
+        }
+      ],
+      "other": []
+    }
+  }
+}

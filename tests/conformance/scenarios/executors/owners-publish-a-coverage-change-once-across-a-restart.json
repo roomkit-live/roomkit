@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/owners-publish-a-coverage-change-once-across-a-restart",
+  "title": "Two owners and a restarted owner publish only one change of coverage",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-032"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ],
+        "started": false,
+        "kit": "main"
+      },
+      {
+        "id": "look_peer",
+        "hosts": [],
+        "started": false,
+        "kit": "peer"
+      },
+      {
+        "id": "initial_peer",
+        "kit": "peer",
+        "hosts": [],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ],
+    "kit": {
+      "shared_realtime": true
+    }
+  },
+  "steps": [
+    {
+      "call": "executor.start",
+      "executor": "initial_peer",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "agent_presence",
+      "kit": "peer",
+      "room_id": "room",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "room",
+      "subscriber": "room",
+      "types": [
+        "presence_online",
+        "presence_offline"
+      ],
+      "gate": "online"
+    },
+    {
+      "call": "executor.start",
+      "executor": "worker",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "wait_for": "online"
+    },
+    {
+      "call": "agent_presence",
+      "kit": "peer",
+      "room_id": "room",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": true,
+            "executors": [
+              "worker"
+            ]
+          }
+        ]
+      },
+      "wait_for_online": "coder"
+    },
+    {
+      "call": "executor.start",
+      "executor": "look_peer",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "restart_process": "peer"
+    },
+    {
+      "call": "executor.start",
+      "executor": "look_peer",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "agent_presence",
+      "kit": "peer",
+      "room_id": "room",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": true,
+            "executors": [
+              "worker"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "room": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}
