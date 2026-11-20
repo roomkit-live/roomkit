@@ -78,8 +78,10 @@ def normalize_phone_number(address: str, default_country_code: str | None = None
 
 def _dialled(value: str) -> tuple[bool, str] | None:
     """Whether *value* is written international (``+`` or ``00``), and its
-    digits; ``None`` when anything but digits and separators is written."""
-    international = value.startswith("+") or _SEPARATORS.sub("", value).startswith("00")
+    digits; ``None`` when anything but digits and separators is written.
+    The separators are dropped first: ``(+44) 20 7946 0958`` is written with
+    ``+``."""
+    international = _SEPARATORS.sub("", value).startswith(("+", "00"))
     if international:
         value = value.replace(_TRUNK_MARK, "", 1)
     compact = _SEPARATORS.sub("", value)

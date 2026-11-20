@@ -67,6 +67,8 @@ def test_anything_else_is_returned_unchanged(address: str) -> None:
         ("001234567890123", None, "+1234567890123"),
         ("00123456789012345", None, "+123456789012345"),
         ("0123456", "33", "+33123456"),
+        ("(+44) 20 7946 0958", None, "+442079460958"),
+        ("(+44) 20 7946 0958", "1", "+442079460958"),
     ],
     ids=[
         "trunk-mark",
@@ -76,6 +78,8 @@ def test_anything_else_is_returned_unchanged(address: str) -> None:
         "00-thirteen-digits",
         "00-fifteen-digits",
         "seven-digits-are-no-short-code",
+        "plus-after-a-parenthesis",
+        "plus-after-a-parenthesis-with-a-country-code",
     ],
 )
 def test_the_rfc_rules_write_a_number(

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A phone channel reads a number written with `+` after an opening parenthesis, `(+44) 20 7946 0958`, as international, `+442079460958`: it was kept as written, or read as a national number and given the channel's country code, another person's number (RFC §5.7).
+
 - A post into a closed room that never bound the host channel emits `room_refused_event`, as the refusal of a later post does (RFC §5.1, §10.5).
 
 - PostgreSQL store initialization reads index uniqueness in its own schema, so concurrent DDL in another schema can proceed independently. Index repair also handles quoted names and predicates containing `UNIQUE`.
