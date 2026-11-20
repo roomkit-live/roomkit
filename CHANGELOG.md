@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Gemini 4 Neon (`gemini-4-neon`) in the Gemini model catalog, with its context window, reasoning support and pricing.
+
 - GPT-Live 1.1 (`gpt-live-1.1`) in the `OpenAILiveProvider` model catalog. The voice catalog gains the nine voices OpenAI added for German, French, Hindi, Japanese and Korean: `nuri`, `juni`, `flitz`, `brise`, `sillage`, `nira`, `harema`, `shida` and `noeul`.
 
 ### Changed

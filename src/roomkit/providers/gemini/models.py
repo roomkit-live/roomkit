@@ -47,7 +47,13 @@ long-context tier and no dated change, its caching implicit only. Google's
 thinking page lists it at ``low``/``medium``/``high``/``xhigh``, ``high`` by
 default and no ``minimal``; ``xhigh`` has no tag here, so a turn's ``xhigh``
 effort is sent as ``high`` and only a configured ``thinking_level`` reaches it.
-Its taking a budget of 0 is assumed from Argon's measurement, not probed.
+
+``gemini-4-neon`` (read 2026-11-20) is billed $3.00/$15.00/$0.15, with no
+long-context tier and no dated change, its caching implicit only. It takes
+Hydrogen's thinking levels with the same default, and its ``xhigh`` is not
+tagged either. Measured on both on 2026-11-20: ``minimal`` answers 400,
+``xhigh`` is taken, and a budget of 0 is taken too, though the answer still
+reports thought tokens.
 
 ``gemini-4-argon`` (read 2026-10-13) and ``gemini-4-carbon`` (read 2026-11-11)
 have no long-context tier and a scheduled increase instead of a discount:
@@ -84,12 +90,27 @@ _LEVELS_MINIMAL = [TAKES_LEVELS, TAKES_MINIMAL]
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
+        id="gemini-4-neon",
+        display_name="Gemini 4 Neon",
+        context_window=_CTX,
+        supports_vision=True,
+        # As Hydrogen: refuses ``minimal`` with a 400 (2026-11-20); its
+        # ``xhigh`` is not tagged (module docstring).
+        capabilities=["thinking", "audio", "video", *_LEVELS],
+        pricing=ModelPricing(
+            input_per_million=3.0,
+            output_per_million=15.0,
+            cache_read_per_million=0.15,
+            verified=date(2026, 11, 20),
+        ),
+    ),
+    ModelInfo(
         id="gemini-4-hydrogen",
         display_name="Gemini 4 Hydrogen",
         context_window=_CTX,
         supports_vision=True,
-        # No ``minimal`` on Google's thinking page (2026-11-18); its ``xhigh``
-        # is not tagged (module docstring).
+        # Refuses ``minimal`` with a 400 (2026-11-20); its ``xhigh`` is not
+        # tagged (module docstring).
         capabilities=["thinking", "audio", "video", *_LEVELS],
         pricing=ModelPricing(
             input_per_million=1.5,
