@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit import RoomKit
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import RoomStatus
+from roomkit.models.identity import Identity
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.verification import Verification, VerificationRequest
@@ -72,6 +73,10 @@ def _verification_request(
     return VerificationRequest.model_validate(record)
 
 
+def _identity(record: Mapping[str, Any], spec: Mapping[str, Any]) -> Identity:
+    return Identity.model_validate(record)
+
+
 def _instant(value: str | None, spec: Mapping[str, Any]) -> datetime | None:
     return None if value is None else datetime.fromisoformat(value)
 
@@ -91,6 +96,7 @@ _RECORDS: dict[str, Callable[[Any, Mapping[str, Any]], Any]] = {
     "task": _task,
     "verification": _verification,
     "request": _verification_request,
+    "identity": _identity,
     "paused_at": _instant,
     "last_activity_at": _instant,
 }
@@ -106,6 +112,12 @@ STORE_ARGUMENTS: dict[str, set[str]] = {
     "store.update_binding": {"binding"},
     "store.remove_binding": {"room_id", "channel_id"},
     "store.add_participant": {"participant"},
+    "store.update_participant": {"participant"},
+    "store.create_identity": {"identity"},
+    "store.get_identity": {"identity_id"},
+    "store.resolve_identity": {"channel_type", "address", "organization_id"},
+    "store.link_address": {"identity_id", "channel_type", "address", "organization_id"},
+    "store.unlink_address": {"identity_id", "channel_type", "address", "organization_id"},
     "store.commit_event": {"room_id", "event", "target", "activity"},
     "store.room_exists": {"room_id"},
     "store.binding_exists": {"room_id", "channel_id"},

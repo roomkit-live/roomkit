@@ -16,6 +16,7 @@ from pydantic import TypeAdapter, ValidationError
 from roomkit import ACPChannel, AIChannel, HostChannel, RoomKit
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import (
+    AddressLinkedError,
     ChangeRefusedError,
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -23,6 +24,7 @@ from roomkit.core.exceptions import (
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
     KitClosedError,
+    ParticipantExistsError,
     ParticipantNotFoundError,
     ProcessTimeoutError,
     ReentrantCallError,
@@ -88,6 +90,8 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (ProcessTimeoutError, "process_timeout"),
     (ParticipantNotFoundError, "participant_not_found"),
     (IdentityNotFoundError, "identity_not_found"),
+    (AddressLinkedError, "address_linked"),
+    (ParticipantExistsError, "participant_exists"),
     (ReentrantCallError, "reentrant"),
     (ReentryLoopCapError, "reentry_loop_cap"),
     (EventNotFoundError, "event_not_found"),
