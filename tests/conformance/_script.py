@@ -129,8 +129,10 @@ def message_subject(message: InboundMessage, room_id: str) -> dict[str, Any]:
 
 
 async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[str, str]) -> None:
-    """Hold at the reaction's gate, wait its delay, run its actions, leave those for after
-    the turn to work it began, then raise its failure."""
+    """Start the reaction's task, hold at its gate, wait its delay, run its actions, leave
+    those for after the turn to work it began, then raise its failure."""
+    if (spawn := reaction.get("spawn")) is not None:
+        harness.spawn(perform(harness, spawn, scope))
     if (gate := reaction.get("gate")) is not None:
         await harness.gates.hold(gate)
     if delay := reaction.get("delay_ms"):
@@ -575,7 +577,8 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
         return router_hook(spec["router"])
     _validate_invalid_returns(spec)
     reactions = Reactions(spec.get("reactions"))
-    name = spec["name"]
+    # A hook registered with no name records its calls under its label.
+    name = spec["as"] if "as" in spec else spec["name"]
 
     async def handler(payload: Any, context: RoomContext) -> HookResult | None:
         room_id = context.room.id

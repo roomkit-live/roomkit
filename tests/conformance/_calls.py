@@ -538,7 +538,7 @@ def register_hook(kit: RoomKit, harness: Harness, hook: Mapping[str, Any]) -> No
     kwargs: dict[str, Any] = {
         "execution": read(lambda: HookExecution(hook.get("execution", "sync"))),
         "priority": hook.get("priority", 0),
-        "name": hook["name"],
+        "name": hook.get("name", ""),
         "fail_closed": hook.get("fail_closed", False),
         "needs_lock": hook.get("needs_lock", True),
     }
@@ -564,7 +564,7 @@ async def _add_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
         execution,
         hook_handler(hook, harness),
         priority=hook.get("priority", 0),
-        name=hook["name"],
+        name=hook.get("name", ""),
         fail_closed=hook.get("fail_closed", False),
         needs_lock=hook.get("needs_lock", True),
         **_org(spec),

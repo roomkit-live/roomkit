@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any
 
 from pydantic_core import to_jsonable_python
@@ -48,6 +48,7 @@ from tests.conformance._addressing import ADDRESSING_CALLS
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
+from tests.conformance._below_kit import BELOW_KIT_CALLS
 from tests.conformance._calls import (
     CALLS,
     UnmappedError,
@@ -249,6 +250,8 @@ class Harness:
         self.handles: dict[str, DeliveryHandle] = {}
         self._background: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._after_turn: list[asyncio.Task[None]] = []
+        # The tasks reactions started and did not wait for (README, Reactions).
+        self._spawned: list[asyncio.Task[None]] = []
         self.tasks: dict[str, DelegatedTask] = {}
         self._checks: list[Check] = []
         self._step_outcomes: list[dict[str, Any]] = []
@@ -725,6 +728,12 @@ class Harness:
                 (f"action {label or action['call']}", action.get("expect"), outcome)
             )
 
+    def spawn(self, work: Coroutine[Any, Any, None]) -> None:
+        """Start *work* in a task of the caller's context, as a hook's body
+        or a parse starts one it does not wait for: ``create_task`` copies
+        the context (RFC §9.5.1 Reentrance)."""
+        self._spawned.append(asyncio.create_task(work))
+
     def leave_after_turn(self, actions: list[Mapping[str, Any]], scope: Mapping[str, str]) -> None:
         """Start the work a turn leaves for after it: a task in the turn's
         context, which makes *actions* in order once the turn ended."""
@@ -765,6 +774,7 @@ class Harness:
         calls |= SKILL_REGISTRY_CALLS
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS
+        calls |= BELOW_KIT_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)
@@ -866,6 +876,7 @@ class Harness:
         tasks.extend(self._task_runs())
         if after_turn:
             tasks.extend(task for task in self._after_turn if not task.done())
+            tasks.extend(task for task in self._spawned if not task.done())
         if tasks:
             busy = True
             await asyncio.wait(tasks, timeout=CALL_BOUND_S)

@@ -22,6 +22,7 @@ from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._addressing import ADDRESSING_ARGUMENTS
+from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
@@ -386,6 +387,8 @@ BINDING = {
 }
 HOOK = {
     "name",
+    # In place of a name: a hook registered with none, recorded under this label.
+    "as",
     "trigger",
     "execution",
     "priority",
@@ -420,7 +423,10 @@ REACTION = {
     "parsed",
     "refuse",
     "after_turn",
+    "spawn",
 }
+# A task the call starts and does not wait for (README, Reactions).
+SPAWN = {"gate", "delay_ms", "do", "after_do_gate"}
 INVALID_RESULT = {"kind", "tasks", "observations", "injected_events"}
 REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
@@ -604,7 +610,7 @@ CALLS |= ROUTING_ARGUMENTS | ADDRESSING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
-CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
+CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
@@ -1095,9 +1101,7 @@ def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str
             reaction,
             f"{path}.reactions[{index}]",
             found,
-            invalid_return=hook.get("trigger") == "before_broadcast"
-            and hook.get("execution", "sync") == "sync"
-            and "router" not in hook,
+            invalid_return=_invalid_return_kinds(hook),
         )
     if "router" in hook:
         _router(hook["router"], f"{path}.router", found)
@@ -1112,12 +1116,34 @@ def _router(router: Mapping[str, Any], path: str, found: list[str]) -> None:
         )
 
 
+def _invalid_return_kinds(hook: Mapping[str, Any]) -> frozenset[str]:
+    """The unusable returns a hook's reaction may script: both on a SYNC
+    BEFORE_BROADCAST hook, a MODIFY with no payload alone on a SYNC
+    ON_TOOL_CALL one, whose typed Rust callback returns no other (README,
+    Reactions)."""
+    if hook.get("execution", "sync") != "sync" or "router" in hook:
+        return frozenset()
+    if hook.get("trigger") == "before_broadcast":
+        return frozenset({"no_result", "missing_payload"})
+    if hook.get("trigger") == "on_tool_call":
+        return frozenset({"missing_payload"})
+    return frozenset()
+
+
 def _reaction(
-    reaction: Mapping[str, Any], path: str, found: list[str], *, invalid_return: bool = False
+    reaction: Mapping[str, Any],
+    path: str,
+    found: list[str],
+    *,
+    invalid_return: frozenset[str] = frozenset(),
 ) -> None:
     _members(reaction, REACTION, path, found)
     if "invalid_result" in reaction:
-        _invalid_return(reaction, path, found, permitted=invalid_return)
+        _invalid_return(reaction, path, found, kinds=invalid_return)
+    if "spawn" in reaction:
+        _members(reaction["spawn"], SPAWN, f"{path}.spawn", found)
+        for index, action in enumerate(reaction["spawn"].get("do", [])):
+            _call(action, {"as", "expect"}, f"{path}.spawn.do[{index}]", found)
     if "after_do_gate" in reaction and not isinstance(reaction["after_do_gate"], str):
         found.append(f"{path}.after_do_gate: expected a gate name")
     _members(reaction.get("when", {}), WHEN, f"{path}.when", found)
@@ -1154,15 +1180,19 @@ def _provider_result(output: Mapping[str, Any], path: str, found: list[str]) -> 
 
 
 def _invalid_return(
-    reaction: Mapping[str, Any], path: str, found: list[str], *, permitted: bool
+    reaction: Mapping[str, Any], path: str, found: list[str], *, kinds: frozenset[str]
 ) -> None:
     value = reaction["invalid_result"]
     at = f"{path}.invalid_result"
     _members(value, INVALID_RESULT, at, found)
     if not isinstance(value, Mapping):
         return
-    if not permitted or any(key in reaction for key in ("result", "fail")):
-        found.append(f"{at}: requires a SYNC BEFORE_BROADCAST hook without result or fail")
+    if not kinds or any(key in reaction for key in ("result", "fail")):
+        found.append(
+            f"{at}: requires a SYNC BEFORE_BROADCAST or ON_TOOL_CALL hook without result or fail"
+        )
+    elif kinds == {"missing_payload"} and value != {"kind": "missing_payload"}:
+        found.append(f"{at}: an ON_TOOL_CALL hook returns a bare missing_payload alone")
     if value.get("kind") not in ("no_result", "missing_payload"):
         found.append(f"{at}: unknown or missing kind")
     if value.get("kind") == "no_result" and set(value) != {"kind"}:
@@ -1230,15 +1260,15 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
     if name == "register_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found)
     if name == "kit_executor.hook":
-        _hook(call.get("hook", {}), f"{path}.hook", found, HOOK - {"needs_lock", "router"})
+        _hook(call.get("hook", {}), f"{path}.hook", found, HOOK - {"as", "needs_lock", "router"})
     if name == "kit_executor.room_hook":
         _hook(
             call.get("hook", {}),
             f"{path}.hook",
             found,
-            (ROOM_HOOK - {"needs_lock", "router"}) | {"timeout_ms"},
+            (ROOM_HOOK - {"as", "needs_lock", "router"}) | {"timeout_ms"},
         )
-    if name == "add_room_hook":
+    if name in ("add_room_hook", "hook_engine.add_room_hook", "kit_executor.add_owner_room_hook"):
         _hook(call.get("hook", {}), f"{path}.hook", found, ROOM_HOOK)
     if name in ("handoff_handler", "install_router"):
         _router(call.get("router", {}), f"{path}.router", found)

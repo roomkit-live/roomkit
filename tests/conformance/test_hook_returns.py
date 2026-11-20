@@ -69,3 +69,23 @@ def test_an_invalid_return_on_an_unhandled_callback_is_refused(setup: dict[str, 
     field = "reactions" if kind == "hooks" else "deliver"
     setup[kind][0][field] = [{"invalid_result": {"kind": "no_result"}}]
     assert unknown_members({"setup": setup})
+
+
+@pytest.mark.parametrize(
+    ("hook", "refused"),
+    [
+        ({"invalid_result": {"kind": "missing_payload"}}, False),
+        ({"invalid_result": {"kind": "no_result"}}, True),
+        ({"invalid_result": {"kind": "missing_payload", "tasks": []}}, True),
+        ({"invalid_result": {"kind": "missing_payload"}, "execution": "async"}, True),
+    ],
+    ids=["bare-missing-payload", "no-result", "side-effects", "async"],
+)
+def test_an_on_tool_call_hook_returns_a_bare_missing_payload_alone(
+    hook: dict[str, Any], refused: bool
+) -> None:
+    """Rust's typed tool hook callback returns a MODIFY with no event and
+    nothing else (README, Reactions)."""
+    reaction = {"invalid_result": hook.pop("invalid_result")}
+    scripted = {"name": "check", "trigger": "on_tool_call", **hook, "reactions": [reaction]}
+    assert bool(unknown_members({"setup": {"hooks": [scripted]}})) is refused
