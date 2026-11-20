@@ -44,6 +44,7 @@ from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
 from tests.conformance._acp_context import ScriptedContextContributor
 from tests.conformance._acp_handler import ScriptedExternalHandler
 from tests.conformance._acp_mcp import ScriptedMCPServers
+from tests.conformance._addressing import ADDRESSING_CALLS
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
@@ -747,6 +748,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
+        calls |= ADDRESSING_CALLS
         calls |= MCP_HOST_CALLS
         calls |= SKILL_REGISTRY_CALLS
         calls |= HOST_CALLS

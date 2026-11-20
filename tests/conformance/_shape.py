@@ -21,6 +21,7 @@ from tests.conformance._acp_context import context_problems
 from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
+from tests.conformance._addressing import ADDRESSING_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
@@ -217,6 +218,7 @@ CHANNEL = {
     "tool_search_miss_hint",
     "tool_search_threshold_tokens",
     "addresses",
+    "addressing",
     "streams_in",
     "recent_events_window",
     "sender_is_participant",
@@ -226,6 +228,7 @@ CHANNEL = {
     "verbs",
 }
 ADDRESSES = {"normalizes", "conversation_key", "recipient_at"}
+ADDRESSING = {"country_code"}
 AGENT = {
     "name",
     "role",
@@ -597,7 +600,7 @@ CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUM
 CALLS |= INPUT_ARGUMENTS
 CALLS |= VERIFICATION_ARGUMENTS
 CALLS |= STRATEGY_ARGUMENTS
-CALLS |= ROUTING_ARGUMENTS
+CALLS |= ROUTING_ARGUMENTS | ADDRESSING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
@@ -869,6 +872,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
             _members(tool, MCP_TOOL, f"{path}.mcp_servers[{index}].tools[{position}]", found)
     if "addresses" in channel:
         _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
+    if "addressing" in channel:
+        _members(channel["addressing"], ADDRESSING, f"{path}.addressing", found)
     if "agent" in channel:
         _members(channel["agent"], AGENT, f"{path}.agent", found)
     if "memory" in channel:

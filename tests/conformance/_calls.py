@@ -60,6 +60,7 @@ from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
     ScriptedFailureError,
+    addressed_transport,
     complete_event,
     complete_participant,
     hook_handler,
@@ -518,7 +519,11 @@ def scripted_channel(
         if isinstance(agent.router, ScriptedAIRouter):
             harness.ai_routers[channel["id"]] = agent.router
         return agent
-    return read(lambda: ScriptedChannel(channel, harness))
+    channel_type = read(lambda: ChannelType(channel["type"]))
+    # Built outside `read`: a country code the implementation refuses
+    # refuses the channel, the call's invalid_argument (README, `addressing`).
+    transport = addressed_transport(channel, channel_type)
+    return read(lambda: ScriptedChannel(channel, harness, transport))
 
 
 async def _unregister_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:

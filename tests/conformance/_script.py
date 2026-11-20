@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit import TransportChannel
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.core.inbound_router import InboundRoomRouter
@@ -202,10 +203,33 @@ def parsed_event(event: RoomEvent, patch: Mapping[str, Any]) -> RoomEvent:
 SYSTEM_SOURCE = {"channel_id": "system", "channel_type": "system", "direction": "inbound"}
 
 
+def addressed_transport(
+    spec: Mapping[str, Any], channel_type: ChannelType
+) -> TransportChannel | None:
+    """The implementation's transport channel of a scripted channel's type,
+    whose address methods the channel answers with (README, ``addressing``):
+    its type's addressing, with the ``country_code`` the scenario declares;
+    ``None`` for a channel without ``addressing``.
+
+    Raises:
+        ValueError: the implementation refuses the country code, which
+            refuses the channel (``invalid_argument``).
+    """
+    addressing = spec.get("addressing")
+    if addressing is None:
+        return None
+    return TransportChannel(spec["id"], channel_type, country_code=addressing.get("country_code"))
+
+
 class ScriptedChannel(Channel):
     """A channel whose parse, turn and delivery follow the scenario's reactions."""
 
-    def __init__(self, spec: Mapping[str, Any], harness: Harness) -> None:
+    def __init__(
+        self,
+        spec: Mapping[str, Any],
+        harness: Harness,
+        transport: TransportChannel | None = None,
+    ) -> None:
         super().__init__(spec["id"])
         self.channel_type = ChannelType(spec["type"])
         default = "intelligence" if spec["type"] == "ai" else "transport"
@@ -226,6 +250,7 @@ class ScriptedChannel(Channel):
         self._on_room_detached = Reactions(spec.get("on_room_detached"))
         self._binding_update = spec.get("update_binding")
         self._addresses = spec.get("addresses")
+        self._transport = transport
         self._recent_events_window = int(spec.get("recent_events_window", 0))
         self._verbs: Mapping[str, Mapping[str, Any]] = spec.get("verbs", {})
         self._kept: dict[str, dict[str, Any]] = {}
@@ -238,21 +263,28 @@ class ScriptedChannel(Channel):
 
     @property
     def recipient_key(self) -> str | None:
+        if self._transport is not None:
+            return self._transport.recipient_key
         return self._recipient_key
 
     @property
     def recent_events_window(self) -> int:
         return self._recent_events_window
 
-    # What the scenario's ``addresses`` says the channel's own address
-    # methods answer; the defaults without it.
+    # What the implementation's transport channel of its type answers, with
+    # ``addressing``; what the scenario's ``addresses`` says the channel's
+    # own address methods answer; the defaults without either.
 
     def normalize_address(self, address: str) -> str:
+        if self._transport is not None:
+            return self._transport.normalize_address(address)
         if self._addresses is None:
             return super().normalize_address(address)
         return self._addresses.get("normalizes", {}).get(address, address)
 
     def conversation_address(self, message: InboundMessage) -> str:
+        if self._transport is not None:
+            return self._transport.conversation_address(message)
         key = (self._addresses or {}).get("conversation_key")
         chat = message.metadata.get(key) if key is not None else None
         if isinstance(chat, str) and chat.strip():
@@ -260,16 +292,22 @@ class ScriptedChannel(Channel):
         return super().conversation_address(message)
 
     def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
+        if self._transport is not None:
+            return self._transport.reply_metadata(message)
         if self._addresses is None or self._recipient_key is None:
             return super().reply_metadata(message)
         return {self._recipient_key: self.conversation_address(message)}
 
     def recipient_metadata(self, address: str) -> dict[str, str]:
+        if self._transport is not None:
+            return self._transport.recipient_metadata(address)
         if self._addresses is None or self._recipient_key is None:
             return super().recipient_metadata(address)
         return {self._recipient_key: address}
 
     def recipient_address(self, binding: ChannelBinding) -> str | None:
+        if self._transport is not None:
+            return self._transport.recipient_address(binding)
         if self._addresses is None or self._recipient_key is None:
             return super().recipient_address(binding)
         key = self._addresses.get("recipient_at", self._recipient_key)
