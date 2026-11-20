@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-call-under-a-lock-the-host-holds-commits-what-its-hooks-inject-once-the-host-released-it",
+  "title": "A call made under a room lock the host holds outside any pass returns first; the event its hook injects commits once the host released the lock",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.4",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-9.5.1-025"
+  ],
+  "notes": "Python: RoomWork.entry places such a call NESTED on a budget of its own, and its injected passes wait for the lock its caller holds (core/_reentrance.py, core/mixins/injected_events.py). The newest event read under the lock, after the call returned, is the call's own: the injection waits for the host's release.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "under_lock": "room-1",
+      "do": [
+        {
+          "call": "send_event",
+          "room_id": "room-1",
+          "channel_id": "ws",
+          "content": {
+            "type": "text",
+            "body": "hi"
+          },
+          "expect": {
+            "result": {
+              "index": 0,
+              "content": {
+                "type": "text",
+                "body": "hi"
+              }
+            }
+          }
+        },
+        {
+          "call": "get_timeline",
+          "room_id": "room-1",
+          "newest_first": true,
+          "limit": 1,
+          "expect": {
+            "result": [
+              {
+                "index": 0,
+                "content": {
+                  "type": "text",
+                  "body": "hi"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "hi"
+          },
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "source": {
+            "channel_id": "system"
+          },
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        }
+      ]
+    }
+  }
+}

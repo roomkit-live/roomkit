@@ -1,0 +1,427 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/each-call-under-a-lock-the-host-holds-draws-on-a-budget-of-its-own",
+  "title": "Two calls made under one room lock the host holds outside any pass each draw on a budget of their own: each one's injections stop at the full cap",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§8.3",
+    "§9.4",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-9.5.1-025"
+  ],
+  "notes": "max_chain_depth 1 gives a budget of 10 passes (§8.3, Reentry cap). The hook injects one more event of the same text on each event, so each call's injections run until its budget is spent: ten committed, the eleventh stored blocked. Two calls sharing one budget would commit ten between them. The two chains run after the host's release in an order no rule fixes.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "echo",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "A"
+            },
+            "repeat": true,
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "A"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "B"
+            },
+            "repeat": true,
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "B"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "under_lock": "room-1",
+      "do": [
+        {
+          "call": "send_event",
+          "room_id": "room-1",
+          "channel_id": "ws",
+          "content": {
+            "type": "text",
+            "body": "A"
+          },
+          "expect": {
+            "result": {
+              "content": {
+                "type": "text",
+                "body": "A"
+              }
+            }
+          }
+        },
+        {
+          "call": "send_event",
+          "room_id": "room-1",
+          "channel_id": "ws",
+          "content": {
+            "type": "text",
+            "body": "B"
+          },
+          "expect": {
+            "result": {
+              "content": {
+                "type": "text",
+                "body": "B"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "ws"
+            },
+            "blocked_by": null
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "ws"
+            },
+            "blocked_by": null
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B"
+            },
+            "source": {
+              "channel_id": "system"
+            },
+            "status": "blocked",
+            "blocked_by": "reentry_loop_cap",
+            "chain_depth": 0
+          }
+        ]
+      }
+    }
+  }
+}
