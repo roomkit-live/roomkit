@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/an-inbound-edit-s-trigger-reads-the-room-as-its-commit-left-it",
+  "title": "An inbound edit's ON_EVENT_UPDATED hook reads the room as the edit's commit left it: the target rewritten, the event its hook committed ahead, the edit last as its hook left it, and the counters",
+  "rules": [
+    "§10.3 Mutation triggers",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-10.3-047"
+  ],
+  "notes": "The edit's BEFORE_BROADCAST hook sends an event into the room, which commits ahead of the edit (index 1), then redacts the edit's new content. The trigger's context holds the target as rewritten with the redacted text, the nested event, and the edit at index 2 as redacted; the room counts three events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "peer",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src",
+            "participant_id": "+15551234567"
+          },
+          {
+            "channel_id": "peer",
+            "participant_id": "bob"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "src",
+                "content": {
+                  "type": "text",
+                  "body": "Nested"
+                },
+                "as": "nested"
+              }
+            ],
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "edit",
+                  "target_event_id": "room-1#0",
+                  "new_content": {
+                    "type": "text",
+                    "body": "REDACTED"
+                  },
+                  "edit_source": "sender"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "v1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "rewritten"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "redact": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "v1"
+            }
+          }
+        },
+        {
+          "event": {
+            "type": "edit"
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Nested"
+            }
+          }
+        }
+      ],
+      "updated": [
+        {
+          "trigger": "on_event_updated",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "REDACTED"
+            }
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1",
+            "room-1#2"
+          ],
+          "context_events": [
+            {
+              "id": "room-1#0",
+              "index": 0,
+              "content": {
+                "type": "text",
+                "body": "REDACTED"
+              },
+              "metadata": {
+                "edited": true
+              }
+            },
+            {
+              "id": "room-1#1",
+              "index": 1,
+              "content": {
+                "type": "text",
+                "body": "Nested"
+              }
+            },
+            {
+              "id": "room-1#2",
+              "index": 2,
+              "type": "edit",
+              "content": {
+                "type": "edit",
+                "target_event_id": "room-1#0",
+                "new_content": {
+                  "type": "text",
+                  "body": "REDACTED"
+                },
+                "edit_source": "sender"
+              }
+            }
+          ],
+          "context_room": {
+            "id": "room-1",
+            "event_count": 3,
+            "latest_index": 2
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/an-off-lock-hook-reads-the-attach-of-the-room-routing-opened",
+  "title": "An off-lock hook's context is the room routing opened for the message, its channel attached naming the sender",
+  "rules": [
+    "§9.5.1",
+    "§10.1 step 2",
+    "§10.1 step 3"
+  ],
+  "requirements": [
+    "RK-9.5.1-015"
+  ],
+  "notes": "No room binds sms: step 2 opens a room for Alice's message and attaches sms naming her, her address as its recipient. The off-lock hook's context holds that room and that attach.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "addressing": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "needs_lock": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "room_id": "$r1",
+          "channel_id": "sms",
+          "participant_id": "+15551234567",
+          "metadata": {
+            "phone_number": "+15551234567"
+          }
+        }
+      }
+    },
+    "hooks": {
+      "check": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          },
+          "context_room": {
+            "id": "$r1"
+          },
+          "context_bindings": [
+            {
+              "room_id": "$r1",
+              "channel_id": "sms",
+              "participant_id": "+15551234567",
+              "metadata": {
+                "phone_number": "+15551234567"
+              }
+            }
+          ],
+          "context_events": []
+        }
+      ]
+    }
+  }
+}

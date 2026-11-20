@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parse-is-handed-the-room-its-bindings-participants-and-recent-events",
+  "title": "A channel parses a message with the context step 3 built: the room's state, all its bindings, all its participants and its recent events",
+  "rules": [
+    "§10.1 step 3",
+    "§10.1 step 4"
+  ],
+  "requirements": [
+    "RK-10.1-026"
+  ],
+  "notes": "Bob's two earlier messages are delivered to sms before alice's is parsed (the idle step). The parse's context holds the room with its metadata and its counters (two events), both bindings, the two participants the room records, and the earlier events with their content. The order of the bindings and of the participants is left open.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recent_events_window": 5
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "metadata": {
+          "topic": "orders"
+        },
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15551234567"
+          },
+          {
+            "channel_id": "ws",
+            "participant_id": "bob"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "sms",
+            "role": "owner"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "role": "member"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Earlier"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "contexts": {
+      "room-1": {
+        "sms": [
+          {
+            "call": "deliver"
+          },
+          {
+            "call": "deliver"
+          },
+          {
+            "call": "parse",
+            "room": {
+              "id": "room-1",
+              "status": "active",
+              "metadata": {
+                "topic": "orders"
+              },
+              "event_count": 2,
+              "latest_index": 1
+            },
+            "bindings": {
+              "$unordered": [
+                {
+                  "room_id": "room-1",
+                  "channel_id": "sms",
+                  "participant_id": "+15551234567"
+                },
+                {
+                  "room_id": "room-1",
+                  "channel_id": "ws",
+                  "participant_id": "bob"
+                }
+              ]
+            },
+            "participants": {
+              "$unordered": [
+                {
+                  "id": "alice",
+                  "room_id": "room-1",
+                  "channel_id": "sms",
+                  "role": "owner"
+                },
+                {
+                  "id": "bob",
+                  "room_id": "room-1",
+                  "channel_id": "ws",
+                  "role": "member"
+                }
+              ]
+            },
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ],
+            "events": [
+              {
+                "id": "room-1#0",
+                "index": 0,
+                "content": {
+                  "type": "text",
+                  "body": "Earlier"
+                },
+                "source": {
+                  "channel_id": "ws",
+                  "participant_id": "bob"
+                }
+              },
+              {
+                "id": "room-1#1",
+                "index": 1,
+                "content": {
+                  "type": "text",
+                  "body": "Second"
+                },
+                "source": {
+                  "channel_id": "ws",
+                  "participant_id": "bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

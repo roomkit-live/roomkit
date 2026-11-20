@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-channel-with-no-binding-parses-its-message-with-a-context-holding-no-event",
+  "title": "A channel with no binding in the room parses the message that names the room with a context that holds no event, the room's event in the store: one detached from it, and one never bound to a closed room, which step 2 attaches nothing to",
+  "rules": [
+    "§10.1 step 2",
+    "§10.1 step 3",
+    "§10.1 step 4",
+    "§7.5 rule 7"
+  ],
+  "requirements": [
+    "RK-10.1-137"
+  ],
+  "notes": "sms is detached from room-1 once bob's message was delivered to it; its next message names room-1. sms was never bound to room-2, which is closed: step 2 makes no attach to a room whose status refuses events. Each parse is handed the room, which counts one event, and no event; room-1's gate then stores the message refused (source_unbound), and room-2 refuses it (room_closed).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recent_events_window": 5
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15551234567"
+          },
+          {
+            "channel_id": "ws",
+            "participant_id": "bob"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws",
+            "participant_id": "bob"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Earlier"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Before the close"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "After"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_unbound"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Too late"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-2": {
+        "sms": null
+      }
+    },
+    "contexts": {
+      "room-1": {
+        "sms": [
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "parse",
+            "room": {
+              "id": "room-1",
+              "event_count": 1,
+              "latest_index": 0
+            },
+            "recent_events": [],
+            "events": []
+          }
+        ]
+      },
+      "room-2": {
+        "sms": [
+          {
+            "call": "parse",
+            "room": {
+              "id": "room-2",
+              "status": "closed",
+              "event_count": 1,
+              "latest_index": 0
+            },
+            "recent_events": [],
+            "events": []
+          }
+        ]
+      }
+    }
+  }
+}

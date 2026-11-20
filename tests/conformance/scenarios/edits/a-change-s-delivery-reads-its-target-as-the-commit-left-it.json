@@ -1,0 +1,246 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-change-s-delivery-reads-its-target-as-the-commit-left-it",
+  "title": "The delivery set of an edit, and of a delete, reads the target as the change's commit left it",
+  "rules": [
+    "§10.3 State updates",
+    "§10.3"
+  ],
+  "requirements": [
+    "RK-10.3-037"
+  ],
+  "notes": "Alice edits her message in room-1 and deletes hers in room-2. peer is handed each change with a context whose history holds the target: rewritten and marked edited for the edit; marked deleted for the delete, its content withheld from a channel (§10.3, What a channel is handed of a deleted event). Each room holds only the target and its change, so each history is those two events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "peer",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src",
+            "participant_id": "+15551234567"
+          },
+          {
+            "channel_id": "peer",
+            "participant_id": "bob"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "src",
+            "participant_id": "+15551234567"
+          },
+          {
+            "channel_id": "peer",
+            "participant_id": "bob"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "v1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "w1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "rewritten"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-2#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "peer": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1",
+            "type": "edit"
+          }
+        ]
+      },
+      "room-2": {
+        "peer": [
+          {
+            "id": "room-2#0"
+          },
+          {
+            "id": "room-2#1",
+            "type": "delete"
+          }
+        ]
+      }
+    },
+    "contexts": {
+      "room-1": {
+        "peer": [
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ],
+            "events": [
+              {
+                "id": "room-1#0",
+                "content": {
+                  "type": "text",
+                  "body": "rewritten"
+                },
+                "metadata": {
+                  "edited": true
+                }
+              },
+              {
+                "id": "room-1#1",
+                "type": "edit"
+              }
+            ]
+          }
+        ]
+      },
+      "room-2": {
+        "peer": [
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-2#0"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-2#0",
+              "room-2#1"
+            ],
+            "events": [
+              {
+                "id": "room-2#0",
+                "content": {
+                  "type": "text",
+                  "body": ""
+                },
+                "metadata": {
+                  "deleted": true
+                }
+              },
+              {
+                "id": "room-2#1",
+                "type": "delete"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

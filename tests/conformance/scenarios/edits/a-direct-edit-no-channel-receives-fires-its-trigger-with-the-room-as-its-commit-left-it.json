@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-direct-edit-no-channel-receives-fires-its-trigger-with-the-room-as-its-commit-left-it",
+  "title": "An edit sent directly into a room whose only channel is its source reaches no channel, and fires ON_EVENT_UPDATED with the room as its commit left it: the target rewritten, the event its hook committed ahead, the edit last as its hook left it, and the counters",
+  "rules": [
+    "§10.3 Mutation triggers",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-10.3-047"
+  ],
+  "notes": "src is the room's only channel and the edit's source: its delivery set is empty, as is the one of the event the edit's BEFORE_BROADCAST hook sends, which commits ahead of the edit (index 1). The hook then redacts the edit's new content.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src",
+            "participant_id": "+15551234567"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "src",
+                "content": {
+                  "type": "text",
+                  "body": "Nested"
+                },
+                "as": "nested"
+              }
+            ],
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "edit",
+                  "target_event_id": "room-1#0",
+                  "new_content": {
+                    "type": "text",
+                    "body": "REDACTED"
+                  },
+                  "edit_source": "sender"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "v1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "src",
+      "event_type": "edit",
+      "participant_id": "+15551234567",
+      "content": {
+        "type": "edit",
+        "target_event_id": "room-1#0",
+        "new_content": {
+          "type": "text",
+          "body": "rewritten"
+        },
+        "edit_source": "sender"
+      },
+      "expect": {
+        "result": {
+          "index": 2,
+          "type": "edit"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "src": []
+      }
+    },
+    "hooks": {
+      "updated": [
+        {
+          "trigger": "on_event_updated",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "REDACTED"
+            },
+            "metadata": {
+              "edited": true
+            }
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1",
+            "room-1#2"
+          ],
+          "context_events": [
+            {
+              "id": "room-1#0",
+              "content": {
+                "type": "text",
+                "body": "REDACTED"
+              },
+              "metadata": {
+                "edited": true
+              }
+            },
+            {
+              "id": "room-1#1",
+              "index": 1,
+              "content": {
+                "type": "text",
+                "body": "Nested"
+              }
+            },
+            {
+              "id": "room-1#2",
+              "index": 2,
+              "type": "edit",
+              "content": {
+                "type": "edit",
+                "target_event_id": "room-1#0",
+                "new_content": {
+                  "type": "text",
+                  "body": "REDACTED"
+                },
+                "edit_source": "sender"
+              }
+            }
+          ],
+          "context_room": {
+            "id": "room-1",
+            "event_count": 3,
+            "latest_index": 2
+          }
+        }
+      ]
+    }
+  }
+}

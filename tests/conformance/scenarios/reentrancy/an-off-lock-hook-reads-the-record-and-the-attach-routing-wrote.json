@@ -1,0 +1,290 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/an-off-lock-hook-reads-the-record-and-the-attach-routing-wrote",
+  "title": "An off-lock hook's context is the room as routing left it, the routed sender recorded on the binding that named no one and the channel attached to the routed room naming its sender, and holds no event committed after it was built",
+  "rules": [
+    "§9.5.1",
+    "§10.1 step 2",
+    "§10.1 step 3"
+  ],
+  "requirements": [
+    "RK-9.5.1-015"
+  ],
+  "notes": "The router routes every message to room-1. Alice's SMS reaches the sms binding, which names no one: step 2 records her on it, her address as its recipient. Her WhatsApp message reaches a room that does not bind wa: step 2 attaches wa naming her. The off-lock hook's context holds each write. Her third message's parse sends an event into the room, which commits ahead of it (index 2) once step 3 built the context: the hook's context, built before the lock, does not hold it. The channels declare a window of 5 events, which holds the room's whole history here.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "addressing": {},
+        "recent_events_window": 5,
+        "parse": [
+          {
+            "when": {
+              "text": "Third"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "wa",
+                "content": {
+                  "type": "text",
+                  "body": "Ahead"
+                },
+                "as": "ahead"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport",
+        "addressing": {},
+        "recent_events_window": 5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "needs_lock": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "By SMS"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1",
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "By WhatsApp"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1",
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Third"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1",
+            "index": 3
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "room_id": "room-1",
+          "channel_id": "sms",
+          "participant_id": "+15551234567",
+          "metadata": {
+            "phone_number": "+15551234567"
+          }
+        },
+        "wa": {
+          "room_id": "room-1",
+          "channel_id": "wa",
+          "participant_id": "+15551234567",
+          "metadata": {
+            "phone_number": "+15551234567"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "By SMS"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "By WhatsApp"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Ahead"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Third"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "check": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "By SMS"
+            }
+          },
+          "context_bindings": [
+            {
+              "room_id": "room-1",
+              "channel_id": "sms",
+              "participant_id": "+15551234567",
+              "metadata": {
+                "phone_number": "+15551234567"
+              }
+            }
+          ],
+          "context_events": []
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "By WhatsApp"
+            }
+          },
+          "context_bindings": {
+            "$unordered": [
+              {
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "participant_id": "+15551234567",
+                "metadata": {
+                  "phone_number": "+15551234567"
+                }
+              },
+              {
+                "room_id": "room-1",
+                "channel_id": "wa",
+                "participant_id": "+15551234567",
+                "metadata": {
+                  "phone_number": "+15551234567"
+                }
+              }
+            ]
+          },
+          "context_events": [
+            {
+              "id": "room-1#0",
+              "content": {
+                "type": "text",
+                "body": "By SMS"
+              }
+            }
+          ]
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Ahead"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Third"
+            }
+          },
+          "recent_events": [
+            "room-1#0",
+            "room-1#1"
+          ],
+          "context_events": [
+            {
+              "id": "room-1#0",
+              "content": {
+                "type": "text",
+                "body": "By SMS"
+              }
+            },
+            {
+              "id": "room-1#1",
+              "content": {
+                "type": "text",
+                "body": "By WhatsApp"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
