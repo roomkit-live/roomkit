@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/an-off-lock-hook-s-task-calling-once-its-body-returned-is-a-new-arrival",
+  "title": "A task an off-lock hook's body started, calling once the body returned, stands in no admission order: it takes a ticket of its own and commits after the event",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.5.1 Order"
+  ],
+  "requirements": [
+    "RK-9.5.1-019"
+  ],
+  "reentrancy": [
+    "inject@outside"
+  ],
+  "notes": "The first off-lock hook's body starts the task and returns; the next off-lock hook holds the event's check at its gate when the task calls. The task's message runs its own check, reaching that hook's other gate, and then waits for the event's earlier ticket. Python: tests/test_reentrance.py::TestACallFromATaskALockedHookStarted::test_once_the_hook_is_over_its_call_is_a_new_arrival[off-lock].",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notifier",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "priority": 0,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "spawn": {
+              "gate": "task_go",
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "heads up"
+                  },
+                  "as": "notice"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "next",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "priority": 1,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "next_held"
+          },
+          {
+            "when": {
+              "text": "heads up"
+            },
+            "gate": "task_checked"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "hello"
+    },
+    {
+      "wait_for": "next_held"
+    },
+    {
+      "open": "task_go"
+    },
+    {
+      "wait_for": "task_checked"
+    },
+    {
+      "open": "task_checked"
+    },
+    {
+      "open": "next_held"
+    },
+    {
+      "await": "hello",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "heads up"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "notice": [
+        {
+          "result": {
+            "id": "room-1#1"
+          }
+        }
+      ]
+    }
+  }
+}

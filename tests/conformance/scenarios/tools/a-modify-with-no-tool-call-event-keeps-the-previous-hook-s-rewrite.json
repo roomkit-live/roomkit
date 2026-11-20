@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-modify-with-no-tool-call-event-keeps-the-previous-hook-s-rewrite",
+  "title": "A SYNC ON_TOOL_CALL hook's MODIFY that carries no tool-call event replaces nothing: the next hook and the model read the result the previous hook rewrote, by its override or by a MODIFY",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-063"
+  ],
+  "notes": "call-1's result is rewritten through the result override, call-2's through a MODIFY; the hook after it returns a MODIFY with no event on both. Python: tests/test_tool_call_hook_chain.py::test_a_modify_the_chain_cannot_use_keeps_the_previous_rewrite.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "SSN 123-45-6789"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "result": "SSN [redacted]"
+              }
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "result": "SSN [redacted]"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "broken",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 1,
+        "reactions": [
+          {
+            "repeat": true,
+            "invalid_result": {
+              "kind": "missing_payload"
+            }
+          }
+        ]
+      },
+      {
+        "name": "next",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "priority": 2
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look me up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "SSN [redacted]",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "SSN [redacted]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "SSN [redacted]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "next": [
+        {
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "result": "SSN [redacted]",
+            "is_error": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "result": "SSN [redacted]",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}

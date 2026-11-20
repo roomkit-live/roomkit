@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-locked-hook-s-section-waits-past-the-hook-s-timeout-for-its-task-s-call",
+  "title": "A call a locked hook's task makes while the body runs holds the hook's section: the body ended by its own timeout, the hook's result waits for the call, which commits ahead of the event",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.5.1-040"
+  ],
+  "reentrancy": [
+    "inject@locked"
+  ],
+  "notes": "The hook's body starts the task and never returns; its 200 ms timeout ends it while the task's call, nested under the lock, is held for a second by another locked hook. The event goes on only once that call is decided. Python: tests/test_reentrance.py::TestAnAdoptedCallBeforeItsCommit::test_a_call_a_locked_hook_s_task_nests_outlives_the_hook_s_timeout.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notifier",
+        "trigger": "before_broadcast",
+        "priority": 0,
+        "timeout_ms": 200,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "spawn": {
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "heads up"
+                  },
+                  "as": "notice"
+                }
+              ]
+            },
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "reactions": [
+          {
+            "when": {
+              "text": "heads up"
+            },
+            "delay_ms": 1000
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "heads up"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "notice": [
+        {
+          "result": {
+            "id": "room-1#0"
+          }
+        }
+      ]
+    },
+    "hook_order": [
+      "notifier",
+      "notifier",
+      "slow",
+      "slow"
+    ]
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/two-room-hooks-registered-without-a-name-take-names-unique-among-the-room-s",
+  "title": "Two hooks added to one room without a name are both registered, under names of the implementation's that differ: each one's block names its own",
+  "rules": [
+    "§9.1",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.1-018"
+  ],
+  "notes": "As the kit's hooks, in the scope of one room's hooks.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "as": "first",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "one"
+            },
+            "result": {
+              "action": "block",
+              "reason": "one"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "as": "second",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "two"
+            },
+            "result": {
+              "action": "block",
+              "reason": "two"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "one"
+          },
+          "status": "blocked",
+          "blocked_by": {
+            "$as": "first_name"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "two"
+          },
+          "status": "blocked",
+          "blocked_by": {
+            "$as": "second_name"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "first": [
+        {
+          "event": {
+            "content": {
+              "body": "one"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "two"
+            }
+          }
+        }
+      ],
+      "second": [
+        {
+          "event": {
+            "content": {
+              "body": "two"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-parse-s-task-calling-once-the-parse-returned-is-a-new-arrival",
+  "title": "A task a channel's parse started, calling once the parse returned, stands in no admission order: it takes a ticket of its own and commits after the message",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.5.1 Order",
+    "§10.1 step 4"
+  ],
+  "requirements": [
+    "RK-9.5.1-019"
+  ],
+  "reentrancy": [
+    "inject@outside"
+  ],
+  "notes": "The parse starts the task and returns; an off-lock hook holds the message's check at its gate when the task calls. The task's message runs its own check, reaching that hook's other gate, and then waits for the message's earlier ticket.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "spawn": {
+              "gate": "task_go",
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "heads up"
+                  },
+                  "as": "notice"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "next",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "next_held"
+          },
+          {
+            "when": {
+              "text": "heads up"
+            },
+            "gate": "task_checked"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "hello"
+    },
+    {
+      "wait_for": "next_held"
+    },
+    {
+      "open": "task_go"
+    },
+    {
+      "wait_for": "task_checked"
+    },
+    {
+      "open": "task_checked"
+    },
+    {
+      "open": "next_held"
+    },
+    {
+      "await": "hello",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "heads up"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "notice": [
+        {
+          "result": {
+            "id": "room-1#1"
+          }
+        }
+      ]
+    }
+  }
+}

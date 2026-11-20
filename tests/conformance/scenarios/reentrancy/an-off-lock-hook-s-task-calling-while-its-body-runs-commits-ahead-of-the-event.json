@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/an-off-lock-hook-s-task-calling-while-its-body-runs-commits-ahead-of-the-event",
+  "title": "A task an off-lock hook's body starts and does not wait for acts for the body while it runs: its call is adopted beside the check and commits ahead of the event",
+  "rules": [
+    "§9.5.1 Reentrance"
+  ],
+  "requirements": [
+    "RK-9.5.1-019"
+  ],
+  "reentrancy": [
+    "inject@admitted"
+  ],
+  "notes": "The off-lock hook's body starts the task and holds at its gate; the task's call runs and returns while the body is still held, then the body returns.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notifier",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "spawn": {
+              "gate": "task_go",
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "heads up"
+                  },
+                  "as": "notice"
+                }
+              ],
+              "after_do_gate": "task_done"
+            },
+            "gate": "body_held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "hello"
+    },
+    {
+      "wait_for": "body_held"
+    },
+    {
+      "wait_for": "task_go"
+    },
+    {
+      "open": "task_go"
+    },
+    {
+      "wait_for": "task_done"
+    },
+    {
+      "open": "task_done"
+    },
+    {
+      "open": "body_held"
+    },
+    {
+      "await": "hello",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "heads up"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "notice": [
+        {
+          "result": {
+            "id": "room-1#0"
+          }
+        }
+      ]
+    }
+  }
+}

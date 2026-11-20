@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-room-hook-held-before-its-room-is-the-first-room-s-it-runs-in",
+  "title": "A room hook the kit holds for an id no room holds yet is the first room's it is read with: once that room is deleted, it does not run in the room another process creates under the id",
+  "rules": [
+    "§9.1",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-9.1-015"
+  ],
+  "notes": "Before any room holds the id, the run's kit holds the hook for it. Another process creates the room for acme; a message through the run's kit runs the hook, whose room is now acme's. The store deletes the room, the other process creates it again for globex, and a message through the run's kit does not run it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "shared-id",
+      "hook": {
+        "name": "held",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "create_room",
+      "kit": "p2",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "kit": "p2",
+      "room_id": "shared-id",
+      "channel_id": "sms",
+      "organization_id": "acme"
+    },
+    {
+      "call": "attach_channel",
+      "kit": "p2",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "acme"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "acme note"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "kit": "p2",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "kit": "p2",
+      "room_id": "shared-id",
+      "channel_id": "sms",
+      "organization_id": "globex"
+    },
+    {
+      "call": "attach_channel",
+      "kit": "p2",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "globex"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "globex secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "held": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "shared-id",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "acme note"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

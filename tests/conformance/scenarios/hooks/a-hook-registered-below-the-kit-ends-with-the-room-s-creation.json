@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-registered-below-the-kit-ends-with-the-room-s-creation",
+  "title": "A room hook registered below the kit, on the hook engine or given straight to the kit's executor, counts as one registered while a room held the id: the kit's creation of the room forgets it",
+  "rules": [
+    "§9.1",
+    "§17.2",
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-9.1-006"
+  ],
+  "notes": "Before room-1 exists, one hook is added through the kit, which holds it for the room, one on the kit's hook engine and one given to the kit's executor. The kit creates the room: the kit's hook fires for the creation and stays the room's, the two below it are forgotten. A global hook on the tool call shows the turn's call ran. Python: tests/test_framework.py::TestRoomHooks::test_a_hook_registered_below_the_kit_ends_with_the_next_creation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a customer up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "held",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "hook_engine.add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "below",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "kit_executor.add_owner_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "given",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-1",
+      "name": "below",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-1",
+      "name": "held",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "held": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "room-1"
+        }
+      ],
+      "below": [],
+      "given": [],
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-1"
+          }
+        }
+      ]
+    }
+  }
+}
