@@ -118,6 +118,7 @@ _ON_EACH_STORE = (
 # the room a message routes to (§10.4 step 1), the delivery a closing kit abandons or
 # runs whatever the store (§12.10.4), a channel's state kept with its room (§10.6.2),
 # the lock releases and the delivery cursor (§13.5), identity verification (§11.7),
+# the identities, their addresses and a room's participant records (§5.5, §5.6),
 # the depth a turn's framework-event handlers send at, which raced the store's
 # awaits, beside an ASYNC hook on the turn's trigger doing the same (§8.3, RMK-1699),
 # and every scenario with other processes, whose kits each open their own store and
@@ -130,6 +131,13 @@ _ON_POSTGRES = (
     "channel-call/",
     "locks/",
     "verification/",
+    "store/a-participant-id-the-room-has-is-refused-and-an-update-rewrites-a-record",
+    "store/an-address-belongs-to-one-identity-of-an-organization-per-channel-type",
+    "store/an-identity-is-read-back-with-each-of-its-fields",
+    "store/an-unlink-changes-whom-a-later-message-resolves-to-not-the-conversation",
+    "store/identity-resolution-reads-the-organization-it-names-and-none-reads-none",
+    "store/link-address-links-to-an-identity-of-the-organization-it-names",
+    "store/unlink-address-removes-an-address-the-identity-holds-in-its-organization",
     "tenancy/a-deleted-room-s-",
     "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
     "reentrancy/a-before-ai-generation-handler-",
