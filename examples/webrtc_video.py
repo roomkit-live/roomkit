@@ -62,9 +62,8 @@ logger = setup_logging("webrtc_video")
 # Suppress noisy transport logs
 logging.getLogger("aioice").setLevel(logging.WARNING)
 logging.getLogger("aiortc").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpx2").setLevel(logging.WARNING)
+for _noisy in ("httpcore", "httpcore2", "httpx", "httpx2"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
 
 env = require_env("ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY", "OPENAI_API_KEY")

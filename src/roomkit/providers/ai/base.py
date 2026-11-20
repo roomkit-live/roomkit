@@ -290,9 +290,9 @@ def is_transport_failure(exc: BaseException) -> bool:
     It is the same failure whichever SDK surfaces it (Anthropic's and
     OpenAI's ``APIConnectionError`` are raised from it, Mistral and
     google-genai let it through as it is), and it is worth retrying on every
-    provider. ``httpx`` and ``httpx2`` (Anthropic's client, and Mistral's from
-    mistralai 3.x) are read only if already imported: an exception of theirs
-    cannot exist otherwise.
+    provider. ``httpx`` and ``httpx2`` (Anthropic's client, OpenAI's from
+    openai 3.x and Mistral's from mistralai 3.x) are read only if already
+    imported: an exception of theirs cannot exist otherwise.
     """
     transport: tuple[type[BaseException], ...] = (ConnectionError, TimeoutError)
     for client in ("httpx", "httpx2"):
