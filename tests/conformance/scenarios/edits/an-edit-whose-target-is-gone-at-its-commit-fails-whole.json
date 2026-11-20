@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/an-edit-whose-target-is-gone-at-its-commit-fails-whole",
+  "title": "An edit whose target is gone by its commit fails whole: neither the edit nor its target is stored",
+  "rules": [
+    "§10.3 State updates",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-10.3-033"
+  ],
+  "notes": "The edit's hooks have run; its target's read again (step 8a) is held once it answered, and the store's own delete_event removes the target meanwhile, outside the lock. The edit's commit, whose target is gone by then, fails whole: the room holds neither the edit nor the target written back, and no ON_EVENT_UPDATED fires.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "gate": "hooks"
+          }
+        ]
+      },
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Original"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Changed"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "background": true,
+      "as": "edit"
+    },
+    {
+      "wait_for": "hooks"
+    },
+    {
+      "store_fault": "get_event",
+      "gate": "read"
+    },
+    {
+      "open": "hooks"
+    },
+    {
+      "wait_for": "read"
+    },
+    {
+      "call": "store.delete_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0"
+    },
+    {
+      "open": "read"
+    },
+    {
+      "await": "edit",
+      "expect": {
+        "error": "event_not_found"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "updated": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Original"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-set-s-record-the-store-fails-to-write-changes-nothing-the-call-reports",
+  "title": "A failed delivery set whose record the store fails to write changes nothing the call reports, and its aftermath runs",
+  "rules": [
+    "§5.13",
+    "§10.1 step 16",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-5.13-008"
+  ],
+  "notes": "The variant of inbound/a-failed-set-is-recorded-on-its-event whose store fails the set's record (store_fault on record_delivery_results): the call reports the same delivery results and the event holds no record. Its AFTER_BROADCAST hook still runs once the set is over (§10.1 step 16): the record's failure ends nothing of the set's aftermath. The log line is not observed. Python: core/mixins/lane_execution.py _record_failed_deliveries.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "refuse": {
+              "error": "rejected",
+              "code": "550",
+              "retryable": false,
+              "provider_message_id": "provider-refused"
+            }
+          }
+        ]
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport",
+        "deliver": [
+          {
+            "output": {
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "record_delivery_results",
+      "fail": "the disk is full"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          },
+          "delivery_results": {
+            "ws": {
+              "channel_id": "ws",
+              "status": "failed",
+              "error": {
+                "code": "550",
+                "retryable": false
+              },
+              "provider_message_id": "provider-refused",
+              "provider_result": {
+                "success": false,
+                "provider_message_id": "provider-refused",
+                "error": "rejected"
+              }
+            },
+            "email": {
+              "channel_id": "email",
+              "status": "sent",
+              "provider_message_id": "provider-accepted",
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "delivered",
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            },
+            "email": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

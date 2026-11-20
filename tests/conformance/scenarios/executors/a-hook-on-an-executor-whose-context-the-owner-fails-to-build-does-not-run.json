@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-hook-on-an-executor-whose-context-the-owner-fails-to-build-does-not-run",
+  "title": "A SYNC hook on an executor does not run when the room's owner fails to build its context, and the turn goes on",
+  "rules": [
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-10.6.6-024"
+  ],
+  "notes": "The variant of executors/a-hook-on-an-executor-reads-the-room-when-it-fires whose owner fails the room's read the hook's context starts with (load_room_context), once the tool is held: the hook gets no context and does not run, as a hook on the owner does not (§9.3), and the model reads the tool's result. The hook is SYNC: its context is read before the call's end row is stored, which an observer's may not be.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "returns": "fine",
+            "gate": "held"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ],
+        "hooks": [
+          {
+            "name": "audit",
+            "trigger": "on_tool_call",
+            "execution": "sync"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "store_fault": "load_room_context",
+      "fail": "the store is down"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": []
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "fine",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

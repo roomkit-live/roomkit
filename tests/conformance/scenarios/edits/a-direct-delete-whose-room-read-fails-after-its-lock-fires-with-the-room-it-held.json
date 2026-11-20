@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-direct-delete-whose-room-read-fails-after-its-lock-fires-with-the-room-it-held",
+  "title": "A direct delete whose room read after its lock fails still stands, and its ON_EVENT_DELETED hook fires",
+  "rules": [
+    "§10.3 Direct mutation",
+    "§13.6"
+  ],
+  "requirements": [
+    "RK-10.3-056"
+  ],
+  "notes": "The delete's read of the room under its lock is held once it answered; the next read, once the lock is released, is held in its place, then fails, while a message is committed: the call does not fail, the event stays removed, and the hook fires with the event as it was stored. Which events the context it is handed holds is not asserted: RK-10.3-056 names the context the call held under the lock, and whether it still holds the removed event is left open; edits/a-direct-update-whose-room-read-fails-after-its-lock-fires-with-the-room-it-held reads that context. The failure's log is not observed.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "deleted",
+        "trigger": "on_event_deleted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Original"
+        }
+      }
+    },
+    {
+      "store_fault": "load_room_context",
+      "gate": "held"
+    },
+    {
+      "call": "delete_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "background": true,
+      "as": "delete"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "store_fault": "load_room_context",
+      "gate": "after",
+      "fail": "the store is down"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "wait_for": "after"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Later"
+        }
+      }
+    },
+    {
+      "open": "after"
+    },
+    {
+      "await": "delete",
+      "expect": {
+        "result": [
+          "$e1"
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Later"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "deleted": [
+        {
+          "trigger": "on_event_deleted",
+          "room_id": "room-1",
+          "event": {
+            "id": "$e1",
+            "content": {
+              "type": "text",
+              "body": "Original"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-direct-update-whose-room-read-fails-after-its-lock-fires-with-the-room-it-held",
+  "title": "A direct update whose room read after its lock fails still stands, and its ON_EVENT_UPDATED hook fires with the room the update held under its lock",
+  "rules": [
+    "§10.3 Direct mutation",
+    "§13.6"
+  ],
+  "requirements": [
+    "RK-10.3-056"
+  ],
+  "notes": "The update's read of the room under its lock is held once it answered; the next read, once the lock is released, is held in its place, then fails. Meanwhile a message is committed: a room read then would hold it, the context the update held does not. The failure's log is not observed.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Original"
+        }
+      }
+    },
+    {
+      "store_fault": "load_room_context",
+      "gate": "held"
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "content": {
+        "type": "text",
+        "body": "Changed"
+      },
+      "background": true,
+      "as": "update"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "store_fault": "load_room_context",
+      "gate": "after",
+      "fail": "the store is down"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "wait_for": "after"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Later"
+        }
+      }
+    },
+    {
+      "open": "after"
+    },
+    {
+      "await": "update",
+      "expect": {
+        "result": {
+          "content": {
+            "type": "text",
+            "body": "Changed"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Changed"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Later"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "updated": [
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Changed"
+            }
+          },
+          "recent_events": [
+            "room-1#0"
+          ]
+        }
+      ]
+    }
+  }
+}
