@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-takes-its-instruction-directly",
+  "title": "A realtime session hears its direct system instruction and announces the injection",
+  "rules": [
+    "§10.1.1",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-10.1.1-041",
+    "RK-9.2-056"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_realtime_text_injected",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "heard"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "operator",
+        "event_type": "instruction",
+        "addressed_to": [
+          "rt"
+        ],
+        "content": {
+          "type": "text",
+          "body": "Room instruction"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "instruction_unaddressed"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": []
+        }
+      }
+    },
+    {
+      "call": "realtime.inject",
+      "channel_id": "rt",
+      "text": "Session instruction",
+      "role": "system"
+    },
+    {
+      "wait_for": "heard"
+    },
+    {
+      "open": "heard"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": "Session instruction",
+              "role": "system"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "heard": [
+        {
+          "event": {
+            "content": {
+              "body": "Session instruction"
+            },
+            "metadata": {
+              "injected_role": "system"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

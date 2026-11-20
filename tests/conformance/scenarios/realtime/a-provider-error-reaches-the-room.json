@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-provider-error-reaches-the-room",
+  "title": "The room receives a provider error in the realtime provider category",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-104"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "reported"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.error",
+      "channel_id": "rt",
+      "code": "rate_limited",
+      "message": "slow down"
+    },
+    {
+      "wait_for": "reported"
+    },
+    {
+      "open": "reported"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "event": {
+            "metadata": {
+              "error_category": "realtime_provider",
+              "error": "slow down"
+            }
+          },
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}

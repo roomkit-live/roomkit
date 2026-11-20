@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-realtime-pipeline-refuses-the-agents-human-input",
+  "title": "A realtime pipeline refuses an agent with human-input tools of its own",
+  "rules": [
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-9.3-117"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "own",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "name": "own"
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_person"
+          ],
+          "tools": [
+            {
+              "name": "ask_person"
+            }
+          ]
+        }
+      },
+      {
+        "id": "plain",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "name": "plain"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "handoff",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "own"
+        }
+      ],
+      "agents": [
+        "own"
+      ],
+      "voice_channel_id": "rt",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "handoff",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "plain"
+        }
+      ],
+      "agents": [
+        "plain"
+      ],
+      "voice_channel_id": "rt"
+    }
+  ]
+}

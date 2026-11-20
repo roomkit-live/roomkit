@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-hosted-delegation-reaches-its-room",
+  "title": "The room observes a hosted delegation with its id and target",
+  "rules": [
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-9.2-057"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegations",
+        "trigger": "on_realtime_delegation",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "delegated"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "hosted"
+    },
+    {
+      "wait_for": "delegated"
+    },
+    {
+      "open": "delegated"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "delegations": [
+        {
+          "delegation": {
+            "delegation_id": "d1",
+            "target": "hosted"
+          },
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}
