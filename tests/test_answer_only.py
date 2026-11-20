@@ -209,11 +209,21 @@ async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() ->
     assert turn.people == ("Sylvain",)
 
 
-@pytest.mark.parametrize("label", ["Sylvain (2)", "SYLVAIN (2)", "Sylvain (a participant)"])
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Sylvain (2, not Sylvain)",
+        "SYLVAIN (2, not SYLVAIN)",
+        "Sylvain (2, not Sylvain) (a participant)",
+        "Sylvain (2)",
+        "Sylvain (a participant)",
+    ],
+)
 async def test_a_speaker_is_matched_by_the_name_without_its_rank(label: str) -> None:
     """The speaker's label may carry a rank (a sender who took the name first
     holds the bare one) or an agent-like name's mark: the person named is
-    answered all the same (RMK-615)."""
+    answered all the same (RMK-615). A label stored before RMK-1835 carries
+    the rank alone, ``Sylvain (2)``."""
     inner = MockSpeakPolicy(["speak"])
     event = _said("What do you think?", "Sylvain")
     turn = SpeakTurn(

@@ -373,7 +373,7 @@ class TestIngest:
         ("record", "label"),
         [
             ({"name": "Mallory", "rank": 1, "source": "s-mallory"}, "Mallory"),
-            ({"name": "Alice", "rank": 2, "source": "s-other"}, "Alice (2)"),
+            ({"name": "Alice", "rank": 2, "source": "s-other"}, "Alice (2, not Alice)"),
             (None, "@ch-1"),
         ],
         ids=["named", "a second name that reads alike", "no name"],

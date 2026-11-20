@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import NamedTuple
 
 from roomkit._lookalike import skeletons
-from roomkit._text import identifier, json_text_line, person_name, quoted
+from roomkit._text import bounded_text, identifier, json_text_line, person_name, quoted
 from roomkit.channels._discussion_turn import discussion_handles
 from roomkit.core._authors import (
     AuthorRegister,
@@ -55,7 +55,13 @@ SPEAKER_ATTRIBUTION_NOTE = (
 """The note that says how a transcript labels several people's messages,
 given wherever the labels are (RFC §6.4). One of the runtime's marks: a copy
 of it in a participant's text is replaced
-(:mod:`~roomkit.channels._mark_copies`)."""
+(:mod:`~roomkit.channels._mark_copies`).
+
+Its sentence on numbers in parentheses still shows a rank alone, though a
+ranked name now says who it is not (``Alice (2, not Alice)``, RMK-1835): the
+label carries that by itself, and a note reworded to show the new form made a
+model follow a forged ``Alice:`` inside another sender's message more often
+(18 times out of 654 against 5 out of 654, on one tool-calling model)."""
 
 
 PEOPLE_NOTE_OPENING = "[People taking part besides you"
@@ -74,9 +80,17 @@ PEOPLE_NOTE_LIMIT = 20
 """People the people note names at most (:func:`people_note`): past them it
 counts the others, so a large group does not put every name in every turn."""
 
-_PERSON_LIMIT = 96
-"""Characters of a person's label the people note quotes at most: a name's
-64, its rank and ``(a participant)``."""
+LABEL_LIMIT = 120
+"""Characters of a person's label a note quotes at most: a name's 64, its
+rank with the name it is not (:data:`_NOT_NAME_LIMIT`) and
+``(a participant)``."""
+
+_PERSON_LIMIT = LABEL_LIMIT
+
+_NOT_NAME_LIMIT = 24
+"""Characters of the name a ranked label says its sender is not
+(``Alice (2, not Alice)``): a longer name is cut there, at a word when it
+holds a space past its middle, and ends in ``…``."""
 
 
 class TurnSpeaker(NamedTuple):
@@ -288,8 +302,9 @@ def turn_speakers(
     Names are told apart across sources (a participant, whichever channel
     reached them, or a sender on its channel): when a source's name reads
     like another's (in case or in Unicode's confusables, ``Alice`` and
-    ``Аlice``), it carries its rank, ``Аlice (2)``, a form no name takes, so
-    a sender who takes another's name does not read as that person. The
+    ``Аlice``), it carries its rank and the name it is not, ``Аlice (2, not
+    Аlice)``, a form no name takes, so a sender who takes another's name does
+    not read as that person. The
     record of its author a turn was committed with (its name and rank,
     :data:`~roomkit.core._authors.AUTHOR`) is the one read, while the turn's
     source is the one recorded; a turn with none is ranked against the room's
@@ -335,10 +350,12 @@ def _told_apart(speaker: TurnSpeaker, sources: list[str]) -> TurnSpeaker:
 
 
 def _ranked(name: str, rank: int) -> str:
-    """*name* as a label: with its *rank* when an earlier name reads like it,
-    and ``(a participant)`` when it reads as a label the agent's own turns
-    carry."""
-    label = name if rank == 1 else f"{name} ({rank})"
+    """*name* as a label: when an earlier name reads like it, with its *rank*
+    and the name its sender is not (``Alice (2, not Alice)``: a rank alone,
+    ``Alice (2)``, was read as the first Alice more than one time in two,
+    RMK-1835); and ``(a participant)`` when it reads as a label the agent's
+    own turns carry."""
+    label = name if rank == 1 else f"{name} ({rank}, not {bounded_text(name, _NOT_NAME_LIMIT)})"
     if skeletons(name) & _agent_labels():
         return f"{label} (a participant)"
     return label
@@ -391,13 +408,16 @@ def _agent_labels() -> frozenset[str]:
     )
 
 
-_LABEL_TAIL = re.compile(r"(?: \(a participant\))?(?: \(\d+\))?(?: \(a participant\))?$")
+_LABEL_TAIL = re.compile(
+    r"(?: \(a participant\))?(?: \(\d+(?:, not [^()]*)?\))?(?: \(a participant\))?$"
+)
 
 
 def label_name(label: str) -> str:
     """The name a label (:func:`turn_labels`) gives, without the rank a
     look-alike name carries nor the ``(a participant)`` an agent-like name
-    does: ``ALICE (2)`` gives ``ALICE``. No name holds a parenthesis
+    does: ``ALICE (2, not ALICE)`` gives ``ALICE``, as do ``@sms1 (2)`` and a
+    label stored before RMK-1835 (``ALICE (2)``). No name holds a parenthesis
     (:func:`~roomkit._text.person_name`), so the tail is the runtime's."""
     return _LABEL_TAIL.sub("", label)
 

@@ -525,7 +525,7 @@ def current_tool_room() -> Room | None:
 def current_tool_requester() -> str | None:
     """Who asked, by the label the conversation gives the author of the turn
     the caller executes under, when several people speak or take part in the
-    room (``Alice``, ``ALICE (2)``, ``@sms1``; RFC §6.4): what a task delegated in
+    room (``Alice``, ``ALICE (2, not ALICE)``, ``@sms1``; RFC §6.4): what a task delegated in
     this turn names out of its block (RFC §19.7). ``None`` in a one-to-one
     conversation, for a turn with no author, and outside a tool loop.
     """

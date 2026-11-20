@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit._media import content_text
 from roomkit._text import quoted
 from roomkit.channels._discussion_turn import issue_mark, retire_mark
+from roomkit.channels._speaker import LABEL_LIMIT
 from roomkit.core._changes import withdrawn
 from roomkit.core.event_router import CHAIN_DEPTH_LIMIT, chain_depth_exceeded, unanswered
 from roomkit.core.locks import _has_room_lock
@@ -53,8 +54,9 @@ POLL_SECONDS = 1.0
 
 _REFUSING = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 _QUOTE = 160
-_LABEL = 48
-"""A person's label in the notes is quoted, never given as the runtime's words."""
+_LABEL = LABEL_LIMIT
+"""A person's label in the notes is quoted, never given as the runtime's words,
+whole: a ranked label cut short would lose the name it says its sender is not."""
 _RETRY_MAX = 30.0
 
 

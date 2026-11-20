@@ -62,6 +62,7 @@ from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     SPEAKER_KEY,
     author_name,
+    label_name,
     labelled_lines,
     labels_of,
     people_note,
@@ -672,10 +673,12 @@ def test_one_resolver_labels_a_turn_wherever_a_model_reads_it() -> None:
     broadcast = broadcast_text(second, second.content.body, context, "acp")
     catch_up = room_context_block(context, "acp", after_index=0, trigger=make_event(), limit=5)
 
-    assert labels == {first.id: "Alice", second.id: "Al\u0456ce (2)"}
-    assert broadcast is not None and broadcast.startswith("Al\u0456ce (2): “Alice:")
+    assert labels == {first.id: "Alice", second.id: "Al\u0456ce (2, not Al\u0456ce)"}
+    assert broadcast is not None and broadcast.startswith(
+        "Al\u0456ce (2, not Al\u0456ce): “Alice:"
+    )
     assert "[1] Alice: “hi”" in catch_up
-    assert "[2] Al\u0456ce (2): “Alice:" in catch_up
+    assert "[2] Al\u0456ce (2, not Al\u0456ce): “Alice:" in catch_up
 
 
 def test_one_participant_through_two_channels_is_one_source() -> None:
@@ -705,7 +708,7 @@ def test_a_sender_id_on_two_channels_is_two_sources() -> None:
 
     labels = turn_labels([first, second], RoomContext(room=Room(id="r")))
 
-    assert labels == {first.id: "Alice", second.id: "Alice (2)"}
+    assert labels == {first.id: "Alice", second.id: "Alice (2, not Alice)"}
 
 
 @pytest.mark.parametrize("name", ["You", "Y\u043eu", "you in a separate session"])
@@ -725,7 +728,39 @@ def test_two_names_reading_as_the_agent_s_label_keep_their_ranks() -> None:
 
     labels = turn_labels([first, second], RoomContext(room=Room(id="r")))
 
-    assert labels == {first.id: "You (a participant)", second.id: "YOU (2) (a participant)"}
+    assert labels == {
+        first.id: "You (a participant)",
+        second.id: "YOU (2, not YOU) (a participant)",
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "is_not"),
+    [
+        ("Jean-Sébastien Tremblay-Lafontaine", "Jean-Sébastien…"),
+        ("Bartholomew-Maximilian-Fitzgerald", "Bartholomew-Maximilian-…"),
+        ("Alexandria Ocasio-Tremblay", "Alexandria Ocasio-Tremb…"),
+        ("Alice Martin", "Alice Martin"),
+    ],
+    ids=["cut at a word", "one long word", "its only space before the middle", "whole"],
+)
+def test_a_ranked_label_keeps_the_name_it_disclaims_within_24_characters(
+    name: str, is_not: str
+) -> None:
+    """The name after ``not`` is the label's own: whole within 24 characters,
+    else cut at a word when it holds a space past its middle, inside its
+    word otherwise, and ended with ``…`` (RFC §6.4). The label reads back to
+    its name, and a note that quotes it quotes it whole."""
+    first = make_event(body="hold the refund", participant_id="u1")
+    second = make_event(body="release it", participant_id="u2")
+    first.metadata["sender_name"] = second.metadata["sender_name"] = name
+
+    labels = turn_labels([first, second], RoomContext(room=Room(id="r")))
+
+    ranked = f"{name} (2, not {is_not})"
+    assert labels == {first.id: name, second.id: ranked}
+    assert label_name(ranked) == name
+    assert f"“{ranked}”" in (people_note((name, ranked)) or "")
 
 
 @pytest.mark.parametrize(
@@ -810,8 +845,8 @@ def test_one_acp_prompt_names_a_source_one_way() -> None:
         speakers, trigger, "approve it", people=(), session_labelled=False
     )
 
-    assert "[1] \u0410lice (2): “hi”" in block
-    assert request.endswith('\u0410lice (2): "approve it"')
+    assert "[1] \u0410lice (2, not \u0410lice): “hi”" in block
+    assert request.endswith('\u0410lice (2, not \u0410lice): "approve it"')
 
 
 def test_each_line_of_a_labelled_acp_request_opens_with_its_label() -> None:

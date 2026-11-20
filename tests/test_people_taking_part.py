@@ -137,7 +137,11 @@ class TestWhoTakesPart:
     ) -> None:
         people = [_person("u-alice", "Alice"), _person("u-other", "ALICE"), _person("u-x", None)]
 
-        assert people_taking_part(_context(people, []), "ai1") == ("Alice", "ALICE (2)", "@sms1")
+        assert people_taking_part(_context(people, []), "ai1") == (
+            "Alice",
+            "ALICE (2, not ALICE)",
+            "@sms1",
+        )
 
     def test_someone_whose_messages_never_reach_the_agent_is_not_named(self) -> None:
         """Visibility withholds a channel's messages from the agent (RFC
@@ -566,4 +570,4 @@ class TestAMeetingOnOneStream:
         provider = await _meeting(rename=True, match_participant=False)
 
         said, _notes = await _input(provider)
-        assert said == 'Alice (2): "Who is here?"'
+        assert said == 'Alice (2, not Alice): "Who is here?"'

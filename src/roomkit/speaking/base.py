@@ -51,7 +51,7 @@ class SpeakTurn:
 
     people: tuple[str, ...] = ()
     """Who takes part besides the agent, as the conversation labels them
-    (``Alice``, ``ALICE (2)``, ``@sms1``): one is a conversation between the
+    (``Alice``, ``ALICE (2, not ALICE)``, ``@sms1``): one is a conversation between the
     agent and one person. The room's active participants who are neither
     agents, bots nor observers, nor on the agent's channel, and whose messages
     reach it, or the distinct speakers of the recent events when more (one
@@ -64,7 +64,7 @@ class SpeakTurn:
     """Who said ``event`` and each of ``recent``, by event id, by the label the
     AI context gives them (RFC §6.4): the sender's name, the channel for a
     sender with none (``@sms1``), and the rank of a sender whose name reads
-    like an earlier one's (``ALICE (2)``, not Alice)."""
+    like an earlier one's (``ALICE (2, not ALICE)``)."""
 
     thought: Thought | None = None
     """What the agent has in mind, when its channel has a thinker."""

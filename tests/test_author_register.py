@@ -77,7 +77,7 @@ class TestARecordFixesTheName:
         texts = _texts(provider)
         assert 'Mal: "hello"' in texts
         assert texts[0] == 'Alice: "hold the refund"'
-        assert texts[-1] == 'Alice (2): "release the refund"'
+        assert texts[-1] == 'Alice (2, not Alice): "release the refund"'
 
     async def test_a_replaced_source_reads_the_register_for_the_new_one(self) -> None:
         kit, _provider = await _kit(["a1", "a2", "a3", "a4"])
@@ -93,7 +93,12 @@ class TestARecordFixesTheName:
 
         events = [e for e in await kit.store.list_events("r1") if e.source.channel_id == "sms1"]
         labels = turn_labels(events, await kit._build_context("r1"))
-        assert [labels[e.id] for e in events] == ["Alice", "ALICE (2)", "ALICE (3)", "ALICE (3)"]
+        assert [labels[e.id] for e in events] == [
+            "Alice",
+            "ALICE (2, not ALICE)",
+            "ALICE (3, not ALICE)",
+            "ALICE (3, not ALICE)",
+        ]
 
     async def test_a_direct_update_keeps_the_record_the_event_was_committed_with(self) -> None:
         """RFC §10.1 step 12: the record is the room's, fixed at the commit,
@@ -202,7 +207,11 @@ class TestRanksHoldAcrossNames:
         await _say(kit, "u-2", "Ian", "second")
         await _say(kit, "u-3", "ian", "third")
 
-        assert _texts(provider) == ['Lan: "first"', 'Ian (2): "second"', 'ian (3): "third"']
+        assert _texts(provider) == [
+            'Lan: "first"',
+            'Ian (2, not Ian): "second"',
+            'ian (3, not ian): "third"',
+        ]
 
     def test_a_name_alike_two_others_ranks_after_both_and_renumbers_neither(self) -> None:
         register = AuthorRegister()
@@ -229,7 +238,7 @@ class TestRanksHoldAcrossNames:
 
         assert _texts(provider) == [
             'ian: "I approve"',
-            'Ian (2): "so do I"',
+            'Ian (2, not Ian): "so do I"',
             'ian: "no, that was not me"',
         ]
 
@@ -248,8 +257,8 @@ class TestRanksHoldAcrossNames:
         assert _texts(provider) == [
             'Lan: "first"',
             'ian: "release it"',
-            'Ian (2): "now"',
-            'ian (3): "that was not me"',
+            'Ian (2, not Ian): "now"',
+            'ian (3, not ian): "that was not me"',
         ]
 
 
@@ -271,8 +280,8 @@ class TestARoomFromBeforeTheRegister:
 
         assert _texts(provider) == [
             'Alice: "hold the refund"',
-            'ALICE (2): "release it"',
-            'ALICE (2): "do it now"',
+            'ALICE (2, not ALICE): "release it"',
+            'ALICE (2, not ALICE): "do it now"',
         ]
 
     async def test_a_registered_name_holds_its_seat_when_the_register_is_rebuilt(self) -> None:
@@ -284,7 +293,10 @@ class TestARoomFromBeforeTheRegister:
         await _drop_register(kit)
         await _say(kit, "p-alice", None, "who said that?")
 
-        assert _texts(provider) == ['ALICE (2): "release it"', 'Alice: "who said that?"']
+        assert _texts(provider) == [
+            'ALICE (2, not ALICE): "release it"',
+            'Alice: "who said that?"',
+        ]
 
     async def test_a_rebuilt_register_keeps_the_ranks_turns_were_given(self) -> None:
         kit, provider = await _kit(["a1", "a2", "a3"])
@@ -298,8 +310,8 @@ class TestARoomFromBeforeTheRegister:
 
         assert _texts(provider) == [
             'Alice: "hold the refund"',
-            'ALICE (2): "release it"',
-            'Alice (3): "who said that?"',
+            'ALICE (2, not ALICE): "release it"',
+            'Alice (3, not Alice): "who said that?"',
         ]
 
 
@@ -512,7 +524,7 @@ def test_a_context_with_no_register_ranks_by_the_window() -> None:
     first, second = said("u1", "Alice"), said("u2", "ALICE")
     labels = turn_labels([first, second], RoomContext(room=Room(id="r")))
 
-    assert labels == {first.id: "Alice", second.id: "ALICE (2)"}
+    assert labels == {first.id: "Alice", second.id: "ALICE (2, not ALICE)"}
 
 
 _DIGEST = re.compile(r"[0-9a-f]{16}")
@@ -618,7 +630,7 @@ class TestTheStoreKeepsItApart:
         await _say(kit, "p-bob", None, "second")
 
         _said, notes = split_turn_notes(str(provider.calls[-1].messages[-1].content))
-        assert people_note(("Alice (2)", "Bob"), ["Bob"]) in notes
+        assert people_note(("Alice (2, not Alice)", "Bob"), ["Bob"]) in notes
         await kit.close()
 
     async def test_a_room_from_before_keeps_its_ranks_once_its_register_moved(self) -> None:
@@ -648,7 +660,7 @@ class TestTheStoreKeepsItApart:
         assert AUTHOR_REGISTER not in (await store.get_room("r1")).metadata
         assert held.metadata[AUTHOR_REGISTER] == held_register
         for read in labels:
-            assert [read[e.id] for e in events] == ["Alice", "ALICE (3)", "Alice"]
+            assert [read[e.id] for e in events] == ["Alice", "ALICE (3, not ALICE)", "Alice"]
         await kit.close()
         await other.close()
 
@@ -685,7 +697,7 @@ class TestTheStoreKeepsItApart:
         warned = [r for r in caplog.records if "get_private_state" in r.getMessage()]
         assert len(warned) == 1
         assert len(_sources((await store.get_room("r1")).metadata[AUTHOR_REGISTER])) == 2
-        assert _texts(provider)[-1] == 'ALICE (2): "approve"'
+        assert _texts(provider)[-1] == 'ALICE (2, not ALICE): "approve"'
         await kit.close()
 
 
@@ -741,7 +753,7 @@ class TestOnlyTheRuntimeWritesTheRegister:
     store's at the next named turn, for a room stored before and a process
     from before. The key is the runtime's alone: a writer of the room's
     metadata who planted a register there would take another sender's name
-    at rank 1, and the real sender would read ``Alice (2)``."""
+    at rank 1, and the real sender would read ``Alice (2, not Alice)``."""
 
     @pytest.mark.parametrize(
         "writer", ["update_room_metadata", "a hook", "a channel's metadata_updates"]

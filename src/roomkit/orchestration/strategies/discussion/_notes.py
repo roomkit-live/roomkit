@@ -6,7 +6,7 @@ handles, and the names people are addressed by, kept to a name's characters (no
 space, no punctuation but ``_ . -``) and bounded. Everything else a
 participant controls is quoted, on one line, between marks it cannot close
 (``roomkit._text.quoted``): the label an author carries in the transcript
-(``Alice (2)`` for a second source that takes Alice's name) and what they
+(``Alice (2, not Alice)`` for a second source that takes Alice's name) and what they
 wrote. An Agent's name, role and description are the host's, and so are
 the rules a discussion gives in place of the default.
 """

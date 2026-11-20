@@ -2,7 +2,7 @@
 
 A person is told apart by the label the transcript gives them (§6.4): their
 name kept to a name's characters, with the rank a look-alike of an earlier
-source carries (``Alice (2)``), or the channel of a sender with no name
+source carries (``Alice (2, not Alice)``), or the channel of a sender with no name
 (``@sms1``), a form no name takes.
 """
 
@@ -89,7 +89,7 @@ def people_index(
     (a Cyrillic ``а`` in ``@аlice``: an agent writing it believes it asks the
     agent), nor longer than :data:`NAME_LIMIT`; two labels behind one name (``Alice
     Martin``, ``AliceMartin``) make it ambiguous, and a look-alike's ranked
-    label (``Alice (2)``) is addressed by no name, and two nameless senders of
+    label (``Alice (2, not Alice)``) is addressed by no name, and two nameless senders of
     a channel (``@chat``, ``@chat (2)``) make its name ambiguous."""
     people = People(context.participants)
     entries: list[tuple[str, Source]] = [

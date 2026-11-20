@@ -22,7 +22,7 @@ LISTENED_TO = "only listened to"
 
 def _key(name: str) -> str:
     """*name* as compared: the name a speaker's label gives, without its rank
-    (``ALICE (2)`` is ``ALICE``), kept to a name's characters, on one line, as
+    (``ALICE (2, not ALICE)`` is ``ALICE``), kept to a name's characters, on one line, as
     the room keeps a speaker's (so a configured name matches the one the room
     gives), then ignoring case."""
     return person_name(label_name(name)).casefold()
@@ -40,8 +40,8 @@ class AnswerOnly(SpeakPolicy):
     one.
 
     A speaker is matched by the name the room gives them (``SpeakTurn.speakers``,
-    without the rank a look-alike name carries: ``ALICE (2)`` is matched as
-    ``ALICE``), ignoring case and spacing, so the person named is never
+    without the rank a look-alike name carries: ``ALICE (2, not ALICE)`` is
+    matched as ``ALICE``), ignoring case and spacing, so the person named is never
     silenced by a sender who took their name first. It chooses whom the agent
     answers; it is not an access control, since a participant may take any
     display name.

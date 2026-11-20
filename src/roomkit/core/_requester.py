@@ -4,7 +4,7 @@ When several people speak in the room, the user's task a strategy copies into
 a model's input as a ``<task>`` block is headed by who asked for it, by the
 label the conversation gives them: ``Alice asked:`` before a participant's own
 words, named by the strategy that hands them on (:func:`asking_label`);
-``Requested by Alice (2), in the delegating agent's words:`` before a task an
+``Requested by Alice (2, not Alice), in the delegating agent's words:`` before a task an
 agent wrote in a tool call (:func:`~roomkit.tools.current_tool_requester`).
 Only the block's heading names the asker: the runtime's own prompts and the
 input a worker acts on as its own carry none. A one-to-one conversation names

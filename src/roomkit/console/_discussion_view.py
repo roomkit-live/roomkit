@@ -99,7 +99,7 @@ class DiscussionView:
         self, label: str, addressed: Sequence[str] | None, text: str, *, mine: bool = False
     ) -> None:
         """A person's message, under the label the transcript gives its author
-        (``Alice (2)`` for a second source taking Alice's name). Whether it is
+        (``Alice (2, not Alice)`` for a second source taking Alice's name). Whether it is
         the person at the terminal is the console's to say, never a name's."""
         shown = f"@{self.you} (you)" if mine else label
         self._add(f"{shown} → {self._to(addressed)}", "class:you" if mine else "class:person")

@@ -29,9 +29,9 @@ from tests.conftest import make_event
 
 class TestATaskBlockNamesWhoAskedForIt:
     def test_the_heading_names_the_asker_out_of_the_block(self) -> None:
-        with tool_turn_context(room_id="r", requester="ALICE (2)"):
+        with tool_turn_context(room_id="r", requester="ALICE (2, not ALICE)"):
             assert task_heading("User request:") == (
-                "Requested by ALICE (2), in the delegating agent's words:"
+                "Requested by ALICE (2, not ALICE), in the delegating agent's words:"
             )
         results = _one_pass_results("approve it", [], asked_by="Alice")
         assert "Alice asked:\n<task>\napprove it\n</task>" in results
@@ -147,6 +147,10 @@ def test_a_speak_policy_reads_the_conversation_s_labels() -> None:
 
     turn = _speak_turn(nameless, context, "ai1")
 
-    assert turn.speakers == {alice.id: "Alice", impostor.id: "ALICE (2)", nameless.id: "@ch1"}
+    assert turn.speakers == {
+        alice.id: "Alice",
+        impostor.id: "ALICE (2, not ALICE)",
+        nameless.id: "@ch1",
+    }
     # A sender with no name is no voice of their own: several read @ch1.
-    assert set(turn.people) == {"Alice", "ALICE (2)"}
+    assert set(turn.people) == {"Alice", "ALICE (2, not ALICE)"}

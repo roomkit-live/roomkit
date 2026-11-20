@@ -194,7 +194,7 @@ class AuthorRegister:
     Two sources whose names read alike share a skeleton, so their ranks are
     told apart there: a source new to the names it uses takes one more than
     the highest rank the sources whose names read like them hold (``Lan``,
-    then ``Ian (2)``, then ``ian (3)``), and a registered participant the
+    then ``Ian`` at 2, then ``ian`` at 3), and a registered participant the
     lowest rank none of them holds. A source keeps its rank while no source
     whose name reads like the one it uses holds it, so a name that reads like
     two others ranks after both and renumbers neither; a rank once given is
