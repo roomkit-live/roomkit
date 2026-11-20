@@ -121,8 +121,8 @@ class TestCurrentToolActorId:
         assert seen == ["alice", "bob"]
 
     async def test_no_participant_reports_none(self, streaming: bool) -> None:
-        """A system injection has no author. ``None`` says so, so the caller
-        decides rather than inheriting whoever spoke last."""
+        """An event that names no participant has no author. ``None`` says
+        so, so the caller decides rather than inheriting whoever spoke last."""
         seen: list[str | None] = []
 
         async def tool_handler(name: str, args: dict[str, Any]) -> str:

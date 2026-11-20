@@ -23,8 +23,8 @@ because the actor is not something to trust on sight:
    answers with her rows.
 2. Bob is on the roster but never identified: the id reads back just fine, so
    the handler has to check ``identification`` itself and refuse.
-3. A system injection has no author at all: ``None``, and the tool refuses
-   rather than borrowing whoever spoke last.
+3. An event the host sends with no participant has no author at all:
+   ``None``, and the tool refuses rather than borrowing whoever spoke last.
 4. The same handler, called from a realtime voice session: the realtime
    channel installs the same context around the call, so Alice's voice turn
    is answered like her text turn.
@@ -139,8 +139,9 @@ async def main() -> None:
             f"toolset={current_tool_allowed_names()}"
         )
 
-        # No author: a system injection, a webhook, a scheduled run. Refusing is
-        # the answer — the alternative is serving the last human who spoke.
+        # No author: an event that names no participant (one the host sends
+        # with none named, another agent's answer). Refusing is the answer —
+        # the alternative is serving the last human who spoke.
         if room_id is None or actor_id is None:
             return json.dumps({"error": "This turn has no author to answer for."})
 
@@ -197,7 +198,7 @@ async def main() -> None:
     print("\n=== Bob asks (same channel object, same room, not identified) ===")
     await ask("bob")
 
-    print("\n=== A system injection asks (no author) ===")
+    print("\n=== An event the host sends with no participant asks (no author) ===")
     await kit.send_event(
         room.id,
         "ws-user",

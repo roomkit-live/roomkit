@@ -1357,10 +1357,10 @@ sender id of the message the turn answers, a participant's id when the room
 knows them, never a name the model was shown. It names the turn and
 authenticates no one: resolve the participant before trusting it. Compare it
 with the id you expect and never test it for absence: a turn the host opened
-with `kit.deliver()` reads `"system"`, and `None` is not the host. It is an
-event that names no participant (a `kit.send_event()` or `kit.post()`
-without one, another agent's message), or a participant's id on a channel
-that does not reach them, which a sender can produce:
+with `kit.deliver()` reads `"system"`, and `None` does not single out the
+host: it is an event that names no participant (a `kit.send_event()` or
+`kit.post()` without one, another agent's answer), or a participant's id on
+a channel that does not reach them, which a sender can produce:
 
 ```python
 from roomkit.tools import current_tool_actor_id

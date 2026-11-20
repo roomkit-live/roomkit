@@ -239,8 +239,9 @@ class _ToolLoopContext:
     # about *this* turn has to ride the contextvar: the room does
     # (``room_id``), and so must the person, or a handler acting "for the
     # user" acts for whoever the channel was built with. ``None`` when the
-    # event carries no participant (a system injection, a webhook) — a caller
-    # must then decide for itself rather than assume the last speaker. It
+    # event names no participant (one the host commits with none named,
+    # another agent's answer) — a caller must then decide for itself rather
+    # than assume the last speaker. It
     # names the turn without authenticating it: what the id is worth is the
     # participant's ``identification``, which is why
     # ``current_tool_actor_id()`` documents the resolution a host owes it.
@@ -550,12 +551,12 @@ def current_tool_actor_id() -> str | None:
     ``Participant.identification`` to be ``IDENTIFIED``, and take
     ``Participant.identity_id`` as the principal.
 
-    The author need not be human, either. In a multi-agent room the waking
-    event may be another agent's: an AI agent speaks through an intelligence
-    channel, and an AI participant the host records in the room takes
-    ``ParticipantRole.BOT`` — compare the participant's ``role`` against it
-    when that distinction matters. ``ParticipantRole.AGENT`` is a human
-    advisor, a person (RFC §5).
+    The author need not be human, either: an AI participant the host records
+    in the room takes ``ParticipantRole.BOT`` — compare the participant's
+    ``role`` against it when that distinction matters.
+    ``ParticipantRole.AGENT`` is a human advisor, a person (RFC §5). An agent
+    that answers through its intelligence channel names no participant: the
+    turn its answer wakes reads ``None``.
 
     ``"system"`` for an event the framework writes under its own name (a
     ``deliver()``, RFC §10.4). A message under that name is refused when it
@@ -571,8 +572,9 @@ def current_tool_actor_id() -> str | None:
     through (RFC §5.5), so the turn's author is not them, and the id read
     back would name them.
 
-    So ``None`` is not the host: a sender can produce it. A gate compares the
-    value with the id it expects and never reads its absence as a leave. A
+    So ``None`` does not single out the host: a sender can produce it too. A
+    gate compares the value with the id it expects and never reads its
+    absence as a leave. A
     caller that needs a person decides for itself — refuse, or fall back to a
     principal it configured on purpose — rather than borrow whoever spoke
     last.
@@ -853,7 +855,7 @@ def tool_turn_context(
             :func:`current_tool_room`; its id is the turn's room id, so
             *room_id* may be left out. Both given must name the same room.
         actor_id: Whose turn it is, read by :func:`current_tool_actor_id`;
-            ``None`` for a turn with no author (a system injection, a webhook).
+            ``None`` for a turn whose waking event names no participant.
         tools: The turn's resolved toolset, read by
             :func:`current_tool_allowed_names`. ``None`` stands for a turn
             whose toolset was not resolved (the accessor answers ``None``);

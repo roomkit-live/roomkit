@@ -54,9 +54,10 @@ class PendingInput:
     """Participant whose turn raised this request, when the tool loop knew one.
 
     A request that names nobody is a request a notification layer has to
-    broadcast, and an answer it cannot attribute. ``None`` when the turn had no
-    author (a system injection, a webhook, a scheduled run) or when the creator
-    runs its own tool loop and did not supply one. It names the turn without
+    broadcast, and an answer it cannot attribute. ``None`` when the turn's
+    waking event named no participant (one the host committed with none named,
+    another agent's answer) or when the creator runs its own tool loop and did
+    not supply one. It names the turn without
     authenticating it — resolve it against the room's roster before treating it
     as a principal, as ``current_tool_actor_id()`` documents."""
     _event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
