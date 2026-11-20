@@ -508,6 +508,17 @@ class TurnClient(RoomOwner):
         reached = await asyncio.gather(*(turn.steer(directive) for turn in targets))
         return sum(reached)
 
+    async def _running_in(self, room_id: str, channel_id: str) -> list[TurnRequest]:
+        """The requests of the turns of *channel_id* running in *room_id*
+        that this client started, oldest first: what a directive steered
+        there without a turn id may reach (:meth:`steer`)."""
+        await self._handed_over(channel_id, room_id, None)
+        return [
+            t.request
+            for t in self._started
+            if not t.over and t.request.channel_id == channel_id and t.request.room_id == room_id
+        ]
+
     async def _handed_over(self, channel_id: str, room_id: str, turn_id: str | None) -> None:
         """Wait for the turns of *channel_id* in *room_id* (its turn
         *turn_id*, when given) still being handed to an executor: each may

@@ -20,12 +20,14 @@ from roomkit.channels import SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.websocket import WebSocketChannel
-from roomkit.models.enums import DeleteType, EventType
+from roomkit.models.enums import DeleteType, EventType, HookTrigger
 from roomkit.models.event import DeleteContent, EditContent, EventContent
+from roomkit.models.hook import HookResult
 from roomkit.models.steering import InjectMessage
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
+from roomkit.tools import current_tool_actor_id, current_tool_requester
 from roomkit.tools.context import _ToolLoopContext
 from roomkit.turns import InMemoryTurnBackend, TurnExecutor
 from tests.test_framework import SimpleChannel
@@ -319,37 +321,117 @@ async def test_off_a_message_during_a_turn_starts_its_own(streaming: bool) -> No
     assert provider.most_at_once == 2
 
 
-async def test_a_steered_message_carries_its_speaker_when_the_room_has_several(
-    streaming: bool,
-) -> None:
-    """In a room where several people speak, the turn reads the message under
-    its speaker's label, as its history labels the room's turns (RFC §6.4)."""
-    provider = _Gated([CALL, AIResponse(content="ok")], held=-1, streaming=streaming)
-    tool = _Paused()
+async def _people_kit(
+    provider: MockAIProvider, tool: Any, where: str = "live"
+) -> tuple[RoomKit, TurnExecutor | None]:
+    """A room several people write to on one channel, and a steering agent
+    in the kit's process or on an executor (:func:`_steering_kit`)."""
     agent = Agent(
         "agent", provider=provider, tools=[WAIT], tool_handler=tool, steer_room_turns=True
     )
-    kit = RoomKit()
+    executor = None
+    if where == "live":
+        kit = RoomKit()
+        kit.register_channel(agent)
+    else:
+        backend = InMemoryTurnBackend()
+        executor = TurnExecutor(lambda channel_id: agent, hosts={"agent"}.__contains__)
+        await backend.serve(executor)
+        kit = RoomKit(store=InMemoryStore(), turn_backend=backend)
+        kit.register_channel(ChannelDeclaration(channel_id="agent", steers_room_turns=True))
     kit.register_channel(SMSChannel("sms1"))
-    kit.register_channel(agent)
     await kit.create_room(room_id="r1")
     await kit.attach_channel("r1", "sms1", group=True)
     await kit.attach_channel("r1", "agent", category=ChannelCategory.INTELLIGENCE)
+    return kit, executor
 
-    def said(sender: str, name: str, body: str) -> InboundMessage:
-        return InboundMessage(
-            channel_id="sms1",
-            sender_id=sender,
-            content=TextContent(body=body),
-            metadata={"sender_name": name},
+
+def _said(sender: str, name: str, body: str) -> InboundMessage:
+    return InboundMessage(
+        channel_id="sms1",
+        sender_id=sender,
+        content=TextContent(body=body),
+        metadata={"sender_name": name},
+    )
+
+
+async def test_a_steered_message_carries_its_speaker_when_the_room_has_several(
+    streaming: bool,
+) -> None:
+    """In a room where several people speak, the turn reads its author's next
+    message under their label, as its history labels the room's turns (RFC
+    §6.4)."""
+    script = [AIResponse(content="hello"), CALL, AIResponse(content="ok")]
+    provider = _Gated(script, held=-1, streaming=streaming)
+    tool = _Paused()
+    kit, _ = await _people_kit(provider, tool)
+    try:
+        await kit.process_inbound(_said("+15550002", "Bob", "hi all"), room_id="r1")
+        turn = asyncio.create_task(
+            kit.process_inbound(_said("+15550001", "Alice", "go"), room_id="r1")
         )
+        await asyncio.wait_for(tool.started.wait(), 2)
 
-    turn = asyncio.create_task(kit.process_inbound(said("+15550001", "Alice", "go"), room_id="r1"))
-    await asyncio.wait_for(tool.started.wait(), 2)
+        await kit.process_inbound(_said("+15550001", "Alice", STEERED), room_id="r1")
+        tool.release.set()
+        await asyncio.wait_for(turn, 5)
 
-    await kit.process_inbound(said("+15550002", "Bob", STEERED), room_id="r1")
-    tool.release.set()
-    await asyncio.wait_for(turn, 5)
+        assert len(provider.calls) == 3
+        assert _read(provider.calls[2], f'Alice: "{STEERED}"')
+    finally:
+        tool.release.set()
+        await kit.close()
 
-    assert _read(provider.calls[1], f'Bob: "{STEERED}"')
-    await kit.close()
+
+@pytest.mark.parametrize("where", ["live", "declared"])
+@pytest.mark.parametrize(
+    ("sender", "requester"),
+    [("+15550002", "Bob"), ("+15550001", None)],
+    ids=["another sender", "the same sender id under another name"],
+)
+async def test_another_person_s_message_waits_a_turn_of_its_own(
+    streaming: bool, where: str, sender: str, requester: str | None
+) -> None:
+    """A turn runs in its author's name: its tools and its tool gate read
+    them as who asked (RFC §21.4), and its channel's tool policy is resolved
+    for their role. A message someone else sends meanwhile is not read inside
+    it, where their request would run under that name: it is answered by a
+    turn of its own, whose author they are. One sender id that signs another
+    name (a bridge, a shared microphone) is someone else too, though the
+    room, which counts its speakers by source, labels no one then
+    (RMK-1840)."""
+    again = AIResponse(
+        content="", tool_calls=[AIToolCall(id="c2", name="wait_here", arguments={})]
+    )
+    script = [CALL, AIResponse(content="a.py"), again, AIResponse(content="b.txt")]
+    provider = _Gated(script, held=-1, streaming=streaming)
+    tool = _Paused()
+    kit, executor = await _people_kit(provider, tool, where)
+    asked_by: list[tuple[str, str | None, str | None]] = []
+
+    async def gate(event: Any, ctx: Any) -> HookResult:
+        asked_by.append((event.tool_call_id, current_tool_actor_id(), current_tool_requester()))
+        return HookResult.allow()
+
+    (executor or kit).hook(HookTrigger.BEFORE_TOOL_USE)(gate)
+    try:
+        first = asyncio.create_task(
+            kit.process_inbound(_said("+15550001", "Alice", "List the files."), room_id="r1")
+        )
+        await asyncio.wait_for(tool.started.wait(), 2)
+
+        second = asyncio.create_task(
+            kit.process_inbound(_said(sender, "Bob", STEERED), room_id="r1")
+        )
+        tool.release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), 5)
+
+        assert len(provider.calls) == 4
+        assert not _read(provider.calls[1], STEERED)
+        assert _read(provider.calls[2], STEERED)
+        assert asked_by == [("c1", "+15550001", None), ("c2", sender, requester)]
+    finally:
+        tool.release.set()
+        await kit.close()
+        if executor is not None:
+            await executor.close()

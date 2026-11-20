@@ -28,6 +28,7 @@ from typing import Any
 from roomkit._media import text_form
 from roomkit.channels._speaker import labelled_lines
 from roomkit.channels.base import Channel
+from roomkit.core._authors import People, author_name, source_of
 from roomkit.core._changes import for_channels, opens_no_turn
 from roomkit.core._requester import asking_label
 from roomkit.core.lanes import anchor_index
@@ -40,6 +41,7 @@ from roomkit.models.steering import InjectMessage, SteeringDirective
 from roomkit.providers.utils import _aclose_stream
 from roomkit.telemetry.context import get_current_span, restored_span
 from roomkit.turns.owner import drop_unread, read_as_trace
+from roomkit.turns.wire import TurnRequest
 
 Reaction = Callable[[Channel, RoomEvent, ChannelBinding, RoomContext], Awaitable[ChannelOutput]]
 """How the room's owner runs a channel's turn: ``EventRouter.react``."""
@@ -47,6 +49,10 @@ Reaction = Callable[[Channel, RoomEvent, ChannelBinding, RoomContext], Awaitable
 Steer = Callable[..., Awaitable[int]]
 """How the room's owner steers a channel's running turns in a room:
 ``TurnClient.steer(room_id, channel_id, directive)``, how many it reached."""
+
+Running = Callable[[str, str], Awaitable[list[TurnRequest]]]
+"""The requests of the turns a channel runs in a room, as the room's owner
+started them: what a message steered there would reach."""
 
 _HELD: contextvars.ContextVar[tuple[_Place, ...]] = contextvars.ContextVar(
     "roomkit_room_turn_places", default=()
@@ -103,11 +109,13 @@ class RoomTurns:
         context_of: Callable[..., Awaitable[RoomContext]] | None,
         telemetry: Any,
         steer: Steer | None = None,
+        running: Running | None = None,
     ) -> None:
         self._react = react
         self._context_of = context_of
         self._telemetry = telemetry
         self._steer = steer
+        self._running = running
         self._lines: dict[tuple[str, str], list[_Place]] = {}
 
     def join(self, room_id: str, channel_id: str) -> _Place:
@@ -152,8 +160,16 @@ class RoomTurns:
         which reads it at its next stop rather than a turn of its own (RFC
         §6.4, §21.3): for a channel that steers its room turns, when its line
         in the room holds that one turn alone, so no turn asked before
-        *event* is passed over, and the turn takes it (``steer`` reached it)."""
-        if self._steer is None or not channel.steers_room_turns:
+        *event* is passed over, when *event* is from the author of the
+        message that turn answers, and the turn takes it (``steer`` reached
+        it).
+
+        A turn runs in its author's name: its tools read them as its actor
+        (RFC §21.4), and its channel's tool policy is resolved for their role
+        (RFC §21.1). Someone else's message read inside it would have its
+        request served under that name and that role, so it waits a turn of
+        its own (RMK-1840)."""
+        if self._steer is None or self._running is None or not channel.steers_room_turns:
             return False
         line = self._lines.get((context.room.id, channel.channel_id))
         if line is None or len(line) != 1:
@@ -161,7 +177,16 @@ class RoomTurns:
         message = steered_message(event, context, channel.channel_id)
         if message is None:
             return False
-        reached = await self._steer(context.room.id, channel.channel_id, message)
+        running = await self._running(context.room.id, channel.channel_id)
+        if len(running) != 1:
+            return False
+        turn = running[0]
+        if _author(turn.event, turn.context) != _author(event, context):
+            return False
+        # That turn and no other: the one whose author was just read.
+        reached = await self._steer(
+            context.room.id, channel.channel_id, message, turn_id=turn.turn_id
+        )
         return reached > 0
 
     async def _start(
@@ -201,6 +226,15 @@ class RoomTurns:
             limit = min(len(asked.recent_events) + latest - horizon, _RECENT_EVENTS_LIMIT)
             now = await self._context_of(room_id, recent_limit=limit)
         return for_channels(now)
+
+
+def _author(event: RoomEvent, context: RoomContext) -> tuple[list[str], str | None]:
+    """Who wrote *event*, as the room tells its sources apart (a participant,
+    a sender on its channel, or a channel: RFC §10.1 step 12), with the name
+    the event is signed with: one sender id may carry several people (a
+    bridge, a shared microphone whose voices are named)."""
+    people = People(context.participants)
+    return source_of(event, people), author_name(event, people)
 
 
 def steered_message(
