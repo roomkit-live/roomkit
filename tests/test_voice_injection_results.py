@@ -120,6 +120,7 @@ async def test_broadcast_hook_requires_explicit_injection_acceptance(status) -> 
                 await kit.store.get_binding("r", "voice"),
                 await kit._build_context("r"),
             )
+        await kit.hook_engine.drain_observers()
         assert len(observed) == (1 if status == "sent" else 0)
 
 

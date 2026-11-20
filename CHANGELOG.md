@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Voice STT waits for partial transcription observers before reading the next result in both VAD-segmented and continuous sessions. A slow partial observer can now finish before the final transcription is delivered (RFC §9.3, RMK-1841).
 
+- Realtime voice and conference text injections return after the provider accepts the text, while the asynchronous `ON_REALTIME_TEXT_INJECTED` observers finish in the background.
+
 ## [0.116.0] — 2026-11-20
 
 ### Added

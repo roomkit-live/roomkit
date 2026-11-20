@@ -646,6 +646,33 @@ async def test_a_broadcast_enters_as_its_author_s_quoted_words(
 
 
 @HOSTS
+async def test_a_direct_injection_returns_while_its_observer_is_held(host: str) -> None:
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    @rt.kit.hook(HookTrigger.ON_REALTIME_TEXT_INJECTED, execution=HookExecution.ASYNC)
+    async def observe(event: RoomEvent, ctx: Any) -> None:
+        entered.set()
+        await release.wait()
+
+    injection = asyncio.create_task(rt.channel.inject_text(session, "Welcome", role="system"))
+    try:
+        async with asyncio.timeout(2):
+            await entered.wait()
+            result = await asyncio.shield(injection)
+        assert result.status == "sent"
+        assert provider.injections == [("Welcome", False)]
+    finally:
+        release.set()
+        await injection
+        await rt.kit.close()
+
+
+@HOSTS
 async def test_a_blank_broadcast_reaches_no_session(host: str) -> None:
     """Nothing to quote: no empty quote is injected (RMK-591)."""
     provider = _Provider()

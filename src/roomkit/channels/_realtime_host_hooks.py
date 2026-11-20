@@ -127,7 +127,7 @@ async def fire_text_injected(
         metadata=metadata,
     )
     try:
-        await RoomHooks(framework, session.room_id).run_async(
+        await RoomHooks(framework, session.room_id).fire(
             HookTrigger.ON_REALTIME_TEXT_INJECTED, event
         )
     except Exception:
