@@ -19,6 +19,10 @@ async def _subscribe_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any
     read = harness.observed.subscribers.setdefault(spec["subscriber"], [])
 
     async def record(event: EphemeralEvent) -> None:
+        if "types" in spec and event.type.value not in spec["types"]:
+            return
+        if "gate" in spec:
+            harness.gates.reach(spec["gate"])
         read.append({"type": event.type.value, "room_id": event.room_id, "user_id": event.user_id})
 
     return await kit.subscribe_room(

@@ -221,6 +221,8 @@ KIT_CALLS = frozenset(
         "add_room_hook",
         "subscribe_room",
         "publish_typing",
+        "steer",
+        "agent_presence",
         "regenerate_response",
         "install_strategy",
         "uninstall_strategy",
@@ -667,8 +669,13 @@ class Harness:
             await self.idle()
             # A fault no call took tested nothing (README, "Steps").
             self._problems.extend(self.store_faults.untaken())
+            self._problems.extend(self.executors.faults.untaken())
             await self._thinking_read()
             await self._observe()
+            # Fixture shutdown can publish its own offline events.
+            return self._problems + compare(
+                self.scenario.get("expect", {}), self.observed, self._checks
+            )
         finally:
             for kit in self._open_kits():
                 await kit.close()
@@ -677,9 +684,6 @@ class Harness:
                 await handler.close()
             await self.mcp.close()
             self.auditors.close()
-        return self._problems + compare(
-            self.scenario.get("expect", {}), self.observed, self._checks
-        )
 
     async def _set_room_status(self, room: Mapping[str, Any]) -> None:
         transitions = {
@@ -721,11 +725,11 @@ class Harness:
         for handler in setup.get("event_handlers", []):
             self.kit.on(handler["event"])(event_handler(handler, self))
         for process in setup.get("processes", []):
-            self.processes[process["id"]] = await self._process()
+            self.processes[process["id"]] = await self._process(process["id"])
         await start_backend(self.kit)
         await self.idle()
 
-    async def _process(self) -> RoomKit:
+    async def _process(self, process_id: str) -> RoomKit:
         """Another process serving the rooms: a kit over the run's store and
         lock manager, or what the caller opens for it, holding the setup's
         channels as objects of its own."""
@@ -737,7 +741,9 @@ class Harness:
                 # Processes share the file, never a connection that one's close
                 # would close for all the others (as in the Rust SQLite runner).
                 store = SQLiteStore(store._path)
-        kit = RoomKit(store=store, lock_manager=lock_manager)
+        kit = RoomKit(
+            store=store, lock_manager=lock_manager, **self.executors.process_options(process_id)
+        )
         self._publications.watch(kit)
         for channel in self.scenario.get("setup", {}).get("channels", []):
             register_channel(kit, self, channel, process=True)
@@ -754,6 +760,15 @@ class Harness:
             outcome = await self.invoke(step, {})
             self._step_outcomes.append(outcome)
             self._checks.append((path, step.get("expect"), outcome))
+        elif "restart_process" in step:
+            name = step["restart_process"]
+            kit = self.processes[name]
+            await self.executors.close_process_workers(name)
+            if kit not in self._closed:
+                await kit.close()
+                self.closed(kit)
+            self.executors.forget_process(name)
+            self.processes[name] = await self._process(name)
         elif "await" in step:
             outcome = await self._background.pop(step["await"])
             self._step_outcomes.append(outcome)

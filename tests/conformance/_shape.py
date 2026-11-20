@@ -109,6 +109,8 @@ EXECUTOR = {
     "telemetry",
     "attached_media",
     "media_resolver",
+    "host_predicate",
+    "kit",
     "id",
     "hosts",
     "builds",
@@ -142,6 +144,9 @@ KIT = {
     "persistence_policy",
     "turn_timeouts",
     "store_faults",
+    "shared_realtime",
+    "turn_backend_faults",
+    "executor_catalogue",
 }
 LOCK_MANAGER = {"kind", "release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
@@ -593,7 +598,7 @@ CALLS: dict[str, set[str]] = {
     "register_hook": {"hook"},
     "add_room_hook": {"room_id", "hook"},
     "remove_room_hook": {"room_id", "name"},
-    "subscribe_room": {"room_id", "subscriber"},
+    "subscribe_room": {"room_id", "subscriber", "types", "gate"},
     "publish_typing": {"room_id", "user_id", "is_typing"},
     "mute_output": {"room_id", "channel_id"},
     "unmute_output": {"room_id", "channel_id"},
@@ -635,6 +640,7 @@ CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
+STEPS["restart_process"] = {"restart_process"}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
 STEPS |= {"acp_disconnect": {"acp_disconnect"}}

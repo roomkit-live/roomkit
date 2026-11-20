@@ -9,14 +9,16 @@ kit is built with: in memory, or across Redis in the suite's Redis mode.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
-from roomkit.realtime import EphemeralEvent, EphemeralEventType
+from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.mock import MockTelemetryProvider
@@ -26,10 +28,17 @@ from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
 from tests.conformance._held_ends import HeldEnds
 from tests.conformance._media import media_options
+from tests.conformance._owner_nodes import (
+    FaultingPresence,
+    OwnerFaults,
+    OwnerRealtime,
+    WithoutCatalogue,
+)
 from tests.conformance._script import GATE_BOUND_S, hook_handler
 from tests.conformance._turn_errors import ERROR_CLASSES, inspect_failure
 
 if TYPE_CHECKING:
+    from roomkit.turns import AgentPresence
     from tests.conformance._harness import Harness
 
 
@@ -99,6 +108,17 @@ class Executors:
         self._specs: dict[str, Mapping[str, Any]] = {
             e["id"]: e for e in setup.get("executors", [])
         }
+        self._settings = setup.get("kit", {})
+        self._distributed = bool(self._specs and setup.get("processes"))
+        self._prefix = f"{redis_turn_mode.SESSION_PREFIX}:{uuid4().hex}"
+        self._nodes: dict[str | None, TurnBackend] = {}
+        self._process_ids = {p["id"] for p in setup.get("processes", [])}
+        if self._distributed and "main" in self._process_ids:
+            raise UnreadableError("main names the run's own process")
+        self.faults = OwnerFaults(harness.gates.reach)
+        self._shared_realtime = (
+            InMemoryRealtime() if self._settings.get("shared_realtime") else None
+        )
         self._channels = {channel["id"]: channel for channel in setup.get("channels", [])}
         self._builds: dict[tuple[str, str], int] = {}
         self._running: dict[str, _ScenarioExecutor] = {}
@@ -127,10 +147,45 @@ class Executors:
         default otherwise."""
         if not self._specs and self._bounds is None and not self.held_ends:
             return {}
-        self._backend = _backend(self._bounds)
+        self._backend = self._node("main")
         if self.held_ends:
             self.held_ends.wrap(self._backend)
-        return {"turn_backend": self._backend}
+        return self.process_options("main")
+
+    def _node(self, name: str | None) -> TurnBackend:
+        if name not in self._nodes:
+            if self._distributed:
+                from roomkit.turns.redis import RedisTurnBackend
+
+                backend: TurnBackend = RedisTurnBackend(
+                    os.environ["REDIS_URL"], key_prefix=self._prefix, timeouts=self._bounds
+                )
+            else:
+                backend = _backend(self._bounds)
+            if self._settings.get("turn_backend_faults"):
+                backend = FaultingPresence(backend, self.faults)
+            if self._settings.get("executor_catalogue") is False:
+                backend = WithoutCatalogue(backend)
+            self._nodes[name] = backend
+        return self._nodes[name]
+
+    def process_options(self, name: str) -> dict[str, Any]:
+        if name != "main" and not self._distributed:
+            return {}
+        options: dict[str, Any] = {"turn_backend": self._node(name)}
+        if self._shared_realtime is not None or self._settings.get("turn_backend_faults"):
+            options["realtime"] = OwnerRealtime(
+                self._shared_realtime or InMemoryRealtime(), self.faults
+            )
+        return options
+
+    async def close_process_workers(self, name: str) -> None:
+        for worker, spec in self._specs.items():
+            if spec.get("kit") == name and worker in self._running:
+                await self.close(worker)
+
+    def forget_process(self, name: str) -> None:
+        self._nodes.pop(name, None)
 
     async def start_all(self) -> None:
         """Serves the executors the setup starts."""
@@ -167,7 +222,11 @@ class Executors:
             partial(self._build, executor_id),
             bool(spec.get("answers", True)),
             partial(self._harness.gates.reach, spec.get("gate", "")),
-            hosts=set(spec.get("hosts", [])),
+            hosts=(
+                set(spec["host_predicate"]).__contains__
+                if "host_predicate" in spec
+                else spec.get("hosts")
+            ),
             organizations=spec.get("organizations"),
             executor_id=executor_id,
             timeouts=self._bounds,
@@ -176,7 +235,11 @@ class Executors:
             **bound,
         )
         self._add_hooks(executor, spec)
-        await self._backend.serve(executor)
+        name = spec.get("kit")
+        if name is not None and name != "main" and name not in self._process_ids:
+            raise UnreadableError(f"no process {name!r} for executor {executor_id!r}")
+        node = self._node(name) if self._distributed else self._backend
+        await node.serve(executor)
         self._running[executor_id] = executor
 
     def _add_hooks(self, executor: TurnExecutor, spec: Mapping[str, Any]) -> None:
@@ -229,6 +292,10 @@ class Executors:
         for executor in self._running.values():
             await executor.close()
         self._running.clear()
+        if None in self._nodes:
+            await self._nodes[None].close()
+        if self._shared_realtime is not None:
+            await self._shared_realtime.close()
 
 
 def _trigger(hook: Mapping[str, Any]) -> tuple[HookTrigger, HookExecution]:
@@ -419,18 +486,41 @@ async def _executors(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
 async def _agent_presence(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     """Each of a room's agents, online or not (README, ``agent_presence``)."""
     arguments = {"organization_id": spec["organization_id"]} if "organization_id" in spec else {}
+
+    async def present() -> list[AgentPresence]:
+        while True:
+            agents = await kit.agent_presence(spec["room_id"], **arguments)
+            target = spec.get("wait_for_online")
+            if target is None or any(
+                agent.online and agent.channel_id == target for agent in agents
+            ):
+                return agents
+            await asyncio.sleep(0.025)
+
+    agents = (
+        await asyncio.wait_for(present(), GATE_BOUND_S)
+        if "wait_for_online" in spec
+        else await present()
+    )
     return [
         {
             "channel_id": presence.channel_id,
             "online": presence.online,
             "executors": sorted(presence.executors),
         }
-        for presence in await kit.agent_presence(spec["room_id"], **arguments)
+        for presence in agents
     ]
+
+
+async def _fault(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    if not harness.scenario["setup"]["kit"].get("turn_backend_faults"):
+        raise UnreadableError("turn_backend.fault requires setup.kit.turn_backend_faults")
+    harness.executors.faults.set(spec["operation"], spec["enabled"], spec.get("gate"))
 
 
 EXECUTOR_CALLS: dict[str, Call] = {
     "telemetry.spans": _spans,
+    "turn_backend.fault": _fault,
     "executor.start": _start,
     "executor.close": _close,
     "executor.kill": _kill,
@@ -448,6 +538,7 @@ EXECUTOR_CALLS: dict[str, Call] = {
 # Each call's arguments, beside `call` and `organization_id`.
 EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "telemetry.spans": {"site", "kind", "attributes"},
+    "turn_backend.fault": {"operation", "enabled", "gate"},
     "executor.start": {"executor"},
     "executor.close": {"executor"},
     "executor.kill": {"executor"},
@@ -459,5 +550,5 @@ EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "release_channel": {"channel_id"},
     "enable_room_hook": {"room_id", "name"},
     "executors": set(),
-    "agent_presence": {"room_id"},
+    "agent_presence": {"room_id", "wait_for_online"},
 }

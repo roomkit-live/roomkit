@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -193,6 +194,7 @@ def _stores(scenario_id: str, scenario: dict[str, Any]) -> tuple[str, ...]:
         return ("memory",)
     if (
         scenario_id.startswith(_ON_POSTGRES)
+        or scenario_id.startswith("executors/owners-")
         or _runs_in_processes(scenario)
         or _faults_the_store(scenario)
     ):
@@ -213,6 +215,12 @@ def _marks(scenario_id: str, scenario: dict[str, Any]) -> list[Any]:
     if missing:
         return [pytest.mark.skip(reason="missing scenario features: " + ", ".join(missing))]
     marks = []
+    if (
+        _runs_in_processes(scenario)
+        and scenario["setup"].get("executors")
+        and not os.getenv("REDIS_URL")
+    ):
+        marks.append(pytest.mark.skip(reason="independent turn owners require REDIS_URL"))
     if scenario_id in _LOCAL_TURN_CONTEXT:
         marks.append(pytest.mark.in_process(_LOCAL_TURN_CONTEXT[scenario_id]))
     if _turn_calls_the_kit(scenario):
