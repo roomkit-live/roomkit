@@ -13,6 +13,7 @@ from roomkit import ChannelDeclaration, RoomKit, ToolNameCollisionError
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels.agent import Agent
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, _current_voice_session
+from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -21,10 +22,13 @@ from roomkit.models.enums import (
     EventType,
     HookExecution,
     HookTrigger,
+    IdentificationStatus,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
+from roomkit.models.identity import IdentityHookResult, IdentityResult
 from roomkit.models.room import Room
+from roomkit.orchestration._handoff_greeting import HandoffGreeting
 from roomkit.orchestration.handoff import HANDOFF_TOOL, HandoffHandler
 from roomkit.orchestration.pipeline import (
     ConversationPipeline,
@@ -33,6 +37,7 @@ from roomkit.orchestration.pipeline import (
 from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import ConversationState, set_conversation_state
 from roomkit.providers.ai.base import AITool
+from roomkit.testing.channels import EchoAgent, RecordingTransport
 from roomkit.turns._registry_tools import OwnerToolStore
 from roomkit.voice.base import VoiceSession
 from tests.conftest import make_event
@@ -1393,3 +1398,43 @@ class TestRealtimeInstall:
         assert len(owner_tool_definitions(kit, agent_a.channel_id)) == 1
         assert len(owner_tool_definitions(kit, agent_b.channel_id)) == 1
         vc.update_voice_map.assert_called_once()
+
+
+class _KnowsNoOne(IdentityResolver):
+    """A resolver that knows no sender, recording whom it was asked about."""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def resolve(self, message: Any, context: Any) -> IdentityResult:
+        self.asked.append(message.sender_id)
+        return IdentityResult(status=IdentificationStatus.UNKNOWN)
+
+
+async def test_the_handoff_cue_is_not_challenged_by_the_identity_hooks() -> None:
+    """The cue that asks the new agent to introduce itself is the framework's
+    own message (RFC §10.4): the identity step leaves it alone (§11.6), so a
+    kit that challenges unknown senders does not challenge it. It was refused
+    with ``identity_challenge_sent`` and the agent never introduced itself
+    (RMK-1874)."""
+    resolver = _KnowsNoOne()
+    kit = RoomKit(identity_resolver=resolver)
+    challenged: list[str | None] = []
+
+    @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)
+    async def challenge(event: Any, context: Any, id_result: Any) -> IdentityHookResult:
+        challenged.append(event.source.participant_id)
+        return IdentityHookResult.challenge(None, "Identify yourself")
+
+    kit.register_channel(RecordingTransport("voice", ChannelType.VOICE))
+    kit.register_channel(EchoAgent("agent", "Hello, I am the advisor."))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "voice")
+    await kit.attach_channel("r", "agent")
+    try:
+        await HandoffGreeting(kit, "voice", "Introduce yourself.", None)._greet("r", "agent")
+
+        answered = [e for e in await kit.store.list_events("r") if e.source.channel_id == "agent"]
+        assert (resolver.asked, challenged, len(answered)) == ([], [], 1)
+    finally:
+        await kit.close()

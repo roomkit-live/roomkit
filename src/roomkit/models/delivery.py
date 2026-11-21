@@ -75,8 +75,12 @@ def framework_message(**fields: Any) -> InboundMessage:
 
 
 def is_framework_message(message: InboundMessage) -> bool:
-    """Whether the framework itself wrote *message* (:func:`framework_message`)."""
-    return message._framework_own and message.sender_id == SYSTEM_SENDER_ID
+    """Whether the framework itself wrote *message* (:func:`framework_message`):
+    the mark alone, whatever a channel's address form made of its sender. A
+    message restored without its private state (one pickled by an earlier
+    release) carries none."""
+    private = message.__pydantic_private__ or {}
+    return private.get("_framework_own") is True
 
 
 class InboundMessage(BaseModel):
@@ -147,8 +151,8 @@ class InboundMessage(BaseModel):
     # pass that must start from a blank page — a summary re-run that would
     # otherwise read, and copy, its previous answer. Instructions only.
     standalone: bool = False
-    # Set by :func:`framework_message` alone: the framework wrote the message
-    # itself. Private, so no payload and no caller's field sets it.
+    # Set by :func:`framework_message`: the framework wrote the message
+    # itself. Private, so no payload sets it and no field of a message does.
     _framework_own: bool = PrivateAttr(default=False)
     # A key the caller chooses that names this message's delivery from the
     # start of ``process_inbound`` until the delivery is over (RFC §10.1):
