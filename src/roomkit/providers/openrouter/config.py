@@ -50,7 +50,7 @@ class OpenRouterImageConfig(OpenAIImageConfig):
     OpenRouter's Image API routes one request shape to every image model it
     aggregates, so this **subclasses** :class:`OpenAIImageConfig` and inherits
     its request fields (``quality``, ``background``, ``output_format``,
-    ``timeout``, ``max_retries``, ``default_headers``) — the Image API accepts
+    ``timeout``, ``default_headers``) — the Image API accepts
     each of them, forwarding what the routed model understands. Only the
     endpoint and OpenRouter's app-attribution headers are added on top.
 

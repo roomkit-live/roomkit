@@ -162,8 +162,9 @@ class AzureImageConfig(BaseModel):
         connect_timeout: TCP connect timeout in seconds, kept apart from
             ``timeout`` so a host that no longer accepts connections is given
             up on in seconds rather than after the read budget.
-        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
-            handles retries at the right layer.
+
+    No SDK retry: a paid generation is never retried automatically (RFC
+    §25.2).
     """
 
     api_key: SecretStr
@@ -175,7 +176,6 @@ class AzureImageConfig(BaseModel):
     output_format: str | None = None
     timeout: float = 120.0
     connect_timeout: float = 5.0
-    max_retries: int = 0
 
     @field_validator("azure_endpoint")
     @classmethod

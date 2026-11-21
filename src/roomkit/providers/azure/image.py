@@ -35,7 +35,6 @@ class AzureImageProvider(OpenAIImageProvider):
         self._config = config
         # The client openai 3.x runs on, installed with it: its errors are read.
         self._httpx2 = import_module("httpx2")
-        self._sdk_retries = config.max_retries
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
         self._client = _openai.AsyncAzureOpenAI(
@@ -43,7 +42,9 @@ class AzureImageProvider(OpenAIImageProvider):
             azure_endpoint=config.azure_endpoint,
             api_version=config.api_version,
             timeout=openai_timeout(_openai, config),
-            max_retries=self._sdk_retries,
+            # No SDK retry: a paid generation is never retried automatically
+            # (RFC §25.2).
+            max_retries=0,
             http_client=openai_http_client(_openai, transport),
         )
 

@@ -4308,9 +4308,9 @@ raising its client's `ConnectError` (`httpx2.ConnectError`, or
 never left:
 OpenAI's and Azure's attempt is `failed`, not `unknown` (possibly billed),
 and xAI's, Meta's and OpenRouter's error is retryable, as for any connect
-failure. Any other exception reads as a request that may have left. So does
-any failure once the SDK retried (`max_retries` above 0): its error is the
-last attempt's.
+failure. Any other exception reads as a request that may have left. No
+provider retries a generation, at the SDK or anywhere else: a paid generation
+is never sent twice, and the host decides what to do with a failure.
 
 ```python
 from roomkit.providers.xai import XAIImageConfig, XAIImageProvider

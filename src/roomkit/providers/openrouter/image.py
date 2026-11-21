@@ -196,7 +196,7 @@ class OpenRouterImageProvider(ImageProvider):
         except self._transport_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=never_sent(exc, self._httpx, retries=0),
+                retryable=never_sent(exc, self._httpx),
                 provider="openrouter",
             ) from exc
         except Exception as exc:

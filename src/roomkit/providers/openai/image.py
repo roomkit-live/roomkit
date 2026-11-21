@@ -54,15 +54,15 @@ class OpenAIImageProvider(ImageProvider):
         self._config = config
         # The client openai 3.x runs on, installed with it: its errors are read.
         self._httpx2 = import_module("httpx2")
-        # No SDK retry: a paid generation is never retried automatically (RFC §25.2).
-        self._sdk_retries = 0
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = (_openai.APIConnectionError, self._httpx2.TransportError)
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
             timeout=openai_timeout(_openai, config),
-            max_retries=self._sdk_retries,
+            # No SDK retry: a paid generation is never retried automatically
+            # (RFC §25.2).
+            max_retries=0,
             default_headers=config.default_headers,
             http_client=openai_http_client(_openai, transport),
         )
@@ -211,15 +211,12 @@ class OpenAIImageProvider(ImageProvider):
 
     def _failure_status(self, exc: Exception) -> Literal["failed", "unknown"]:
         """``unknown`` when the vendor may have run, and billed, the request: a
-        transport failure once it left, or any failure after an SDK retry,
-        status included (an earlier attempt may have left). One that never
-        left (a connect failure, a host's policy refusing the address as one)
-        ``failed`` (RFC §25.2)."""
-        if self._sdk_retries > 0:
-            return "unknown"
+        transport failure once it left. One that never left (a connect
+        failure, a host's policy refusing the address as one), or a status
+        the vendor answered, ``failed`` (RFC §25.2)."""
         if not isinstance(exc, self._api_connection_error):
             return "failed"
-        return "failed" if never_sent(exc, self._httpx2, retries=0) else "unknown"
+        return "failed" if never_sent(exc, self._httpx2) else "unknown"
 
     @staticmethod
     def _validated_size(size: str) -> str:

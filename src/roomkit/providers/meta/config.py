@@ -47,8 +47,9 @@ class MetaImageConfig(BaseModel):
         timeout: HTTP request timeout in seconds; a drawing takes ~10 s at
             ``reasoning_strength="low"`` (measured 2026-09-27).
         connect_timeout: TCP connect timeout in seconds.
-        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
-            handles retries at the right layer.
+
+    No SDK retry: a paid generation is never retried automatically (RFC
+    §25.2).
     """
 
     api_key: SecretStr
@@ -60,7 +61,6 @@ class MetaImageConfig(BaseModel):
     output_format: Literal["png", "jpeg", "webp"] | None = None
     timeout: float = 120.0
     connect_timeout: float = 5.0
-    max_retries: int = 0
 
     model_config = _KEEP_KEY_OUT_OF_ERRORS
     _check_api_key = field_validator("api_key")(_header_safe)

@@ -3764,7 +3764,7 @@
     "supports_vision": ["property"]
   },
   "roomkit.providers.azure.AzureImageConfig": {
-    "__init__": ["def", "*", "api_key", "azure_endpoint", "api_version='2025-04-01-preview'", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "max_retries=0"]
+    "__init__": ["def", "*", "api_key", "azure_endpoint", "api_version='2025-04-01-preview'", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0"]
   },
   "roomkit.providers.azure.AzureImageProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
@@ -4226,7 +4226,7 @@
     "__init__": ["def", "*", "api_key", "base_url='https://api.meta.ai/v1'", "model='muse-spark-1.3'", "max_tokens=1024", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=True", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None", "thinking_field=None"]
   },
   "roomkit.providers.meta.MetaImageConfig": {
-    "__init__": ["def", "*", "api_key", "base_url='https://api.meta.ai/v1'", "model='muse-image-1.0'", "tools=[]", "reasoning_strength=None", "moderation=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "max_retries=0"]
+    "__init__": ["def", "*", "api_key", "base_url='https://api.meta.ai/v1'", "model='muse-image-1.0'", "tools=[]", "reasoning_strength=None", "moderation=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0"]
   },
   "roomkit.providers.meta.MetaImageProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
@@ -4336,7 +4336,7 @@
     "__init__": ["def", "*", "api_key", "base_url=None", "model", "max_tokens=1024", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None", "thinking_field=None"]
   },
   "roomkit.providers.openai.OpenAIImageConfig": {
-    "__init__": ["def", "*", "api_key", "base_url=None", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "max_retries=0", "default_headers=None"]
+    "__init__": ["def", "*", "api_key", "base_url=None", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "default_headers=None"]
   },
   "roomkit.providers.openai.OpenAIImageProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
@@ -4453,7 +4453,7 @@
     "__init__": ["def", "*", "api_key", "base_url='https://openrouter.ai/api/v1'", "model", "max_tokens=1024", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None", "thinking_field=None", "site_url=None", "app_name=None"]
   },
   "roomkit.providers.openrouter.OpenRouterImageConfig": {
-    "__init__": ["def", "*", "api_key", "base_url='https://openrouter.ai/api/v1'", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "max_retries=0", "default_headers=None", "site_url=None", "app_name=None"]
+    "__init__": ["def", "*", "api_key", "base_url='https://openrouter.ai/api/v1'", "model", "quality=None", "background=None", "output_format=None", "timeout=120.0", "connect_timeout=5.0", "default_headers=None", "site_url=None", "app_name=None"]
   },
   "roomkit.providers.openrouter.OpenRouterImageProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
@@ -4951,7 +4951,7 @@
     "__init__": ["def", "*", "api_key", "base_url='https://api.x.ai/v1'", "model='grok-4.7'", "max_tokens=1024", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=True", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None", "thinking_field=None"]
   },
   "roomkit.providers.xai.XAIImageConfig": {
-    "__init__": ["def", "*", "api_key", "base_url='https://api.x.ai/v1'", "model='grok-imagine-image-2.0'", "quality=None", "resolution=None", "timeout=120.0", "connect_timeout=5.0", "max_retries=0"]
+    "__init__": ["def", "*", "api_key", "base_url='https://api.x.ai/v1'", "model='grok-imagine-image-2.0'", "quality=None", "resolution=None", "timeout=120.0", "connect_timeout=5.0"]
   },
   "roomkit.providers.xai.XAIImageProvider": {
     "__init__": ["def", "config", "*", "transport=None"],

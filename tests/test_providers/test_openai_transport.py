@@ -347,29 +347,26 @@ async def test_an_image_attempt_is_unknown_once_its_request_may_have_left(
     assert attempt.status == status
 
 
-@pytest.mark.parametrize(
-    "last", [httpx2.ConnectError, 429, 503, 500], ids=["connect-error", "429", "503", "500"]
-)
-@pytest.mark.parametrize("kind", ["azure image", "xai image", "meta image"])
-async def test_a_retried_image_request_stays_ambiguous_whatever_its_last_failure(
-    kind: str, last: type[httpx2.TransportError] | int, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("then", [200, 503], ids=["then-200", "then-503"])
+@pytest.mark.parametrize("kind", ["openai image", "azure image", "xai image", "meta image"])
+async def test_a_generation_that_may_have_run_is_never_sent_again(
+    kind: str, then: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With the SDK's retries (``max_retries``), the error raised is the last
-    attempt's: the first timed out, and may have run and been billed. A last
-    attempt that could not connect, or that the vendor refused, does not
-    make the request unbilled: the attempt is ``unknown`` and the error is
-    not retryable (RFC §25.2)."""
+    """A paid generation is never retried automatically (RFC §25.2), and no
+    config asks the SDK to, whose own default would: the first request timed
+    out, and may have run and been billed. It is sent once, and its error is
+    ambiguous: the attempt ``unknown``, the error not retryable."""
     monkeypatch.setattr("openai._base_client.INITIAL_RETRY_DELAY", 0.0)
-    transport = _Scripted(httpx2.ReadTimeout, last)
+    transport = _Scripted(httpx2.ReadTimeout, then)
     client = _CALLS[kind]
-    provider = client.build("https://models.example", transport, max_retries=1)
+    provider = client.build("https://models.example", transport)
     try:
         with pytest.raises(ProviderError) as caught:
             await client.call(provider)
     finally:
         await provider.close()
 
-    assert transport.requests == 2
+    assert transport.requests == 1
     assert caught.value.retryable is False
     if isinstance(caught.value, ImageGenerationError):
         assert [attempt.status for attempt in caught.value.attempts] == ["unknown"]

@@ -67,13 +67,14 @@ class MetaImageProvider(ImageProvider):
         self._api_connection_error = _openai.APIConnectionError
         # The client openai 3.x runs on, installed with it: its errors are read.
         self._httpx2 = import_module("httpx2")
-        self._sdk_retries = config.max_retries
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
             timeout=openai_timeout(_openai, config),
-            max_retries=self._sdk_retries,
+            # No SDK retry: a paid generation is never retried automatically
+            # (RFC §25.2).
+            max_retries=0,
             http_client=openai_http_client(_openai, transport),
         )
 
@@ -207,15 +208,13 @@ class MetaImageProvider(ImageProvider):
         except self._api_connection_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=never_sent(exc, self._httpx2, retries=self._sdk_retries),
+                retryable=never_sent(exc, self._httpx2),
                 provider="meta",
             ) from exc
         except self._api_status_error as exc:
             raise ProviderError(
                 status_error_text(exc),
-                # The SDK retries 408, 409, 429 and 5xx itself: with retries, a
-                # final one follows an attempt that may have run (RFC §25.2).
-                retryable=exc.status_code in PAID_GENERATION_RETRYABLE and self._sdk_retries == 0,
+                retryable=exc.status_code in PAID_GENERATION_RETRYABLE,
                 provider="meta",
                 status_code=exc.status_code,
             ) from exc

@@ -205,8 +205,9 @@ class OpenAIImageConfig(BaseModel):
         connect_timeout: TCP connect timeout in seconds, kept apart from
             ``timeout`` so a host that no longer accepts connections is given
             up on in seconds rather than after the read budget.
-        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
-            handles retries at the right layer.
+
+    No SDK retry: a paid generation is never retried automatically (RFC
+    §25.2).
     """
 
     api_key: SecretStr
@@ -217,7 +218,6 @@ class OpenAIImageConfig(BaseModel):
     output_format: str | None = None
     timeout: float = 120.0
     connect_timeout: float = 5.0
-    max_retries: int = 0
     default_headers: dict[str, str] | None = None
     """Extra HTTP headers sent on every request, passed to the SDK's
     ``default_headers`` — same role as on :class:`OpenAIConfig`."""
