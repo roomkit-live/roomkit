@@ -146,10 +146,18 @@ async def test_a_worker_chain_calls_back_on_the_home_loop_in_chain_order() -> No
     worker_log: list[tuple[str, Any]] = []
     pipeline = _utterance_pipeline()  # built here: this loop is its home
     _record_callbacks(pipeline, worker_log)
+    frame_done = asyncio.Event()
+
+    def processed(session: VoiceSession, frame: AudioFrame) -> None:
+        frame_done.set()
+
+    # Registered last, after the recorder. This frame's callbacks have now
+    # reached the home loop in full when its processed notification arrives.
+    pipeline.on_processed_frame(processed)
     for _ in range(3):
-        # to_thread resumes through the loop too, behind the callbacks its
-        # frame sent home: they have all run by the time it returns.
+        frame_done.clear()
         await asyncio.to_thread(pipeline.process_inbound, _session(), _frame())
+        await asyncio.wait_for(frame_done.wait(), timeout=2.0)
 
     loop_thread = threading.get_ident()
     assert [kind for kind, _ in worker_log] == [kind for kind, _ in inline_log]
