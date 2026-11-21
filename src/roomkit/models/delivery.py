@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from roomkit.models._keys import IdempotencyKey
 from roomkit.models._time import UtcDatetime
@@ -59,6 +59,24 @@ class ProviderResult(BaseModel):
 # correspondent of the room's channel, so routing does not count it as one
 # (RFC §10.4).
 SYSTEM_SENDER_ID = "system"
+
+
+def framework_message(**fields: Any) -> InboundMessage:
+    """A message the framework writes into a room itself, under its own sender
+    (a ``deliver()``, an orchestration cue: RFC §10.4).
+
+    It is marked out of band: the sender id is a value any caller of
+    ``process_inbound()`` can write, so what the pipeline grants the
+    framework's own message (no identity resolution, RFC §11.6) it grants on
+    the mark, never on the id. The mark is no field: no payload carries it."""
+    message = InboundMessage(sender_id=SYSTEM_SENDER_ID, **fields)
+    message._framework_own = True
+    return message
+
+
+def is_framework_message(message: InboundMessage) -> bool:
+    """Whether the framework itself wrote *message* (:func:`framework_message`)."""
+    return message._framework_own and message.sender_id == SYSTEM_SENDER_ID
 
 
 class InboundMessage(BaseModel):
@@ -129,6 +147,9 @@ class InboundMessage(BaseModel):
     # pass that must start from a blank page — a summary re-run that would
     # otherwise read, and copy, its previous answer. Instructions only.
     standalone: bool = False
+    # Set by :func:`framework_message` alone: the framework wrote the message
+    # itself. Private, so no payload and no caller's field sets it.
+    _framework_own: bool = PrivateAttr(default=False)
     # A key the caller chooses that names this message's delivery from the
     # start of ``process_inbound`` until the delivery is over (RFC §10.1):
     # ``kit.cancel_delivery(key)`` cancels it from anywhere in the process,

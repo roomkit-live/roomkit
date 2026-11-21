@@ -14,7 +14,7 @@ from roomkit.channels.voice import VoiceChannel
 from roomkit.core.hooks import HookRegistration
 from roomkit.core.task_utils import hold_task
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import SYSTEM_SENDER_ID, InboundMessage
+from roomkit.models.delivery import framework_message
 from roomkit.models.enums import ChannelType, EventType, HookExecution, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
@@ -137,9 +137,8 @@ class HandoffGreeting:
                 # never stores it as the caller's words and only that agent
                 # is asked (RFC §10.1.1).
                 self._kit.process_inbound(
-                    InboundMessage(
+                    framework_message(
                         channel_id=self._voice_channel_id,
-                        sender_id=SYSTEM_SENDER_ID,
                         event_type=EventType.INSTRUCTION,
                         content=TextContent(body=self._prompt),
                         addressed_to=[to_agent] if to_agent else None,

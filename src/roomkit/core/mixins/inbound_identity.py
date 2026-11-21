@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core._authors import People
 from roomkit.core.mixins.helpers import HelpersMixin, PendingSender
+from roomkit.models.delivery import is_framework_message
 from roomkit.models.enums import HookTrigger, IdentificationStatus
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import own_record_id
@@ -106,14 +107,20 @@ class InboundIdentityMixin(HelpersMixin):
     ) -> tuple[Any, Identity | None, IdentityResult | None]:
         """Run identity resolution pipeline (RFC §11).
 
-        Two senders carry no question for a resolver, and asking anyway is not
-        free — it costs a lookup per message where a resolver reads a CRM, and
-        it re-fires ``ON_IDENTITY_UNKNOWN``, so a hook written to refuse unknown
-        senders blocks a sender the room already knows (RFC §11.6):
+        Three senders carry no question for a resolver, and asking anyway is
+        not free — it costs a lookup per message where a resolver reads a CRM,
+        and it re-fires ``ON_IDENTITY_UNKNOWN``, so a hook written to refuse
+        unknown senders blocks a sender the room already knows (RFC §11.6):
 
         - one the channel names itself, whose ``sender_id`` is a
           ``Participant.id`` rather than an address (``sender_is_participant``);
-        - one the room has already identified, whose answer is on the roster.
+        - one the room has already identified, whose answer is on the roster;
+        - the framework itself, for a message it wrote (a ``deliver()``, an
+          orchestration cue: RFC §10.4), which names no correspondent:
+          resolved, the host's own delivery was challenged like a stranger's
+          and blocked (RMK-1874). It is known by the mark its builder sets
+          (``framework_message``), never by the sender ``system``, which any
+          caller can write: a caller's message under that name is resolved.
 
         Whether resolution is configured for this channel at all is a separate
         question, and :meth:`identity_enabled_for` is the one place that answers
@@ -128,6 +135,7 @@ class InboundIdentityMixin(HelpersMixin):
             resolver is None
             or not self.identity_enabled_for(channel.channel_type)
             or channel.sender_is_participant
+            or is_framework_message(message)
         ):
             return event, None, None
         if _sender_already_identified(event, context):

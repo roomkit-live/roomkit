@@ -13,11 +13,11 @@ from roomkit.core._voice_delivery import active_sessions as _active_sessions
 from roomkit.core._voice_delivery import deliver_to_realtime_voice, replay_explicit_session
 from roomkit.core.exceptions import error_type_name
 from roomkit.models.delivery import (
-    SYSTEM_SENDER_ID,
     DeliveryError,
     DeliveryOutcome,
     InboundMessage,
     InboundResult,
+    framework_message,
 )
 from roomkit.models.enums import (
     Access,
@@ -200,9 +200,8 @@ def _publication(ctx: DeliveryContext, channel_id: str) -> InboundMessage:
     """The message that publishes *ctx* into its room through *channel_id*,
     from the framework's own sender, its key in the publication namespace."""
     key = ctx.idempotency_key
-    return InboundMessage(
+    return framework_message(
         channel_id=channel_id,
-        sender_id=SYSTEM_SENDER_ID,
         event_type=EventType.INSTRUCTION if ctx.instruction else EventType.MESSAGE,
         content=TextContent(body=ctx.content),
         metadata=ctx.metadata or {},

@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `kit.deliver()` is no longer put to the identity resolver, nor is an orchestration cue (RFC §11.6, RMK-1874). The framework's own message was resolved like a stranger's: with an `ON_IDENTITY_UNKNOWN` or `ON_IDENTITY_AMBIGUOUS` hook that challenges such senders, the host's own delivery was challenged and blocked, and the agent it addressed never ran; under a resolver answering PENDING it was stored under a `pending-…` id, with a participant record for the framework's sender. The framework knows its own message by where it comes from, not by the sender `system`: a message a caller writes under that name is resolved as before.
+
 - Voice STT waits for partial transcription observers before reading the next result in both VAD-segmented and continuous sessions. A slow partial observer can now finish before the final transcription is delivered (RFC §9.3, RMK-1841).
 
 - Realtime voice and conference text injections return after the provider accepts the text, while the asynchronous `ON_REALTIME_TEXT_INJECTED` observers finish in the background.
