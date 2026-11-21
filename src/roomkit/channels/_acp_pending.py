@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
-from dataclasses import dataclass
+from collections.abc import Coroutine, Generator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -14,6 +15,8 @@ class _Asking:
 
     deciding: asyncio.Task[Any]
     abandoned: bool = False
+    woken: asyncio.Event = field(default_factory=asyncio.Event)
+    """Set once the session's cancellation is out: the request is answered."""
 
 
 def _cancelling() -> bool:
@@ -36,8 +39,8 @@ class PendingPermissions:
 
     async def decide[T](self, session_id: str, decision: Coroutine[Any, Any, T]) -> T | None:
         """The result of *decision*, a permission request's decision made in
-        *session_id*; ``None`` once the session's prompt was cancelled while
-        it was pending, the decision abandoned."""
+        *session_id*; ``None`` once the session's prompt was cancelled while it
+        was pending, the decision abandoned."""
         asking = _Asking(asyncio.get_running_loop().create_task(decision))
         pending = self._by_session.setdefault(session_id, set())
         pending.add(asking)
@@ -51,12 +54,25 @@ class PendingPermissions:
             pending.discard(asking)
             if not pending and self._by_session.get(session_id) is pending:
                 del self._by_session[session_id]
-        # A decision made as the session was cancelled is abandoned all the same.
-        return None if asking.abandoned else decided
+        if asking.abandoned:
+            # Made while the cancellation was being sent: dropped, and the
+            # request answered once the cancellation is out.
+            await asking.woken.wait()
+            return None
+        return decided
 
-    def abandon(self, session_id: str) -> None:
-        """Abandon every decision pending in *session_id*: each request is
-        answered ``cancelled``, and its decision is cancelled."""
-        for asking in tuple(self._by_session.get(session_id, ())):
+    @contextmanager
+    def abandoning(self, session_id: str) -> Generator[None]:
+        """Abandon the decisions pending in *session_id* around the block that
+        sends the session's cancellation: a decision made meanwhile is
+        dropped, and once the block ends, however it ends, each request is
+        answered ``cancelled`` and its decision cancelled."""
+        asked = tuple(self._by_session.get(session_id, ()))
+        for asking in asked:
             asking.abandoned = True
-            asking.deciding.cancel()
+        try:
+            yield
+        finally:
+            for asking in asked:
+                asking.woken.set()
+                asking.deciding.cancel()

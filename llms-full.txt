@@ -4189,7 +4189,7 @@ Every agent `session/request_permission` goes to the `external_tool_handler` (`E
 2. Approved → RoomKit selects the agent's `allow_once`/`allow_always` option; denied → `reject_once`/`reject_always`; no matching option → `DeniedOutcome(outcome="cancelled")`.
 3. **No handler ⇒ every permission request is rejected.** `ToolDecision.modified_input`/`result` overrides cannot be applied over ACP — setting them logs a warning and rejects the call.
 4. On tool completion, `on_tool_result(...)` runs; via `_fire_on_tool_hook` it fires **`ON_TOOL_CALL`** hooks.
-5. Cancelling the turn (`cancel(room_id)`, a steering `Cancel`, the caller cancelled) answers each permission request still pending `cancelled`, as ACP requires: the pending `process_tool_call` is cancelled, its decision abandoned, and the call, announced or not, is reported cancelled through `on_tool_cancelled`. An agent's `$/cancel_request` is ignored (debug log): the handler's decision stands and is the answer.
+5. Cancelling the turn (`cancel(room_id)`, a steering `Cancel`, the caller cancelled, `close()`) answers each permission request still pending `cancelled`, after `session/cancel`, as ACP requires: the pending `process_tool_call` is cancelled, its decision abandoned, and the call, announced or not, is reported cancelled through `on_tool_cancelled`. A turn that ends otherwise with a decision pending reports the call cancelled too, and leaves the decision to the handler. An agent's `$/cancel_request` is ignored (debug log): the handler's decision stands and is the answer.
 
 ## CLIChannel
 

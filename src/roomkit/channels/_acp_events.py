@@ -763,12 +763,13 @@ class ACPEventsMixin:
         return _permission_response(sdk, options, approved=decision.approved)
 
     async def _cancel_session(self, connection: Any, session_id: str) -> None:
-        """Cancel *session_id*'s prompt with ``session/cancel``, then answer
+        """Cancel *session_id*'s prompt with ``session/cancel``, and answer
         each of its permission requests still pending ``cancelled``, as ACP
         requires of a client that cancels a prompt: their decisions, the
-        external tool handler's included, are abandoned (RFC §6.4)."""
-        await connection.cancel(session_id)
-        self._pending_permissions.abandon(session_id)
+        external tool handler's included, are abandoned before the
+        notification goes, and the answers follow it (RFC §6.4)."""
+        with self._pending_permissions.abandoning(session_id):
+            await connection.cancel(session_id)
 
     async def _decide_permission(
         self,

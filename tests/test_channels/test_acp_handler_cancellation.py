@@ -211,3 +211,51 @@ async def test_an_agents_cancel_request_leaves_the_decision_to_the_handler(
         await asyncio.gather(turn, return_exceptions=True)
         await kit.close()
         agent_writer.close()
+
+
+async def test_a_decision_made_as_the_cancel_is_sent_never_reaches_the_agent(
+    tmp_path: Path,
+) -> None:
+    """The handler decides while ``session/cancel`` is being written: its
+    decision is abandoned all the same, and the agent reads the notification,
+    then the request answered ``cancelled``."""
+    agent_sock, client_sock = socket.socketpair()
+    agent_reader, agent_writer = await asyncio.open_connection(sock=agent_sock)
+    client_reader, client_writer = await asyncio.open_connection(sock=client_sock)
+    agent = _WireAgent(agent_reader, agent_writer)
+    handler = HeldApproval()
+    channel = ACPChannel(
+        "acp-agent",
+        transport=_SocketPairTransport(client_reader, client_writer),
+        cwd=tmp_path,
+        external_tool_handler=handler,
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await _room(kit, "acp-agent")
+    turn = asyncio.create_task(
+        kit.process_inbound(
+            InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="go"))
+        )
+    )
+    try:
+        prompt = await agent.prompted()
+        agent.ask("first", "read")
+        assert await asyncio.wait_for(handler.asked.get(), 3) == "read"
+        handler.release.set()
+        assert await channel.cancel("room-1")
+        wire = [await agent.read(), await agent.read()]
+        assert wire[0]["method"] == "session/cancel"
+        assert wire[1] == {
+            "jsonrpc": "2.0",
+            "id": "first",
+            "result": {"outcome": {"outcome": "cancelled"}},
+        }
+        agent.send({"id": prompt["id"], "result": {"stopReason": "cancelled"}})
+        await asyncio.wait_for(turn, 3)
+    finally:
+        handler.release.set()
+        turn.cancel()
+        await asyncio.gather(turn, return_exceptions=True)
+        await kit.close()
+        agent_writer.close()
