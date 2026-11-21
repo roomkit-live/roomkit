@@ -10,11 +10,27 @@ name sits in ``references/``.
 So the check here is positional rather than lexical. Both ends are resolved and
 the result must still be inside the base directory. Symlink escapes fall out of
 that comparison instead of having to be enumerated.
+
+A checked path is then read through the file it opened, never by its name
+again (RFC §24.6, §17.8): someone who can write into the skill could otherwise
+swap the file for a link out between the check and the read.
+:func:`_read_text_inside` opens the resolved path, then checks the descriptor.
+On Linux the path the kernel gives the open file (``/proc/self/fd``) must be
+inside, so a file exchanged for a link out, even atomically, is never read,
+and a ``/proc`` that cannot be read refuses the file. On every platform the
+path resolved anew must still be inside and name the device and inode the
+descriptor holds.
 """
 
 from __future__ import annotations
 
+import errno
+import os
+import stat
+import sys
 import unicodedata
+from collections.abc import Callable
+from enum import Enum
 from pathlib import Path, PureWindowsPath
 
 from roomkit.skills.errors import SkillPathError
@@ -107,3 +123,149 @@ def safe_join_filename(directory: Path, filename: str, *, kind: str = "file") ->
         )
 
     return resolved_target
+
+
+class _OpenRefusal(Enum):
+    """Why a path was not read as the regular file it resolves to."""
+
+    MISSING = "missing"
+    """It resolves to nothing."""
+    ESCAPES = "escapes"
+    """It resolves where it may not."""
+    NOT_A_FILE = "not a file"
+    """It resolves to no regular file."""
+    CHANGED = "changed"
+    """Once opened, it resolves elsewhere or names another file, or the
+    descriptor holds a file elsewhere: it changed while it was opened."""
+    UNVERIFIED = "unverified"
+    """The descriptor's path could not be read (``/proc/self/fd``, on Linux):
+    the file is refused, its place unknown."""
+
+
+_MISSING_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+"""What a path that resolves to nothing fails with: no entry, a component that
+is no directory, a symlink loop."""
+
+
+class _RefusedOpenError(Exception):
+    """An open refused for :attr:`refusal`, which the reader turns into its
+    own error."""
+
+    def __init__(self, refusal: _OpenRefusal) -> None:
+        super().__init__(refusal.value)
+        self.refusal = refusal
+
+
+def _read_text_inside(
+    path: Path,
+    inside: Callable[[Path], bool],
+    refused: Callable[[_OpenRefusal], Exception],
+) -> str:
+    """The UTF-8 text, with universal newlines, of the regular file *path*
+    resolves to, when *inside* takes where it resolves; read from the file
+    the check opened (RFC §24.6, §17.8).
+
+    Raises:
+        Exception: ``refused(why)`` for a path refused (:class:`_OpenRefusal`).
+        UnicodeDecodeError: The file is not UTF-8 text.
+        OSError: The path could not be resolved, opened or read otherwise.
+    """
+    try:
+        fd = _open_inside(path, inside)
+    except _RefusedOpenError as refusal:
+        raise refused(refusal.refusal) from refusal.__cause__
+    try:
+        handle = open(fd, encoding="utf-8")  # noqa: SIM115 - closed below
+    except BaseException:
+        os.close(fd)
+        raise
+    with handle:
+        return handle.read()
+
+
+def _open_inside(path: Path, inside: Callable[[Path], bool]) -> int:
+    """A descriptor open on the regular file *path* resolves to, when *inside*
+    takes where it resolves, checked once it is open: the path resolved anew
+    must still resolve there and name the file the descriptor holds, and on
+    Linux the descriptor's own path must be inside. A FIFO is refused before
+    the open, which it would block.
+
+    Raises:
+        _RefusedOpenError: The path is refused.
+        OSError: It could not be resolved or opened otherwise.
+    """
+    resolved = _resolved(path)
+    if not inside(resolved):
+        raise _RefusedOpenError(_OpenRefusal.ESCAPES)
+    if not stat.S_ISREG(_disk(os.stat, resolved).st_mode):
+        raise _RefusedOpenError(_OpenRefusal.NOT_A_FILE)
+    fd = _disk(os.open, resolved, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise _RefusedOpenError(_OpenRefusal.NOT_A_FILE)
+        if not _still_names(path, resolved, opened, inside):
+            raise _RefusedOpenError(_OpenRefusal.CHANGED)
+        if not _descriptor_inside(fd, inside):
+            raise _RefusedOpenError(_OpenRefusal.CHANGED)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _resolved(path: Path) -> Path:
+    """*path* resolved with its links followed, each of them existing.
+
+    Raises:
+        _RefusedOpenError: It resolves to nothing (:attr:`_OpenRefusal.MISSING`).
+        OSError: It could not be resolved otherwise.
+    """
+    try:
+        return _disk(path.resolve, strict=True)
+    except RuntimeError as exc:
+        # Python 3.12 reports a symlink loop so; later versions raise ELOOP.
+        raise _RefusedOpenError(_OpenRefusal.MISSING) from exc
+
+
+def _disk[**P, R](call: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    """``call(*args, **kwargs)``, an error for a path that resolves to nothing
+    raised as :attr:`_OpenRefusal.MISSING`."""
+    try:
+        return call(*args, **kwargs)
+    except OSError as exc:
+        if exc.errno in _MISSING_ERRNOS:
+            raise _RefusedOpenError(_OpenRefusal.MISSING) from exc
+        raise
+
+
+def _still_names(
+    path: Path, resolved: Path, opened: os.stat_result, inside: Callable[[Path], bool]
+) -> bool:
+    """Whether *path*, resolved anew, still resolves to *resolved*, inside, and
+    names the file *opened* describes: the same device and inode."""
+    try:
+        again = path.resolve(strict=True)
+        now = os.stat(again)
+    except (OSError, RuntimeError):
+        return False
+    same_file = (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino)
+    return again == resolved and inside(again) and same_file
+
+
+def _descriptor_inside(fd: int, inside: Callable[[Path], bool]) -> bool:
+    """Whether the path the kernel gives the open *fd* is inside: what was
+    opened, whatever the path names now. Elsewhere than Linux there is no
+    such path to read, and the device and inode the path names are the check.
+
+    Raises:
+        _RefusedOpenError: ``/proc/self/fd`` could not be read
+            (:attr:`_OpenRefusal.UNVERIFIED`).
+    """
+    if sys.platform != "linux":
+        return True
+    try:
+        held = os.readlink(f"/proc/self/fd/{fd}")
+    except OSError as exc:
+        raise _RefusedOpenError(_OpenRefusal.UNVERIFIED) from exc
+    return inside(Path(held))

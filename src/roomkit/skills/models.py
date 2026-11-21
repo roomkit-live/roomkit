@@ -11,7 +11,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from roomkit.skills.paths import _resolve_contained_directory, safe_join_filename
+from roomkit.skills.errors import SkillPathError
+from roomkit.skills.paths import (
+    _OpenRefusal,
+    _read_text_inside,
+    _resolve_contained_directory,
+    safe_join_filename,
+)
 from roomkit.tools.policy import bracket_error, matches_any_pattern
 
 logger = logging.getLogger("roomkit.skills")
@@ -192,15 +198,23 @@ class Skill:
     def read_reference(self, filename: str) -> str:
         """Read a reference file by name.
 
+        The file is read through the descriptor its check opened, never by
+        its name again (RFC §24.6): one swapped for a link out meanwhile is
+        refused, not read.
+
         Raises:
             SkillPathError: If filename is not a plain name inside the skill's
-                ``references/`` directory. Subclasses ValueError.
+                ``references/`` directory, or the file changed while it was
+                read. Subclasses ValueError.
             FileNotFoundError: If the reference file does not exist.
         """
         ref_path = safe_join_filename(self.path / _REFERENCES_DIR, filename, kind="reference")
-        if not ref_path.is_file():
-            raise FileNotFoundError(f"Reference not found: {filename}")
-        return ref_path.read_text(encoding="utf-8")
+        base = _resolve_contained_directory(self.path / _REFERENCES_DIR, kind="reference")
+
+        def refused(why: _OpenRefusal) -> Exception:
+            return _reference_refusal(filename, base, why)
+
+        return _read_text_inside(ref_path, lambda target: target.is_relative_to(base), refused)
 
     def resolve_script(self, script_name: str) -> Path:
         """Resolve a script inside the skill's ``scripts/`` directory.
@@ -220,6 +234,19 @@ class Skill:
         if not script_path.is_file():
             raise FileNotFoundError(f"Script not found: {script_name}")
         return script_path
+
+
+def _reference_refusal(filename: str, base: Path, why: _OpenRefusal) -> Exception:
+    """What :meth:`Skill.read_reference` raises for a reference of *base*,
+    its resolved ``references/``, refused for *why*."""
+    if why in (_OpenRefusal.MISSING, _OpenRefusal.NOT_A_FILE):
+        return FileNotFoundError(f"Reference not found: {filename}")
+    reason = {
+        _OpenRefusal.ESCAPES: f"escapes {base.name}/",
+        _OpenRefusal.CHANGED: "changed while it was read",
+        _OpenRefusal.UNVERIFIED: "cannot be verified (/proc/self/fd unreadable)",
+    }[why]
+    return SkillPathError(f"Invalid reference filename: {filename!r} {reason}")
 
 
 class ScriptResult(BaseModel):

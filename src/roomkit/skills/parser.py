@@ -14,6 +14,7 @@ import yaml
 from roomkit.skills._frontmatter_lines import GATING_KEYS, parse_lines
 from roomkit.skills.errors import SkillParseError, SkillValidationError
 from roomkit.skills.models import Skill, SkillMetadata, bracketed_pattern_errors
+from roomkit.skills.paths import _OpenRefusal, _read_text_inside
 
 __all__ = [
     "SkillParseError",
@@ -72,20 +73,38 @@ class _FrontmatterNotReadError(SkillParseError):
 
 
 def _read_skill_md(skill_dir: Path) -> tuple[Path, str]:
-    """Resolve and decode one SKILL.md using the public error hierarchy."""
+    """Resolve and decode one SKILL.md using the public error hierarchy: a
+    regular file inside its skill once links are followed, read through the
+    descriptor its check opened (RFC §24.6)."""
     try:
         resolved_dir = skill_dir.resolve()
         md_path = find_skill_md(resolved_dir)
         if md_path is None:
             raise SkillParseError(f"No SKILL.md found in {resolved_dir}")
-        resolved_md = md_path.resolve()
-        if resolved_dir not in resolved_md.parents:
-            raise SkillParseError(f"SKILL.md escapes its skill directory: {md_path}")
-        return resolved_dir, resolved_md.read_text(encoding="utf-8")
+
+        def inside(target: Path) -> bool:
+            return target != resolved_dir and target.is_relative_to(resolved_dir)
+
+        def refused(why: _OpenRefusal) -> Exception:
+            return _skill_md_refusal(md_path, why)
+
+        return resolved_dir, _read_text_inside(md_path, inside, refused)
     except SkillParseError:
         raise
     except (OSError, RuntimeError, UnicodeError) as exc:
         raise SkillParseError(f"Unable to read SKILL.md in {skill_dir}: {exc}") from exc
+
+
+def _skill_md_refusal(md_path: Path, why: _OpenRefusal) -> SkillParseError:
+    """What reading the SKILL.md at *md_path* raises when it is refused for *why*."""
+    reason = {
+        _OpenRefusal.MISSING: "is missing",
+        _OpenRefusal.ESCAPES: "escapes its skill directory",
+        _OpenRefusal.NOT_A_FILE: "is not a regular file",
+        _OpenRefusal.CHANGED: "changed while it was read",
+        _OpenRefusal.UNVERIFIED: "cannot be verified (/proc/self/fd unreadable)",
+    }[why]
+    return SkillParseError(f"SKILL.md {reason}: {md_path}")
 
 
 def find_skill_md(skill_dir: Path) -> Path | None:
