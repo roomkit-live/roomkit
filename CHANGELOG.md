@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A message whose sender sets `metadata["interruption_marker"] = True` asks the room's agents like any other (RFC §6.4, §19.3, RMK-1903). The framework read that key as the mark of a turn the provider cut, and asked no agent to answer it; nothing writes it any more, and no key list kept a sender from supplying it, so a participant could keep every agent from answering their own message. The read is gone, with `roomkit.models.event.is_interruption_marker` and `INTERRUPTION_MARKER_KEY` (internal names), and stored records that carried the marker are now read as ordinary messages: an agent answers one, and a strategy or a delegation reads its text as an answer.
+
 - A skill file swapped for a link out between its containment check and its read is no longer read outside the skill (RFC §24.6, §17.8, RMK-1008). `Skill.read_reference`, `SkillRegistry.read_file` (the model's `read_skill_reference`) and the loading of a SKILL.md read through the descriptor their check opened, where they read the path again by its name: someone able to write into the skill could swap the file between the two and have a file outside it, readable by the process, handed to the model. On Linux the open file's own path (`/proc/self/fd`) must be inside the skill, and a `/proc` that cannot be read refuses the file; everywhere, the path resolved again must name the opened file's device and inode. A refused reference raises `SkillPathError`, a refused SKILL.md `SkillParseError`. Links that stay inside `references/` (inside the skill, for a SKILL.md) still read.
 
 ## [0.116.0] — 2026-11-20

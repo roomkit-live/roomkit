@@ -18,18 +18,10 @@ import pytest
 
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.ai import AIChannel
-from roomkit.core.event_router import _solicits
-from roomkit.core.mixins._child_execution import _persist_response_events
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType
-from roomkit.models.event import (
-    INTERRUPTION_MARKER_KEY,
-    EventSource,
-    RoomEvent,
-    TextContent,
-    is_interruption_marker,
-)
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.steering import Cancel
 from roomkit.orchestration.strategies.supervisor import _extract_output_text
 from roomkit.providers.ai.base import (
@@ -365,68 +357,14 @@ async def test_an_interrupted_turn_is_an_error(streaming: bool) -> None:
     await kit.close()
 
 
-class TestTheMarkerIsNoAnswer:
-    """A stored interruption marker is known for what it is, solicits no
-    agent, and is never read as an agent's answer (RFC §6.4, §19.3)."""
+async def test_a_supervisor_reads_no_answer_from_an_interrupted_output() -> None:
+    """An output that carries an error has no answer to hand on as a task,
+    its rounds' narration included (RFC §6.4)."""
+    source = EventSource(channel_id="ai1", channel_type=ChannelType.AI)
+    narration = RoomEvent(room_id="r1", source=source, content=TextContent(body="Looking."))
+    interrupted = ChannelOutput(response_events=[narration], error=ProviderError("upstream 500"))
 
-    async def test_an_interrupted_turn_writes_none(self, streaming: bool) -> None:
-        kit, _, _ = await _room(_FailingAt(4, HISTORY, streaming=streaming))
-
-        await _say(kit, "first", "second", "third")
-
-        events = await kit.store.list_events("r1")
-        ai = [e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == "ai1"]
-        assert [is_interruption_marker(e) for e in ai] == [False, False, False]
-
-    def test_a_stored_one_is_marked(self) -> None:
-        marker = RoomEvent(
-            room_id="r1",
-            source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
-            content=TextContent(body=MARKER),
-            metadata={INTERRUPTION_MARKER_KEY: True},
-        )
-
-        assert is_interruption_marker(marker) is True
-
-    def test_it_solicits_nobody(self) -> None:
-        marker = RoomEvent(
-            room_id="r1",
-            source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
-            content=TextContent(body=MARKER),
-            addressed_to=["ai2"],
-            metadata={INTERRUPTION_MARKER_KEY: True, "_always_process": ["supervisor"]},
-        )
-        for channel_id in ("ai2", "supervisor", "ai3"):
-            assert _solicits(marker, channel_id, source_is_agent=True) is False
-
-    def test_a_voice_barge_in_record_is_not_one(self) -> None:
-        """RFC §12.3.13's ``interrupted`` marks a spoken reply cut by a barge-in:
-        a different record, which is no interruption marker."""
-        spoken = RoomEvent(
-            room_id="r1",
-            source=EventSource(channel_id="voice", channel_type=ChannelType.VOICE),
-            content=TextContent(body="Your balance is"),
-            metadata={"interrupted": True, "played_ms": 800},
-        )
-
-        assert is_interruption_marker(spoken) is False
-
-    async def test_a_supervisor_does_not_hand_it_on_as_a_task(self) -> None:
-        source = EventSource(channel_id="ai1", channel_type=ChannelType.AI)
-        narration = RoomEvent(room_id="r1", source=source, content=TextContent(body="Looking."))
-        marker = RoomEvent(
-            room_id="r1",
-            source=source,
-            content=TextContent(body=MARKER),
-            metadata={INTERRUPTION_MARKER_KEY: True},
-        )
-
-        assert await _extract_output_text(ChannelOutput(response_events=[marker])) == ""
-        # An output that carries an error has no answer, its narration included
-        interrupted = ChannelOutput(
-            response_events=[narration, marker], error=ProviderError("upstream 500")
-        )
-        assert await _extract_output_text(interrupted) == ""
+    assert await _extract_output_text(interrupted) == ""
 
 
 class TestADelegatedTurn:
@@ -484,19 +422,6 @@ class TestADelegatedTurn:
         ]
         assert rows[-1].metadata["loop_end_reason"] == "completed"
         assert rows[-1].metadata["ai_usage"] == {"input_tokens": 8, "output_tokens": 3}
-        await kit.close()
-
-    async def test_the_marker_alone_is_no_result(self) -> None:
-        kit = RoomKit()
-        await kit.create_room(room_id="child")
-        marker = RoomEvent(
-            room_id="child",
-            source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
-            content=TextContent(body=MARKER),
-            metadata={INTERRUPTION_MARKER_KEY: True},
-        )
-
-        assert await _persist_response_events(kit, "child", [marker]) is None
         await kit.close()
 
 

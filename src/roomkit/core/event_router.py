@@ -54,7 +54,6 @@ from roomkit.models.event import (
     TemplateContent,
     TextContent,
     VideoContent,
-    is_interruption_marker,
     refuse_too_deep,
     with_pipeline_id,
 )
@@ -86,9 +85,6 @@ def _solicits(
     Solicitation only — the caller has already resolved *visibility*, which
     is a separate question this must not re-answer.
     """
-    if is_interruption_marker(event):
-        # It says a turn was cut, nothing to act on (RFC §19.3 rule 5)
-        return False
     metadata = event.metadata or {}
     # A router writes a list; a stamp written otherwise names no one.
     listed = metadata.get(ALWAYS_PROCESS)

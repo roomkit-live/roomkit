@@ -348,26 +348,10 @@ class RoomEvent(BaseModel):
     delivery_results: dict[str, Any] = Field(default_factory=dict)
 
 
-#: Metadata key marking the terminal message of a turn the provider
-#: interrupted after a round (RFC §6.4): the interruption marker, not an answer.
-#: Distinct from ``interrupted``, which marks a spoken reply a barge-in cut
-#: (RFC §12.3.13).
-INTERRUPTION_MARKER_KEY = "interruption_marker"
-
-
 def with_pipeline_id(event: RoomEvent) -> RoomEvent:
     """*event* with a fresh id: the pipeline gives every event it commits its
     id, whatever id a channel or a hook built it with (RFC §8.1)."""
     return event.model_copy(update={"id": uuid4().hex})
-
-
-def is_interruption_marker(event: RoomEvent) -> bool:
-    """Whether *event* is an interruption marker (RFC §6.4).
-
-    It says an agent's turn was cut: it solicits no agent (RFC §19.3), and
-    nothing that reads an agent's answer takes it for one.
-    """
-    return event.metadata.get(INTERRUPTION_MARKER_KEY) is True
 
 
 def is_tool_call_record(event: RoomEvent) -> bool:
@@ -381,13 +365,10 @@ def is_tool_call_record(event: RoomEvent) -> bool:
 
 
 def answer_text(event: RoomEvent) -> str | None:
-    """The text *event* carries as an agent's answer, or ``None``.
-
-    ``None`` for anything but a non-empty text, and for the interruption
-    marker, which is no answer (RFC §6.4).
-    """
+    """The text *event* carries as an agent's answer, or ``None`` for
+    anything but a non-empty text."""
     if isinstance(event.content, TextContent) and event.content.body:
-        return None if is_interruption_marker(event) else event.content.body
+        return event.content.body
     return None
 
 

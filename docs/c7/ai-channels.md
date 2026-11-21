@@ -1192,10 +1192,7 @@ own message, `ON_AI_RESPONSE` reports it with the usage of its rounds, and it
 is an error too, surfaced through `ON_ERROR` and the caller's
 `InboundResult.error`. No message is added to say so: the loop yields its
 `LoopEndMarker` with `reason="error"`, then the exception reaches the
-consumer, and a delegated turn it ends fails. A stored `[Response interrupted]`
-message (`metadata["interruption_marker"] = True`,
-`roomkit.models.event.is_interruption_marker`) solicits no agent and no
-strategy or delegation takes it for an answer. `LoopEndMarker.usage` is what the turn's
+consumer, and a delegated turn it ends fails. `LoopEndMarker.usage` is what the turn's
 generations used, summed over its rounds; a response without tools yields the
 marker too, with `rounds=0`, a provider that streams text alone included.
 

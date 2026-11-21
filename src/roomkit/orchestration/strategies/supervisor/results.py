@@ -88,7 +88,7 @@ async def _extract_output_text(output: ChannelOutput) -> str:
     For streaming, drains the stream to collect the full text.
     """
     # An output that carries an error (a turn interrupted after a round) has
-    # no answer to hand on as a task, and the marker never is one (RFC §6.4).
+    # no answer to hand on as a task (RFC §6.4).
     if output.error is not None:
         return ""
     # Check synchronous response first.

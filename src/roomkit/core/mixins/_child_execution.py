@@ -261,7 +261,6 @@ async def _persist_response_events(
             child_room_id,
             without_reserved_key(resp.model_copy(update={"status": EventStatus.DELIVERED})),
         )
-        # An interruption marker is not the worker's answer (RFC §6.4)
         if (text := answer_text(resp)) is not None:
             final_text = text
     return final_text
