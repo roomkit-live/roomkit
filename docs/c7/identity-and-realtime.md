@@ -17,6 +17,14 @@ Inbound message arrives with sender_id
      REJECTED        -> ON_IDENTITY_UNKNOWN hook fires; held when no hook answers
 ```
 
+The framework's own message is not asked about: a `kit.deliver()` or an
+orchestration cue names no correspondent, so no resolver call and no identity
+hook runs for it. The framework knows its message by where it comes from, not
+by the sender `system`: an `InboundMessage(sender_id="system", ...)` a caller
+passes to `process_inbound()` is resolved like any other. In a kit that runs
+identity hooks, send the application's own instructions with
+`kit.deliver(room_id, text, addressed_to=[...], instruction=True)`.
+
 ### Identity Hooks
 
 ```python

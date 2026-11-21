@@ -46,6 +46,10 @@ async def main() -> None:
     await kit.attach_channel(ROOM, "advisor", category=ChannelCategory.INTELLIGENCE)
 
     # The application directs the advisor. Nobody in the room says this.
+    # In a kit with an identity resolver and identity hooks, send it with
+    # kit.deliver(ROOM, text, addressed_to=["advisor"], instruction=True): a
+    # message under "system" passed to process_inbound() is resolved as any
+    # caller's is.
     await kit.process_inbound(
         InboundMessage(
             channel_id="ws",
