@@ -8,7 +8,8 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-9.5.1-025"
+    "RK-9.5.1-025",
+    "RK-13.5-003"
   ],
   "notes": "Python: RoomWork.entry places such a call NESTED on a budget of its own, and its injected passes wait for the lock its caller holds (core/_reentrance.py, core/mixins/injected_events.py). The newest event read under the lock, after the call returned, is the call's own: the injection waits for the host's release.",
   "setup": {
