@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-accepts-a-turn-before-its-first-cpu-bound-work",
+  "title": "An executor accepts the turn before its first CPU-bound work",
+  "rules": [
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-10.6.8-010"
+  ],
+  "notes": "The remote executor occupies its thread for 1.5 seconds as soon as the turn starts. Its acceptance must reach the owner within one second so the independent heartbeat keeps the turn alive through the computation.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 100,
+        "heartbeat_timeout_ms": 500,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "executors": [
+      {
+        "id": "apart",
+        "hosts": [
+          "agent"
+        ],
+        "own_process": true
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "on_event": [
+          {
+            "holds_cpu_ms": 1500,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Work hard."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Work hard."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "apart": [
+        {
+          "call": "built",
+          "channel_id": "agent",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "agent",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
