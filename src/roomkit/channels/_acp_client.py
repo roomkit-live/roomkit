@@ -32,6 +32,7 @@ class _SDK:
     acp: ModuleType
     schema: ModuleType
     task: ModuleType
+    router: ModuleType
     version: str
 
 
@@ -45,6 +46,9 @@ class _ToolState:
     started_at: float = field(default_factory=time.monotonic)
     started: bool = False
     finished: bool = False
+    asked: bool = False
+    """The agent asked RoomKit's permission for the call: a request still
+    pending announces the call for the turn's cut (RFC §9.3)."""
     decided: bool = False
     """RoomKit decided the agent's permission request for the call."""
     refused: bool = False
@@ -138,6 +142,7 @@ def _load_sdk() -> _SDK:
     """Load the optional official ACP SDK with an actionable error."""
     try:
         import acp
+        import acp.router
         import acp.schema
         import acp.task
     except ImportError as exc:
@@ -150,7 +155,34 @@ def _load_sdk() -> _SDK:
         sdk_version = metadata.version("agent-client-protocol")
     except metadata.PackageNotFoundError:
         sdk_version = "unknown"
-    return _SDK(acp=acp, schema=acp.schema, task=acp.task, version=sdk_version)
+    return _SDK(acp=acp, schema=acp.schema, task=acp.task, router=acp.router, version=sdk_version)
+
+
+_CANCEL_REQUEST = "$/cancel_request"
+
+
+async def _ignore_cancel_request(params: Any) -> None:
+    request_id = params.get("requestId") if isinstance(params, Mapping) else None
+    logger.debug("Ignoring the ACP agent's %s for request %r", _CANCEL_REQUEST, request_id)
+
+
+def _route_cancel_requests(sdk: _SDK, connection: Any) -> None:
+    """Take the agent's ``$/cancel_request`` on *connection* without an error.
+
+    ACP lets a peer ignore the notification, the request it names still
+    answered; RoomKit does: the external tool handler keeps deciding a
+    permission request the agent withdraws, and its decision is the answer.
+    The SDK's client router does not route the method, and logs
+    an ERROR with a traceback for each one; it offers no public way to add a
+    route, so the route is added to the router of a connection the SDK built.
+    """
+    router = getattr(getattr(connection, "_conn", None), "_handler", None)
+    if isinstance(router, sdk.router.MessageRouter):
+        router.add_route(
+            sdk.router.Route(
+                method=_CANCEL_REQUEST, func=_ignore_cancel_request, kind="notification"
+            )
+        )
 
 
 def _new_message_queue(sdk: _SDK) -> Any:
@@ -445,6 +477,7 @@ class ACPConnectionMixin:
                     self._transport.open(self._client, queue=self._message_queue),
                     context=contextvars.Context(),
                 )
+                _route_cancel_requests(sdk, connection)
                 response = await connection.initialize(
                     _STABLE_PROTOCOL_VERSION,
                     client_capabilities=sdk.schema.ClientCapabilities(

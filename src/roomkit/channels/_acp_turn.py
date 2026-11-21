@@ -114,6 +114,7 @@ class ACPTurnMixin:
     _close_turn_session: Callable[[str, str, Any], Coroutine[Any, Any, None]]
     session_config: Callable[[str], dict[str, str | bool]]
     _close_open_tools: Callable[..., Coroutine[Any, Any, bool]]
+    _cancel_session: Callable[[Any, str], Coroutine[Any, Any, None]]
     _publish: Callable[..., Coroutine[Any, Any, None]]
     _room_locks: dict[str, asyncio.Lock]
     _detached: dict[str, int]
@@ -441,7 +442,7 @@ class ACPTurnMixin:
         finally:
             if turn.runner is not None and not turn.runner.done():
                 with contextlib.suppress(Exception):
-                    await connection.cancel(session_id)
+                    await self._cancel_session(connection, session_id)
                 turn.runner.cancel()
                 await asyncio.gather(turn.runner, return_exceptions=True)
             if turn.thinking_open:

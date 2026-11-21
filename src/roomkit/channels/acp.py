@@ -47,6 +47,7 @@ from roomkit.channels._acp_context import (
     contributed_blocks,
 )
 from roomkit.channels._acp_events import ACPEventsMixin
+from roomkit.channels._acp_pending import PendingPermissions
 from roomkit.channels._acp_sessions import (
     ACPSessionsMixin,
     MCPServersForRoom,
@@ -304,6 +305,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         # Rooms whose session was sent the instructions (RFC §6.4).
         self._instructed_rooms: set[str] = set()
         self._turns: dict[str, _TurnState] = {}
+        self._pending_permissions = PendingPermissions()
         self._agent_info: dict[str, Any] | None = None
         self._agent_closes_sessions = True
         self._handler_started = False
@@ -613,7 +615,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         connection = self._connection
         if session_id is None or connection is None:
             return False
-        await connection.cancel(session_id)
+        await self._cancel_session(connection, session_id)
         return True
 
     async def _cancel_turn(self, key: str, turn: _TurnState) -> None:
@@ -628,7 +630,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
             return
         connection = self._connection
         if connection is not None:
-            await connection.cancel(key)
+            await self._cancel_session(connection, key)
 
     async def _close_detached(self, room_id: str, session_id: str) -> None:
         """Close the session *room_id* had when it was detached, unless the
@@ -708,7 +710,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         if connection is not None:
             await asyncio.gather(
                 *(
-                    connection.cancel(session_id)
+                    self._cancel_session(connection, session_id)
                     for session_id, turn in self._turns.items()
                     if not turn.preparing
                 ),

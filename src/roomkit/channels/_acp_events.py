@@ -23,6 +23,7 @@ from roomkit.channels._acp_client import (
     _ToolState,
     _TurnState,
 )
+from roomkit.channels._acp_pending import PendingPermissions
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
     _observe_usage,
@@ -308,6 +309,7 @@ class ACPEventsMixin:
     _tool_report_hook: ToolCallObserver | None
     _tool_observer_hook: ToolCallObserver | None
     _realtime: RealtimeBackend | None
+    _pending_permissions: PendingPermissions
 
     async def _for_session[T](self, session_id: str, work: Coroutine[Any, Any, T]) -> T:
         """Run *work*, the agent's update or permission request for
@@ -574,7 +576,7 @@ class ACPEventsMixin:
         stream: bool,
     ) -> bool:
         """Close every tool the turn started and never closed, and every call
-        RoomKit decided that the agent never announced.
+        whose permission the agent asked that it never announced.
 
         A turn can die mid-tool — the agent process restarts, the node goes
         away, the user presses Stop — and the agent then never sends the
@@ -591,13 +593,14 @@ class ACPEventsMixin:
         left something open from one that ended clean. Idempotent: a tool
         already finished is skipped by :meth:`_emit_tool_end`.
         """
-        # A call RoomKit decided is closed even if the agent never announced
-        # it: its refusal or failure is reported, an approval cut by the
-        # turn's end is reported cancelled.
+        # A call whose permission the agent asked is closed even if the agent
+        # never announced it: its refusal or failure is reported; an
+        # approval, or a decision still pending or abandoned, cut by the
+        # turn's end is reported cancelled (RFC §9.3).
         open_tools = [
             tool
             for tool in turn.tools.values()
-            if not tool.finished and (tool.started or tool.decided)
+            if not tool.finished and (tool.started or tool.asked)
         ]
         if not open_tools:
             return False
@@ -730,6 +733,8 @@ class ACPEventsMixin:
         if turn is not None:
             turn.activity_seen = True
         tool = self._merge_tool(turn, tool_call)
+        if tool is not None:
+            tool.asked = True
         tool_id = str(getattr(tool_call, "tool_call_id", "") or "")
         tool_name = str(getattr(tool_call, "title", "") or "") or (
             tool.name if tool is not None else "tool"
@@ -741,12 +746,29 @@ class ACPEventsMixin:
             else (tool.arguments if tool is not None else {})
         )
 
-        decision = await self._decide_permission(
-            tool_name, arguments, tool_id=tool_id, session_id=session_id, room_id=room_id
+        decision = await self._pending_permissions.decide(
+            session_id,
+            self._decide_permission(
+                tool_name, arguments, tool_id=tool_id, session_id=session_id, room_id=room_id
+            ),
         )
+        if decision is None:
+            # RoomKit cancelled the session's prompt while the request was
+            # pending: ACP has it answered cancelled, the decision abandoned.
+            return sdk.schema.RequestPermissionResponse(
+                outcome=sdk.schema.DeniedOutcome(outcome="cancelled")
+            )
         if tool is not None:
             _record_decision(tool, decision)
         return _permission_response(sdk, options, approved=decision.approved)
+
+    async def _cancel_session(self, connection: Any, session_id: str) -> None:
+        """Cancel *session_id*'s prompt with ``session/cancel``, then answer
+        each of its permission requests still pending ``cancelled``, as ACP
+        requires of a client that cancels a prompt: their decisions, the
+        external tool handler's included, are abandoned (RFC §6.4)."""
+        await connection.cancel(session_id)
+        self._pending_permissions.abandon(session_id)
 
     async def _decide_permission(
         self,
