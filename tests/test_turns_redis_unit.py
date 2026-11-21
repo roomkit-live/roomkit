@@ -1097,6 +1097,31 @@ class _HangingClient:
         return _HangingPipeline()
 
 
+@pytest.mark.parametrize("outcome", ["written", "failed", "released"])
+async def test_acceptance_waits_for_its_redis_write(outcome: str) -> None:
+    """The channel can only start once acceptance crossed its transport."""
+    posted: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+
+    def post(*args: Any, **callbacks: Any) -> None:
+        posted.set_result(callbacks)
+
+    link = RedisExecutorLink(_request(), "owner", post, lambda _: None, end_bound=1)
+    sending = asyncio.create_task(link.send(Accepted(executor_id="worker")))
+    callbacks = await posted
+    assert not sending.done()
+    if outcome == "written":
+        callbacks["written"]()
+        assert await sending == 1
+    else:
+        if outcome == "released":
+            link.end("owner_lost")
+        else:
+            callbacks["failed"](ConnectionError("write failed"))
+        with pytest.raises(TurnLinkError) as lost:
+            await sending
+        assert lost.value.reason == ("owner_lost" if outcome == "released" else "frame_lost")
+
+
 async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

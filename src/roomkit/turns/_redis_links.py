@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.turns.base import ExecutorLink, MessageOrder, TurnLink
-from roomkit.turns.wire import Cancel, ControlEnvelope, End, FrameEnvelope, TurnRequest
+from roomkit.turns.wire import Accepted, Cancel, ControlEnvelope, End, FrameEnvelope, TurnRequest
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_beat import LiveExecutors
@@ -43,7 +43,7 @@ class _Inbound:
         self._envelope = envelope
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._order = MessageOrder()
-        self._gone = "backend_closed"
+        self.end_reason = "backend_closed"
         self._own: list[Frame | Control] = []
         self.ended = False
         """Whether the other end's ``end`` came."""
@@ -52,7 +52,7 @@ class _Inbound:
         self._queue.put_nowait(body)
 
     def end(self, reason: str) -> None:
-        self._gone = reason
+        self.end_reason = reason
         self._queue.put_nowait(_GONE)
 
     def hand(self, message: Frame | Control) -> None:
@@ -65,7 +65,7 @@ class _Inbound:
             body = await self._queue.get()
             if body == _GONE:
                 self._queue.put_nowait(_GONE)
-                raise TurnLinkError(self._gone)
+                raise TurnLinkError(self.end_reason)
             if body == _OWN:
                 return 0, self._own.pop(0)
             envelope = self._envelope.model_validate_json(body)
@@ -197,6 +197,7 @@ class RedisExecutorLink(ExecutorLink):
     ) -> None:
         self.request = request
         self.owner_node = owner_node
+        self._accept_written = asyncio.Event()
         self._controls = _Inbound(ControlEnvelope)
         self._frames = _Outbound(request.turn_id, FrameEnvelope, post, self._broken)
         self._forget = forget
@@ -215,6 +216,7 @@ class RedisExecutorLink(ExecutorLink):
         turn's cut: the turn stops, sending nothing more."""
         self._frames.open = False
         self._controls.end(reason)
+        self._accept_written.set()
 
     def cut(self, reason: str) -> None:
         """The backend closes: the turn is cut as its owner's ``cancel``
@@ -226,6 +228,17 @@ class RedisExecutorLink(ExecutorLink):
         return cast("Control", message)
 
     async def send(self, frame: Frame) -> int:
+        if isinstance(frame, Accepted):
+            # The channel may occupy this event loop on its very first poll.
+            # Flush acceptance before giving it the thread (RFC §10.6.8).
+            seq = self._frames.put(
+                "frame", self.owner_node, frame, written=self._accept_written.set
+            )
+            if self._frames.open:
+                await self._accept_written.wait()
+            if not self._frames.open:
+                raise TurnLinkError(self._controls.end_reason)
+            return seq
         if not isinstance(frame, End):
             return self._frames.put("frame", self.owner_node, frame)
         # The turn's last frame: nothing more crosses.
@@ -267,7 +280,6 @@ class RedisExecutorLink(ExecutorLink):
         """A frame could not be written: the turn is cut, its owner learning
         it from the turn's silence (its process no longer runs it)."""
         logger.warning("Turn %s lost its link to its owner: %s", self.request.turn_id, error)
-        self._frames.open = False
-        self._controls.end("frame_lost")
+        self.end("frame_lost")
         if self._ending:
             self._let_go()
