@@ -1,0 +1,263 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/turn-end-reports-a-pending-permission-call-cancelled",
+  "title": "A turn that ends while a permission is pending for a call never announced reports the call cancelled",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "requirements": [
+    "RK-6.4-039",
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
+  "notes": "Python: channels/_acp_events.py::_request_permission, _close_open_tools; tests/test_channels/test_acp_handler_cancellation.py. The agent asks a permission without awaiting it (prompts[].permission) and ends its prompt once a gate opens, while the handler is held at its decision gate: no cancellation is sent, so the decision is not abandoned. The call, never announced, is announced by its pending permission request for the turn's end: it is reported once, cancelled, the handler hearing of it through on_tool_cancelled (RK-9.3-048). The decision gate opens only once the turn has ended. Active room turns only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [],
+                "permission": {
+                  "toolCall": {
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "rawInput": {
+                      "path": "notes.txt"
+                    }
+                  },
+                  "options": [
+                    {
+                      "kind": "allow_once",
+                      "name": "allow_once",
+                      "optionId": "allow_once"
+                    },
+                    {
+                      "kind": "reject_once",
+                      "name": "reject_once",
+                      "optionId": "reject_once"
+                    }
+                  ]
+                },
+                "before_reply_gate": "reply",
+                "stop_reason": "end_turn"
+              }
+            ]
+          },
+          "external_tool_handler": {
+            "decisions": [
+              {
+                "approved": true
+              }
+            ],
+            "decision_gate": "held"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "sync-tools",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "open": "reply"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "stop_reason": {
+                "$absent": true
+              },
+              "interrupted": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1",
+            "status": "failed",
+            "outcome": "cancelled",
+            "refused_but_ran": false,
+            "error": "The ACP turn ended before the tool reported a result"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "tools": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {
+              "path": "notes.txt"
+            },
+            "result": "{\"error\": \"Tool call cancelled\", \"tool\": \"Read\", \"hint\": \"The turn ended before its result.\"}",
+            "is_error": true,
+            "cancelled": true,
+            "refused": false,
+            "error_detail": null,
+            "refused_but_ran": false
+          }
+        }
+      ],
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "tool_calls_count": 1,
+            "loop_end_reason": "completed"
+          }
+        }
+      ],
+      "sync-tools": []
+    },
+    "acp_handlers": {
+      "claude": [
+        {
+          "method": "start",
+          "channel_id": "claude"
+        },
+        {
+          "method": "process_tool_call",
+          "channel_id": "claude",
+          "name": "Read",
+          "arguments": {
+            "path": "notes.txt"
+          },
+          "tool_call_id": "call-1",
+          "room_id": "room-1",
+          "session_id": "session-1"
+        },
+        {
+          "method": "on_tool_cancelled",
+          "channel_id": "claude",
+          "name": "Read",
+          "arguments": {
+            "path": "notes.txt"
+          },
+          "tool_call_id": "call-1",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    }
+  }
+}
