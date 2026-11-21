@@ -116,6 +116,19 @@ def task_work(result: Any) -> str:
     return getattr(result, "output", None) or ""
 
 
+# The keys of a task's metadata only the framework writes: how its worker's
+# turn ended, whether its failure was reported, and the turn's record (RFC
+# §23.3 step 6). A context that carries one, which a model writes on a
+# delegate_task call, never stands for the framework's.
+_TASK_END_KEYS = frozenset({"loop_end_reason", "error_reported", TURNS_KEY})
+
+
+def _context_metadata(context: dict[str, Any] | None) -> dict[str, Any]:
+    """The task's metadata the *context* starts, without the keys only the
+    framework writes."""
+    return {key: value for key, value in (context or {}).items() if key not in _TASK_END_KEYS}
+
+
 def cancelled_task_fields(
     context: dict[str, Any] | None,
     turns: TurnEntries | None = None,
@@ -128,7 +141,7 @@ def cancelled_task_fields(
     ``turns``, ``cancelled``, over what its record held (*turns*), as a room
     turn's caller reads a cancelled read; one cut before carries none (RFC
     §23.3)."""
-    metadata = dict(context or {})
+    metadata = _context_metadata(context)
     if worker is not None:
         entries = dict(turns or {})
         entries[worker] = {**entries.get(worker, {}), "loop_end_reason": "cancelled"}
@@ -163,7 +176,7 @@ def finished_task_fields(
     keeps its last narration as the output and how its turn ended in the
     metadata (RFC §23.3); any other failure keeps nothing. Its turn's record
     (*turns*, by responder) goes under ``turns`` however it ended."""
-    output, metadata = response, dict(context or {})
+    output, metadata = response, _context_metadata(context)
     if turns:
         metadata[TURNS_KEY] = dict(turns)
     if isinstance(failure, (TaskCutShortError, TaskTurnFailedError)):
