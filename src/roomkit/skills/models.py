@@ -200,12 +200,13 @@ class Skill:
 
         The file is read through the descriptor its check opened, never by
         its name again (RFC §24.6): one swapped for a link out meanwhile is
-        refused, not read.
+        refused, not read. On Linux, where the open file's place is read
+        from ``/proc/self/fd``, a ``/proc`` that cannot be read refuses it.
 
         Raises:
             SkillPathError: If filename is not a plain name inside the skill's
-                ``references/`` directory, or the file changed while it was
-                read. Subclasses ValueError.
+                ``references/`` directory, the file changed while it was
+                read, or its place cannot be verified. Subclasses ValueError.
             FileNotFoundError: If the reference file does not exist.
         """
         ref_path = safe_join_filename(self.path / _REFERENCES_DIR, filename, kind="reference")

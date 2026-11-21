@@ -295,6 +295,7 @@ class TestParseSkillMetadata:
             # Not YAML: read line by line, every value as written.
             ("flag: true\nweird: =", {"flag": "true", "weird": "="}),
             ("flag: true\nnote: Use when: asked", {"flag": "true", "note": "Use when: asked"}),
+            ("flag: true\nodd:value", {"flag": "true", "odd": "value"}),
         ],
     )
     def test_a_plain_scalar_is_kept_as_python_writes_its_yaml_value(

@@ -46,6 +46,7 @@ def layout(tmp_path: Path) -> _Layout:
     (skill / "SKILL.md").write_text(_skill_md(_INSIDE), encoding="utf-8")
     (skill / "references" / "guide.md").write_text(_INSIDE, encoding="utf-8")
     (skill / "references" / "other.md").write_text("another inside", encoding="utf-8")
+    (skill / "other-skill.md").write_text(_skill_md("another inside"), encoding="utf-8")
     outside = (tmp_path / "outside").resolve()
     outside.mkdir()
     (outside / "guide.md").write_text(_OUTSIDE, encoding="utf-8")
@@ -156,7 +157,8 @@ async def test_a_descriptor_that_holds_another_file_is_refused(
     a hard link to it, so that only the descriptor's own path tells."""
     target = layout.skill / file
     if held == "another file inside":
-        opened = layout.skill / "references" / "other.md"
+        other = "other-skill.md" if file == "SKILL.md" else "references/other.md"
+        opened = layout.skill / other
     else:
         opened = layout.outside / target.name
         target.unlink()
