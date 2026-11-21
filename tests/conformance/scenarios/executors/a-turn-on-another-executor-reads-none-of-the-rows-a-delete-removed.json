@@ -1,0 +1,424 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-on-another-executor-reads-none-of-the-rows-a-delete-removed",
+  "title": "A room's next turn on another executor reads the agent's earlier rows but those an accepted delete removed: a deleted tool call and a deleted instruction it read are neither in its history nor in its tool memory, the call kept is in both",
+  "rules": [
+    "§10.6.5",
+    "§7.5 rule 8",
+    "§10.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-10.6.5-039"
+  ],
+  "notes": "The agent's first turn, on the executor first, calls lookup (c1), then other (c2); its second reads the application's instruction (its instruction_read row). The room's owner then deletes c1's two rows, its start and its end, and the instruction_read row, by ADMIN deletes the pipeline accepts (§10.3). The next turn runs on second, which never ran the agent in the room, so what it reads of the agent's own rows comes with its request, the channel_rows its owner read for it (§10.6.5), where a deleted row is withheld (§7.5 rule 8, an empty text in place of what it held): the turn's request replays c2 alone, in its history and in its tool memory, and holds neither c1 nor the instruction. Covered in part: what the turn reads is observed, not the request it is sent, so an executor that applies rule 8 again hides an owner that sent a deleted row whole; and a store that fails to read the rows is not exercised, since one store fault lands on different reads in different implementations. Python: tests/test_executor_without_store.py::test_a_deleted_row_never_leaves_the_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          },
+          {
+            "name": "other",
+            "description": "Look elsewhere",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "elsewhere"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "other",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "noted"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner-1",
+            "channel_id": "ws",
+            "role": "owner",
+            "status": "active"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "agent"
+        ],
+        "started": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Mind the depot."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#1",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#2",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner-1",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#6",
+          "delete_type": "admin"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "More."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c2"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c2"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "done"
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Mind the depot."
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "noted"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "target_event_id": "room-1#1"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "target_event_id": "room-1#2"
+          }
+        },
+        {
+          "type": "delete",
+          "content": {
+            "target_event_id": "room-1#6"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "More."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "again"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "done"
+            },
+            {
+              "role": "assistant",
+              "text": "noted"
+            },
+            {
+              "role": "user",
+              "text": "More."
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "name": "other",
+              "content": "elsewhere",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

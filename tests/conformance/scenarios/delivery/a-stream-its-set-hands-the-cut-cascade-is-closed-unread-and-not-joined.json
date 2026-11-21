@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-stream-its-set-hands-the-cut-cascade-is-closed-unread-and-not-joined",
+  "title": "A stream a delivery set still running at the cut hands its cascade afterwards is closed unread, and nothing waits for its end",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§5.13",
+    "§10.6.8 Cancellation"
+  ],
+  "requirements": [
+    "RK-10.1-104"
+  ],
+  "notes": "The message's delivery set asks the agent, which answers with a stream, and delivers to ws, which fails, so the set records its targets' outcomes on its event (§5.13); a set hands its cascade its streams only once that record is written. The fault holds the record at recording once it is written: every target has answered, and the set, still running, has not handed over the agent's stream. The cut lands there: none of the cascade's turns is running, and it returns at once. Once the record goes on, the set hands the cut cascade the stream before its AFTER_BROADCAST hook reaches after-set: the stream is closed unread (turn_ends: close; the model is asked nothing) and not joined: the handle's wait returns while the agent's turn still owes its end, held at end-owed, which a joined close would wait for past every bound (cancel_ms 20 s). Whether the owner reads that end once it comes is not asserted. A stream handed before the cut, closed and joined, is RK-10.1-103's. Python: tests/test_turns_cleanup.py::test_a_cancelled_cascade_waits_for_no_stream_it_is_handed_once_cancelled; roomkit-rs: turns::tests::cut_reads::a_cut_while_its_delivery_set_runs_waits_for_no_stream_the_set_answered.",
+  "setup": {
+    "kit": {
+      "store_faults": true,
+      "turn_timeouts": {
+        "cancel_ms": 20000
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "source_channel_id": "sms"
+            },
+            "fail": "ws is down"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "holds_end": "end-owed",
+        "model": {
+          "rounds": [
+            {
+              "text": "Streamed."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after-set",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "after-set"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "record_delivery_results",
+      "gate": "recording",
+      "room_id": "room-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "d1"
+    },
+    {
+      "wait_for": "recording"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d1",
+      "timeout_ms": 300,
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "recording"
+    },
+    {
+      "wait_for": "after-set"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "d1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "after-set"
+    },
+    {
+      "open": "end-owed"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "models": {
+      "agent": []
+    },
+    "turn_ends": {
+      "agent": [
+        {
+          "room_id": "room-1",
+          "cut": "close"
+        }
+      ]
+    }
+  }
+}
