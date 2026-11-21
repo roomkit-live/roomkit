@@ -275,6 +275,52 @@ class TestParseSkillMetadata:
         assert meta.gated_tool_names == []
 
     @pytest.mark.parametrize(
+        ("lines", "expected"),
+        [
+            ("flag: true", {"flag": "True"}),
+            ("flag: Off", {"flag": "False"}),
+            ("size: 0x10", {"size": "16"}),
+            ("size: 012", {"size": "10"}),
+            ("size: 1_000", {"size": "1000"}),
+            ("size: 1:30", {"size": "90"}),
+            ("ratio: 1.", {"ratio": "1.0"}),
+            ("ratio: 1.5e+3", {"ratio": "1500.0"}),
+            ("ratio: 1.5e3", {"ratio": "1.5e3"}),
+            ("ratio: -.inf", {"ratio": "-inf"}),
+            ("at: 2024-01-01T10:00:00Z", {"at": "2024-01-01 10:00:00+00:00"}),
+            ('flag: "true"', {"flag": "true"}),
+            ("flag: y", {"flag": "y"}),
+            ("tags: [yes, 0x10, 'no', ~]", {"tags": "True, 16, no"}),
+            ("tags:\n- on\n- '1.0'", {"tags": "True, 1.0"}),
+            # Not YAML: read line by line, every value as written.
+            ("flag: true\nweird: =", {"flag": "true", "weird": "="}),
+            ("flag: true\nnote: Use when: asked", {"flag": "true", "note": "Use when: asked"}),
+        ],
+    )
+    def test_a_plain_scalar_is_kept_as_python_writes_its_yaml_value(
+        self, tmp_path: Path, lines: str, expected: dict[str, str]
+    ) -> None:
+        """A key RoomKit does not read keeps the text ``str()`` writes of the
+        value YAML 1.1 types a plain scalar to, unless the frontmatter is not
+        YAML (RFC §24.1). roomkit-rs reads it so too (RMK-1579)."""
+        skill_dir = tmp_path / "typed"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: typed\ndescription: d\n{lines}\n---\nBody", encoding="utf-8"
+        )
+        assert parse_skill_metadata(skill_dir).extra_metadata == expected
+
+    def test_a_field_s_plain_scalar_is_typed_as_another_key_s(self, tmp_path: Path) -> None:
+        skill_dir = tmp_path / "typed"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: typed\ndescription: d\nlicense: yes\ncompatibility: 3.10\n---\nBody",
+            encoding="utf-8",
+        )
+        meta = parse_skill_metadata(skill_dir)
+        assert (meta.license, meta.compatibility) == ("True", "3.1")
+
+    @pytest.mark.parametrize(
         ("frontmatter", "reason"),
         [
             ("name: refunds\n---\nBody", "must start with"),
