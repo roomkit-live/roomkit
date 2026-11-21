@@ -12,7 +12,9 @@ The validator catches:
 - IPv4 literals in every Python-accepted numeric form: dotted-quad,
   shorthand (``127.1``), octal, hex, integer (``2130706433``) — these
   bypass ``ipaddress.ip_address`` which only accepts canonical dotted-quad
-- IPv6 literals including loopback, link-local, unique-local, etc.
+- IPv6 literals including loopback, link-local, unique-local, site-local, etc.
+- shared address space (``100.64.0.0/10``, carrier-grade NAT and overlay
+  networks), and any other address ``ipaddress`` does not call global
 - hostnames whose A/AAAA records resolve to any non-public address
 
 A note on DNS rebinding: this validator resolves at validation time and
@@ -57,6 +59,9 @@ _V6_PUBLIC_PROTOCOLS = tuple(
 _V6_NON_PUBLIC = tuple(
     ipaddress.IPv6Network(prefix) for prefix in ("64:ff9b:1::/48", "2002::/16", "3fff::/20")
 )
+# Shared address space (RFC 6598): carrier-grade NAT and overlay networks.
+# ``ipaddress`` calls it neither private nor global.
+_V4_SHARED = ipaddress.IPv4Network("100.64.0.0/10")
 
 
 def _is_private_destination(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -70,6 +75,23 @@ def _is_private_destination(addr: ipaddress.IPv4Address | ipaddress.IPv6Address)
         if any(addr in net for net in _V6_NON_PUBLIC):
             return True
     return addr.is_private
+
+
+def _is_off_the_public_internet(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Whether an address the named reasons let through is still not global.
+
+    The ranges whose answer changed between CPython patch releases are
+    decided by the tables above, never by ``is_global``.
+    """
+    if isinstance(addr, ipaddress.IPv4Address):
+        if addr in _V4_PROTOCOLS:
+            return False
+        return addr in _V4_SHARED or not addr.is_global
+    if addr in _V6_PROTOCOLS:
+        return False
+    # Site-local addresses (fec0::/10, RFC 3879) are deprecated, and
+    # ``ipaddress`` calls them global; sites still route them inside.
+    return addr.is_site_local or not addr.is_global
 
 
 def _is_blocked_address(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:
@@ -88,6 +110,8 @@ def _is_blocked_address(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> 
         return "multicast"
     if addr.is_unspecified:
         return "unspecified"
+    if _is_off_the_public_internet(addr):
+        return "non-public"
     return None
 
 

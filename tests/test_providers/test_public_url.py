@@ -5,8 +5,10 @@ from __future__ import annotations
 import socket
 
 import pytest
+from pydantic import ValidationError
 
 from roomkit.providers import validate_public_url
+from roomkit.providers.http import HTTPProviderConfig
 
 
 @pytest.mark.parametrize("port", ["invalid", "65536"])
@@ -116,6 +118,65 @@ def test_literal_address_policy_is_independent_of_the_python_patch(
     else:
         with pytest.raises(ValueError):
             validate_public_url(url, resolve_dns=False)
+
+
+@pytest.mark.parametrize(
+    ("literal", "public"),
+    [
+        # Shared address space, RFC 6598: carrier-grade NAT and overlay networks.
+        ("100.64.0.0", False),
+        ("100.64.0.1", False),
+        ("100.100.100.200", False),
+        ("100.127.255.255", False),
+        ("[::ffff:100.64.0.1]", False),
+        ("100.63.255.255", True),
+        ("100.128.0.0", True),
+        # Site-local IPv6, deprecated by RFC 3879 and still routed inside sites.
+        ("[fec0::1]", False),
+        ("[feff:ffff::1]", False),
+        ("[fe7f::1]", False),
+        ("[ff00::1]", False),
+    ],
+)
+def test_an_address_that_is_not_of_the_public_internet_is_refused(
+    literal: str, public: bool
+) -> None:
+    url = f"https://{literal}/"
+    if public:
+        assert validate_public_url(url, resolve_dns=False) == url
+    else:
+        with pytest.raises(ValueError):
+            validate_public_url(url, resolve_dns=False)
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        ("100.64.0.1", "non-public address 100.64.0.1"),
+        ("100.100.100.200", "non-public address 100.100.100.200"),
+        ("fec0::1", "non-public address fec0::1"),
+    ],
+)
+def test_a_name_that_resolves_off_the_public_internet_is_refused(
+    monkeypatch: pytest.MonkeyPatch, answer: str, reason: str
+) -> None:
+    family = socket.AF_INET6 if ":" in answer else socket.AF_INET
+
+    def resolve(*_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (family, socket.SOCK_STREAM, 6, "", (answer, 443)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    with pytest.raises(ValueError, match=reason):
+        validate_public_url("https://service.example/")
+
+
+@pytest.mark.parametrize("host", ["100.64.0.1", "100.100.100.200", "[fec0::1]"])
+def test_a_webhook_configured_off_the_public_internet_is_refused(host: str) -> None:
+    with pytest.raises(ValidationError, match="webhook_url rejected.*non-public address"):
+        HTTPProviderConfig(webhook_url=f"https://{host}/hook")
 
 
 @pytest.mark.parametrize("prefix", [" ", "\t", "\r", "\n", "\u00a0"])

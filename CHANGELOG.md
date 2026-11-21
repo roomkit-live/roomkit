@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `validate_public_url` refuses an address of the shared address space (`100.64.0.0/10`, RFC 6598: carrier-grade NAT and overlay networks) and a site-local IPv6 address (`fec0::/10`), written or resolved, as `non-public` (RMK-1876). It refused loopback, private, link-local, reserved, multicast and unspecified addresses, and let these through, since `ipaddress` calls the first neither private nor global and the second global: `https://100.64.0.1/` was accepted, by `HTTPProviderConfig.webhook_url` too. Any other address `ipaddress` does not call global is refused the same way.
+
 - A `kit.deliver()` is no longer put to the identity resolver, nor is an orchestration cue (RFC §11.6, RMK-1874). The framework's own message was resolved like a stranger's: with an `ON_IDENTITY_UNKNOWN` or `ON_IDENTITY_AMBIGUOUS` hook that challenges such senders, the host's own delivery was challenged and blocked, and the agent it addressed never ran; under a resolver answering PENDING it was stored under a `pending-…` id, with a participant record for the framework's sender. The framework knows its own message by where it comes from, not by the sender `system`: a message a caller writes under that name is resolved as before, an `INSTRUCTION` sent through `process_inbound()` included. An application whose kit runs identity hooks sends its own instructions with `kit.deliver(..., instruction=True)`.
 
 - Voice STT waits for partial transcription observers before reading the next result in both VAD-segmented and continuous sessions. A slow partial observer can now finish before the final transcription is delivered (RFC §9.3, RMK-1841).
