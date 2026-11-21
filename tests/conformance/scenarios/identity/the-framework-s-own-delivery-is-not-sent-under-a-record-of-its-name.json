@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/the-framework-s-own-delivery-is-not-sent-under-a-record-of-its-name",
+  "title": "A deliver() keeps the sender system in a room that holds an identified participant under the id a resolved delivery once got",
+  "rules": [
+    "§10.1 step 5",
+    "§10.4",
+    "§11.6"
+  ],
+  "requirements": [
+    "RK-11.6-001"
+  ],
+  "notes": "Before RMK-1874 a deliver() under a resolver that answers pending left a participant pending-5aeb2fe61380ef9f in the room, the id resolution gives the sender system on this channel. Once that record is identified, a sender whose own record the room identified is sent under it (§11.6 case 2). The framework's own message is no sender's: it stays under system, and its turn's actor reads system. Python: core/mixins/inbound_identity.py _resolve_identity returns before _as_the_record_named.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "pending"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "actor",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "actor",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "pending-5aeb2fe61380ef9f",
+            "channel_id": "ws",
+            "identification": "identified",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Send the report.",
+      "addressed_to": [
+        "agent"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"system\""
+            }
+          ]
+        }
+      ]
+    },
+    "resolver": []
+  }
+}
