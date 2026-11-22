@@ -6,6 +6,10 @@
     "§6.4",
     "§20.1"
   ],
+  "requirements": [
+    "RK-20.1-003",
+    "RK-20.1-007"
+  ],
   "notes": "Python's MemoryProvider.compact (HITL cb3751f9, RMK-1533), called by the AI channel after AFTER_TOOL_ROUND, before the next round's request (channels/_ai_resilience.py _compact_after_round). The first compaction hands back a summary then the history's last message, the assistant's answer, which the input follows as it is; the second a summary alone, a user text joined to the input, so the third is handed no history: the input, the summary joined to it, is still the turn's.",
   "setup": {
     "channels": [

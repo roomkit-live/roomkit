@@ -7,6 +7,15 @@
     "§20.1",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20-001",
+    "RK-20.1-006",
+    "RK-20.2-002",
+    "RK-20.2-004",
+    "RK-20.3-008",
+    "RK-20.3-013",
+    "RK-20.3-014"
+  ],
   "notes": "Python's SlidingWindowMemory(max_events=max_context_events) slices the context's last max_events events, the turn's event the newest, then leaves the turn's event out: the channel places it as the input (RFC §20.1).",
   "setup": {
     "channels": [

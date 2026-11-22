@@ -6,6 +6,11 @@
     "§6.4",
     "§20.2"
   ],
+  "requirements": [
+    "RK-20.2-002",
+    "RK-20.2-003",
+    "RK-20.2-006"
+  ],
   "notes": "Python's _build_context joins the memory's trailing user text to the conversation's first user message (RFC §20.2), then with_turn_images splits that input from its notes and adds the images after it.",
   "setup": {
     "channels": [

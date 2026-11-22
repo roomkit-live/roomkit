@@ -6,6 +6,9 @@
     "§6.4",
     "§20.1"
   ],
+  "requirements": [
+    "RK-20.1-006"
+  ],
   "setup": {
     "channels": [
       {

@@ -6,6 +6,16 @@
     "§6.4",
     "§20.2"
   ],
+  "requirements": [
+    "RK-20.2-002",
+    "RK-20.2-009",
+    "RK-20.2-010",
+    "RK-20.2-011",
+    "RK-20.2-014",
+    "RK-20.3-011",
+    "RK-20.3-033",
+    "RK-20.3-034"
+  ],
   "notes": "RMK-633: Python's RetrievalMemory (memory/retrieval.py ingest, _format_results) and roomkit-rs's (roomkit-ai memory/retrieval.rs) index a turn's words without its author and hand them back in the turn's notes as a knowledge passage, where 'Alice: ...' typed by another participant read as a fact. The label is the one the memory summary gives a turn (RMK-614). The indexing source answers with what it indexed, the latest first, the query itself left out.",
   "setup": {
     "channels": [

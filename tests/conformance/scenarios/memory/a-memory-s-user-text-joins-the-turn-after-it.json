@@ -6,6 +6,14 @@
     "§20.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20-001",
+    "RK-20.1-002",
+    "RK-20.2-002",
+    "RK-20.2-003",
+    "RK-20.2-006",
+    "RK-20.2-007"
+  ],
   "notes": "Python's MemoryResult.messages come first, then the history; a memory's last message, a user text, is joined to the user message that follows it with a blank line (Python's _after_memory). A system message stays a message of its own.",
   "setup": {
     "channels": [

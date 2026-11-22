@@ -6,6 +6,13 @@
     "§20.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20.3-005",
+    "RK-20.3-012",
+    "RK-20.3-038",
+    "RK-20.3-041",
+    "RK-20.3-042"
+  ],
   "notes": "Python's BudgetAwareMemory (window 700, margin 15 %, min_events 1). Alice and Bob take part, so every turn is labelled. Each question is a 14-line JSON paste in a code block: 96 tokens as typed (len // 4 + 1), 143 (Alice) and 136 (Bob) as sent, each line Name: \"…\" with its quotes escaped. The 595 the prompt may take, less the measured input (293: the empty system prompt and its notes' room) and the third question as sent (143), leave 159: Answer 2, Question 2 and Answer 1 (144) fit, Question 1 does not. Counted as typed (before RMK-636), all four turns fit what the raw count left (206), and the request sent 293 + 287 + 143 = 723 tokens to a window of 700.",
   "setup": {
     "channels": [

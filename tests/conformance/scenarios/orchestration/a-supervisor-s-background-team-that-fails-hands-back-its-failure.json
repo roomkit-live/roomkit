@@ -8,6 +8,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-22.1-045",
     "RK-9.3-086"
   ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_supervisor_s_failed_background_workers_hand_back_their_failure; orchestration/_background.py _work (the run raised: posted failed with its message) and background_failure_text; core/_fallback.py FALLBACK_FAILED. The failure hand-back is held at BEFORE_DELIVER until the original call has returned its acknowledgement: the background run and that answer otherwise race. This pins the scenario's schedule without requiring an order between independent turns.",

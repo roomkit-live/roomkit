@@ -7,6 +7,20 @@
     "§22.3",
     "§13.4"
   ],
+  "requirements": [
+    "RK-22.1-010",
+    "RK-22.1-013",
+    "RK-22.1-038",
+    "RK-22.1-039",
+    "RK-22.1-058",
+    "RK-22.1-102",
+    "RK-22.3-003",
+    "RK-22.3-004",
+    "RK-22.3-009",
+    "RK-22.3-010",
+    "RK-22.3-012",
+    "RK-22.3-014"
+  ],
   "notes": "A blank key, empty or whitespace only, names no publication: the request asking for idempotency with one is refused, not delivered unkeyed.",
   "setup": {
     "channels": [

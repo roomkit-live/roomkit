@@ -6,6 +6,22 @@
     "§22.2",
     "§22.1"
   ],
+  "requirements": [
+    "RK-22.1-010",
+    "RK-22.1-021",
+    "RK-22.1-036",
+    "RK-22.1-102",
+    "RK-22.1-104",
+    "RK-22.2-021",
+    "RK-22.2-022",
+    "RK-22.2-023",
+    "RK-22.2-025",
+    "RK-22.2-026",
+    "RK-22.3-003",
+    "RK-22.3-004",
+    "RK-22.3-010",
+    "RK-22.3-014"
+  ],
   "notes": "The event is published, its address naming a target the room lacks: the outcome is unavailable with an error that is not retryable, so the item is dead-lettered, executed once.",
   "setup": {
     "kit": {

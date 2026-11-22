@@ -6,6 +6,11 @@
     "§23.3 step 8",
     "§22.1"
   ],
+  "requirements": [
+    "RK-22.1-023",
+    "RK-22.1-028",
+    "RK-22.1-029"
+  ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_the_turn_a_result_opens_gives_that_result_only (its transport half; tasks/a-background-delegation-relays-its-result-to-the-notified-agent pins the agent's, closed by RESULT_TURN_NOTE); tasks/handback.py _target, _addressed_text (a transport is handed the text as it is).",
   "setup": {
     "channels": [

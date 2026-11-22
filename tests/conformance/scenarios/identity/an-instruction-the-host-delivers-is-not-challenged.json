@@ -8,7 +8,8 @@
     "§11.6"
   ],
   "requirements": [
-    "RK-11.6-001"
+    "RK-11.6-001",
+    "RK-22.1-045"
   ],
   "notes": "The door for a host's own instruction in a kit that challenges unknown senders: deliver(instruction=True) is the framework's own message, which the identity step leaves alone. An instruction sent through process_inbound() under the sender system is a caller's message and is resolved (identity/a-caller-s-message-under-the-framework-s-name-is-still-resolved). Python: core/mixins/inbound_identity.py _resolve_identity, models/delivery.py framework_message.",
   "setup": {

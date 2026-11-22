@@ -6,6 +6,12 @@
     "§20.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20.3-008",
+    "RK-20.3-013",
+    "RK-20.3-014",
+    "RK-20.3-015"
+  ],
   "notes": "Python's turn context holds the room's messages (get_conversation) and the turn's event; the agent's earlier rounds are read from its tool rows apart and placed after the message they followed (RFC §6.4, The tools of earlier turns).",
   "setup": {
     "channels": [

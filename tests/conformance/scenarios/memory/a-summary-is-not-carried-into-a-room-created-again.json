@@ -5,6 +5,12 @@
   "rules": [
     "§20.3"
   ],
+  "requirements": [
+    "RK-20.3-016",
+    "RK-20.3-021",
+    "RK-20.3-022",
+    "RK-20.3-025"
+  ],
   "notes": "Python's SummarizingMemory over a sliding window of 11 events: at the fourth question the room's first turns are summarized (Summary 1). The room is then deleted from the store and created again under its id, the channels attached again. The new room's first question reads alone, and its second reads the first and its answer, no summary: the summary belongs to the room created at the mark it was built for (the room's created_at), and the turns it covers are not in the new room's history.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§20.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20.2-002",
+    "RK-20.2-009"
+  ],
   "notes": "Python's MemoryResult.notes: the channel carries them with the turn's notes, after the input, never in the history a provider caches (RFC §20.2); the next turn's history holds the earlier input bare.",
   "setup": {
     "channels": [

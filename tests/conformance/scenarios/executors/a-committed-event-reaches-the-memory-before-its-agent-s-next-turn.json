@@ -8,7 +8,11 @@
     "§20.2"
   ],
   "requirements": [
-    "RK-10.6.3-024"
+    "RK-10.6.3-024",
+    "RK-20.2-009",
+    "RK-20.3-011",
+    "RK-20.3-033",
+    "RK-20.3-034"
   ],
   "notes": "Python: turns/executor.py _apply_on_build and _hand_event apply a committed_event; the owner awaits the backend's control (turns/memory.py control, turns/redis.py) before it sends the room's next request. ana's retrieval memory indexes each event it is handed and hands back what it indexed: the message nobody was asked about is in the request of ana's turn, which the next message, sent with no wait between, asks for. What the executor logs of a raise is not observable.",
   "setup": {

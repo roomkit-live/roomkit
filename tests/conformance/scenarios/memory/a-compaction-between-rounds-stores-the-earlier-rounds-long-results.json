@@ -7,6 +7,10 @@
     "§20.1",
     "§21.5"
   ],
+  "requirements": [
+    "RK-20.1-003",
+    "RK-20.1-007"
+  ],
   "notes": "Python's _compact_after_round stores, with with_results_stored (channels/_compaction.py), each result longer than 2,000 characters of the rounds between the turn's input and its last round, a preview of 1,000 characters in its place. Here the memory hands back nothing after the first round, then an empty history after the second: the first round's result (2,899 characters) is stored, the second's goes whole.",
   "setup": {
     "channels": [

@@ -8,7 +8,8 @@
     "§11.6"
   ],
   "requirements": [
-    "RK-11.6-001"
+    "RK-11.6-001",
+    "RK-22.1-028"
   ],
   "notes": "The kit's resolver knows no one and a hook challenges every unknown sender, which blocks their message (identity/a-challenge-runs-the-before-broadcast-hooks). The host's own deliver() is no sender's message: the resolver is not asked, no hook fires, and the agent is asked. Before RMK-1874 the delivery was blocked with identity_challenge_sent and the agent never ran. The delivery is known by where it comes from, not by its sender id (identity/a-caller-s-message-under-the-framework-s-name-is-still-resolved). Python: core/mixins/inbound_identity.py _resolve_identity, models/delivery.py framework_message.",
   "setup": {

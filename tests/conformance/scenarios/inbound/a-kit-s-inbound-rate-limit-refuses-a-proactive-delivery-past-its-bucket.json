@@ -7,7 +7,11 @@
     "§22.1"
   ],
   "requirements": [
-    "RK-10.1-007"
+    "RK-10.1-007",
+    "RK-22.1-010",
+    "RK-22.1-023",
+    "RK-22.1-041",
+    "RK-22.1-102"
   ],
   "notes": "Python: core/mixins/inbound.py process_inbound (the inbound limit, before the channel is read), which deliver's publication goes through (core/delivery.py). §13.3's queueing is a binding's outbound limit, not this one.",
   "setup": {

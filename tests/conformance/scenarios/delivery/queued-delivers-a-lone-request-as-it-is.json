@@ -6,6 +6,16 @@
     "§22.2",
     "§22.1"
   ],
+  "requirements": [
+    "RK-22.1-008",
+    "RK-22.1-009",
+    "RK-22.1-010",
+    "RK-22.1-014",
+    "RK-22.1-032",
+    "RK-22.1-033",
+    "RK-22.1-034",
+    "RK-22.1-102"
+  ],
   "notes": "The strategy waits for idle only on a voice channel or one hosting a realtime model; on any other channel it delivers with no buffer.",
   "setup": {
     "channels": [

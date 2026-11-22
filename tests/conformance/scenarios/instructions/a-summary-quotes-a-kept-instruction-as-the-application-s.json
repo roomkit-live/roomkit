@@ -8,7 +8,9 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.1.1-045"
+    "RK-10.1.1-045",
+    "RK-20.3-026",
+    "RK-20.3-027"
   ],
   "notes": "The instruction opens the room; the agent keeps it and replays it at the head of its later histories (instructions/an-instruction-that-opened-the-room-opens-its-later-history). At the third turn a round measures past tier2_ratio of the memory's window and the memory compacts the history between two calls, as in memory/a-summarizing-memory-compacts-a-turn-past-its-threshold-between-two-calls: the replayed instruction and the answer its turn wrote are summarized. The summarizer reads the instruction quoted with the application's mark, as the turn read it, never as the bare words of the sender who carried it. Only the transcript lines are asserted, not the summarizer's ask before them.",
   "setup": {

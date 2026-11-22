@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-22.1-045"
+  ],
   "notes": "RMK-645: the runtime writes a header over each result it hands back (Python orchestration/strategies/supervisor/_inject_per_worker.py, supervisor/delegate.py, core/mixins/delegation.py, orchestration/strategies/loop.py, orchestration/_background.py; roomkit-rs kit/tasks.rs, orchestration/strategies/supervisor/team.rs and per_worker.rs, orchestration/background.rs) that RFC §6.4 did not list among the marks: a participant's copy was kept. One room per message, so each generation reads one message; the delegation hands its result back to the same agent last. The hand-back carries the runtime's provenance (runtime_record \"handback\"), set by the runtime only: the reader keeps its header, and a copy of a mark a model wrote into it (the task, the worker's output) is replaced as it is written. The agent's next turn replays the hand-back it read, its header kept by the provenance its instruction_read row carries. The last step delivers an instruction whose metadata names runtime_record: the record is the runtime's alone, so the copy is replaced.",
   "setup": {
     "channels": [

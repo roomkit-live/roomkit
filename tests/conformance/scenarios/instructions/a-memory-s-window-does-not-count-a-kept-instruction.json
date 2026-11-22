@@ -8,7 +8,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.1.1-045"
+    "RK-10.1.1-045",
+    "RK-20.3-014"
   ],
   "notes": "The agent's window holds 4 events, the turn's own event among them. At `Thanks.` the room holds four messages and the agent's instruction_read row: the window reads the four messages, `Where is my order?` included, and the instruction replays between the answer before it and the answer its turn wrote. A window that counted the row would read `Let me ask the team.` first and leave `Where is my order?` out. memory/the-window-counts-no-tool-row is the same for an earlier turn's tool rows.",
   "setup": {

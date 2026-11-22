@@ -6,6 +6,15 @@
     "§20.3",
     "§20.1"
   ],
+  "requirements": [
+    "RK-20-001",
+    "RK-20.3-005",
+    "RK-20.3-012",
+    "RK-20.3-038",
+    "RK-20.3-041",
+    "RK-20.3-042",
+    "RK-20.3-044"
+  ],
   "notes": "Python's BudgetAwareMemory: the history's budget is max_context_tokens less the safety margin (15 %), the turn's measured input (its system prompt, its tools, room for its notes: the header, the speaker note and the cut answers' note), and the current event, each text estimated as len // 4 + 1 tokens; events are dropped from the oldest, min_events of the latest always kept. Here the window of 520 tokens leaves 442 for the prompt; the measured input (263 tokens of notes' room) and the current question (78) leave 101 for the history: one question of 78 tokens and the answers around it (3 each).",
   "setup": {
     "channels": [

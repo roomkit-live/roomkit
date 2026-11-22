@@ -7,6 +7,13 @@
     "§20.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-20.3-021",
+    "RK-20.3-026",
+    "RK-20.3-027",
+    "RK-20.3-028",
+    "RK-20.3-029"
+  ],
   "notes": "Python's with_leading_text (channels/_user_text.py), which _after_memory calls: a user text a memory's messages end on, before no user message, becomes AIMessage(role='user', content=text), the summary's provenance left out. The first compaction (850 measured, 50 past the threshold of 800) keeps the history's last message, Answer 2, so the summary stands before it; the second reads that summary as a [user] line.",
   "setup": {
     "channels": [

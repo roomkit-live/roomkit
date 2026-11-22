@@ -7,6 +7,12 @@
     "§6.4",
     "§20.1"
   ],
+  "requirements": [
+    "RK-20.3-026",
+    "RK-20.3-027",
+    "RK-20.3-028",
+    "RK-20.3-031"
+  ],
   "notes": "Python's SummarizingMemory.compact (HITL cb3751f9, RMK-1533): the round's counters (830 tokens) pass 80% of the 1,000-token window by 30; with the summary's 50 tokens, the history (four messages, each estimated as 4 tokens for its role and len // 4 + 1 for its text) gives back 80, so the latest two messages that fit what is left (min_events 2) are kept and the first two summarized, each read on one line after its role, quoted. The summary's message joins the user message after it. At each turn's start the history is far under the memory's tiers, so its read summarizes nothing. The memory it wraps is not asked to compact.",
   "setup": {
     "channels": [

@@ -8,6 +8,23 @@
     "§22.3"
   ],
   "requirements": [
+    "RK-22.1-008",
+    "RK-22.1-009",
+    "RK-22.1-013",
+    "RK-22.1-017",
+    "RK-22.1-060",
+    "RK-22.1-061",
+    "RK-22.2-021",
+    "RK-22.2-022",
+    "RK-22.2-024",
+    "RK-22.2-025",
+    "RK-22.2-028",
+    "RK-22.3-003",
+    "RK-22.3-004",
+    "RK-22.3-005",
+    "RK-22.3-007",
+    "RK-22.3-010",
+    "RK-22.3-014",
     "RK-5.2-015"
   ],
   "notes": "Enqueue acceptance is not transmission: the queued outcome names no event. The worker runs the item's strategy, the delivery hooks around it.",

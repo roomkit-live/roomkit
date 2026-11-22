@@ -6,6 +6,11 @@
     "§22.1",
     "§22.2"
   ],
+  "requirements": [
+    "RK-22.1-028",
+    "RK-22.1-030",
+    "RK-22.1-031"
+  ],
   "notes": "Voice is a channel of type voice, realtime_voice or realtime_audio_video. An agent attached with the transport category is still an intelligence channel: an instruction carried by it would re-enter the channel it is for.",
   "setup": {
     "channels": [

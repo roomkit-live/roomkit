@@ -8,6 +8,8 @@
     "§13.5"
   ],
   "requirements": [
+    "RK-22.1-064",
+    "RK-22.1-068",
     "RK-5.2-015"
   ],
   "notes": "The publication's call is nested under the lock its section holds from the call's start: its channel's parse runs under that lock, where a change of the room takes the lock again at once rather than wait for the section that runs it.",

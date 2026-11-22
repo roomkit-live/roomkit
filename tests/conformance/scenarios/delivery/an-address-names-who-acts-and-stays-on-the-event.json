@@ -6,6 +6,19 @@
     "§22.1",
     "§19.3"
   ],
+  "requirements": [
+    "RK-22.1-008",
+    "RK-22.1-010",
+    "RK-22.1-013",
+    "RK-22.1-017",
+    "RK-22.1-019",
+    "RK-22.1-020",
+    "RK-22.1-021",
+    "RK-22.1-022",
+    "RK-22.1-036",
+    "RK-22.1-102",
+    "RK-22.1-104"
+  ],
   "notes": "Addressing changes neither visibility nor who receives the event: the observer transport is delivered each one as published.",
   "setup": {
     "channels": [
