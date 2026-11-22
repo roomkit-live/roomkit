@@ -10,7 +10,8 @@
   "requirements": [
     "RK-5.8-001",
     "RK-6.4-002",
-    "RK-6.4-004"
+    "RK-6.4-004",
+    "RK-6.7-029"
   ],
   "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
   "setup": {

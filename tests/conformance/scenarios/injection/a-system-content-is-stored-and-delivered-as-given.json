@@ -8,7 +8,8 @@
     "§6.6"
   ],
   "requirements": [
-    "RK-5.3-009"
+    "RK-5.3-009",
+    "RK-6.6-017"
   ],
   "notes": "A system content reaches every channel unchanged (§6.6), so the text-only SMS channel receives it whole.",
   "setup": {

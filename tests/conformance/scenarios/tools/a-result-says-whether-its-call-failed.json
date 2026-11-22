@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-21.4-041",
-    "RK-6.4-266"
+    "RK-6.4-266",
+    "RK-6.7-026"
   ],
   "notes": "Python's ToolOutcome.as_part writes is_error for every outcome but served; a replayed round's result reads as its turn read it (_tool_history.py), the refusal included: a later turn replays every call its turn ended, as it was sent (RMK-1370).",
   "setup": {

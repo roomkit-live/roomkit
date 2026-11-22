@@ -15,7 +15,8 @@
     "RK-10.6.8-018",
     "RK-10.6.8-022",
     "RK-6.4-429",
-    "RK-6.4-435"
+    "RK-6.4-435",
+    "RK-6.7-060"
   ],
   "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read, end_stopped and write_owed_record, which finds no MESSAGE and writes on the turn's last row (RMK-1333, RMK-1344, HITL 5f58e3e3).",
   "setup": {

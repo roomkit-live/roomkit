@@ -7,7 +7,8 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/tools/test_turn_report_claim.py and tests/tools/test_turn_report_claim_observers.py. The scripted handler calls the public accessor and actual retained callbacks; observer counts and model results are independent assertions.",
   "setup": {

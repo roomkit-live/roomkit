@@ -19,7 +19,8 @@
     "RK-21.1-074",
     "RK-5.5-014",
     "RK-5.5-033",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "The first turn is restricted. A deliberate leave and rejoin updates the same participant to owner; the next turn resolves its new policy. The model declaration and exhaustive actual-handler audit prove the new permissions; prior tool history is not mistaken for a new invocation.",
   "setup": {

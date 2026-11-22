@@ -14,7 +14,8 @@
     "RK-24.3-036",
     "RK-24.3-037",
     "RK-24.4-017",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_an_activated_skill_opens_a_gate_an_unavailable_one_shares[text]. Before activation, the available inactive skill means the gate is openable, so refusal directs activation; afterward its identical pattern opens.",
   "setup": {

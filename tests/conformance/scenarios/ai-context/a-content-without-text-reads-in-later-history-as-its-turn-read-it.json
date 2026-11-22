@@ -6,6 +6,16 @@
     "§6.4",
     "§6.6"
   ],
+  "requirements": [
+    "RK-6.6-010",
+    "RK-6.6-011",
+    "RK-6.6-012",
+    "RK-6.6-014",
+    "RK-6.6-022",
+    "RK-6.6-023",
+    "RK-6.6-025",
+    "RK-6.6-026"
+  ],
   "notes": "RFC §6.6, Text form: a turn's history and input read a content as text by its text form; §6.4: the event a turn answers reads as the same event does in its history. The event a turn answers reaches the AI channel transcoded to that text, while the history reads the stored event: Python's _ai_context.py _read_as_text reads a location and a template there by their text form, as _media.py text_form writes it. Room 1's model does not see; room 2's sees, and reads a composite in its history part by part, the location its text form among them. A composite nested in a composite reads by its parts too (RMK-1743).",
   "setup": {
     "channels": [

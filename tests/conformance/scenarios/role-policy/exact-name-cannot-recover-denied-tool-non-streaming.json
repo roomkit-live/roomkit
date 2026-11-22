@@ -13,7 +13,8 @@
     "RK-21.1-048",
     "RK-21.1-061",
     "RK-21.1-072",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_tool_search_text.py::TestDeferredCallRecovery::test_policy_denied_catalogue_tool_is_not_recovered. Role-selection counterpart of tool-search/a-denied-tool-is-not-recovered; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {

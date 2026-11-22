@@ -10,7 +10,8 @@
     "RK-10.6.5-028",
     "RK-10.6.5-046",
     "RK-21.4-026",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
   "setup": {

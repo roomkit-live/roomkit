@@ -6,7 +6,8 @@
     "§10.6.2"
   ],
   "requirements": [
-    "RK-10.6.2-038"
+    "RK-10.6.2-038",
+    "RK-6.1-014"
   ],
   "notes": "Covers the retry after a failed discard. Eviction at the private ROOMS_KEPT = 10_000 bound is covered by the implementations' own tests: test_a_record_that_falls_out_drops_the_state_it_vouched_for in Python and a_record_that_falls_out_drops_the_state_it_vouched_for in Rust.",
   "setup": {

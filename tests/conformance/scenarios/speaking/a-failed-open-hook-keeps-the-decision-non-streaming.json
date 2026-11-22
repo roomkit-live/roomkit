@@ -11,6 +11,7 @@
     "RK-6.4-141",
     "RK-6.4-149",
     "RK-6.4-397",
+    "RK-6.7-111",
     "RK-9.2-064"
   ],
   "notes": "Python: tests/test_speak_decision_hooks.py::test_a_hook_that_fails_leaves_the_decision_unless_it_fails_closed. The policy records actual public calls; generation and observation counts are independently asserted.",

@@ -6,6 +6,10 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.7-066",
+    "RK-6.7-087"
+  ],
   "notes": "Python: tests/test_turn_that_did_not_complete.py::test_a_final_answer_failing_its_schema_after_a_round_is_no_interruption.",
   "setup": {
     "channels": [

@@ -7,7 +7,12 @@
     "§6.6"
   ],
   "requirements": [
-    "RK-5.8-007"
+    "RK-5.8-007",
+    "RK-6.6-005",
+    "RK-6.6-009",
+    "RK-6.6-013",
+    "RK-6.6-019",
+    "RK-6.6-020"
   ],
   "notes": "mms takes JPEG files up to 1000 bytes. The PNG and the 5000-byte JPEG reach it as text, as they reach a channel that does not name MEDIA (transcoding/a-media-reaches-a-text-channel-as-its-label); the 1000-byte JPEG, at the limit, reaches it as a file. A composite holding the PNG reaches it as one text. A native edit carrying a file is not asserted: §6.6 delivers it without transcoding.",
   "setup": {

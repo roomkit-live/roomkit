@@ -7,8 +7,9 @@
     "§10.1 step 12"
   ],
   "requirements": [
+    "RK-10.1-075",
     "RK-5.12-006",
-    "RK-10.1-075"
+    "RK-6.1-015"
   ],
   "requires_features": [
     "message_session"

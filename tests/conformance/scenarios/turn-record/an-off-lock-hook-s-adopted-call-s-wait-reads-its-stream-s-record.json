@@ -7,7 +7,9 @@
     "§10.1 step 18"
   ],
   "requirements": [
-    "RK-10.1-131"
+    "RK-10.1-131",
+    "RK-6.7-059",
+    "RK-6.7-060"
   ],
   "notes": "Python: core/mixins/lane_execution.py _consume, merge_caller_record; RFC §10.1 step 18; light review of RMK-1254.",
   "setup": {

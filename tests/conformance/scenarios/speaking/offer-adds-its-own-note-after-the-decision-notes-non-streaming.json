@@ -11,7 +11,8 @@
     "RK-6.4-134",
     "RK-6.4-136",
     "RK-6.4-141",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_speak_policy.py::test_offer_asks_to_offer_rather_than_answer. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {

@@ -7,7 +7,8 @@
     "§6.6"
   ],
   "requirements": [
-    "RK-6.4-295"
+    "RK-6.4-295",
+    "RK-6.6-026"
   ],
   "notes": "No mark (RFC §6.4): the label the runtime writes for a media or a location stands inside its sender's own message and names what that sender gave (a caption, a file name, coordinates), so a copy claims nothing more than that sender could send, where a mark speaks for the runtime or the application. Python's _media.py media_label and location_label write the labels; a model that sees reads a media that is no image as its label too. Two rooms, one model that does not see and one that sees, the same four messages: a text holding copies of both labels, a PDF, prose holding their words, and a location, last so that it is each model's input.",
   "setup": {

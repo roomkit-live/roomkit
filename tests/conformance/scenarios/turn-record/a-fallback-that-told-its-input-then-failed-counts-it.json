@@ -10,7 +10,8 @@
     "RK-6.4-421",
     "RK-6.4-425",
     "RK-6.4-426",
-    "RK-6.4-440"
+    "RK-6.4-440",
+    "RK-6.7-020"
   ],
   "notes": "RMK-369 (review of C40-12). The primary refuses the second generation; the fallback tells its input, then fails: the turn ends error after a round. Python: the round's told usage, counted in its finally. roomkit-rs: tool_loop/resilience.rs rerouted keeps the fallback failure's reports.",
   "setup": {

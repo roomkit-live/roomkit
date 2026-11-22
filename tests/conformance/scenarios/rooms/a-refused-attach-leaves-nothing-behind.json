@@ -6,6 +6,9 @@
     "§6.1",
     "§5.7"
   ],
+  "requirements": [
+    "RK-6.1-012"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestRefusedAttach (test_the_failure_reaches_the_caller, test_no_binding_survives, test_nothing_was_announced) and TestRefusedReattach::test_a_first_attach_still_leaves_nothing_behind.",
   "setup": {
     "channels": [

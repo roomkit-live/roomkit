@@ -7,7 +7,8 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-6.4-343"
+    "RK-6.4-343",
+    "RK-6.7-086"
   ],
   "notes": "Python: channels/_ai_resilience.py counts what it emitted after hold_until_checked (_structured_stream), so held text hands nothing and the retry runs.",
   "setup": {

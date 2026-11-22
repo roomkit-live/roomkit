@@ -12,7 +12,8 @@
     "RK-21.6-008",
     "RK-21.6-016",
     "RK-6.4-067",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_absent_names_keep_the_channel_per_tool_bound. Gates establish call ordering without a sleep-based oracle.",
   "setup": {

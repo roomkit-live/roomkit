@@ -9,7 +9,9 @@
   "requirements": [
     "RK-10.1-102",
     "RK-10.1-110",
-    "RK-10.1-130"
+    "RK-10.1-130",
+    "RK-6.7-059",
+    "RK-6.7-060"
   ],
   "notes": "Python: core/mixins/inbound_streaming.py _record_cancelled_read; tests/test_response_metadata.py::TestLiveRecord::test_a_cut_turn_gives_its_caller_what_its_tool_wrote; HITL 84991349.",
   "setup": {

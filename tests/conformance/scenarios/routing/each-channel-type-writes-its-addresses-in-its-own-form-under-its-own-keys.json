@@ -8,7 +8,8 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-5.7-013"
+    "RK-5.7-013",
+    "RK-6.2-010"
   ],
   "notes": "Each channel takes the implementation's own address methods for its type, with no country code. Each message opens a room of its own, whose binding records the conversation as its correspondent and, where the type has a recipient key, as its recipient. A phone type writes E.164, email lower-case without its display name, Messenger, Telegram, Teams, webhook and any other type as written. WhatsApp Personal's group message is its group's, a private one its sender's. A type with no chat key routes by the sender whatever the message carries under another type's chat key (SMS's chat_id, WhatsApp's group_jid). Telegram and Teams keep an author written as a number or as an email address as written. VOICE, WEBHOOK and WEBSOCKET have no recipient key: nothing is written under any of the table's keys. The event's author stays the message's sender, in the type's form.",
   "setup": {

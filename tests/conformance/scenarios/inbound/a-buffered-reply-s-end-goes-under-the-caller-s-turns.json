@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.1-129",
-    "RK-6.4-435"
+    "RK-6.4-435",
+    "RK-6.7-060",
+    "RK-6.7-063"
   ],
   "notes": "Python: core/mixins/lane_execution.py record_buffered_reply (merge_channel_record, then add_turn_entry with reply_turn_entry), core/event_router.py reply_turn_entry (turn_summary of the output's record, then of its messages' metadata, last first), models/response_metadata.py merge_channel_record (every key but turns, loop_end_reason, ai_usage). bot's record names its end and usage beside x; aide's record names none, its last message does.",
   "setup": {

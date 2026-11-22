@@ -11,7 +11,8 @@
     "RK-24.3-037",
     "RK-24.4-017",
     "RK-6.4-386",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_deferred_tools.py::test_an_activation_references_only_what_it_would_have_shown. Held definitions are stable; only a discovery result references the tool Tool Search had hidden.",
   "setup": {

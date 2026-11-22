@@ -11,7 +11,8 @@
     "RK-6.4-420",
     "RK-6.4-425",
     "RK-6.4-426",
-    "RK-6.4-440"
+    "RK-6.4-440",
+    "RK-6.7-020"
   ],
   "notes": "RMK-369 (HITL 69bc2a10, 242a9f5e). The second generation tells what it used as its stream starts, its input and a first output count, then holds; the Cancel stops it before its end, so the record reads incomplete whatever it told. Python: channels/_ai_stream_round.py _StreamRound.stream (StreamUsage), channels/_ai_streaming.py _StreamTurnState.count_generation. roomkit-rs: tool_loop/generation.rs.",
   "setup": {

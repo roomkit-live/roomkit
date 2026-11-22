@@ -5,6 +5,9 @@
   "rules": [
     "§6.1"
   ],
+  "requirements": [
+    "RK-6.1-012"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestRefusedAttach::test_the_room_can_be_attached_once_the_backend_recovers.",
   "setup": {
     "channels": [

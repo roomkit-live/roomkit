@@ -7,7 +7,8 @@
   ],
   "requirements": [
     "RK-6.4-425",
-    "RK-6.4-430"
+    "RK-6.4-430",
+    "RK-6.7-060"
   ],
   "notes": "Python: tests/test_response_metadata.py::TestResponseMetadataDirect::test_no_hook_means_empty_response_metadata.",
   "setup": {

@@ -9,7 +9,8 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: channels/_skill_handlers.py::handle_read_reference uses missing_skill_error for unavailable local skills.",
   "setup": {

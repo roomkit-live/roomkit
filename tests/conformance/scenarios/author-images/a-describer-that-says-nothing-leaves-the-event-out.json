@@ -7,7 +7,8 @@
     "§6.6"
   ],
   "requirements": [
-    "RK-6.4-322"
+    "RK-6.4-322",
+    "RK-6.6-026"
   ],
   "notes": "Python's _transcript_content: the describer answering None, an empty extraction omits the event, unless it is a lone media, which reads as its label (RFC §6.6).",
   "setup": {

@@ -6,6 +6,9 @@
     "§6.1",
     "§5.7"
   ],
+  "requirements": [
+    "RK-6.1-012"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestRefusedReattach (test_the_binding_it_replaced_is_put_back, test_the_attachment_it_could_not_replace_can_still_be_detached).",
   "setup": {
     "channels": [

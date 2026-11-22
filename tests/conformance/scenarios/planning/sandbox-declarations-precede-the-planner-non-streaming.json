@@ -8,7 +8,8 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: AIChannel public model request with sandbox and enable_planning; _ai_context._add_sandbox precedes the planner. The provider tool_names observation preserves declaration order.",
   "setup": {

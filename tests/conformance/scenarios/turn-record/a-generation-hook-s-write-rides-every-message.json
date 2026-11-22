@@ -5,6 +5,12 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-6.7-030",
+    "RK-6.7-058",
+    "RK-6.7-059",
+    "RK-6.7-064"
+  ],
   "notes": "Python: channels/_ai_context.py hands the loop context's record to AIContext.response_metadata; tests/test_response_metadata.py::TestResponseMetadataDirect::test_streaming_output_carries_response_metadata, test_streaming_tool_loop_output_carries_response_metadata, test_streaming_stored_event_has_metadata, test_non_streaming_stored_event_has_metadata, TestInboundResultResponseMetadata::test_non_streaming_turn_returns_its_final_record.",
   "setup": {
     "channels": [

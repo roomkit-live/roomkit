@@ -8,7 +8,8 @@
   "requirements": [
     "RK-21.2-003",
     "RK-21.2-004",
-    "RK-21.2-021"
+    "RK-21.2-021",
+    "RK-6.7-095"
   ],
   "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
   "steps": [

@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.6.3-014",
-    "RK-25.3-005"
+    "RK-25.3-005",
+    "RK-6.1-010"
   ],
   "notes": "Python's AIChannel.on_room_attached calls _forget_room, which drops the room's RefusedImages (RMK-1219): an attach over the agent's live attachment, with no detach, forgets them too.",
   "setup": {

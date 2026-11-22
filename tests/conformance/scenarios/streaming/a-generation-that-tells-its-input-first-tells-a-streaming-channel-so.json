@@ -7,9 +7,11 @@
     "§6.4 The turn's record"
   ],
   "requirements": [
+    "RK-6.1-005",
     "RK-6.4-425",
     "RK-6.4-430",
-    "RK-6.4-439"
+    "RK-6.4-439",
+    "RK-6.7-020"
   ],
   "notes": "RMK-369 (HITL 242a9f5e): UsageMarker.partial. Python: channels/_ai_stream_round.py _StreamRound.stream (StreamUsage), channels/_ai_streaming.py _stream_generation.",
   "setup": {

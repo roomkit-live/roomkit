@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.1-129",
-    "RK-6.4-435"
+    "RK-6.4-435",
+    "RK-6.7-060"
   ],
   "notes": "Python: models/response_metadata.py merge_channel_record, _TURN_RECORD_KEYS (RMK-1056).",
   "setup": {

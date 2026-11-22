@@ -9,7 +9,8 @@
   "requirements": [
     "RK-21.1-053",
     "RK-21.1-060",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python reference: tests/test_channels/test_ai_extra_tools.py and test_ai_extra_tools_turns.py. Edits happen before the next turn is prepared.",
   "setup": {

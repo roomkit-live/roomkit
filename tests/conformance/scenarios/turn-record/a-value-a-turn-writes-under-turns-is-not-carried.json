@@ -5,6 +5,9 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-6.7-062"
+  ],
   "notes": "Python: models/response_metadata.py merge_channel_record; tests/test_inbound_turns_record.py::test_a_host_value_under_turns_is_not_carried.",
   "setup": {
     "channels": [

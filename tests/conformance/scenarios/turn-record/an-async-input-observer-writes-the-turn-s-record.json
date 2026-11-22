@@ -6,6 +6,9 @@
     "§6.7",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.7-058"
+  ],
   "notes": "Python: core/hooks.py runs an ASYNC hook on a task that copies the turn's context; light review of RMK-1254. The hook writes, then holds at its gate; the next round holds until the write is known.",
   "setup": {
     "channels": [

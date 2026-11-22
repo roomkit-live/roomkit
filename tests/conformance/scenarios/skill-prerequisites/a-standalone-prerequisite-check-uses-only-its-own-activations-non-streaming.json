@@ -14,7 +14,8 @@
     "RK-24.3-028",
     "RK-24.3-030",
     "RK-24.4-014",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: channels/_ai_tools.py::_missing_required_tools and channels/_ai_policy.py::_activated_skill_names. A standalone turn borrows no room activation, but a served activation in that same turn can open a closed prerequisite.",
   "setup": {

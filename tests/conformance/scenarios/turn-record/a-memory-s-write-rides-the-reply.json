@@ -7,7 +7,10 @@
     "§20"
   ],
   "requirements": [
-    "RK-10.1-130"
+    "RK-10.1-130",
+    "RK-6.7-058",
+    "RK-6.7-059",
+    "RK-6.7-064"
   ],
   "notes": "Python: tests/test_response_metadata.py::TestLiveRecord::test_memory_provider_write_lands_on_the_reply.",
   "setup": {

@@ -15,7 +15,8 @@
     "RK-24.3-028",
     "RK-24.3-030",
     "RK-24.3-031",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: skills/models.py::serves_exactly; tests/test_skill_requires_parity.py::test_a_host_matcher_reads_a_hub_requirement (default counterpart).",
   "setup": {

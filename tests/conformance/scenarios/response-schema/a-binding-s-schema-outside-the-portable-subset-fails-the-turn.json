@@ -6,6 +6,11 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.7-068",
+    "RK-6.7-069",
+    "RK-6.7-114"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestResolution::test_a_binding_schema_outside_the_subset_fails_the_turn.",
   "setup": {
     "channels": [

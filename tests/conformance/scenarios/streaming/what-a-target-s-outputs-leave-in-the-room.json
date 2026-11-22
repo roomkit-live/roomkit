@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-088",
-    "RK-10.1-089"
+    "RK-10.1-089",
+    "RK-6.1-024"
   ],
   "notes": "Python: core/event_router.py _merged keeps each target's on_event() tasks and observations and both outputs' metadata updates, deliver()'s tasks and observations dropped; core/mixins/inbound_streaming.py _deliver_segments awaits deliver_stream() and keeps none of its ChannelOutput, only what it raises; the row the stream commits reaches web through the room's lane, whose delivery set's side effects are kept with the row (lane_execution.py _post_plan_effects). ws streams the row and is not delivered it again.",
   "setup": {

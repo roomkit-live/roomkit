@@ -6,7 +6,8 @@
   ],
   "requirements": [
     "RK-21.4-022",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "setup": {
     "channels": [

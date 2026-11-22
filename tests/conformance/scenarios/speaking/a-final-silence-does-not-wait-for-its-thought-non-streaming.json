@@ -15,7 +15,8 @@
     "RK-6.4-198",
     "RK-6.4-200",
     "RK-6.4-218",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: tests/test_answer_only.py::test_a_voice_only_listened_to_is_thought_about_and_never_answered. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
   "setup": {

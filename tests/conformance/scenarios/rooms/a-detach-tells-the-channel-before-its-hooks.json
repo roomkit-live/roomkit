@@ -6,6 +6,9 @@
     "§6.1",
     "§7.5"
   ],
+  "requirements": [
+    "RK-6.1-013"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach::test_the_channel_lets_go_before_the_hooks_run.",
   "setup": {
     "channels": [

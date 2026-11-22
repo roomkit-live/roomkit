@@ -5,6 +5,11 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-6.7-030",
+    "RK-6.7-058",
+    "RK-6.7-064"
+  ],
   "notes": "Python: channels/_ai_generation.py loop_ctx.response_metadata = gen_event.ai_context.response_metadata; tests/test_response_metadata.py::TestLiveRecord::test_a_hook_that_replaces_the_context_keeps_one_record.",
   "setup": {
     "channels": [

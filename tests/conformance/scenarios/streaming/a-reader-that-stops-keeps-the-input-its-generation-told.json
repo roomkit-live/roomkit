@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-6.4-425",
-    "RK-6.4-441"
+    "RK-6.4-441",
+    "RK-6.7-020"
   ],
   "notes": "RMK-369 (HITL 69bc2a10, 242a9f5e), as a barge-in stops the voice channel's reader. The generation's partial UsageMarker reaches the reader before it stops. Python: channels/_ai_stream_round.py (StreamUsage), core/mixins/_streaming_segments.py _GenerationsRead.",
   "setup": {

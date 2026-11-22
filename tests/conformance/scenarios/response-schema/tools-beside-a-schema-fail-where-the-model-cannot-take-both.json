@@ -6,6 +6,9 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.7-080"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_tools_beside_the_schema_fail_the_turn_where_they_cannot_combine.",
   "setup": {
     "channels": [

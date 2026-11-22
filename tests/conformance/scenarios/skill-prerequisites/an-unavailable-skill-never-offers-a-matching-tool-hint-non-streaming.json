@@ -13,7 +13,8 @@
     "RK-24.3-034",
     "RK-24.4-026",
     "RK-6.4-231",
-    "RK-6.4-397"
+    "RK-6.4-397",
+    "RK-6.7-111"
   ],
   "notes": "Python: channels/_skill_handlers.py::tools_hint excludes a known unavailable skill even when a reachable tool matches.",
   "setup": {

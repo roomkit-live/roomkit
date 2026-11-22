@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.1-102",
-    "RK-10.1-110"
+    "RK-10.1-110",
+    "RK-6.7-059",
+    "RK-6.7-060"
   ],
   "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.cancel, report_cascade (the cascade's record, its stream read, its transport still sending). roomkit-rs: crates/roomkit/src/turns/tests/records.rs a_cut_call_reads_its_record_while_a_transport_still_sends (RMK-1323).",
   "setup": {

@@ -11,6 +11,7 @@
   "requirements": [
     "RK-10.1-097",
     "RK-10.1-131",
+    "RK-6.7-060",
     "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait and report_cascade, src/roomkit/core/mixins/inbound.py (a call a hook makes, adopted by the cascade whose hook made it, its handle told once that cascade read its streams) (RMK-1322, RMK-1329). The two turns run at once, so which one the model answers first, and which answer is stored first, is the scheduler's (RFC §10.1 step 14): the scenario names each answer by the message it answers, never by its text or its place (RMK-1762).",

@@ -14,7 +14,9 @@
     "RK-10.6.8-022",
     "RK-6.4-425",
     "RK-6.4-435",
-    "RK-6.4-441"
+    "RK-6.4-441",
+    "RK-6.7-020",
+    "RK-6.7-060"
   ],
   "notes": "RMK-369 (HITL 69bc2a10, 242a9f5e). The reader holds after the second generation's first text, the told input read before it; the cut comes then. The neighbour streaming/a-generation-in-flight-at-a-cut-is-not-counted keeps a generation that told nothing out. Python: core/mixins/_streaming_segments.py _GenerationsRead (a partial UsageMarker).",
   "setup": {

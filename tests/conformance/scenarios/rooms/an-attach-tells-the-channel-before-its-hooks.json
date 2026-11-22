@@ -6,6 +6,9 @@
     "§6.1",
     "§5.7"
   ],
+  "requirements": [
+    "RK-6.1-011"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestAttachOrder (test_the_channel_is_told_before_anything_else_is, test_the_binding_the_channel_receives_is_the_stored_one).",
   "setup": {
     "channels": [
