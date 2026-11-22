@@ -4,6 +4,10 @@
     "§19.7.5 rule 7",
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-8.5-007",
+    "RK-8.5-010"
+  ],
   "setup": {
     "channels": [
       {

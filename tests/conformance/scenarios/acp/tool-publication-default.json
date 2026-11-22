@@ -6,6 +6,15 @@
     "§8.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-8.4-025",
+    "RK-8.4-026",
+    "RK-8.4-027",
+    "RK-8.4-028",
+    "RK-8.4-029",
+    "RK-8.4-030",
+    "RK-8.4-037"
+  ],
   "notes": "RMK-1747. The subscriber observes a call on a real ACP turn. The private values are test fixtures.",
   "setup": {
     "channels": [

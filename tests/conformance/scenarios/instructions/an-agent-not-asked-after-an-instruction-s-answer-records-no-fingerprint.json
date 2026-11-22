@@ -8,7 +8,13 @@
     "§19.3.1"
   ],
   "requirements": [
-    "RK-10.1.1-027"
+    "RK-10.1.1-027",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048",
+    "RK-8.5-007"
   ],
   "notes": "max_chain_depth 2. The instruction (depth 0) asks `ai`, whose answer (depth 1) carries the fingerprint and solicits `other` under AGENT_CHAIN (§19.3.1); `other` is not asked at the limit (1 + 1 >= 2), and its record, stored BLOCKED at depth 2 in reply to the answer, carries no fingerprint: neither the answer's nor the instruction's.",
   "setup": {

@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestSupervisedSequential::test_rework_on_rejection_then_approve, TestParseVerdict::test_plain_json. orchestration/strategies/supervisor/supervised.py _run_supervised_sequential, prompts.py _compose_rework, _normalize_verdict. The rejection's next_task is not read; each attempt is a task run of its own.",
   "setup": {
     "channels": [

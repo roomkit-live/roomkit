@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-054",
-    "RK-10.5-047"
+    "RK-10.5-047",
+    "RK-8.1-005"
   ],
   "reentrancy": [
     "commit@locked"

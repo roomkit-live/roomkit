@@ -4,7 +4,7 @@
   "title": "An injected event reaches its transport targets only; an agent it names reads it, unasked",
   "rules": [
     "§9.4 Injected events",
-    "§19.3 rule 6"
+    "§19.3 rule 5"
   ],
   "requirements": [
     "RK-10.6.1-004",

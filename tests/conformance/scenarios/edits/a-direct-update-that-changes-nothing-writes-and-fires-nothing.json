@@ -6,7 +6,9 @@
     "§10.3 Direct mutation"
   ],
   "requirements": [
-    "RK-10.3-059"
+    "RK-10.3-059",
+    "RK-8.2-020",
+    "RK-8.2-023"
   ],
   "reentrancy": [
     "change@outside"

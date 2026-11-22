@@ -10,7 +10,9 @@
   ],
   "requirements": [
     "RK-10.1-138",
-    "RK-10.5-049"
+    "RK-10.5-049",
+    "RK-8.1-014",
+    "RK-8.5-012"
   ],
   "notes": "commit_event stores the record with the id the caller gives (§10.5), so root-1 and reply-1 are known before the agent's scripted response names reply-1. Each later event names reply-1 as its parent and is stored under root-1, the thread's root, at index 0.",
   "setup": {

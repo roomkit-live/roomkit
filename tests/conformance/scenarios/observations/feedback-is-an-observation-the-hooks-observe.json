@@ -10,6 +10,7 @@
   ],
   "requirements": [
     "RK-5.11-001",
+    "RK-8.2-039",
     "RK-9.2-099"
   ],
   "notes": "Python: tests/test_hook_observers.py (ON_FEEDBACK observes submit_feedback), tests/test_room_org_scoping.py (submit_feedback and list_observations for another organization), tests/test_framework_queries.py (list_observations). The rated event's id names no stored event: it is normalized as any such id, and asserted present.",

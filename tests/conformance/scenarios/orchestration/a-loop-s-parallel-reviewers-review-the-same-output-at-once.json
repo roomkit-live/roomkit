@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: test_loop_strategy.py TestRunReviewers::test_parallel_reviewers, TestReviewParallel::test_all_reviewers_run_concurrently. Both reviews are held at their gates at once: neither waits for the other.",
   "setup": {
     "channels": [

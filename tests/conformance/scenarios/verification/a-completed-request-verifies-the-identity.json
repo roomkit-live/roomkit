@@ -10,6 +10,8 @@
   ],
   "requirements": [
     "RK-5.5-005",
+    "RK-8.2-029",
+    "RK-8.2-030",
     "RK-9.2-027"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_completed_request_verifies_the_identity, tests/test_verification_lifecycle.py::test_a_completion_fires_its_hook_in_the_request_room (RMK-1171). A secret is random: `$req.secret` names the one the call returned. The verification's lifetime, the policy's ttl from its completion, is in each implementation's own tests.",

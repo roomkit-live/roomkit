@@ -5,6 +5,12 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-8.4-017",
+    "RK-8.4-018",
+    "RK-8.4-019",
+    "RK-8.4-020"
+  ],
   "notes": "Python: channels/_ai_coalescers.py _ThinkingCoalescer.flush; tests/test_ai_streaming_thinking.py test_thinking_coalescer_flush_splits_at_preview_limit.",
   "setup": {
     "channels": [

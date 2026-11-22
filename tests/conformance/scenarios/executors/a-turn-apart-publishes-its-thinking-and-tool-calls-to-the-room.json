@@ -8,7 +8,10 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.6.2-020"
+    "RK-10.6.2-020",
+    "RK-8.4-017",
+    "RK-8.4-018",
+    "RK-8.4-022"
   ],
   "notes": "Python: tests/test_turn_ephemerals_scope.py test_a_turn_whose_answer_reaches_the_room_publishes_its_reasoning. A channel's realtime publications cross as frames: the same events a live agent's subscribers read.",
   "setup": {

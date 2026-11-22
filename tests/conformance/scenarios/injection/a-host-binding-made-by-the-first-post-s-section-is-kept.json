@@ -7,7 +7,10 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.5-030"
+    "RK-10.5-030",
+    "RK-8.2-010",
+    "RK-8.2-020",
+    "RK-8.2-023"
   ],
   "notes": "room-1's binding is attached by the integrator before the post, which keeps it and attaches nothing: one attachment, the integrator's. room-2's attach and post run together: whichever binds first, the binding left is the integrator's, its settings unreplaced; how many attachments that writes is left open. room-3's three first posts attach the host channel once.",
   "setup": {

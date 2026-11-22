@@ -15,7 +15,14 @@
     "RK-5.1-007",
     "RK-5.1-008",
     "RK-5.1-011",
-    "RK-5.1-012"
+    "RK-5.1-012",
+    "RK-8.2-002",
+    "RK-8.2-005",
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
   ],
   "notes": "The turn's channel calls no kit: it holds at a gate, a step closes the room, then it answers. So the refusal reads the room as the owner holds it whatever executor ran the turn, one of another process included (§10.6.1), where rooms/a-response-the-room-refuses closes the room from inside the turn.",
   "setup": {

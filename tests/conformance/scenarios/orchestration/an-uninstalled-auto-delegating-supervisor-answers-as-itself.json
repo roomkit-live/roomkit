@@ -6,6 +6,9 @@
     "§19.7",
     "§19.7.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: orchestration/strategies/supervisor/_install_auto.py (the turns taken with owner=self), core/mixins/strategies.py uninstall_strategy (the owner's turn runners released).",
   "setup": {
     "channels": [

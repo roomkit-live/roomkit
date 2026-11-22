@@ -9,7 +9,16 @@
     "§8.2"
   ],
   "requirements": [
-    "RK-10.1-084"
+    "RK-10.1-084",
+    "RK-8.2-002",
+    "RK-8.2-003",
+    "RK-8.2-007",
+    "RK-8.2-010",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
   ],
   "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-deleted-are-refused, the tool-call hook then creating the room again under the same id with `web`, `ws` and the agent itself, which may write there. The rows after it belong to the deleted room: each is refused as in a room gone (`room_refused_event`, a null status), none is written into the new room, though the agent may write there: its timeline stays empty. The deleted room's events are matched by their content: its indexes and ids are not read back once it is gone.",
   "setup": {

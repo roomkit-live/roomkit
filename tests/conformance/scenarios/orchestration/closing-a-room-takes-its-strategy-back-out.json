@@ -7,7 +7,11 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-5.1-036"
+    "RK-5.1-036",
+    "RK-8.2-005",
+    "RK-8.2-010",
+    "RK-8.2-011",
+    "RK-8.2-020"
   ],
   "notes": "RMK-341. One Pipeline installed in four rooms over shared agents. r1 is closed by close_room, r3 by its timers, r4 archived while active; r2 stays open. The room_closed event comes before the detach events of the strategy's agents. A closed room refuses an install; a reopened room holds no strategy: the agent bound before the install answers there alone.",
   "setup": {

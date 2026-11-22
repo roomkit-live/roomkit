@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestSupervisedSequential::test_infra_failure_aborts_without_review; tests/orchestration/test_supervisor_strategy.py TestSequentialWorkerFailure::test_sequential_propagates_error_in_result. orchestration/strategies/supervisor/supervised.py _run_supervised_sequential (a delegation not ok breaks before the review), _worker_run.py task_output.",
   "setup": {
     "channels": [

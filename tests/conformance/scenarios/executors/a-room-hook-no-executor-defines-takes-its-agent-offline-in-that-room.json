@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.6.7-028",
     "RK-10.6.7-030",
-    "RK-10.6.7-031"
+    "RK-10.6.7-031",
+    "RK-8.4-008"
   ],
   "notes": "Python: tests/test_agent_presence.py test_a_room_hook_no_executor_defines_takes_its_agent_offline_in_that_room.",
   "setup": {

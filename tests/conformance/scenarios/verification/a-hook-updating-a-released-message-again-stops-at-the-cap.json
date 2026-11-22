@@ -11,6 +11,8 @@
     "RK-10.3-060",
     "RK-10.3-062",
     "RK-10.3-064",
+    "RK-8.3-041",
+    "RK-8.3-043",
     "RK-9.5.1-046"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_hook_updating_a_released_message_again_stops_at_the_cap (RMK-1173). With a depth limit of 1 the budget holds ten hook calls; the release's own write draws none. Run on no budget, the first update would start one of its own, and the twelfth would be refused. The updates commit in chain order, but an observer and the observer its call fires finish independently (RFC §9.2). Assert every successful result and the one cap refusal exactly once, without ordering their returns (RMK-1551).",

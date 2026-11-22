@@ -6,6 +6,9 @@
     "§19.7.3",
     "§19.7"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestSupervisedSequential::test_rework_on_rejection_then_approve. orchestration/strategies/supervisor/supervised.py _run_step, prompts.py _compose_rework. The first revision is as a-rejected-step-is-done-again-with-the-supervisor-s-feedback gives it; the second starts from the step's task again, never from the first revision. A Loop composes its revision the same way: a-loop-reviewer-s-refusal-approves-nothing.",
   "setup": {
     "channels": [

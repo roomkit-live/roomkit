@@ -7,7 +7,13 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-10.6.5-034"
+    "RK-10.6.5-034",
+    "RK-8.3-011",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048"
   ],
   "notes": "Python: core/_turn_host.py _send_event sends at the depth the turn's call carries, its response's (turns/host.py); tests/test_turns_host.py. a answers every event with no message of its own, only the host's send; b answers a. At max_chain_depth 3, a's turn on b's answer at depth 2 would answer at the limit: it is not asked, its record stored BLOCKED (§8.3), so the chain ends. Sent at depth 0, the host's events would loop for ever.",
   "setup": {

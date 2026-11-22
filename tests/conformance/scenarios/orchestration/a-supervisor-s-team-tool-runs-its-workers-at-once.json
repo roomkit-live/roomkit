@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_parallel_strategy_tool, TestRunParallel::test_concurrent_workers, TestSequentialContextAndReview::test_review_brief_includes_request_and_labeled_outputs, test_worker_label_prefers_role_then_description; tests/orchestration/test_supervisor_strategy.py TestStrategyToolInjection::test_strategy_injects_delegate_workers_tool, TestParallelStrategy::test_runs_all_workers_concurrently, test_parallel_all_receive_same_task, TestStrategyHooks::test_hooks_fire_for_each_worker. orchestration/strategies/supervisor/_inject_strategy.py (_StrategyToolServer._run), execution.py _run_parallel, results.py _format_supervisor_review. Both workers wait at their gates before either answers: they run at once. Each worker's status entries are the worker run's (strategy parallel).",
   "setup": {
     "channels": [

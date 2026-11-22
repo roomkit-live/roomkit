@@ -7,7 +7,8 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-7.3-027"
+    "RK-7.3-027",
+    "RK-8.3-038"
   ],
   "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_an_answer_stored_past_the_reentry_budget. A budget of 20 (`max_chain_depth` 2): the agent's 21st answer is stored BLOCKED, with its binding's `ws`, as the 20 before it are delivered with.",
   "setup": {

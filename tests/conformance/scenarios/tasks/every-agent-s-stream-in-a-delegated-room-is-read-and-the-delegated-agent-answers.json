@@ -7,6 +7,10 @@
     "§23.3 step 6",
     "§8.3"
   ],
+  "requirements": [
+    "RK-8.3-004",
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::TestEveryResponseIsRead::test_a_second_response_is_read_and_the_first_answer_wins; core/mixins/_child_execution.py _collect_answer, which reads every stream the broadcast started to its end (RFC §8.3) and takes the delegated agent's answer (the room's task_agent_id). The Python test reads two streams of one agent through the private _collect_answer; the public form is another agent shared into the room. The two rows come in either order: the scenario names neither row's index.",
   "setup": {
     "channels": [

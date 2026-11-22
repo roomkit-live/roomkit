@@ -5,6 +5,9 @@
   "rules": [
     "§13.6"
   ],
+  "requirements": [
+    "RK-8.2-020"
+  ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTriggerId::test_a_message_landing_in_between_refuses_the_regenerate: the pipeline answered the new message already, and a regeneration would answer it twice.",
   "setup": {
     "channels": [

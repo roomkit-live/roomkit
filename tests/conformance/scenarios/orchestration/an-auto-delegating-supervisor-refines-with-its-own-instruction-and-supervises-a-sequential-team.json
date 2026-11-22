@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestTwoPassDelegate::test_two_pass_custom_instruction, TestAutoDelegate::test_sync_auto_delegate_custom_refine_instruction; tests/orchestration/test_strategy_rooms.py test_the_supervisor_runs_its_sub_runs_without_its_strategy_tool. orchestration/strategies/supervisor/delegate.py _formulate_task (instruction or _build_pass1_instruction), _run_workers (sequential with a supervisor that can answer: _run_supervised_sequential), results.py _present_worker_results.",
   "setup": {
     "channels": [

@@ -8,7 +8,9 @@
     "§8.1"
   ],
   "requirements": [
-    "RK-5.1-001"
+    "RK-5.1-001",
+    "RK-8.1-005",
+    "RK-8.1-006"
   ],
   "notes": "Python: tests/test_commit_atomicity.py::test_policy_excluded_event_does_not_advance_latest_index; core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes is delivered, its plan laned index-less behind the room's latest index, nothing committed), _commit_reentry (an answer not stored is none of the call's response events). The channels' lifecycle records are stored: the policy names messages only.",
   "setup": {

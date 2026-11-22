@@ -7,6 +7,9 @@
     "Appendix A.9.1",
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-034"
+  ],
   "notes": "Python: tests/test_turn_ephemerals_scope.py::test_a_turn_whose_answer_the_room_narrows_publishes_no_ephemeral; ACP notification path with actual subscriber.",
   "setup": {
     "channels": [

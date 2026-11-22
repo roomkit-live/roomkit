@@ -8,6 +8,17 @@
     "§13.6",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-027",
+    "RK-8.2-029",
+    "RK-8.2-030",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
+  ],
   "notes": "Python: src/roomkit/core/mixins/lane_execution.py (_refuse_closed_rerun, _refuses_writes: a room gone refuses), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); review of RMK-1173/RMK-1182, finding 3 (RMK-1195).",
   "setup": {
     "kit": {

@@ -10,7 +10,8 @@
     "RK-10.1-024",
     "RK-10.1-025",
     "RK-10.4-041",
-    "RK-10.4-043"
+    "RK-10.4-043",
+    "RK-8.2-022"
   ],
   "notes": "The hooks are not bounded by the call's deadline; the re-route is (RFC §13.6): no other room is opened. Found by the review of RMK-1396.",
   "setup": {

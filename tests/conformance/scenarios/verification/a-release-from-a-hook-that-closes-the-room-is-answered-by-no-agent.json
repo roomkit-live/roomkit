@@ -12,7 +12,18 @@
     "RK-5.1-007",
     "RK-5.1-008",
     "RK-5.1-011",
-    "RK-5.1-012"
+    "RK-5.1-012",
+    "RK-8.2-005",
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-027",
+    "RK-8.2-029",
+    "RK-8.2-030",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063",
+    "RK-8.2-064"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _answer_released), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on), src/roomkit/core/mixins/lane_execution.py (_refuse_closed_rerun); review of RMK-1173/RMK-1182, finding 2 (RMK-1195).",
   "setup": {

@@ -6,6 +6,11 @@
     "§6.4",
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-022",
+    "RK-8.4-023",
+    "RK-8.4-024"
+  ],
   "notes": "Python: tests/test_ai_streaming_tool_events.py::test_streaming_tool_loop_publishes_tool_events and test_non_streaming_tool_loop_publishes_tool_events; channels/_ai_loop_rules.py _execute_round_tools (START), channels/_ai_streaming.py (END, duration_ms), channels/_ai_events.py _publish_tool_event, _started_calls, _ended_calls. Each event's user_id and channel_id are the agent's. A call's id is read under `id`, so it is normalized as `$e1`.",
   "setup": {
     "channels": [

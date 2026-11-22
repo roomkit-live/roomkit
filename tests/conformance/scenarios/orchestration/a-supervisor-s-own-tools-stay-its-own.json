@@ -8,7 +8,8 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-10.6.5-007"
+    "RK-10.6.5-007",
+    "RK-8.5-007"
   ],
   "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_strategy_tool_unknown_falls_through; tests/orchestration/test_strategy_supervisor.py TestSupervisorInstall::test_unknown_tool_falls_through. channels/_tool_registry.py (the owner's tools declared after the channel's own, RFC §10.6.5).",
   "setup": {

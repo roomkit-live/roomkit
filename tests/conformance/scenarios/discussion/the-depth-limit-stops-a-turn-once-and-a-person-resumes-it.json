@@ -6,6 +6,12 @@
     "§19.7.5 rule 10",
     "§19.7.5 rule 11"
   ],
+  "requirements": [
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-049"
+  ],
   "notes": "Python: test_strategy_discussion.py test_the_depth_limit_stops_a_turn_once_and_a_person_resumes_it. The kit's max_chain_depth is 5, max_depth 3, whose announcement holds 3 (HITL 0d726397).",
   "setup": {
     "channels": [

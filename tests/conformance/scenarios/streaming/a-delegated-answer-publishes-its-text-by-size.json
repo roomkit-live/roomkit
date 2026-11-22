@@ -6,6 +6,9 @@
     "§6.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.4-038"
+  ],
   "notes": "Python: channels/_ai_coalescers.py _TextCoalescer; tests/test_ai_streaming_text_events.py::test_a_delegated_answer_is_published_as_its_text_on_a_window, by its size half.",
   "setup": {
     "channels": [

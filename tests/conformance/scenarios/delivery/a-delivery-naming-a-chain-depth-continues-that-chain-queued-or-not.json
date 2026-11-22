@@ -7,6 +7,9 @@
     "§22.2",
     "§8.3"
   ],
+  "requirements": [
+    "RK-8.3-009"
+  ],
   "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_delivered_content_continues_the_chain_it_names, test_a_queued_delivery_keeps_the_chain_it_names; delivery/base.py DeliveryItem (chain_depth), delivery/worker.py execute_delivery. The queued item's JSON round trip is the store's (a Rust unit test, delivery/item.rs).",
   "setup": {
     "kit": {

@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_pick_merged_with_a_later_message_answers_the_later_one.",
   "setup": {
     "channels": [

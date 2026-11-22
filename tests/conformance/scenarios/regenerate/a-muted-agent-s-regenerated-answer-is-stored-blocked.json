@@ -14,7 +14,10 @@
     "RK-7.5-003",
     "RK-7.5-005",
     "RK-7.5-008",
-    "RK-7.5-011"
+    "RK-7.5-011",
+    "RK-8.2-002",
+    "RK-8.2-020",
+    "RK-8.2-021"
   ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateBlocked::test_a_muted_agents_regenerated_answer_is_stored_blocked (a BufferedAgent, here a scripted channel that responds).",
   "setup": {

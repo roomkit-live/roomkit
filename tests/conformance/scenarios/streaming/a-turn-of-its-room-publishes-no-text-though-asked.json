@@ -6,6 +6,9 @@
     "§6.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.4-038"
+  ],
   "notes": "Python: turns/_owner_publish.py publish_frame; tests/test_ai_streaming_text_events.py::test_an_answer_a_hook_judges_is_never_published_as_text, its room half.",
   "setup": {
     "channels": [

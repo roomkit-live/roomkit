@@ -7,6 +7,7 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-8.5-007",
     "RK-9.3-086"
   ],
   "notes": "Python: orchestration/strategies/supervisor/execution.py _run_parallel (core/task_utils.py gather_or_cut: the first error cuts the others, then is raised), _inject_strategy.py _run (logged, raised: a failed call, RFC §9.3); tests/orchestration/test_supervisor_strategy.py TestParallelWorkerFailure::test_the_first_error_cuts_the_other_workers. Decided by the maintainer, HITL 4080f241 (RMK-1279). The raising worker is the first: each worker still starts, posted pending, before the error answers; the slow worker's model holds at a gate never opened, so whether its turn reached the model is not pinned.",

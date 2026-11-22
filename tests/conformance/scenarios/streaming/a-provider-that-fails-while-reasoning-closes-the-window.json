@@ -5,6 +5,11 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-8.4-017",
+    "RK-8.4-018",
+    "RK-8.4-019"
+  ],
   "notes": "Python: channels/_ai_stream_round.py _add_thinking, _end_thinking; channels/_ai_streaming.py _close_thinking_window; channels/_ai_events.py _publish_thinking_event; turns/_wiring.py build_thinking_hook; tests/test_ai_streaming_thinking.py test_no_tools_path_closes_the_window_when_the_provider_fails, test_no_tools_path_error_still_reaches_the_consumer.",
   "setup": {
     "channels": [

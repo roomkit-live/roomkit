@@ -9,7 +9,10 @@
     "§26.1"
   ],
   "requirements": [
-    "RK-5.1-041"
+    "RK-5.1-041",
+    "RK-8.2-004",
+    "RK-8.2-005",
+    "RK-8.2-006"
   ],
   "notes": "Python: test_every_locked_section_applies_the_due_transitions_first and test_close_room_on_a_room_its_timer_closes_returns_it_as_stored. A pause/resume now refuses CLOSED, reopen succeeds from CLOSED, close is already done, archive follows CLOSED. Timer announcements must precede the explicit archive, with no duplicate close. All rooms share the same due close instant; its normalized rank may differ with optional lifecycle payloads, so equality names the value. The exact deadline arithmetic remains covered by the specialized timer tests.",
   "setup": {

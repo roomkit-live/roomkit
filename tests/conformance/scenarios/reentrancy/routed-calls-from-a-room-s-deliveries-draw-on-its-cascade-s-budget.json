@@ -10,7 +10,9 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-10.1-022"
+    "RK-10.1-022",
+    "RK-8.3-035",
+    "RK-8.3-036"
   ],
   "reentrancy": [
     "routed@cascade"

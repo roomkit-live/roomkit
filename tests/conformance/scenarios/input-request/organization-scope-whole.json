@@ -8,7 +8,9 @@
     "§9.3"
   ],
   "requirements": [
-    "RK-10.6.5-059"
+    "RK-10.6.5-059",
+    "RK-8.2-020",
+    "RK-8.2-038"
   ],
   "notes": "Python: tests/test_turns_inputs.py. input_request reads the owner record while open, preserves request fields, and returns None after settlement. Original creation time is checked with a controlled clock in the native reference; these reads also pin a stable timestamp.",
   "setup": {

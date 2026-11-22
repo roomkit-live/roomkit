@@ -9,7 +9,16 @@
   ],
   "requirements": [
     "RK-10.5-031",
-    "RK-5.1-012"
+    "RK-5.1-012",
+    "RK-8.2-002",
+    "RK-8.2-005",
+    "RK-8.2-007",
+    "RK-8.2-010",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
   ],
   "notes": "room-1 never bound the host channel: its first post, refused in the section that would attach it, emits room_refused_event as a post refused at its gate does. room-2 bound it with its first post, then closed: the room's status is read before the key, so the replay is refused too.",
   "setup": {

@@ -6,6 +6,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-8.2-037",
     "RK-9.3-095"
   ],
   "notes": "The room's read the observers' context starts with (load_room_context) fails once the call refused: the observer does not run, the model reads the call as it refused, and the tool_call framework event reports the call once. Partial: a cancelled call and a call an external handler ran are not observed, nor another channel than the AI channel's loop.",

@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-8.4-017",
+    "RK-8.4-018",
+    "RK-8.4-019"
+  ],
   "notes": "Python: channels/_ai_resilience.py _generate_stream_with_retry, _fallback_stream (reasoning alone is not handed: it arms no `emitted`), channels/_ai_stream_round.py (a retry boundary drops the abandoned attempt's reasoning); tests/test_channels/test_ai_retry.py. RMK-1542 (HITL ea119829).",
   "setup": {
     "channels": [

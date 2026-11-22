@@ -7,7 +7,8 @@
     "§8.1"
   ],
   "requirements": [
-    "RK-10.1-032"
+    "RK-10.1-032",
+    "RK-8.1-011"
   ],
   "notes": "The parse sets the event's id: wire-1 for the first two messages, and for the third the id of the event at index 0, the first message as stored. A kept channel id would make the second and the third collide with the first, and the room would hold an event wire-1: an update naming it finds none.",
   "setup": {

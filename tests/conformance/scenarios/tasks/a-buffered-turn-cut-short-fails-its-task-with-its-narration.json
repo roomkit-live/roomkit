@@ -6,6 +6,9 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::TestRunAgentNonStreaming::test_a_buffered_turn_cut_short_fails_with_its_narration; core/mixins/_child_execution.py _buffered_outcome (_turn_end reads the end off the last message's loop_end_reason when the output's record names none), _collect_answer (_cut_short: a TaskCutShortError carrying the narration); tasks/models.py finished_task_fields. The trace keeps the message.",
   "setup": {
     "channels": [

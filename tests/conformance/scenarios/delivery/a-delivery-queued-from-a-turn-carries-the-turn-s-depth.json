@@ -7,6 +7,7 @@
     "§22.2"
   ],
   "requirements": [
+    "RK-8.3-011",
     "RK-9.5.1-052"
   ],
   "notes": "The agent answers a message at depth 0, so its turn's answers are at depth 1. During its turn it delivers through the backend: the item carries the turn's depth to the worker, which publishes it once the turn is over, outside it. Addressed to no one, the publication asks no turn.",

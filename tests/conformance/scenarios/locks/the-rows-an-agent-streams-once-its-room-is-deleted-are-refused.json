@@ -9,7 +9,13 @@
     "§8.2"
   ],
   "requirements": [
-    "RK-10.1-084"
+    "RK-10.1-084",
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
   ],
   "notes": "As streaming/a-room-closed-mid-stream-ends-its-target-s-stream, the tool-call hook deleting the room instead of closing it. The rows written before the deletion stand; each row after it (the tool call's end, the answer's text) is refused as a response a room gone refuses (`room_refused_event`, a null status, `operation = reentry`), and none is recorded `BLOCKED` as if its agent had left the room. ws reads nothing of the stream after the deletion. The deleted room's events are matched by their content: its indexes and ids are not read back once it is gone.",
   "setup": {

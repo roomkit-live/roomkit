@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: test_loop_strategy.py TestRunReviewers::test_sequential_multiple_reviewers, TestReviewSequential::test_feedback_chains_to_next_reviewer, test_reviewer_uses_role_for_name, test_reviewer_without_role_uses_channel_id, TestFeedbackCombination::test_multiple_reviewer_feedback_combined. The style reviewer has no role: its feedback is named by its channel id.",
   "setup": {
     "channels": [

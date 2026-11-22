@@ -9,6 +9,12 @@
     "§9.4"
   ],
   "requirements": [
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063",
     "RK-9.5.1-069"
   ],
   "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-deleted-are-refused, with a BEFORE_BROADCAST hook `watch` that records its calls. The tool call's end is the first row written once the room is deleted: it is refused before its hooks, as the answer's text after it, so `watch` runs on the incoming message and the two rows written before the deletion only.",

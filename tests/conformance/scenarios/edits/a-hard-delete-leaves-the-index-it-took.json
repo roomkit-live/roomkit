@@ -10,7 +10,8 @@
   ],
   "requirements": [
     "RK-10.3-051",
-    "RK-5.1-001"
+    "RK-5.1-001",
+    "RK-8.1-005"
   ],
   "notes": "The deleted event leaves the timeline, so its id reads $e1.",
   "setup": {

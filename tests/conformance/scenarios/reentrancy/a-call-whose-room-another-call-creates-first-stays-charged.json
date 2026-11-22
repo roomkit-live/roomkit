@@ -7,6 +7,8 @@
     "§10.1 step 2"
   ],
   "requirements": [
+    "RK-8.3-035",
+    "RK-8.3-036",
     "RK-9.5.1-050"
   ],
   "notes": "room-1's delivery to loop sends x naming room-new, which the store does not hold: step 2 reads it absent (room_exists or load_room_context, held after it answered), then the steps create room-new and bind inner to it. The call stays charged: room-1's cascade spends its budget with x and nine more, the tenth refused. In room-new, x's cascade has a budget of its own: each of its deliveries to inner sends another y there, ten committed, the eleventh refused.",

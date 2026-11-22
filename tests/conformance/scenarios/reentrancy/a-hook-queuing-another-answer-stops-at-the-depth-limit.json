@@ -8,6 +8,12 @@
     "§10.3"
   ],
   "requirements": [
+    "RK-8.3-014",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048",
     "RK-9.5.1-054"
   ],
   "notes": "Python: tests/test_reentrance.py::TestACallFromAnAsyncHook::test_a_hook_delivering_to_the_agent_through_a_queue_stops_at_the_depth_limit. The first worker waits until the seed call has returned. Twenty finite reactions bound a broken loop.",

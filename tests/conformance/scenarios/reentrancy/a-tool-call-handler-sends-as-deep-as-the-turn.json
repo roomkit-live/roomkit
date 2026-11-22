@@ -8,6 +8,9 @@
     "§10.6.3"
   ],
   "requirements": [
+    "RK-8.2-037",
+    "RK-8.3-020",
+    "RK-8.5-007",
     "RK-9.5.1-054"
   ],
   "notes": "The handler holds at 'handler' until the inbound call has returned, its turn over, then sends as the agent, which answers none of its own events. Python: the owner publishes the turn's framework events, during the turn (turns/_owner_publish.py) and after it (turns/_owner_between.py), within its response depth, which core/_kit_wiring.py KitEvents lends each handler while it runs; roomkit-rs: the turn's host emits them with its response depth, which Handlers::emit_at lends each handler. Before RMK-1699 both implementations stored it at depth 0.",

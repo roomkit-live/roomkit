@@ -8,7 +8,8 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-10.6.5-034"
+    "RK-10.6.5-034",
+    "RK-8.3-013"
   ],
   "notes": "Python: tests/test_turns_between.py::test_a_room_call_after_the_turn_sends_at_the_depth_it_names; core/_turn_host.py call_between_turns, which runs the verb as work that starts fresh. The message arrives at depth 2, so the turn answers at depth 3; the work after it sends at 0 when it names no depth, and at the depth it names.",
   "setup": {

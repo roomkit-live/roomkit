@@ -5,6 +5,9 @@
   "rules": [
     "§11.7.6"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_only_the_requests_window_is_released (RMK-1173). The windows start when each request opens; the message held during the first is before the second's.",
   "setup": {
     "kit": {

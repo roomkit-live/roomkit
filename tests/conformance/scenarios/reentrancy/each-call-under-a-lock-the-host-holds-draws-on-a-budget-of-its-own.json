@@ -9,6 +9,8 @@
     "§13.5"
   ],
   "requirements": [
+    "RK-8.3-035",
+    "RK-8.3-038",
     "RK-9.5.1-025"
   ],
   "notes": "max_chain_depth 1 gives a budget of 10 passes (§8.3, Reentry cap). The hook injects one more event of the same text on each event, so each call's injections run until its budget is spent: ten committed, the eleventh stored blocked. Two calls sharing one budget would commit ten between them. The two chains run after the host's release in an order no rule fixes.",

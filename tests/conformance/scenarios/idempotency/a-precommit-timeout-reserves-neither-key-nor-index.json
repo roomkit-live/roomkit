@@ -8,7 +8,8 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-5.1-001"
+    "RK-5.1-001",
+    "RK-8.1-005"
   ],
   "notes": "Python: tests/test_precommit_timeout.py::TestTheWindowStopsWhereItShould::test_a_refused_message_commits_nothing; tests/test_idempotent_redelivery.py. RMK-1609.",
   "steps": [

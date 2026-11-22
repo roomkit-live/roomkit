@@ -7,7 +7,13 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-10.5-040"
+    "RK-10.5-040",
+    "RK-8.3-009",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048"
   ],
   "notes": "max_chain_depth is 3. The first post opens a chain: the agent's answer is at depth 1. The host follows it up once that work is over, naming the answer's depth plus one: the post is stored at 2, and the agent's answer, which would be at 3, is recorded BLOCKED at the limit, the agent not asked.",
   "setup": {

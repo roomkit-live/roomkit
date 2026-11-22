@@ -8,6 +8,7 @@
     "§9.5.1 Reentrance"
   ],
   "requirements": [
+    "RK-8.3-042",
     "RK-9.5.1-046"
   ],
   "notes": "Python: tests/test_reentrance.py::TestTheBudgetOfAHooksCalls::test_a_notice_per_answer_costs_the_agents_no_answer. Three agents answer one another below depth five; a hook sends an unaddressed notice per answer. Merging the budgets blocks valid work. This buffered case does not cover SegmentBreakMarker or streamed-row budgets.",

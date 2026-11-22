@@ -9,6 +9,8 @@
   ],
   "requirements": [
     "RK-10.3-060",
+    "RK-8.3-041",
+    "RK-8.3-043",
     "RK-9.5.1-046"
   ],
   "notes": "Python: tests/test_reentrance.py::TestADirectChangeFromAHook::test_a_direct_change_past_the_cap_writes_nothing. All thirty updates and the refused call run in the same AFTER_BROADCAST body.",

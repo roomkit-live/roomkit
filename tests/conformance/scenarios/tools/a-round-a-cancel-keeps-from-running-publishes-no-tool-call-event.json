@@ -7,6 +7,9 @@
     "§8.4",
     "§21.3"
   ],
+  "requirements": [
+    "RK-8.4-022"
+  ],
   "notes": "Python: channels/_ai_streaming.py _stream_local_tool_round checks the loop's cancel before _execute_round_tools, which publishes TOOL_CALL_START: a stop that came while the calls were announced runs none of them and publishes nothing of them. The hook on the start row steers the Cancel, as tools/a-cancel-while-the-calls-are-announced-counts-no-round does.",
   "setup": {
     "channels": [

@@ -8,6 +8,7 @@
     "§10.2"
   ],
   "requirements": [
+    "RK-8.2-020",
     "RK-9.3-039"
   ],
   "notes": "The hook holds at 'audit' until the inbound call has returned, then marks the room. The event_processed handler reads the room: it sees the mark, so event_processed came after the hook ended.",

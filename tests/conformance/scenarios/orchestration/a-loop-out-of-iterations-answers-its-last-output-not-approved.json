@@ -6,6 +6,10 @@
     "§19.7.4",
     "§8.3"
   ],
+  "requirements": [
+    "RK-8.3-009",
+    "RK-8.5-007"
+  ],
   "notes": "Python: test_loop_strategy.py TestExecuteLoop::test_max_iterations_reached, TestRunLoop::test_run_loop_answers_one_deeper_than_its_event; test_loop_producer_cut.py test_the_result_says_how_the_loop_stopped[max_iterations]. The message is sent at depth 2 in the thread of an earlier event: the answer is at depth 3 in that thread.",
   "setup": {
     "channels": [

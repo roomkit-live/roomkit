@@ -6,6 +6,9 @@
     "§19.7",
     "§21.1"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up; channels/_tool_registry.py register_all (all or none, ToolNameCollisionError: invalid_argument). After refusal the host's colliding tool is called and still returns its own result; neither worker generates.",
   "setup": {
     "channels": [

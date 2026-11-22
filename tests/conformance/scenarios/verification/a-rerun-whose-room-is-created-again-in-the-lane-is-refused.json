@@ -9,6 +9,19 @@
     "§13.6",
     "§10.1 step 18"
   ],
+  "requirements": [
+    "RK-8.2-003",
+    "RK-8.2-007",
+    "RK-8.2-010",
+    "RK-8.2-020",
+    "RK-8.2-023",
+    "RK-8.2-027",
+    "RK-8.2-029",
+    "RK-8.2-030",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063"
+  ],
   "notes": "As verification/a-rerun-whose-room-is-deleted-in-the-lane-is-refused, the room then created again under the same id with `sms` and `ws` only, in the same turn. The regeneration waits in the deleted room's lane; once its turn comes, the room it was released in is gone, though one is held under its id: the regeneration is refused before the agent runs (`operation = regenerate`, a null status), and the new room's timeline stays empty.",
   "setup": {
     "kit": {

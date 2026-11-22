@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/orchestration/test_loop_strategy.py TestReviewVerdict. orchestration/strategies/_loop_verdict.py SUBMIT_REVIEW, read_review; loop.py _review, _review_ended. The reviewer is reminded three times (max_result_retries), then its last words are its feedback, not approved. The verdict tool is declared in the review's task only.",
   "setup": {
     "channels": [

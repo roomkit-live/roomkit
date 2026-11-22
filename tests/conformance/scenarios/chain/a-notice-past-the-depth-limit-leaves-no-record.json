@@ -6,6 +6,10 @@
     "§8.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-8.2-020",
+    "RK-8.3-029"
+  ],
   "notes": "No agent answers a notice (RFC §6.4, RMK-1257), so none is recorded as not asked past the depth limit, as a tool-call row: no BLOCKED record, no observation, no chain_depth_exceeded. Both implementations recorded one until RMK-1257.",
   "setup": {
     "kit": {

@@ -6,6 +6,10 @@
     "§17.2",
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-012",
+    "RK-8.4-013"
+  ],
   "notes": "acme's agent turn waits on a tool; the store deletes the room; the same process creates a room under the same id for globex, attaches the channels, and globex subscribes to its ephemerals. The turn goes on: its publications carry the creation mark of acme's room, which globex's subscription does not read, and its answer finds its room gone.",
   "setup": {
     "channels": [

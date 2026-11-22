@@ -9,6 +9,7 @@
     "§9.4"
   ],
   "requirements": [
+    "RK-8.2-034",
     "RK-9.2-068"
   ],
   "notes": "Python's channel returns an empty output on a block (_ai_streaming.py _start_streaming_tool_response), so no loop runs and no response is reported.",

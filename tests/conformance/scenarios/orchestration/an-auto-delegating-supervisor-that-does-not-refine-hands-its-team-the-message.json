@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestOnePassDelegate::test_one_pass_runs_workers_with_raw_message, TestAutoDelegate::test_sync_auto_delegate_without_refine; tests/orchestration/test_strategy_supervisor.py test_auto_delegate_one_pass_passes_share_channels; tests/orchestration/test_strategy_supervisor.py test_the_supervisors_turns_answer_at_the_depth_of_its_event[one_pass]. orchestration/strategies/supervisor/delegate.py _one_pass_delegate, _one_pass_results (task_heading 'The user asked:'), _results_event.",
   "setup": {
     "channels": [

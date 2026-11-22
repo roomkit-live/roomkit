@@ -9,6 +9,8 @@
   ],
   "requirements": [
     "RK-5.5-005",
+    "RK-8.2-029",
+    "RK-8.2-031",
     "RK-9.2-028"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_an_unanswered_request_leaves_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_verification_that_outlived_an_unanswered_request_still_ends (RMK-1171). The verification in force is the store's, so that the request's short lifetime is the only one at play.",

@@ -7,6 +7,9 @@
     "§8.1",
     "§14.3"
   ],
+  "requirements": [
+    "RK-8.1-005"
+  ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_blank_key_is_no_key. RMK-1609.",
   "steps": [
     {

@@ -6,6 +6,13 @@
     "§8.3",
     "§19.7.5 rule 11"
   ],
+  "requirements": [
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-027",
+    "RK-8.3-049"
+  ],
   "notes": "One process; the discussion's max_depth is 3. While `a` takes its turn, held at `a-held`, `hello` asks `b` at chain depth 2, and `@c look` asks `c`. Once `a` answers, the next pick stops `b`'s turn, whose answer would reach the limit, and gives `c` its turn. `b`'s record and its observation are stored before `c`'s answer is committed. `c`'s answer is held at `c-out` in its delivery to `ops`: the observation is already stored, though `c`'s turn's cascade is not over. Python: orchestration/strategies/discussion/_driver.py `_planned_turn` and `_record_depth_stop`, under the room's lock the turn was planned under.",
   "setup": {
     "channels": [

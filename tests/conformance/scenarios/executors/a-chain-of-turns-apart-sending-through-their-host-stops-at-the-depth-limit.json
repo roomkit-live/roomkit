@@ -8,7 +8,13 @@
   ],
   "requirements": [
     "RK-10.6.5-034",
-    "RK-10.6.5-057"
+    "RK-10.6.5-057",
+    "RK-8.3-011",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048"
   ],
   "notes": "Python: turns/host.py TurnHost, each verb a host_call carrying the turn's chain depth; core/_turn_host.py. The scenario host/a-chain-of-turns-sending-through-their-host-stops-at-the-depth-limit on the kit's own executor; here the turns run on an executor of their own, which shares no execution context with the owner (§10.6.5).",
   "setup": {

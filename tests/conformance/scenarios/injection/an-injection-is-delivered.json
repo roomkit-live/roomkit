@@ -9,7 +9,10 @@
   ],
   "requirements": [
     "RK-10.5-004",
-    "RK-10.5-005"
+    "RK-10.5-005",
+    "RK-8.2-002",
+    "RK-8.2-020",
+    "RK-8.2-023"
   ],
   "reentrancy": [
     "inject@outside"

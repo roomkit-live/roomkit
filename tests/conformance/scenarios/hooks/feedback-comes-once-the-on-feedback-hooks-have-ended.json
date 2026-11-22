@@ -8,6 +8,7 @@
     "§15.9"
   ],
   "requirements": [
+    "RK-8.2-039",
     "RK-9.3-039"
   ],
   "notes": "submit_feedback returns while the hook is held at 'audit'; the hook then marks the room. The feedback handler reads the room: it sees the mark, so feedback came after the hook ended.",

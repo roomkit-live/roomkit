@@ -8,7 +8,9 @@
     "§8.2"
   ],
   "requirements": [
-    "RK-10.6.2-021"
+    "RK-10.6.2-021",
+    "RK-8.2-034",
+    "RK-8.2-035"
   ],
   "notes": "Python: tests/test_turns_between.py, tests/test_turns_wiring.py. The events a turn emits cross as frames and the owner emits them.",
   "setup": {

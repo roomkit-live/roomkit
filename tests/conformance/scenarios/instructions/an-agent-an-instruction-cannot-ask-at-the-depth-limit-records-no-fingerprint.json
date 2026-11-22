@@ -7,7 +7,14 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-10.1.1-027"
+    "RK-10.1.1-027",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048",
+    "RK-8.5-007",
+    "RK-8.5-008"
   ],
   "notes": "max_chain_depth 1: the instruction (depth 0) cannot ask `ai` (0 + 1 >= 1). In place of its answer the instruction's delivery set stores a BLOCKED record at depth 1, responding to the instruction ($e1, never stored), and the record carries no fingerprint: it is no response.",
   "setup": {

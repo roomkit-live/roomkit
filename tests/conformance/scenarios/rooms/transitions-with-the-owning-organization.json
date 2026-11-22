@@ -9,7 +9,9 @@
     "§26.1"
   ],
   "requirements": [
-    "RK-5.1-022"
+    "RK-5.1-022",
+    "RK-8.2-005",
+    "RK-8.2-006"
   ],
   "notes": "Positive counterpart of transitions-scope-before-due-timers: forwarding the caller scope must not reject its own room.",
   "setup": {

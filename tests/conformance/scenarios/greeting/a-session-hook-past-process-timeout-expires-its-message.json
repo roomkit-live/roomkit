@@ -7,7 +7,10 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.1-025"
+    "RK-10.1-025",
+    "RK-8.2-003",
+    "RK-8.2-010",
+    "RK-8.2-022"
   ],
   "notes": "The room is created and the channel attached by then: both stand. _held is held at a gate well within its own timeout. session_started is not emitted.",
   "setup": {

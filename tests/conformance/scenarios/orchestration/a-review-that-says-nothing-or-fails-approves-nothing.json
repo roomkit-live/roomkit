@@ -6,6 +6,9 @@
     "§19.7.4",
     "§19.8"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: test_loop_strategy.py TestReviewSequential::test_empty_output_not_approved, TestReviewParallel::test_parallel_empty_result; test_loop_review_status.py test_a_review_ends_on_its_terminal_entry[task-failed]. The reviewer's first turn raises, its second answers nothing: both tasks fail.",
   "setup": {
     "channels": [

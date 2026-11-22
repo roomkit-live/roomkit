@@ -6,6 +6,9 @@
     "§19.7.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_supervisor.py test_pass_one_hands_on_its_answer_and_stores_its_calls, test_pass_ones_rows_cross_the_rooms_gate. orchestration/strategies/supervisor/delegate.py _pass1_task, core/mixins/_child_execution.py persist_tool_calls (_ToolRowsOnly, the rows through the room's lane: BEFORE_BROADCAST once).",
   "setup": {
     "channels": [

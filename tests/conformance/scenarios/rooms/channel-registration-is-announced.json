@@ -6,6 +6,10 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-8.2-008",
+    "RK-8.2-009"
+  ],
   "steps": [
     {
       "call": "register_channel",

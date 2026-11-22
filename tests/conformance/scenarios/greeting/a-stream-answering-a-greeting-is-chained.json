@@ -7,7 +7,9 @@
     "§19.1"
   ],
   "requirements": [
-    "RK-10.6.4-004"
+    "RK-10.6.4-004",
+    "RK-8.3-037",
+    "RK-8.3-038"
   ],
   "notes": "A greeting is no caller's own event: unlike a message's, the turn that answers it draws a pass as its stream is read. At max_chain_depth 3 the budget is 30 passes, and bot's 30 notes for sms spend them: helper's model is never asked.",
   "setup": {

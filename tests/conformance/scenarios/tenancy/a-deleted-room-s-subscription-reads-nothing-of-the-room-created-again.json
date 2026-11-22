@@ -6,6 +6,14 @@
     "§17.2",
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-006",
+    "RK-8.4-007",
+    "RK-8.4-008",
+    "RK-8.4-011",
+    "RK-8.4-013",
+    "RK-8.4-016"
+  ],
   "notes": "acme subscribes to its room's ephemerals and reads acme's typing; the store deletes the room; globex creates a room under the same id, subscribes, and publishes typing in it. acme's subscription was the deleted room's and reads nothing of globex's; globex's reads its own.",
   "setup": {},
   "steps": [

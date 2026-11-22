@@ -7,7 +7,12 @@
     "§9.3"
   ],
   "requirements": [
-    "RK-10.1-025"
+    "RK-10.1-025",
+    "RK-8.2-003",
+    "RK-8.2-010",
+    "RK-8.2-020",
+    "RK-8.2-033",
+    "RK-8.2-042"
   ],
   "notes": "_held never passes its gate: its timeout ends it. A session's start that did not wait would emit session_started first, or the message's event_processed.",
   "setup": {

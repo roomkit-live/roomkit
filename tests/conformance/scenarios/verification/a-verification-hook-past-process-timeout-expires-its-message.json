@@ -8,7 +8,9 @@
     "§11.7.3"
   ],
   "requirements": [
-    "RK-10.1-041"
+    "RK-10.1-041",
+    "RK-8.2-022",
+    "RK-8.2-027"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification: the read and the hooks under the call's deadline, _bounded_by; the attempt not); RMK-913, the boundary of the code reply's rule.",
   "setup": {

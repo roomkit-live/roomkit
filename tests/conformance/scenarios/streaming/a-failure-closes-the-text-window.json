@@ -6,6 +6,9 @@
     "§6.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.4-038"
+  ],
   "notes": "Python: channels/_ai_stream_round.py stream, close in its finally.",
   "setup": {
     "channels": [

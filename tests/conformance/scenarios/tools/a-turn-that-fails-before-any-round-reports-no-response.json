@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-8.2-034"
+  ],
   "notes": "Python reports a turn only once its loop reached its end (AIResponseEvent.loop_end_reason): one that raised before a round is the error itself.",
   "setup": {
     "channels": [

@@ -8,7 +8,8 @@
     "§10.1 step 5b"
   ],
   "requirements": [
-    "RK-10.1-039"
+    "RK-10.1-039",
+    "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_code_reply_releases_too (RMK-1173). The release runs within the code reply's call: its answer is in once the call returns.",
   "setup": {

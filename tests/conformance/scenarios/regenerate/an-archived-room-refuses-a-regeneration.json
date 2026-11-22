@@ -10,7 +10,14 @@
   "requirements": [
     "RK-5.1-007",
     "RK-5.1-008",
-    "RK-5.1-012"
+    "RK-5.1-012",
+    "RK-8.2-006",
+    "RK-8.2-007",
+    "RK-8.2-020",
+    "RK-8.2-061",
+    "RK-8.2-062",
+    "RK-8.2-063",
+    "RK-8.2-064"
   ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateStatusGuard::test_an_archived_room_is_refused_too.",
   "setup": {

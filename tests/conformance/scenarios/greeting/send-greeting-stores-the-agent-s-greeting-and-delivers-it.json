@@ -5,6 +5,10 @@
   "rules": [
     "§19.1"
   ],
+  "requirements": [
+    "RK-8.1-005",
+    "RK-8.1-006"
+  ],
   "notes": "The agent's auto_greet is off: only the calls greet. A greeting carries no hook and the agent does not answer its own event.",
   "setup": {
     "channels": [

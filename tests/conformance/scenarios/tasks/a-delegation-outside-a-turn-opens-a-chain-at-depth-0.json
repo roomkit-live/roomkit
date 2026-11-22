@@ -6,6 +6,14 @@
     "§23.3 step 8",
     "§8.3"
   ],
+  "requirements": [
+    "RK-8.3-009",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-026",
+    "RK-8.3-048"
+  ],
   "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_a_delegation_outside_a_tool_call_opens_a_chain; core/mixins/delegation.py delegate (no turn above it: depth 0); core/_turn_host.py _delegate (setup_delegation's delegate_task tool in Python's test, the turn's host here: both delegate from the turn), tasks/handback.py hand_back: the result handed back is an instruction at the depth of the answer whose turn delegated (never stored, RMK-310), and front's turn on the one at depth 2 is not asked, its answer at the limit stored BLOCKED (§8.3). A result can come back before the turn that delegated it committed its answer, so front's rows are matched in any order.",
   "setup": {
     "kit": {

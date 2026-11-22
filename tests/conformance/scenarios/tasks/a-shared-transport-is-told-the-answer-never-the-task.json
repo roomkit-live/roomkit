@@ -10,7 +10,8 @@
     "§12.2 step 14s"
   ],
   "requirements": [
-    "RK-7.5-010"
+    "RK-7.5-010",
+    "RK-8.5-007"
   ],
   "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestASharedTransportIsToldTheAnswer::test_it_receives_the_answer_and_never_the_task[False], [True]; core/mixins/_child_execution.py _answer_of_broadcast, _shares_a_transport, _deliver_answer. The description is committed outside the pipeline, as without a shared transport, and crosses no hook; the answer re-enters as a room's response: it answers the description, crosses BEFORE_BROADCAST, and rides the child room's lane to the shared transport. worker answers buffered, writer (a scripted agent) streams.",
   "setup": {

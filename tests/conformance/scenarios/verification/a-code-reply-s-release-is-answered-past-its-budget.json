@@ -9,7 +9,8 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.1-039"
+    "RK-10.1-039",
+    "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification, _code_reply, _attempt_code: the attempt run to its end; _release_held), src/roomkit/core/mixins/inbound.py (_prepare_event: the pre-commit budget); RMK-913. The agent takes twice the budget. A wrong code is verification/a-reply-of-other-digits-is-a-wrong-code.",
   "setup": {

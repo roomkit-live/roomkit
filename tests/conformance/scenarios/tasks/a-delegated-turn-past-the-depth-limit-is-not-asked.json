@@ -7,6 +7,22 @@
     "§8.3",
     "§8.2"
   ],
+  "requirements": [
+    "RK-8.2-002",
+    "RK-8.2-003",
+    "RK-8.2-010",
+    "RK-8.2-032",
+    "RK-8.3-022",
+    "RK-8.3-023",
+    "RK-8.3-024",
+    "RK-8.3-025",
+    "RK-8.3-026",
+    "RK-8.3-027",
+    "RK-8.3-028",
+    "RK-8.3-048",
+    "RK-8.3-052",
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_a_child_room_keeps_what_its_broadcast_blocked; core/event_router.py, whose delivery plan leaves out an agent whose answer would reach the limit and stores its record (_commit_blocked_events) and observation. With max_chain_depth 1, the description at depth 0 cannot be answered. RMK-1188. The observation's text is each implementation's (roomkit-rs gap G-016).",
   "setup": {
     "kit": {

@@ -8,7 +8,9 @@
     "§9.5.1 The room's work outside the lock"
   ],
   "requirements": [
-    "RK-10.5-034"
+    "RK-10.5-034",
+    "RK-8.3-035",
+    "RK-8.3-038"
   ],
   "reentrancy": [
     "inject@cascade",

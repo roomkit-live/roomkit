@@ -8,6 +8,11 @@
     "§9.3",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-8.4-026",
+    "RK-8.4-027",
+    "RK-8.4-029"
+  ],
   "notes": "The shared response record of RFC §6.7 also belongs to ACP hooks (maintainer decision 0a3b774c). Python source: tools/context.py::current_response_metadata; channels/_acp_client.py::_TurnState and _acp_turn.py::_turn_stream. Source tests: test_tool_turn_context.py::TestWhatTheHandlerWritesBack::test_the_response_record_is_the_turns_one; test_response_metadata.py::TestInboundResultResponseMetadata. The observer writes before prompt completion; a first room opens the connection without writing. No remote executor or late write after turn completion is claimed.",
   "setup": {
     "channels": [

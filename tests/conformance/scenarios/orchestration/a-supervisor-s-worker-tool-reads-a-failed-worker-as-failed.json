@@ -6,6 +6,9 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_wait_for_result_with_error, test_wait_for_result_none. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer._delegate_and_wait, _worker_run.py task_output.",
   "setup": {
     "channels": [

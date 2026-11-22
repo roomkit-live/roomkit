@@ -16,7 +16,8 @@
     "RK-10.1-112",
     "RK-10.1-115",
     "RK-10.6.8-018",
-    "RK-10.6.8-022"
+    "RK-10.6.8-022",
+    "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait and report_cascade, src/roomkit/core/mixins/inbound.py (a call a hook makes, adopted by the cascade whose hook made it, its handle told once that cascade read its streams) (RMK-1322, RMK-1329). The outer hook waits until the target reads A1 from the adopted call before allowing hello to commit. Each stream belongs to its own cascade and can finish before the other. Each answer retains its link to its input.",
   "setup": {

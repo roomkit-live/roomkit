@@ -6,6 +6,10 @@
     "§6.4",
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-022",
+    "RK-8.4-023"
+  ],
   "notes": "Python: tests/test_ai_streaming_tool_events.py::test_a_failed_call_ends_failed_on_the_bus (RMK-305); channels/_ai_events.py _ended_calls: status 'failed' when the result part is_error. A call's id is read under `id`, so it is normalized as `$e1`.",
   "setup": {
     "channels": [

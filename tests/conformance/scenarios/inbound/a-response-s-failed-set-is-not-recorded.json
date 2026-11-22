@@ -8,7 +8,9 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-5.13-006"
+    "RK-5.13-006",
+    "RK-8.2-020",
+    "RK-8.2-023"
   ],
   "notes": "The record describes the trigger's own delivery set, never a reentry's (roomkit's _post_plan_effects reports the root pass only). The first message's set succeeds and records nothing; the agent's answer fails on ws and records nothing either.",
   "setup": {

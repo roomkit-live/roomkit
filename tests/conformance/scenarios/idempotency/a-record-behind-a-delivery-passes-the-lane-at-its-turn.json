@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.5-047",
-    "RK-5.1-001"
+    "RK-5.1-001",
+    "RK-8.1-005"
   ],
   "notes": "Python: tests/test_commit_event.py::test_a_record_behind_a_delivery_in_flight_is_passed_at_its_turn. RMK-1609.",
   "setup": {

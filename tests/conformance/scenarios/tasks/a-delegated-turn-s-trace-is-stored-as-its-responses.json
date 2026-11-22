@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-5.2-015",
-    "RK-5.2-018"
+    "RK-5.2-018",
+    "RK-8.5-007",
+    "RK-8.5-014"
   ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::TestRunAgentNonStreaming::test_persists_all_response_events_not_just_final_text; core/event_router.py _answering, which writes a buffered output's response events back as the pipeline commits them (_as_response: the responder's source, the trigger's room, one deeper, responds_to the trigger unless named, a fresh id, no idempotency key; a typed INSTRUCTION dropped), so that a delegated turn reads them so (core/mixins/_child_execution.py _persist_response_events, which also drops a key under roomkit:publication:, core/_publication_keys.py without_reserved_key).",
   "setup": {

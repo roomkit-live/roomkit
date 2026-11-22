@@ -6,6 +6,11 @@
     "§6.7",
     "§12.2"
   ],
+  "requirements": [
+    "RK-8.4-017",
+    "RK-8.4-018",
+    "RK-8.4-019"
+  ],
   "notes": "Python: channels/_ai_streaming.py _close_thinking_window, every abnormal exit of a round; channels/_ai_stream_round.py close.",
   "setup": {
     "channels": [

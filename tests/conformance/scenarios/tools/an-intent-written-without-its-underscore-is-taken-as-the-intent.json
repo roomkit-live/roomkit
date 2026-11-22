@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-8.4-023"
+  ],
   "notes": "Python: providers/ai/tool_intent.py take_intent, INTENT_ALIAS; channels/_ai_streaming.py _intent_taker. tests/test_channels/test_tool_call_intents.py test_the_property_written_without_its_underscore_is_taken_as_the_intent, test_the_property_wins_over_its_misspelling_and_neither_reaches_the_tool.",
   "setup": {
     "channels": [

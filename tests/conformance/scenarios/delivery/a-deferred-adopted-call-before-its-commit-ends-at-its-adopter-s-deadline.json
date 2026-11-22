@@ -7,6 +7,7 @@
     "§13.6"
   ],
   "requirements": [
+    "RK-8.2-022",
     "RK-9.5.1-038"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, the off-lock check runs its hooks within the call's deadline (process_timeout): past it the hook's body is cancelled, and with it the call it awaits, before that call's commit. Found by the review of RMK-1432 (RMK-1443 item 1); decided as Python's by the maintainer.",

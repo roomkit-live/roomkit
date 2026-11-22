@@ -7,7 +7,8 @@
     "§10.1 step 14"
   ],
   "requirements": [
-    "RK-10.1-085"
+    "RK-10.1-085",
+    "RK-8.1-005"
   ],
   "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_adds_response_without_duplicating_user_message and test_regenerate_context_includes_user_message. The earlier answer stays: removing it is the caller's (regenerate_response's docstring). The agent reads the message once, last, after the answers that followed it: its history leaves the trigger out by id and the turn adds it at the end.",
   "setup": {

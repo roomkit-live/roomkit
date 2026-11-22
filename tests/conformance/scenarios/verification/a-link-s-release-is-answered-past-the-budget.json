@@ -6,6 +6,9 @@
     "§11.7.6",
     "§13.6"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (complete_verification, _release_held), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on: the budget bounds the wait for the room's lock alone); RMK-913, the code door's neighbour. The agent takes twice the budget.",
   "setup": {
     "kit": {

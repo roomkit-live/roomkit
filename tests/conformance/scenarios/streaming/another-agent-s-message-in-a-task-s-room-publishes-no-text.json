@@ -6,6 +6,9 @@
     "§6.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-8.4-038"
+  ],
   "notes": "tests/test_ai_streaming_text_events.py::test_an_answer_a_hook_judges_is_never_published_as_text, another agent in a task's room: the planner is a scripted channel with no reaction, addressed_to asks the worker alone.",
   "setup": {
     "channels": [

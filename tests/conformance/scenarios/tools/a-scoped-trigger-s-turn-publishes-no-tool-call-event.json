@@ -5,6 +5,9 @@
   "rules": [
     "§8.4"
   ],
+  "requirements": [
+    "RK-8.4-034"
+  ],
   "notes": "Python: tests/test_turn_ephemerals_scope.py; turns/_owner_publish.py publish_frame: a turn whose answers do not reach the whole room publishes no ephemeral (RFC §8.4), as streaming/a-scoped-trigger-s-turn-publishes-no-reasoning shows for reasoning.",
   "setup": {
     "channels": [

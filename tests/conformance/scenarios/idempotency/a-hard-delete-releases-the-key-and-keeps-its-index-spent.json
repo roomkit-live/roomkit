@@ -8,7 +8,8 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-5.1-001"
+    "RK-5.1-001",
+    "RK-8.1-005"
   ],
   "notes": "Python: tests/test_store_memory.py::TestDeleteEvent::test_delete_releases_idempotency_key; test_commit_after_deleting_latest_keeps_index_monotonic. RMK-1609.",
   "steps": [

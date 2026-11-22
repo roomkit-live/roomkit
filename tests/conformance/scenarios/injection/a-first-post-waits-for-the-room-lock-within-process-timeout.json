@@ -8,7 +8,9 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.5-033"
+    "RK-10.5-033",
+    "RK-8.2-010",
+    "RK-8.2-022"
   ],
   "notes": "In room-1 an install holds the room lock at a gate no step opens before the post's deadline: the first post's attach waits for it within the call's process_timeout, so the post raises, the host channel never attached. In room-2 the lock is free: the post's attach runs and the deadline passes later, at a gate of a BEFORE_BROADCAST hook on the post's message: the attach stays, with its record, and the message is not written.",
   "setup": {

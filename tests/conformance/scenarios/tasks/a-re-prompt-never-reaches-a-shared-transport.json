@@ -6,6 +6,9 @@
     "§23.3 step 4",
     "§23.3 step 5"
   ],
+  "requirements": [
+    "RK-8.5-007"
+  ],
   "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestASharedTransportIsToldTheAnswer::test_a_result_tool_reprompt_never_reaches_it; core/mixins/_child_execution.py _broadcast_and_collect, _run_with_structured_result; orchestration/result.py SUBMIT_RESULT.reminder.",
   "setup": {
     "channels": [

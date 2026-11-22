@@ -7,7 +7,10 @@
     "§10.2"
   ],
   "requirements": [
-    "RK-5.7-019"
+    "RK-5.7-019",
+    "RK-8.2-020",
+    "RK-8.2-024",
+    "RK-8.2-025"
   ],
   "notes": "The sms bindings are written through the store, as an attach would read and keep these values its own way. The sms channel's deliver() is never reached.",
   "setup": {

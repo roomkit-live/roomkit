@@ -9,6 +9,8 @@
     "§10.1 step 2"
   ],
   "requirements": [
+    "RK-8.3-035",
+    "RK-8.3-039",
     "RK-9.5.1-062"
   ],
   "reentrancy": [

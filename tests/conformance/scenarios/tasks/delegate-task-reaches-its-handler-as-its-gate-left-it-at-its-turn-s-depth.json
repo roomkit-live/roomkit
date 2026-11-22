@@ -10,7 +10,8 @@
     "§8.3"
   ],
   "requirements": [
-    "RK-10.6.5-009"
+    "RK-10.6.5-009",
+    "RK-8.3-011"
   ],
   "notes": "Python: turns/wire.py ToolCall, which carries the call's arguments as the gate left them and the turn's chain depth to the owner (turns/_owner_calls.py), where the DelegateHandler reads them (tasks/delegate.py); tests/test_turns_owner_tools.py::test_a_handler_runs_on_the_owner_under_what_the_turn_gave_its_call. The message arrives at depth 1, so the assistant's turn answers at depth 2, and the result the task hands back reaches it at that depth (§23.3 step 8): its answer to the result is at depth 3, where a handler run at depth 0 would hand it back at 0 and the answer be at 1. The rows between are the turn's tool-call rows and the record of the instruction it read. The owner floors the handler's depth at the turn's response depth (turns/_owner_calls.py), so the depth the tool_call message itself carries is not observed here.",
   "setup": {

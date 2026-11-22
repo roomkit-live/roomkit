@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-10.1-006",
+    "RK-8.3-039",
     "RK-9.5.1-061"
   ],
   "notes": "Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_call_naming_its_room_past_the_budget_is_refused_before_anything_else. ghost is unregistered.",

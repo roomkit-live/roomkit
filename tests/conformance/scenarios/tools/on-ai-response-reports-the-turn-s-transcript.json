@@ -8,6 +8,8 @@
     "§8.2"
   ],
   "requirements": [
+    "RK-8.2-034",
+    "RK-8.2-035",
     "RK-9.2-070"
   ],
   "notes": "Python reports the turn once its loop ended (_ai_streaming.py _finish_streaming_tool_turn): response_transcript drops the empty stretches, the usage counts from zero, every declared tool is `always` without Tool Search; ai_response follows its observers.",

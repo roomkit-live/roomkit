@@ -6,6 +6,9 @@
     "§13.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-8.2-020"
+  ],
   "notes": "Python: tests/test_room_org_scoping.py TestScopedTurnsAndDeliveries::test_another_organizations_room_is_not_found_and_nothing_runs (the refusal writes and runs nothing) and test_the_rooms_own_organization_or_none_runs_each_verb.",
   "setup": {
     "channels": [

@@ -8,7 +8,8 @@
     "§12.2 step 13s"
   ],
   "requirements": [
-    "RK-10.1-138"
+    "RK-10.1-138",
+    "RK-8.5-012"
   ],
   "notes": "The root is a record committed outside the pipeline, so the agent never answers it. Both questions reply to it, so the answer to each takes the root as its parent. The first answer commits while the room holds the root: its row names it. The second answer's round is held at a gate once its turn started; the root is hard-deleted meanwhile, its replies kept (cascade_replies false), so the questions and the first answer still name the removed root. The second answer's row takes that parent at its commit, when the room no longer holds it: the row names none.",
   "setup": {

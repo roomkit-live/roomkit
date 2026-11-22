@@ -7,6 +7,10 @@
     "§8.4",
     "§10.1"
   ],
+  "requirements": [
+    "RK-8.4-022",
+    "RK-8.4-023"
+  ],
   "notes": "Python: tests/test_ai_streaming_tool_events.py::test_a_turn_cancelled_while_a_tool_runs_closes_its_start (RMK-282); channels/_ai_loop_rules.py _execute_round_tools publishes _aborted_results, {\"error\": \"Tool call aborted\"} cancelled, when the round is aborted while its calls run. A call's id is read under `id`, so it is normalized as `$e1`.",
   "setup": {
     "channels": [
