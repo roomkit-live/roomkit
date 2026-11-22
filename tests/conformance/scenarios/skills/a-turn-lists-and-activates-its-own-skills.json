@@ -6,6 +6,14 @@
     "§24.3",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-24.1-002",
+    "RK-24.2-002",
+    "RK-24.3-017",
+    "RK-24.3-020",
+    "RK-24.3-021",
+    "RK-24.3-026"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turn_lists_and_activates_its_own_skills.",
   "setup": {
     "channels": [

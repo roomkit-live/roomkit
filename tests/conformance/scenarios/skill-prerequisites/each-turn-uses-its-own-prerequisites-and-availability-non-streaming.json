@@ -8,6 +8,16 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-010",
+    "RK-24.3-020",
+    "RK-24.3-021",
+    "RK-24.3-027",
+    "RK-24.3-028",
+    "RK-24.3-030",
+    "RK-24.3-034",
+    "RK-24.4-026"
+  ],
   "notes": "Python: channels/_ai_policy.py::_turn_skills; tests/test_skills_integration.py per-turn registry. The first turn uses its hub matcher; the second restores the channel unavailable mark.",
   "setup": {
     "channels": [

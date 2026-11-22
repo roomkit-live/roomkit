@@ -8,7 +8,9 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-21.1-042"
+    "RK-21.1-042",
+    "RK-24.3-037",
+    "RK-24.4-017"
   ],
   "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestMultipleSkillGating; skills/registry.py::gated_tool_names unions the patterns of all inactive skills.",
   "setup": {

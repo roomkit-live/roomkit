@@ -6,6 +6,11 @@
     "§24.3",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-24.3-020",
+    "RK-24.3-023",
+    "RK-24.3-026"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turn_that_gives_none_reads_the_channels (both cases): room-1 has no configuration, room-2's gives no skills.",
   "setup": {
     "channels": [

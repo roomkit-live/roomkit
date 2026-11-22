@@ -8,6 +8,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-24.4-025"
+  ],
   "notes": "Python: AIChannel._handle_activate_skill excludes its exact _channel_tool_names, including sandbox commands, from skill-miss hints. Search and policy remain independent.",
   "setup": {
     "channels": [

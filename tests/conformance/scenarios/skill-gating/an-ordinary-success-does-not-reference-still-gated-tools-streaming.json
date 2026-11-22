@@ -7,6 +7,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-037",
+    "RK-24.4-017"
+  ],
   "notes": "Python: channels/_ai_policy.py::_reference_shown applies _apply_tool_filters; tests/test_deferred_tools.py::test_a_skill_references_the_tools_it_opens. A successful ordinary call precedes activation: it must not reveal the held gated tools or consume their later activation references.",
   "setup": {
     "channels": [

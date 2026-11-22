@@ -8,6 +8,13 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-016",
+    "RK-24.3-028",
+    "RK-24.3-030",
+    "RK-24.3-031",
+    "RK-24.3-033"
+  ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_host_matcher_reads_a_hub_requirement[text]; skills/models.py::missing_required_tools filters policy and closed gates before calling the matcher.",
   "setup": {
     "channels": [

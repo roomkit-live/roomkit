@@ -8,6 +8,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-24.4-025"
+  ],
   "notes": "Python: AIChannel._handle_activate_skill excludes _channel_tool_names from hints, including run_skill_script independently of its exemption from policy.",
   "setup": {
     "channels": [

@@ -7,6 +7,12 @@
     "§24.3",
     "§24.4"
   ],
+  "requirements": [
+    "RK-24.4-003",
+    "RK-24.4-004",
+    "RK-24.4-005",
+    "RK-24.4-011"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py seed calls activate for each stored call, then render_prompt drops what the registry lacks: stored a to e under a registry of a to d leaves b, c and d. skills_in_prompt false, so the prompt can be read whole: no base prompt, its blocks each after a blank line (_add_skills).",
   "setup": {
     "channels": [

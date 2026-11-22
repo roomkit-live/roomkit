@@ -7,6 +7,12 @@
     "§24.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-24.3-021",
+    "RK-24.3-025",
+    "RK-24.4-002",
+    "RK-24.4-003"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py render_prompt. tests/test_channels/test_turn_skills.py::test_a_skill_the_next_turns_registry_lacks_leaves_the_room: Ada's turn, Bob's, Ada's again, in one room. A later turn replays the activation round as its turn sent it, as any round (RMK-1370).",
   "setup": {
     "channels": [

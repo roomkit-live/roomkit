@@ -8,6 +8,12 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-028",
+    "RK-24.3-030",
+    "RK-24.3-034",
+    "RK-24.3-035"
+  ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_required_tool_only_a_closed_gate_holds_is_missing[text], test_an_activated_skill_opens_a_gate_an_unavailable_one_shares[text].",
   "setup": {
     "channels": [

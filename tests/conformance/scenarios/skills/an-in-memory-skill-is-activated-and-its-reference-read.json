@@ -7,6 +7,14 @@
     "§24.4",
     "§24.6"
   ],
+  "requirements": [
+    "RK-24.2-002",
+    "RK-24.3-006",
+    "RK-24.3-018",
+    "RK-24.3-020",
+    "RK-24.3-023",
+    "RK-24.3-026"
+  ],
   "notes": "Python: tests/test_skill_registry_copy.py::test_a_skill_built_in_memory_is_registered_and_found. The fixture calls public SkillRegistry.add without creating SKILL.md. The name with capitals and a space is valid for in-memory add, so directory discovery cannot substitute for it. Both successful tool results are observed by the next real model generation.",
   "setup": {
     "channels": [

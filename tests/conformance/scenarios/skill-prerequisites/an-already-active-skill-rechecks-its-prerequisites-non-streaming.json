@@ -8,6 +8,11 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-028",
+    "RK-24.3-030",
+    "RK-24.3-037"
+  ],
   "notes": "Python: channels/_ai_tools.py::_handle_activate_skill checks missing requirements before the already-active acknowledgement.",
   "setup": {
     "channels": [

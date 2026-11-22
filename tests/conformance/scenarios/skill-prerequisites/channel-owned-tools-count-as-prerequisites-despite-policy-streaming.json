@@ -9,7 +9,9 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-21.1-016"
+    "RK-21.1-016",
+    "RK-24.3-028",
+    "RK-24.3-030"
   ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_channel_tool_counts_as_a_requirement_on_both_doors[text].",
   "setup": {

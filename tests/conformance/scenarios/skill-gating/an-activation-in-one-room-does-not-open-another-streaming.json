@@ -9,7 +9,11 @@
   ],
   "requirements": [
     "RK-21.1-042",
-    "RK-21.1-048"
+    "RK-21.1-048",
+    "RK-24.3-037",
+    "RK-24.4-002",
+    "RK-24.4-010",
+    "RK-24.4-017"
   ],
   "notes": "Python: channels/_ai_policy.py::_activated_skill_names and channels/_skill_activation.py::active_names; tests/test_skills_integration.py::test_gated_tools_stay_visible_on_later_turns (room-keyed record).",
   "setup": {

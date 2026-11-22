@@ -6,6 +6,9 @@
     "§24.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-24.4-016"
+  ],
   "notes": "Python: turns/_wiring.py remembered_calls, tools/_open_calls.py, channels/_skill_activation.py seed (HITL 9763c3cd). Pairing an end row to the latest start under its id activated the skill the refused call named, and the agent lost the rules it had loaded.",
   "setup": {
     "channels": [

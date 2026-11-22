@@ -7,7 +7,8 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-21.1-044"
+    "RK-21.1-044",
+    "RK-24.3-024"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_channel_built_without_skills_ignores_a_turns_registry (the warning it logs is a test in each implementation). The model's call to activate_skill reads what an undeclared tool reads.",
   "setup": {

@@ -8,6 +8,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.2-007",
+    "RK-24.3-028"
+  ],
   "notes": "Python: skills/models.py::missing_required_tools and test_skill_tool_gating.py::test_requires_reads_a_value_as_allowed_tools_does.",
   "setup": {
     "channels": [

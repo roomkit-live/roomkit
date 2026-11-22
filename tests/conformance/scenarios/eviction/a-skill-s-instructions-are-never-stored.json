@@ -7,7 +7,9 @@
     "§24.4"
   ],
   "requirements": [
-    "RK-21.5-008"
+    "RK-21.5-008",
+    "RK-24.4-008",
+    "RK-24.4-009"
   ],
   "notes": "Python: tests/test_skills_integration.py::test_large_skill_body_is_returned_whole, test_large_reference_is_still_evicted (kept_whole).",
   "setup": {

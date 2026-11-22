@@ -8,7 +8,9 @@
     "§24.4"
   ],
   "requirements": [
-    "RK-21.5-008"
+    "RK-21.5-008",
+    "RK-24.4-003",
+    "RK-24.4-008"
   ],
   "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_skill_body_and_a_page_read_back_stay_whole (channels/_compaction.py _stored: kept_whole, REREAD_TOOL, is_eviction_placeholder). Eleven messages, the input at 0: the half (5) is the third round's call, so the first two rounds are shortened. At the threshold 1500, dump's result (6999 characters) is stored at its call; the page read back (3135 characters), the skill's instructions (2099) and lookup's result (2399) are not. At compaction only lookup's is stored, with a 1000-character preview.",
   "setup": {

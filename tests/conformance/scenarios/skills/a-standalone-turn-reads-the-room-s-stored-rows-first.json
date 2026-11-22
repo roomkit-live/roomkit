@@ -8,7 +8,13 @@
     "§24.4"
   ],
   "requirements": [
-    "RK-10.1.1-031"
+    "RK-10.1.1-031",
+    "RK-24.4-002",
+    "RK-24.4-003",
+    "RK-24.4-004",
+    "RK-24.4-005",
+    "RK-24.4-014",
+    "RK-24.4-015"
   ],
   "notes": "HITL 30895156 option 1, RMK-1356. Python: channels/_ai_context.py _hydrate_room_memories runs before _add_skills on any turn, and channels/_ai_tools.py _record_activation adds to what it read. Read after it, the turn's own activation would mark the room read and the stored one would be lost. The next ordinary turn replays both activation rounds as their turns sent them, the standalone one's before its answer and without its instruction, which no turn keeps (RMK-1370).",
   "setup": {

@@ -9,7 +9,10 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-21.1-042"
+    "RK-21.1-042",
+    "RK-24.3-028",
+    "RK-24.3-030",
+    "RK-24.3-033"
   ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_text_turn_refuses_an_activation_missing_its_tool; refusal leaves its gate shut.",
   "setup": {

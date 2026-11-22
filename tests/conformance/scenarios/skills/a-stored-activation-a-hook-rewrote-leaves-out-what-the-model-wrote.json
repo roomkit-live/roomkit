@@ -6,6 +6,9 @@
     "§24.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-24.4-016"
+  ],
   "notes": "Python: turns/_wiring.py remembered_calls, channels/_skill_activation.py seed: the end row says what ran, the start row what the model wrote (HITL 2ddedc88). The live turn carries beta's rules, so the room read anew does.",
   "setup": {
     "channels": [

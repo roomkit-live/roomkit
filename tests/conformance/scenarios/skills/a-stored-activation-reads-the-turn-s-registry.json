@@ -7,6 +7,12 @@
     "§24.3",
     "§24.4"
   ],
+  "requirements": [
+    "RK-24.3-021",
+    "RK-24.4-003",
+    "RK-24.4-004",
+    "RK-24.4-005"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _hydrate_room_memories, channels/_skill_activation.py seed and render_prompt. Ada's turn activates, Bob's turn drops her skill from the record, the agent joining again forgets the room (§10.6.3), and Ada's next turn reads the stored call under her registry.",
   "setup": {
     "channels": [

@@ -10,7 +10,9 @@
   "requirements": [
     "RK-21.1-021",
     "RK-21.1-042",
-    "RK-21.1-048"
+    "RK-21.1-048",
+    "RK-24.3-037",
+    "RK-24.4-017"
   ],
   "notes": "Python: tests/test_deferred_tools.py::test_a_skill_references_the_tools_it_opens and test_a_gated_tool_held_unseen_is_still_refused. A provider capable of deferred loading holds gated definitions unseen, without granting execution.",
   "setup": {

@@ -8,6 +8,16 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-24.3-010",
+    "RK-24.3-017",
+    "RK-24.3-026",
+    "RK-24.3-027",
+    "RK-24.3-034",
+    "RK-24.3-035",
+    "RK-24.3-037",
+    "RK-24.4-026"
+  ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_an_unavailable_skill_keeps_its_tools_closed[text]; tests/test_skills.py::TestSkillRegistry::test_to_prompt_xml_unavailable_block.",
   "setup": {
     "channels": [

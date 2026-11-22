@@ -5,6 +5,9 @@
   "rules": [
     "§24.7"
   ],
+  "requirements": [
+    "RK-24.7-018"
+  ],
   "steps": [
     {
       "call": "skill_registry_session",
