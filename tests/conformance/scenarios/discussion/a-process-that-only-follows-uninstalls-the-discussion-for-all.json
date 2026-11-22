@@ -11,7 +11,9 @@
     "RK-19.7-041",
     "RK-19.7-042",
     "RK-19.7-046",
-    "RK-19.7-048"
+    "RK-19.7-048",
+    "RK-19.7.5-024",
+    "RK-19.7.5-129"
   ],
   "notes": "Python: test_discussion_processes.py test_a_process_that_only_follows_uninstalls_the_discussion_for_all. a is bound by the host before the install, which attaches b and c.",
   "setup": {

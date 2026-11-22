@@ -7,7 +7,12 @@
   ],
   "requirements": [
     "RK-19.3-015",
-    "RK-19.3.1-008"
+    "RK-19.3.1-008",
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-041",
+    "RK-19.7.5-044",
+    "RK-19.7.5-047"
   ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py test_an_agent_naming_another_by_its_handle_queues_it, test_notes_and_the_transcript_present_agents_by_their_handles.",
   "setup": {

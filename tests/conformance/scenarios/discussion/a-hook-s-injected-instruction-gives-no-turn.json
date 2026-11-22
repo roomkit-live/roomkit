@@ -9,6 +9,11 @@
   "requirements": [
     "RK-10.1.1-004",
     "RK-19.3-011",
+    "RK-19.7.5-031",
+    "RK-19.7.5-033",
+    "RK-19.7.5-076",
+    "RK-19.7.5-145",
+    "RK-19.7.5-146",
     "RK-9.4-036"
   ],
   "notes": "Python: tests/orchestration/test_discussion_edges.py::test_a_hook_s_injected_instruction_gives_no_turn.",

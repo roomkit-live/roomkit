@@ -6,7 +6,12 @@
     "§19.7.5 rule 12"
   ],
   "requirements": [
-    "RK-10.6.8-040"
+    "RK-10.6.8-040",
+    "RK-19.7.5-017",
+    "RK-19.7.5-055",
+    "RK-19.7.5-100",
+    "RK-19.7.5-105",
+    "RK-19.7.5-145"
   ],
   "notes": "Python: test_strategy_discussion.py test_listen_only_cuts_the_turn_its_agent_is_taking. _room.py cut: the owner's steer reaches the running loop.",
   "setup": {

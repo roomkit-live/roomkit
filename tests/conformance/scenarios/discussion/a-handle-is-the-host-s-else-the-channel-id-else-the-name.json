@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-19.7.5-007",
+    "RK-19.7.5-041",
+    "RK-19.7.5-042"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py test_a_handle_is_the_hosts_else_the_channel_id_else_the_name. orchestration/strategies/discussion/strategy.py _handle_of.",
   "setup": {},
   "steps": [

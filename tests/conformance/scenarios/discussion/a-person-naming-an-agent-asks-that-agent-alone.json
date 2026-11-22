@@ -6,6 +6,15 @@
     "§19.7.5 rule 8",
     "§19.7.5 rule 9"
   ],
+  "requirements": [
+    "RK-19.7.5-005",
+    "RK-19.7.5-006",
+    "RK-19.7.5-029",
+    "RK-19.7.5-033",
+    "RK-19.7.5-034",
+    "RK-19.7.5-039",
+    "RK-19.7.5-047"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_discussion.py test_a_person_naming_an_agent_asks_that_agent_alone.",
   "setup": {
     "channels": [

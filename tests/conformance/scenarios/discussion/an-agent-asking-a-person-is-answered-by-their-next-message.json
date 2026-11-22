@@ -5,6 +5,18 @@
   "rules": [
     "§19.7.5 rule 10"
   ],
+  "requirements": [
+    "RK-19.7.5-017",
+    "RK-19.7.5-029",
+    "RK-19.7.5-049",
+    "RK-19.7.5-050",
+    "RK-19.7.5-070",
+    "RK-19.7.5-072",
+    "RK-19.7.5-086",
+    "RK-19.7.5-089",
+    "RK-19.7.5-145",
+    "RK-19.7.5-151"
+  ],
   "notes": "Python: test_strategy_discussion.py test_an_agent_asking_a_person_is_answered_by_their_next_message. A sender with no name is asked by its channel label.",
   "setup": {
     "channels": [

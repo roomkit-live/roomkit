@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 15"
   ],
+  "requirements": [
+    "RK-19.7.5-123"
+  ],
   "setup": {
     "channels": [
       {

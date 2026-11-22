@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-015",
+    "RK-19.7.5-152",
+    "RK-19.7.5-154"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_name_is_never_decided.",
   "setup": {
     "channels": [

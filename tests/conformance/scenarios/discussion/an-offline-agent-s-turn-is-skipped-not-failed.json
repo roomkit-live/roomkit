@@ -9,6 +9,10 @@
   ],
   "requirements": [
     "RK-10.6.7-028",
+    "RK-19.7.5-017",
+    "RK-19.7.5-064",
+    "RK-19.7.5-065",
+    "RK-19.7.5-146",
     "RK-9.2-066"
   ],
   "notes": "Python: tests/orchestration/test_discussion_offline_agents.py. An agent is offline as kit.agent_presence reads it (executors/an-agent-s-presence-follows-its-executors). Before: its turn was given and failed with no_executor, firing ON_ERROR at each message.",

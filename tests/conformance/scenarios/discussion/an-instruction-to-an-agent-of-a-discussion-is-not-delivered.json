@@ -6,6 +6,9 @@
     "§19.7.5 rule 7",
     "§10.1.1"
   ],
+  "requirements": [
+    "RK-19.7.5-031"
+  ],
   "setup": {
     "channels": [
       {

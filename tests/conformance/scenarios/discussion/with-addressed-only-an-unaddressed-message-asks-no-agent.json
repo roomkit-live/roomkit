@@ -7,7 +7,9 @@
   ],
   "requirements": [
     "RK-19.3-014",
-    "RK-19.3-015"
+    "RK-19.3-015",
+    "RK-19.7.5-008",
+    "RK-19.7.5-079"
   ],
   "notes": "Python: test_strategy_discussion.py test_with_addressed_only_an_unaddressed_message_asks_no_agent.",
   "setup": {

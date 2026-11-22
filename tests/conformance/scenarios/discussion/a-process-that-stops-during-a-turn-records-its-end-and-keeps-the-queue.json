@@ -6,6 +6,13 @@
     "§19.7.5 rule 16",
     "§19.7.5 rule 6"
   ],
+  "requirements": [
+    "RK-19.7.5-025",
+    "RK-19.7.5-069",
+    "RK-19.7.5-125",
+    "RK-19.7.5-128",
+    "RK-19.7.5-135"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_process_that_stops_during_a_turn_records_its_end_and_keeps_the_queue; _room.py stop, _driver.py stop and _abandon_orphan or _run's cancel, then _ended. The run's kit gives a's turn, held at its gate, and closes: the turn is cut, its end recorded (last_speaker a), the lease given up, b still queued. p2 installs the discussion and gives b's turn; a's is not given again.",
   "setup": {
     "channels": [

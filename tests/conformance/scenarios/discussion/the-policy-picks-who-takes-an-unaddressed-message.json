@@ -6,7 +6,12 @@
     "§19.7.5 rule 18"
   ],
   "requirements": [
-    "RK-19.3-014"
+    "RK-19.3-014",
+    "RK-19.7.5-015",
+    "RK-19.7.5-073",
+    "RK-19.7.5-150",
+    "RK-19.7.5-198",
+    "RK-19.7.5-199"
   ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_policy_picks_who_takes_an_unaddressed_message.",
   "setup": {

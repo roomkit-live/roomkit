@@ -5,6 +5,10 @@
   "rules": [
     "§19.7.5 rule 3"
   ],
+  "requirements": [
+    "RK-19.7.5-035",
+    "RK-19.7.5-036"
+  ],
   "notes": "Python: test_discussion_edges.py test_an_agents_memory_learns_every_message_it_may_see; test_discussion_memory_handoff.py, what Rust has of it (no turn backend, speak policy or declaration-only agent). _room.py _hand_to_memories, through the turn backend's committed_event.",
   "setup": {
     "channels": [

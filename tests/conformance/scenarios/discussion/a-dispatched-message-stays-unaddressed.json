@@ -6,7 +6,9 @@
     "§19.7.5 rule 18"
   ],
   "requirements": [
-    "RK-19.3-014"
+    "RK-19.3-014",
+    "RK-19.7.5-125",
+    "RK-19.7.5-169"
   ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_dispatched_message_stays_unaddressed.",
   "setup": {

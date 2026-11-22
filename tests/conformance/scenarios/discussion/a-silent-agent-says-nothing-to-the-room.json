@@ -5,6 +5,12 @@
   "rules": [
     "§19.7.5 rule 13"
   ],
+  "requirements": [
+    "RK-19.7.5-013",
+    "RK-19.7.5-033",
+    "RK-19.7.5-110",
+    "RK-19.7.5-111"
+  ],
   "notes": "Python: test_strategy_discussion.py test_a_silent_agent_says_nothing_to_the_room.",
   "setup": {
     "channels": [

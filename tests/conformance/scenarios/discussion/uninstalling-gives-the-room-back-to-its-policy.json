@@ -8,7 +8,9 @@
   "requirements": [
     "RK-19.7-042",
     "RK-19.7-045",
-    "RK-19.7-046"
+    "RK-19.7-046",
+    "RK-19.7.5-023",
+    "RK-19.7.5-024"
   ],
   "notes": "Python: test_strategy_discussion.py test_uninstalling_gives_the_room_back_to_its_policy, tests/orchestration/test_strategy_install.py test_a_room_moves_from_a_swarm_to_a_discussion_and_back.",
   "setup": {

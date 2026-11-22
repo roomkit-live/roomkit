@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 9"
   ],
+  "requirements": [
+    "RK-19.7.5-145"
+  ],
   "notes": "Python: test_discussion_edges.py test_a_message_deleted_while_queued_gives_no_turn.",
   "setup": {
     "channels": [

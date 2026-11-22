@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7.5-022"
+  ],
   "notes": "Python: core/mixins/discussion.py _refuse_discussion_binding.",
   "setup": {
     "channels": [

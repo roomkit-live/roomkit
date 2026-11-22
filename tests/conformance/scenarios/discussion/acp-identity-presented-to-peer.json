@@ -6,6 +6,11 @@
     "§6.4",
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-19.7.5-006",
+    "RK-19.7.5-115",
+    "RK-19.7.5-120"
+  ],
   "notes": "Review regression for Discussion agent_line: a real AI peer takes the addressed turn and receives the unprompted ACP agent local name, role and description under the runtime notes header. It does not create an ACP declared Agent identity or claim a remote executor.",
   "setup": {
     "kit": {

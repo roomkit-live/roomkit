@@ -5,6 +5,14 @@
   "rules": [
     "§19.7.5 rule 15"
   ],
+  "requirements": [
+    "RK-19.7.5-010",
+    "RK-19.7.5-017",
+    "RK-19.7.5-122",
+    "RK-19.7.5-124",
+    "RK-19.7.5-145",
+    "RK-19.7.5-202"
+  ],
   "notes": "Python: test_discussion_edges.py test_the_last_turn_given_ends_the_discussion_at_once.",
   "setup": {
     "channels": [

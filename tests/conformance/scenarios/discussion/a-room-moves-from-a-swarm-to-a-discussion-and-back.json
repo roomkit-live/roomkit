@@ -11,7 +11,10 @@
     "RK-19.7-031",
     "RK-19.7-038",
     "RK-19.7-042",
-    "RK-19.7-047"
+    "RK-19.7-047",
+    "RK-19.7.5-024",
+    "RK-19.7.5-196",
+    "RK-19.7.5-197"
   ],
   "notes": "Python: tests/orchestration/test_strategy_install.py test_a_room_moves_from_a_swarm_to_a_discussion_and_back.",
   "setup": {

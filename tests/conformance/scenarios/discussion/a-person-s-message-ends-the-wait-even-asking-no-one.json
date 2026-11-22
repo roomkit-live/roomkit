@@ -5,6 +5,16 @@
   "rules": [
     "§19.7.5 rule 10"
   ],
+  "requirements": [
+    "RK-19.7.5-017",
+    "RK-19.7.5-049",
+    "RK-19.7.5-062",
+    "RK-19.7.5-074",
+    "RK-19.7.5-086",
+    "RK-19.7.5-089",
+    "RK-19.7.5-090",
+    "RK-19.7.5-145"
+  ],
   "notes": "Python: test_discussion_edges.py test_a_persons_message_ends_the_wait_even_asking_no_one. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {
     "channels": [

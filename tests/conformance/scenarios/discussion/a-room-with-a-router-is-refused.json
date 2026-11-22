@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7.5-196"
+  ],
   "notes": "Python: core/mixins/discussion.py _discussion_refusal, has_router_hook; tests/orchestration/test_discussion_refusals.py.",
   "setup": {
     "channels": [

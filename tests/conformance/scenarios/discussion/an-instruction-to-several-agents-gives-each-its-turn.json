@@ -10,7 +10,12 @@
     "RK-10.1.1-022",
     "RK-10.1.1-042",
     "RK-19.3-007",
-    "RK-19.3-015"
+    "RK-19.3-015",
+    "RK-19.7.5-031",
+    "RK-19.7.5-033",
+    "RK-19.7.5-059",
+    "RK-19.7.5-060",
+    "RK-19.7.5-145"
   ],
   "notes": "Python: tests/orchestration/test_discussion_edges.py::test_an_instruction_to_several_agents_gives_each_its_turn.",
   "setup": {

@@ -6,6 +6,14 @@
     "§19.7.5 rule 13",
     "§6.4"
   ],
+  "requirements": [
+    "RK-19.7.5-013",
+    "RK-19.7.5-033",
+    "RK-19.7.5-110",
+    "RK-19.7.5-111",
+    "RK-19.7.5-112",
+    "RK-19.7.5-192"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py read: a segment written, `_released` goes back to False (lot 8d review, finding 2).",
   "setup": {
     "channels": [

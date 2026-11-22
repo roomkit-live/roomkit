@@ -7,7 +7,8 @@
   ],
   "requirements": [
     "RK-19.7-062",
-    "RK-19.7-065"
+    "RK-19.7-065",
+    "RK-19.7.5-133"
   ],
   "notes": "Python: test_discussion_processes.py test_the_kind_asked_about_is_the_kind_installed. Its host's own subclass of Discussion has no form in a scenario.",
   "setup": {

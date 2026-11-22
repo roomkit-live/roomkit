@@ -8,7 +8,9 @@
     "§19.7.5 rule 3"
   ],
   "requirements": [
-    "RK-10.6.3-025"
+    "RK-10.6.3-025",
+    "RK-19.7.5-035",
+    "RK-19.7.5-038"
   ],
   "notes": "Python: orchestration/strategies/discussion/_room.py _hand_to_memories, an agent offline handed nothing; turns/owner.py control. The owner's log line is not observable.",
   "setup": {

@@ -8,7 +8,9 @@
     "§19.7.5 rule 3"
   ],
   "requirements": [
-    "RK-10.6.3-022"
+    "RK-10.6.3-022",
+    "RK-19.7.5-035",
+    "RK-19.7.5-036"
   ],
   "notes": "Python: turns/memory.py and turns/_redis_placement.py, a committed_event placed where the room's state is held. early, paused, declares nothing while holder runs ana's turn, which leaves holder holding the room's state; once resumed, early would take ana's turns too, served before holder, and is handed nothing. bob is live: the kit's own executor hands its memory every message but its own, never pool, which declares bob too.",
   "setup": {

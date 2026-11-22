@@ -7,7 +7,11 @@
   ],
   "requirements": [
     "RK-10.1.1-016",
-    "RK-10.1.1-022"
+    "RK-10.1.1-022",
+    "RK-19.7.5-031",
+    "RK-19.7.5-033",
+    "RK-19.7.5-059",
+    "RK-19.7.5-060"
   ],
   "notes": "Python: test_strategy_discussion.py test_an_instruction_gives_its_agent_a_turn_taking_it_as_input. Without the redirect the agent is never asked (lot 8b review, N7). The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {

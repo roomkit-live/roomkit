@@ -7,6 +7,13 @@
     "§19.7.5 rule 4",
     "§10.4"
   ],
+  "requirements": [
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-044",
+    "RK-19.7.5-047",
+    "RK-19.7.5-127"
+  ],
   "notes": "From the full review of RMK-1476: a run that took its hooks before another run of the same process joined the discussion reads the room's hooks once its own context read finds the discussion held. Python joins in _build_context and reads its hook engine at each firing (asyncio.gather of the two calls: both addressed to Counsel). everyone names Jev, so a message read without the handles would ask Jev. Counsel answers once or twice, as the driver's look meets the two asks merged or apart: only the addresses and Jev's silence are asserted.",
   "setup": {
     "channels": [

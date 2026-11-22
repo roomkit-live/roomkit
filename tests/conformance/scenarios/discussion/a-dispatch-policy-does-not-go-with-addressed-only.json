@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-015",
+    "RK-19.7.5-150",
+    "RK-19.7.5-153"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_dispatch_policy_does_not_go_with_addressed_only. orchestration/strategies/discussion/strategy.py _check_dispatch.",
   "setup": {
     "channels": [

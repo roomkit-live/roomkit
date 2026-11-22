@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-160"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_message_waiting_for_a_decision_keeps_its_place.",
   "setup": {
     "channels": [

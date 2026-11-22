@@ -5,6 +5,17 @@
   "rules": [
     "§19.7.5 rule 12"
   ],
+  "requirements": [
+    "RK-19.7.5-017",
+    "RK-19.7.5-057",
+    "RK-19.7.5-068",
+    "RK-19.7.5-089",
+    "RK-19.7.5-100",
+    "RK-19.7.5-101",
+    "RK-19.7.5-102",
+    "RK-19.7.5-103",
+    "RK-19.7.5-145"
+  ],
   "notes": "Python: test_strategy_discussion.py test_an_agent_that_only_listens_answers_only_a_person_naming_it.",
   "setup": {
     "channels": [

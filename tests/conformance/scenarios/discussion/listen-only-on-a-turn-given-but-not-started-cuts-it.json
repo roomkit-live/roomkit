@@ -6,6 +6,13 @@
     "§19.7.5 rule 12",
     "§10.2"
   ],
+  "requirements": [
+    "RK-19.7.5-017",
+    "RK-19.7.5-100",
+    "RK-19.7.5-106",
+    "RK-19.7.5-138",
+    "RK-19.7.5-145"
+  ],
   "notes": "The transport holds the room's delivery lane while the strategy gives agent a its turn. The queue identifies the speaking agent before the transport calls listen_only from the preceding delivery. The agent's model receives no call.",
   "setup": {
     "channels": [

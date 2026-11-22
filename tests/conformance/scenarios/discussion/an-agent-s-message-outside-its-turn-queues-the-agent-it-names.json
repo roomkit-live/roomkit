@@ -11,7 +11,12 @@
     "RK-19.3-004",
     "RK-19.3-010",
     "RK-19.3-015",
-    "RK-19.3.1-008"
+    "RK-19.3.1-008",
+    "RK-19.7.5-005",
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-047",
+    "RK-19.7.5-068"
   ],
   "notes": "Python: core/mixins/discussion.py, _queue_named. The queue fills between the driver's peek and its plan: done, not asked of an empty queue, is asked on the next look, which sees the turn (lot 8c review, B1).",
   "setup": {

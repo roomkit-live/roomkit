@@ -8,7 +8,11 @@
   ],
   "requirements": [
     "RK-19.7-042",
-    "RK-19.7-047"
+    "RK-19.7-047",
+    "RK-19.7.5-017",
+    "RK-19.7.5-024",
+    "RK-19.7.5-125",
+    "RK-19.7.5-145"
   ],
   "notes": "Python: test_discussion_edges.py test_uninstalling_forgets_the_discussion_so_a_new_one_starts_fresh.",
   "setup": {

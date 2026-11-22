@@ -7,6 +7,13 @@
     "§19.7.5 rule 4",
     "§10.4"
   ],
+  "requirements": [
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-044",
+    "RK-19.7.5-047",
+    "RK-19.7.5-127"
+  ],
   "notes": "Python: test_discussion_handles.py test_a_process_that_follows_the_discussion_reads_handles, the message routed instead of naming its room (RMK-1476, HITL c2f6fe5e). p2 never read the room: its default router finds r1 by ops' binding, and the context it builds joins the discussion before the message's BEFORE_BROADCAST hooks run, the names hook among them. everyone names Jev, so a message read without the handles would ask Jev.",
   "setup": {
     "channels": [

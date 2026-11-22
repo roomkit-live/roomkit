@@ -7,7 +7,8 @@
   ],
   "requirements": [
     "RK-19.7-047",
-    "RK-19.7-066"
+    "RK-19.7-066",
+    "RK-19.7.5-129"
   ],
   "notes": "Python: test_discussion_processes.py test_uninstalling_in_another_process_leaves_no_record_behind.",
   "setup": {

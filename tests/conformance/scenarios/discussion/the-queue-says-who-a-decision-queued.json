@@ -6,6 +6,8 @@
     "§19.7.5 rule 18"
   ],
   "requirements": [
+    "RK-19.7.5-146",
+    "RK-19.7.5-157",
     "RK-9.2-066"
   ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_queue_says_who_a_decision_queued. The decision is told after the queue's change it made, before the turn it gives (lot 9 review, finding 5).",

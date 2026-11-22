@@ -11,7 +11,16 @@
     "RK-19.3-004",
     "RK-19.3-010",
     "RK-19.3-015",
-    "RK-19.3.1-008"
+    "RK-19.3.1-008",
+    "RK-19.7.5-005",
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-040",
+    "RK-19.7.5-047",
+    "RK-19.7.5-053",
+    "RK-19.7.5-055",
+    "RK-19.7.5-068",
+    "RK-19.7.5-092"
   ],
   "notes": "Python: test_strategy_discussion.py test_an_agent_naming_another_queues_it_once_its_turn_has_ended.",
   "setup": {

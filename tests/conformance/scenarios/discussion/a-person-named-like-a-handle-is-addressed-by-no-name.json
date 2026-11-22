@@ -5,6 +5,14 @@
   "rules": [
     "§19.7.5 rule 10"
   ],
+  "requirements": [
+    "RK-19.7.5-049",
+    "RK-19.7.5-050",
+    "RK-19.7.5-051",
+    "RK-19.7.5-074",
+    "RK-19.7.5-086",
+    "RK-19.7.5-116"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_edges.py test_a_person_named_like_a_handle_is_addressed_by_no_name (HITL 9247da98 point 3).",
   "setup": {
     "channels": [

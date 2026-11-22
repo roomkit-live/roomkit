@@ -6,6 +6,9 @@
     "§19.7.5 rule 8",
     "§14.3"
   ],
+  "requirements": [
+    "RK-19.7.5-033"
+  ],
   "notes": "Python: core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes returns before _queue_for_discussion).",
   "setup": {
     "kit": {

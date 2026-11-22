@@ -7,6 +7,13 @@
     "§19.7.5 rule 7",
     "§19.7.5 rule 6"
   ],
+  "requirements": [
+    "RK-19.7.5-027",
+    "RK-19.7.5-131",
+    "RK-19.7.5-132",
+    "RK-19.7.5-143",
+    "RK-19.7.5-146"
+  ],
   "notes": "Python: test_discussion_processes.py test_what_a_process_held_when_another_install_replaced_its_own_is_not_kept, its instruction half (the posted result comes with the posts of task results, RMK-1233); _driver.py _gives_turns and _room.py give_up. The turn running when p2's install lands runs to its end; then the run's kit gives up the lease and the instruction only it holds the text of.",
   "setup": {
     "channels": [

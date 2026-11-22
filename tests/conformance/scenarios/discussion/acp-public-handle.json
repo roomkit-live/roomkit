@@ -6,6 +6,15 @@
     "§6.4",
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-19.7.5-006",
+    "RK-19.7.5-032",
+    "RK-19.7.5-039",
+    "RK-19.7.5-041",
+    "RK-19.7.5-044",
+    "RK-19.7.5-047",
+    "RK-19.7.5-115"
+  ],
   "notes": "Python: tests/test_channels/test_acp_discussion.py. Real Discussion scheduling and ACP JSON-RPC; native tests cover exact note ordering, header count and issued-mark lifetime. No remote executor or agent-output guarantee is inferred.",
   "setup": {
     "kit": {

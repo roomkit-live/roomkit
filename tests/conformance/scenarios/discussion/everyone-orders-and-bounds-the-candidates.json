@@ -5,6 +5,12 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-009",
+    "RK-19.7.5-155",
+    "RK-19.7.5-199",
+    "RK-19.7.5-200"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_everyone_orders_and_bounds_the_candidates.",
   "setup": {
     "channels": [

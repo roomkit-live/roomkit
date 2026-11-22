@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7.5-019"
+  ],
   "notes": "Python: test_strategy_discussion.py test_a_room_with_a_voice_channel_is_refused.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-200"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_identity_reaches_the_candidates.",
   "setup": {
     "channels": [

@@ -5,6 +5,15 @@
   "rules": [
     "§19.7.5 rule 15"
   ],
+  "requirements": [
+    "RK-19.7.5-010",
+    "RK-19.7.5-017",
+    "RK-19.7.5-122",
+    "RK-19.7.5-123",
+    "RK-19.7.5-124",
+    "RK-19.7.5-145",
+    "RK-19.7.5-202"
+  ],
   "notes": "Python: test_strategy_discussion.py test_max_turns_ends_the_discussion_and_refuses_later_instructions.",
   "setup": {
     "channels": [

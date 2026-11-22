@@ -5,6 +5,14 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7.5-017",
+    "RK-19.7.5-141",
+    "RK-19.7.5-142",
+    "RK-19.7.5-143",
+    "RK-19.7.5-145",
+    "RK-19.7.5-146"
+  ],
   "notes": "Python: orchestration/strategies/discussion/_room.py load: an instruction that names no process kept its text in one gone.",
   "setup": {
     "channels": [

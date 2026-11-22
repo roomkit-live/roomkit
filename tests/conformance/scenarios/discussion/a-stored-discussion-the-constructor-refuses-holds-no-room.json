@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7.5-093"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py test_what_the_constructor_refuses_stored_reads_as_no_discussion, test_a_depth_of_1_the_kit_writes_for_a_discussion_is_read_back. The read runs for every context built, so it warns and never raises (HITL 9247da98).",
   "setup": {
     "channels": [

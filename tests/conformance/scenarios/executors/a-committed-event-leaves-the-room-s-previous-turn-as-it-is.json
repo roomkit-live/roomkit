@@ -7,7 +7,10 @@
     "§10.6.3"
   ],
   "requirements": [
-    "RK-10.6.3-023"
+    "RK-10.6.3-023",
+    "RK-19.7.5-035",
+    "RK-19.7.5-036",
+    "RK-19.7.5-079"
   ],
   "notes": "The message nobody addresses is a committed event of ana (§19.7.5), which first, holding the room's state since ana's first turn, applies to her memory (RK-10.6.3-022, -024). Ana's next turn names her first turn: first drops nothing (RK-10.6.2-036). An owner that named the committed event as the previous turn, or an executor that recorded it as what left the state, would make first drop the room's state before the second turn. Not observed: the owner and the executor both taking the committed event for the last turn, which no drop shows (no runner reads a request's previous_turn on the executor); and that the committed event never makes its executor the holder: a committed event reaches the holder when there is one, and with none, which executor takes the next turn is the backend's choice. Python: tests/test_turns_between.py test_a_committed_event_goes_where_the_room_s_turns_would.",
   "setup": {

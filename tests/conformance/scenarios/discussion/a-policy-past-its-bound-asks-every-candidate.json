@@ -5,6 +5,13 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-150",
+    "RK-19.7.5-165",
+    "RK-19.7.5-166",
+    "RK-19.7.5-167",
+    "RK-19.7.5-201"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_policy_past_its_bound_asks_every_candidate.",
   "setup": {
     "channels": [

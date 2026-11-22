@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-19.7.5-007",
+    "RK-19.7.5-014",
+    "RK-19.7.5-093"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_discussion.py test_a_discussion_is_checked_when_built (its ValueErrors; the TypeError is a live channel that is no agent, a Rust test), tests/orchestration/test_discussion_rules.py test_blank_rules_are_refused. orchestration/strategies/discussion/strategy.py _check.",
   "setup": {},
   "steps": [

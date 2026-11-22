@@ -6,6 +6,16 @@
     "§19.7.5 rule 16",
     "§19.7.5 rule 8"
   ],
+  "requirements": [
+    "RK-19.7.5-031",
+    "RK-19.7.5-125",
+    "RK-19.7.5-127",
+    "RK-19.7.5-128",
+    "RK-19.7.5-135",
+    "RK-19.7.5-137",
+    "RK-19.7.5-140",
+    "RK-19.7.5-149"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_process_that_did_not_install_it_follows_the_discussion. p2 installed nothing: the message it takes asks nobody there, and every agent answers once, from the process that installed the discussion. Its speak queue is the one it last read: it knows the room holds a discussion.",
   "setup": {
     "channels": [

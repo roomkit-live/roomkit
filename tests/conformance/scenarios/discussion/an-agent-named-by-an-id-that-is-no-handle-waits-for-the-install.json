@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-19.7.5-007",
+    "RK-19.7.5-041",
+    "RK-19.7.5-043"
+  ],
   "notes": "Python: orchestration/strategies/discussion/strategy.py __init__ named_later, _check_given. The install's own reading comes with the install (lot 8c).",
   "setup": {},
   "steps": [

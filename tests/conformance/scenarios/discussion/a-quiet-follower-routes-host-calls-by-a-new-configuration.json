@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7.5-125",
+    "RK-19.7.5-127",
+    "RK-19.7.5-137"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_quiet_follower_routes_host_calls_by_a_new_configuration, the install that adds c made by a third process: roomkit-rs refuses an install over the discussion its own process installed (RMK-1233).",
   "setup": {
     "channels": [

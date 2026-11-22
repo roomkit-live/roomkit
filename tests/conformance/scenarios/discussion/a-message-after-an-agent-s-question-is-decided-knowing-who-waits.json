@@ -5,6 +5,15 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.7.5-073",
+    "RK-19.7.5-086",
+    "RK-19.7.5-087",
+    "RK-19.7.5-150",
+    "RK-19.7.5-155",
+    "RK-19.7.5-198",
+    "RK-19.7.5-199"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_message_after_an_agents_question_is_decided_knowing_who_waits.",
   "setup": {
     "channels": [

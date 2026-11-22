@@ -8,7 +8,12 @@
   ],
   "requirements": [
     "RK-19.7-039",
-    "RK-19.7-061"
+    "RK-19.7-061",
+    "RK-19.7.5-125",
+    "RK-19.7.5-128",
+    "RK-19.7.5-135",
+    "RK-19.7.5-140",
+    "RK-19.7.5-145"
   ],
   "notes": "Python: test_discussion_processes.py test_a_restarted_process_takes_the_discussion_back. The run's kit closes; p2 queues a's turn and gives none until its install.",
   "setup": {
