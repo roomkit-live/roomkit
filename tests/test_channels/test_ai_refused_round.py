@@ -32,7 +32,6 @@ def _refused(caplog: pytest.LogCaptureFixture) -> list[str]:
         ("refusal", {"refusal": "reasoning_extraction"}, "refusal=reasoning_extraction"),
         ("refusal", {}, "finish_reason='refusal'"),
         ("content_filter", {}, "finish_reason='content_filter'"),
-        ("SAFETY", {}, "finish_reason='SAFETY'"),
         (None, {"refusal": "PROHIBITED_CONTENT"}, "refusal=PROHIBITED_CONTENT"),
     ],
 )
@@ -74,7 +73,7 @@ async def test_a_refusal_in_the_model_s_own_words_is_logged_by_its_length(
 async def test_an_answer_the_model_ended_itself_logs_no_refusal(
     streaming: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    ch = _channel(AIResponse(content="Sharing it now.", finish_reason="end_turn"))
+    ch = _channel(AIResponse(content="Sharing it now.", finish_reason="stop"))
     context = AIContext(messages=[AIMessage(role="user", content="Share your screen")])
 
     with caplog.at_level(logging.WARNING, logger="roomkit.channels.ai"):

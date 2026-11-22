@@ -6,7 +6,8 @@ hands the model an instruction to go on; the next round calls the tool and
 answers. Shows:
 - AIChannel(continuation=...): the text of a round the model ended itself,
   without a call, in; the instruction to go on, or None, out
-- The same signal on every provider: "stop", "end_turn" and "STOP" alike
+- The one stop reason it reads, whatever the provider: ``stop``, which each
+  provider maps its vendor's own word onto
 - The bound it shares with the empty round (max_empty_retries), and the
   ``unfinished`` end of a turn whose policy still asks once it has run out
 
@@ -52,16 +53,14 @@ def scripted_model() -> MockAIProvider:
     """A model that announces a check and stops, then calls the tool once told to."""
     return MockAIProvider(
         ai_responses=[
-            # Anthropic's word for a natural stop: the policy still reads it.
-            AIResponse(content="I will check the run.", finish_reason="end_turn"),
+            # The model ended its answer itself: the policy reads it.
+            AIResponse(content="I will check the run.", finish_reason="stop"),
             AIResponse(
                 content="",
-                finish_reason="tool_use",
+                finish_reason="tool_calls",
                 tool_calls=[AIToolCall(id="c1", name="run_status", arguments={})],
             ),
-            AIResponse(
-                content="The run finished at 12:07 without errors.", finish_reason="end_turn"
-            ),
+            AIResponse(content="The run finished at 12:07 without errors.", finish_reason="stop"),
         ]
     )
 

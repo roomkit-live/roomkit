@@ -531,7 +531,7 @@ async def test_request_names_the_speaker_through_the_framework(streaming: bool) 
         return [
             AIResponse(
                 content="",
-                finish_reason="tool_use",
+                finish_reason="tool_calls",
                 tool_calls=[AIToolCall(id="tc", name="AskUser", arguments={"q": "?"})],
             ),
             AIResponse(content="Thanks.", finish_reason="stop"),
@@ -917,7 +917,7 @@ async def test_hook_deny_blocks_tool_via_framework(streaming: bool) -> None:
         ai_responses=[
             AIResponse(
                 content="",
-                finish_reason="tool_use",
+                finish_reason="tool_calls",
                 tool_calls=[AIToolCall(id="tc-1", name="AskUser", arguments={"q": "?"})],
             ),
             AIResponse(content="OK, moving on.", finish_reason="stop"),

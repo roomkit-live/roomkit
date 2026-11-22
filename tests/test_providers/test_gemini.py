@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import MALFORMED_CALL_NUDGE
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.gemini.errors import finish_reason_of
 from roomkit.providers.gemini.request import format_content, format_messages
 from tests.private_module import load_private_copy
 from tests.tool_loop_modes import run_tool_loop
@@ -437,7 +438,7 @@ class TestGeminiAIProvider:
             result = await provider.generate(_context())
 
             assert result.content == ""
-            assert result.finish_reason == "MAX_TOKENS"
+            assert result.finish_reason == "length"
 
     async def test_a_malformed_call_is_retried_by_the_tool_loop(self, streaming: bool) -> None:
         """Gemini ends a round on a call it could not parse with no part at all:
@@ -1043,7 +1044,7 @@ class TestGeminiResponseSchema:
         result = await provider.generate(_context(response_schema=_VERDICT))
 
         assert result.content == '{"label": "no"}'
-        assert result.finish_reason == "STOP"
+        assert result.finish_reason == "stop"
 
     @pytest.mark.parametrize(
         ("text", "finish_reason", "reason"),
@@ -1129,3 +1130,24 @@ class TestGeminiResponseSchema:
 
         assert error is not None and error.reason == "invalid_json"
         assert not any(isinstance(e, StreamDone) for e in events)
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("STOP", "stop"),
+        ("MAX_TOKENS", "length"),
+        ("SAFETY", "content_filter"),
+        ("RECITATION", "content_filter"),
+        ("PROHIBITED_CONTENT", "content_filter"),
+        ("BLOCKLIST", "content_filter"),
+        ("SPII", "content_filter"),
+        ("MALFORMED_FUNCTION_CALL", "malformed_call"),
+        ("UNEXPECTED_TOOL_CALL", "unexpected_call"),
+        ("OTHER", None),
+        (None, None),
+    ],
+)
+def test_a_finish_reason_ends_in_the_contract_s_word(name: str | None, reason: str | None) -> None:
+    """Gemini's finish reasons in the contract's vocabulary (RFC §6.7)."""
+    assert finish_reason_of(name) == reason

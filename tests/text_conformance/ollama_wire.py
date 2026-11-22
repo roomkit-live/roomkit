@@ -158,6 +158,7 @@ class OllamaWire(ChatDriver):
         SERVER_ID: "an Ollama call carries no id (SDK Message.ToolCall holds only function)",
     }
     reasoning = "field"
+    tool_reason = "stop"
     calls_by_name = True
     accepted_names = ("lookup", "files.read")
 

@@ -23,6 +23,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.tool_calls import (
     CallIds,
     arguments_cut,
@@ -31,6 +32,29 @@ from roomkit.providers.ai.tool_calls import (
     minted_call_id,
     tool_arguments,
 )
+
+CHAT_FINISH_REASONS: Mapping[str, FinishReason] = {
+    "stop": FinishReason.STOP,
+    "tool_calls": FinishReason.TOOL_CALLS,
+    "function_call": FinishReason.TOOL_CALLS,
+    "length": FinishReason.LENGTH,
+    "content_filter": FinishReason.CONTENT_FILTER,
+    "error": FinishReason.ERROR,
+}
+"""The dialect's stop reasons in the contract's vocabulary (RFC §6.7):
+``function_call`` is the word for a round of calls before ``tool_calls``, and
+``error`` a generation a compatible server (OpenRouter) failed."""
+
+
+def chat_finish_reason(
+    word: str | None, words: Mapping[str, FinishReason] = CHAT_FINISH_REASONS
+) -> FinishReason | None:
+    """A stop reason of the dialect in the contract's vocabulary: ``None``
+    for none, and for a word *words* does not hold, which the core could only
+    misread (a server's own extension, say)."""
+    if word is None:
+        return None
+    return words.get(word)
 
 
 def field_reasoning(carrier: Any) -> str | None:
@@ -330,7 +354,7 @@ class ToolCallSlots:
             return whole
         return bool(fragment.strip()) and bool(held.strip()) and whole
 
-    def calls(self, finish_reason: str | None) -> list[StreamToolCall]:
+    def calls(self, finish_reason: FinishReason | None) -> list[StreamToolCall]:
         """The complete calls, each with its own id and its arguments as a
         mapping; one whose arguments do not read is partial, and cut when the
         response was cut short over them, which only the last call can be.
@@ -365,7 +389,7 @@ def _argument_text(fragment: str | Mapping[str, Any] | None) -> str:
     return fragment or ""
 
 
-def message_tool_calls(message: Any, finish_reason: str | None) -> list[AIToolCall]:
+def message_tool_calls(message: Any, finish_reason: FinishReason | None) -> list[AIToolCall]:
     """The calls of a chat completion's message, as the loop reads them
     (RFC §6.4): each with an id of its own, its arguments read as text or as
     an object, cut or not; a call with no name keeps an empty one, for the

@@ -18,6 +18,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelMediaType, ToolCallOutcome
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.task import Observation, Task
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.json_schema import check_portable_schema
 from roomkit.providers.ai.model_tags import with_speech_tags
 
@@ -720,7 +721,10 @@ class AIResponse(BaseModel):
     whose reasoning has no blocks. A block the response cut before its
     signature is not among them. ``thinking`` stays all the reasoning text,
     ``thinking_signature`` the last signature."""
-    finish_reason: str | None = None
+    finish_reason: FinishReason | None = None
+    """Why the generation stopped, in the contract's one vocabulary, which
+    the provider maps its vendor's words onto; ``None`` when it gave no
+    reason the provider knows."""
     usage: dict[str, int] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tasks: list[Task] = Field(default_factory=list)
@@ -814,7 +818,8 @@ class StreamDone(BaseModel):
     """Signals the end of a streaming AI response."""
 
     type: Literal["done"] = "done"
-    finish_reason: str | None = None
+    finish_reason: FinishReason | None = None
+    """As :attr:`AIResponse.finish_reason`."""
     usage: dict[str, int] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -841,7 +846,7 @@ def answered_by(answered: str | None, asked: str, refusal: str | None = None) ->
 
 
 def stream_done(
-    finish_reason: str | None,
+    finish_reason: FinishReason | None,
     usage: dict[str, int],
     answered: str | None,
     asked: str,
@@ -1334,7 +1339,7 @@ class AIProvider(ABC):
             async for text in self.generate_stream(context):
                 yield StreamTextDelta(text=text)
             # A text stream reports no usage and no stop reason.
-            yield StreamDone(finish_reason="stop")
+            yield StreamDone(finish_reason=FinishReason.STOP)
             return
         for event in response_stream_events(await self.generate(context)):
             yield event

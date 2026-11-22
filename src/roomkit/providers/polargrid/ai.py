@@ -60,9 +60,11 @@ from roomkit.providers.ai.base import (
     stream_done,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.openai_dialect import (
     ThinkTagParser,
     ToolCallSlots,
+    chat_finish_reason,
     extract_think_tags,
     json_schema_format,
     message_tool_calls,
@@ -435,7 +437,7 @@ class PolarGridAIProvider(AIProvider):
         # qwen surfaces reasoning inline as <think>...</think>; split it out
         # so the answer text is clean and the reasoning rides on .thinking.
         thinking, content = extract_think_tags(getattr(message, "content", "") or "")
-        finish_reason = getattr(choice, "finish_reason", None)
+        finish_reason = chat_finish_reason(getattr(choice, "finish_reason", None))
         tool_calls = message_tool_calls(message, finish_reason)
         if not tool_calls:
             self._check_schema_answer(context, content, finish_reason)
@@ -449,7 +451,7 @@ class PolarGridAIProvider(AIProvider):
         )
 
     def _check_schema_answer(
-        self, context: AIContext, content: str, finish_reason: str | None
+        self, context: AIContext, content: str, finish_reason: FinishReason | None
     ) -> None:
         """Refuse a constrained answer that did not deliver its JSON document."""
         if context.response_schema is None:
@@ -553,10 +555,11 @@ class PolarGridAIProvider(AIProvider):
                 else:
                     yield StreamTextDelta(text=segment)
 
-            for event in tool_call_slots.calls(finish_reason):
+            ended = chat_finish_reason(finish_reason)
+            for event in tool_call_slots.calls(ended):
                 yield event
 
-            yield stream_done(finish_reason, usage, model, self._config.model)
+            yield stream_done(ended, usage, model, self._config.model)
         except ProviderError:
             raise
         except Exception as exc:

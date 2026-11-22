@@ -71,3 +71,22 @@ def test_an_executor_defines_its_hooks_by_name(member: str) -> None:
     hook = {"as": "audit", "trigger": "on_tool_call"}
     scenario = {"setup": {"executors": [{"id": "w1", member: [hook]}]}}
     assert unknown_members(scenario) == [f"setup.executors[0].{member}[0]: as"]
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "problems"),
+    [
+        ("length", []),
+        (None, []),
+        (
+            "max_tokens",
+            ["setup.channels[0].model.rounds[0].finish_reason: 'max_tokens' is not a stop reason"],
+        ),
+    ],
+)
+def test_a_round_ends_on_a_stop_reason_of_the_contract(
+    finish_reason: str | None, problems: list[str]
+) -> None:
+    round_ = {"text": "Half an ans", "finish_reason": finish_reason}
+    scenario = {"setup": {"channels": [{"id": "ai", "type": "ai", "model": {"rounds": [round_]}}]}}
+    assert unknown_members(scenario) == problems

@@ -25,9 +25,12 @@ from roomkit.providers.ai.base import (
     tool_call_of,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.openai_dialect import (
+    CHAT_FINISH_REASONS,
     ThinkTagParser,
     ToolCallSlots,
+    chat_finish_reason,
     json_schema_format,
 )
 from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
@@ -41,6 +44,10 @@ from roomkit.providers.vendor_endpoint import MISTRAL_BASE_URL, is_vendor_endpoi
 MISTRAL_CHAT = ChatDialect(names_tool_results=True)
 """Mistral renders a conversation as OpenAI does, each tool message naming its
 tool."""
+
+_MISTRAL_FINISH_REASONS = {**CHAT_FINISH_REASONS, "model_length": FinishReason.LENGTH}
+"""Mistral's stop reasons in the contract's vocabulary: the dialect's, ``error``
+among them, and the context window filling up mid-answer (``model_length``)."""
 
 MISTRAL_TOOL_NAMES = ToolNameRule("mistral", r"[A-Za-z0-9_.-]+")
 """The tool names Mistral accepts, a dot included, a colon not (measured
@@ -305,10 +312,11 @@ class MistralAIProvider(AIProvider):
                     yield StreamTextDelta(text=segment)
 
             # Yield accumulated tool calls
-            for call in tool_call_slots.calls(finish_reason):
+            ended = chat_finish_reason(finish_reason, _MISTRAL_FINISH_REASONS)
+            for call in tool_call_slots.calls(ended):
                 yield call
 
-            yield stream_done(finish_reason, usage, model, self._config.model)
+            yield stream_done(ended, usage, model, self._config.model)
 
         except Exception as exc:
             raise self._wrap_error(exc) from exc

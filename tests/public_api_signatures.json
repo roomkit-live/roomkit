@@ -3512,6 +3512,16 @@
     "__init__": ["def", "thinking_field=None", "names_tool_results=False", "flattens_text=False", "round_thinking_required=False", "round_thinking_placeholder=''"]
   },
   "roomkit.providers.ai.CutArguments": {},
+  "roomkit.providers.ai.FinishReason": {
+    "CONTENT_FILTER": ["member", "'content_filter'"],
+    "ERROR": ["member", "'error'"],
+    "LENGTH": ["member", "'length'"],
+    "MALFORMED_CALL": ["member", "'malformed_call'"],
+    "REFUSAL": ["member", "'refusal'"],
+    "STOP": ["member", "'stop'"],
+    "TOOL_CALLS": ["member", "'tool_calls'"],
+    "UNEXPECTED_CALL": ["member", "'unexpected_call'"]
+  },
   "roomkit.providers.ai.MockAIProvider": {
     "__init__": ["def", "responses=None", "*", "vision=False", "ai_responses=None", "streaming=False", "tool_call_delta_chunks=0", "response_schema=False", "response_schema_with_tools=False"],
     "available_models": ["classmethod"],

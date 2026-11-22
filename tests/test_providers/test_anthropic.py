@@ -27,6 +27,7 @@ from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS as ANTHROPIC_MODELS
 from roomkit.providers.anthropic.request import build_kwargs, format_content
+from roomkit.providers.anthropic.stop_reasons import finish_reason_of
 from roomkit.providers.anthropic.stream_events import done_event, stream_events
 from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
 from tests.private_module import load_private_copy
@@ -269,7 +270,7 @@ class TestAnthropicAIProvider:
             result = await provider.generate(_context())
 
             assert result.content == "Hi there!"
-            assert result.finish_reason == "end_turn"
+            assert result.finish_reason == "stop"
             assert result.metadata["model"] == "claude-sonnet-4-20250514"
 
     @pytest.mark.asyncio
@@ -625,7 +626,7 @@ class TestAnthropicAIProvider:
             # Done
             done_events = [e for e in events if isinstance(e, StreamDone)]
             assert len(done_events) == 1
-            assert done_events[0].finish_reason == "end_turn"
+            assert done_events[0].finish_reason == "stop"
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
@@ -1620,3 +1621,24 @@ class TestAnthropicRefusal:
 
     def test_an_answer_carries_no_refusal(self) -> None:
         assert "refusal" not in done_event(self._final("end_turn", None), "m").metadata
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "reason"),
+    [
+        ("end_turn", "stop"),
+        ("stop_sequence", "stop"),
+        ("tool_use", "tool_calls"),
+        ("max_tokens", "length"),
+        ("model_context_window_exceeded", "length"),
+        ("refusal", "refusal"),
+        ("pause_turn", None),
+        (None, None),
+    ],
+)
+def test_a_stop_reason_ends_in_the_contract_s_word(
+    stop_reason: str | None, reason: str | None
+) -> None:
+    """Anthropic's stop reasons in the contract's vocabulary (RFC §6.7): a
+    paused turn has not ended, so it is no reason."""
+    assert finish_reason_of(stop_reason) == reason

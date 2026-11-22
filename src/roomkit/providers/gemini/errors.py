@@ -5,12 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit.providers.ai.base import ProviderError, provider_error
+from roomkit.providers.ai.finish_reason import FinishReason
 
 #: Finish reasons that mean the model withheld the answer rather than wrote it:
 #: a constrained answer ending on one of these is a refusal, not bad JSON.
 REFUSAL_FINISH_REASONS = frozenset(
     {"SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"}
 )
+
+
+_FINISH_REASONS = {
+    "STOP": FinishReason.STOP,
+    "MAX_TOKENS": FinishReason.LENGTH,
+    "MALFORMED_FUNCTION_CALL": FinishReason.MALFORMED_CALL,
+    "UNEXPECTED_TOOL_CALL": FinishReason.UNEXPECTED_CALL,
+    **dict.fromkeys(REFUSAL_FINISH_REASONS, FinishReason.CONTENT_FILTER),
+}
+"""Gemini's finish reasons in the contract's vocabulary (RFC §6.7). A round of
+calls ends ``STOP``: Gemini has no word of its own for it."""
+
+
+def finish_reason_of(name: str | None) -> FinishReason | None:
+    """A Gemini finish reason, by its wire spelling (:func:`reason_name`), in
+    the contract's vocabulary: ``None`` for none, and for one with no word
+    there (``LANGUAGE``, ``OTHER``)."""
+    return None if name is None else _FINISH_REASONS.get(name)
 
 
 def reason_name(raw: Any) -> str | None:

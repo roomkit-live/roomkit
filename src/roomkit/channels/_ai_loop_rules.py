@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     AIMessage,
     AIToolResultPart,
 )
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import (
     is_malformed_call,
@@ -136,7 +137,7 @@ def final_round_reason(
     *,
     had_tool_round: bool,
     final_text: str,
-    finish_reason: str | None,
+    finish_reason: FinishReason | None,
     limit: LoopEndReason | None,
     force_stopped: bool = False,
     unfinished: bool = False,
@@ -180,22 +181,22 @@ def final_round_reason(
     return "empty_response"
 
 
-# A provider's reason that is an identifier from a fixed set (Anthropic's
-# refusal category, Gemini's block reason), which the log may carry as is.
+# A provider's reason that is an identifier from a fixed set (a refusal
+# category, a block reason), which the log may carry as is.
 _REASON_IDENTIFIER = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
-def warn_refused(log_label: str, finish_reason: str | None, refusal: str | None) -> None:
+def warn_refused(log_label: str, finish_reason: FinishReason | None, refusal: str | None) -> None:
     """Log a round its provider refused to answer, with the provider's reason
-    when it gives one (*refusal*: Anthropic's refusal category, OpenAI's
-    refusal text, Gemini's block reason). The turn ends without the answer,
-    and nothing else says why: the agent only stays silent."""
+    when it gives one (*refusal*: a refusal category, the model's refusal
+    text, a block reason). The turn ends without the answer, and nothing else
+    says why: the agent only stays silent."""
     if not (refusal or is_refusal(finish_reason)):
         return
     logger.warning(
         "%s: the provider refused to answer (finish_reason=%r, refusal=%s)",
         log_label,
-        finish_reason,
+        None if finish_reason is None else str(finish_reason),
         _loggable_reason(refusal),
     )
 
@@ -210,7 +211,7 @@ def _loggable_reason(refusal: str | None) -> str | None:
 
 
 def _empty_round_nudge(
-    *, had_tool_round: bool, final_text: str, finish_reason: str | None, log_label: str
+    *, had_tool_round: bool, final_text: str, finish_reason: FinishReason | None, log_label: str
 ) -> str | None:
     """What to tell a model whose round ended with no call to run, or ``None``
     to end the turn there.
@@ -456,7 +457,7 @@ class AIToolLoopRulesMixin(_AIChannelContract):
         *,
         had_tool_round: bool,
         final_text: str,
-        finish_reason: str | None = None,
+        finish_reason: FinishReason | None = None,
     ) -> Literal["retry", "unfinished"] | None:
         """Another try at a round that ended without a call to run (RFC §6.4).
 
@@ -503,7 +504,7 @@ class AIToolLoopRulesMixin(_AIChannelContract):
         return "retry"
 
     def _continuation_nudge(
-        self, context: AIContext, final_text: str, finish_reason: str | None
+        self, context: AIContext, final_text: str, finish_reason: FinishReason | None
     ) -> str | None:
         """What the channel's continuation policy says of a round the model
         ended itself on text, without a call, a tool declared: the instruction

@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import (
     StreamUsage,
     answered_by,
 )
+from roomkit.providers.anthropic.stop_reasons import finish_reason_of
 from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
 
 
@@ -80,7 +81,9 @@ def done_event(final: Any, asked: str) -> StreamDone:
     if thinking:
         usage["reasoning_tokens"] = thinking
     metadata = answered_by(getattr(final, "model", None), asked, _refusal_category(final))
-    return StreamDone(finish_reason=final.stop_reason, usage=usage, metadata=metadata)
+    return StreamDone(
+        finish_reason=finish_reason_of(final.stop_reason), usage=usage, metadata=metadata
+    )
 
 
 def _refusal_category(final: Any) -> str | None:

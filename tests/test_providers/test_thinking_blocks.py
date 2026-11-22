@@ -286,7 +286,7 @@ class TestTheLoopReplaysTheRound:
                 _delta(3, "Now the time."),
                 _delta(3, signature="S3"),
                 StreamToolCall(id="c2", name="get_time", arguments={"city": "Tokyo"}),
-                StreamDone(finish_reason="tool_use"),
+                StreamDone(finish_reason="tool_calls"),
             ]
         )
 
@@ -315,7 +315,7 @@ class TestTheLoopReplaysTheRound:
                 _delta(2, signature="S2"),
                 StreamTextDelta(text="And the time."),
                 StreamToolCall(id="c2", name="get_time", arguments={}),
-                StreamDone(finish_reason="tool_use"),
+                StreamDone(finish_reason="tool_calls"),
             ]
         )
 
@@ -340,7 +340,7 @@ class TestTheLoopReplaysTheRound:
                 _delta(2, "Now the weather."),
                 _delta(2, signature="S2"),
                 StreamToolCall(id="c2", name="get_weather", arguments={}),
-                StreamDone(finish_reason="tool_use"),
+                StreamDone(finish_reason="tool_calls"),
             ]
         )
 
@@ -358,7 +358,7 @@ class TestTheLoopReplaysTheRound:
                 _delta(0, signature="S0"),
                 StreamToolCall(id="c1", name="get_weather", arguments={"first": True}),
                 StreamToolCall(id="c1", name="get_time", arguments={"second": True}),
-                StreamDone(finish_reason="tool_use"),
+                StreamDone(finish_reason="tool_calls"),
             ]
         )
 
@@ -375,7 +375,7 @@ class TestTheLoopReplaysTheRound:
                 _delta(0, signature="S0"),
                 StreamToolCall(id="c1", name="get_weather", arguments={}),
                 _delta(2, "Then the ti"),
-                StreamDone(finish_reason="max_tokens"),
+                StreamDone(finish_reason="length"),
             ]
         )
 
@@ -456,7 +456,7 @@ async def test_a_response_read_through_generate_replays_its_blocks_first(
         ai_responses=[
             AIResponse(
                 content="Looking.",
-                finish_reason="tool_use",
+                finish_reason="tool_calls",
                 thinking_parts=[
                     AIThinkingPart(thinking="a", signature="S0"),
                     AIThinkingPart(thinking="", redacted="RRR"),

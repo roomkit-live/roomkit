@@ -9,7 +9,6 @@ import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool
 from roomkit.providers.ai.response_schema import ResponseSchemaError
-from roomkit.providers.ai.tool_calls import is_malformed_call, is_truncation
 from tests.text_conformance.driver import (
     ARGUMENT_TEXT,
     CACHE_USAGE,
@@ -292,26 +291,52 @@ class TestCallsThatDoNotRun:
 
 
 class TestEndings:
-    @pytest.mark.parametrize("finish", ["cut", "context"])
-    async def test_a_response_that_ran_out_of_room_says_so(
-        self, driver: Driver, mode: str, finish: Finish
+    @pytest.mark.parametrize(
+        ("finish", "reason"),
+        [
+            ("stop", "stop"),
+            ("cut", "length"),
+            ("context", "length"),
+        ],
+    )
+    async def test_an_ending_reaches_the_loop_in_the_contract_s_word(
+        self, driver: Driver, mode: str, finish: Finish, reason: str
     ) -> None:
-        """The output cap and the context window are one ending to the loop
-        and to a schema check, under every provider's word (RFC §6.4)."""
+        """Each provider maps its vendor's word onto the contract's one
+        vocabulary: the output cap and the context window are one ending,
+        ``length``, to the loop and to a schema check (RFC §6.4, §6.7)."""
         answer = await generation(
             driver, Script(text="Half an ans", finish=finish), mode, tool_context(LOOKUP)
         )
 
-        assert is_truncation(answer.finish_reason), answer.finish_reason
+        assert answer.finish_reason == reason, answer.finish_reason
 
-    @pytest.mark.parametrize("finish", ["malformed", "unexpected"])
+    async def test_a_filter_or_a_refusal_ends_on_its_word(self, driver: Driver, mode: str) -> None:
+        driver.require(FILTER_STOP)
+        answer = await generation(
+            driver, Script(text="Half an ans", finish="filtered"), mode, tool_context(LOOKUP)
+        )
+
+        assert answer.finish_reason == driver.filtered_reason, answer.finish_reason
+
+    async def test_a_round_of_calls_ends_on_its_word(self, driver: Driver, mode: str) -> None:
+        script = Script(calls=(Call("lookup", '{"q": "paris"}', id="c1", index=0),), finish="tool")
+
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        assert answer.finish_reason == driver.tool_reason, answer.finish_reason
+
+    @pytest.mark.parametrize(
+        ("finish", "reason"),
+        [("malformed", "malformed_call"), ("unexpected", "unexpected_call")],
+    )
     async def test_a_call_the_vendor_would_not_hand_over_says_so(
-        self, driver: Driver, mode: str, finish: Finish
+        self, driver: Driver, mode: str, finish: Finish, reason: str
     ) -> None:
         driver.require(MALFORMED_CALL)
         answer = await generation(driver, Script(finish=finish), mode, tool_context(LOOKUP))
 
-        assert is_malformed_call(answer.finish_reason), answer.finish_reason
+        assert answer.finish_reason == reason, answer.finish_reason
 
 
 class TestReasoningReceived:

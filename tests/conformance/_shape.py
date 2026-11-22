@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from roomkit.providers.ai import FinishReason
 from tests.conformance._acp import AFTER_REPLY as ACP_AFTER_REPLY
 from tests.conformance._acp import AGENT as ACP_AGENT
 from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
@@ -280,6 +281,9 @@ MODEL = {
     "response_schema_with_tools",
     "fails_once_closed",
 }
+_FINISH_REASONS = frozenset(reason.value for reason in FinishReason)
+"""The words a scripted round may end on: the provider contract's (RFC §6.7)."""
+
 MODEL_ROUND = {
     "text",
     "deltas",
@@ -1108,6 +1112,9 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.append(f"{path}.streaming: expected a boolean")
     for index, round_ in enumerate(model.get("rounds", [])):
         _members(round_, MODEL_ROUND, f"{path}.rounds[{index}]", found)
+        finish = round_.get("finish_reason")
+        if finish is not None and finish not in _FINISH_REASONS:
+            found.append(f"{path}.rounds[{index}].finish_reason: {finish!r} is not a stop reason")
         if model.get("streaming") is False:
             for field in (
                 "deltas",

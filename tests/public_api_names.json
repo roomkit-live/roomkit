@@ -795,6 +795,7 @@
     "CallIds",
     "ChatDialect",
     "CutArguments",
+    "FinishReason",
     "MockAIProvider",
     "ModelInfo",
     "ModelPricing",

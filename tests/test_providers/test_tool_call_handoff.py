@@ -67,7 +67,7 @@ class TestArguments:
 
     @pytest.mark.parametrize(
         ("finish_reason", "partial"),
-        [("length", True), ("MAX_TOKENS", True), ("content_filter", True), ("stop", False)],
+        [("length", True), ("content_filter", True), ("stop", False)],
     )
     def test_a_call_is_partial_when_the_response_cut_it(
         self, finish_reason: str, partial: bool

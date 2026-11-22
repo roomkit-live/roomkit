@@ -3439,10 +3439,10 @@ the server reads (`"reasoning_content"` on Z.ai's GLM). A later turn's request
 holds no reasoning, on any of them: it lives within its turn.
 
 Reasoning competes with the answer for the same `max_tokens`. A round that
-spends its whole budget thinking returns empty `content` with a truncation
-finish reason; RoomKit recognises that across every provider's spelling
-(`length`, `max_tokens`, `MAX_TOKENS`, case-insensitively) and skips the
-empty-response retry, which would only truncate again under the same cap.
+spends its whole budget thinking returns empty `content` with the finish
+reason `length`, which each provider maps its vendor's word onto
+(`FinishReason`, RFC §6.7), and RoomKit skips the empty-response retry, which
+would only truncate again under the same cap.
 
 `AIContext.max_tokens` defaults to `None`, not a number: every provider reads
 `context.max_tokens or self._config.max_tokens`, so a non-`None` default here

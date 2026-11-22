@@ -38,6 +38,7 @@ from roomkit.providers.ai import (
     AITool,
     AIToolCall,
     ChatDialect,
+    FinishReason,
     ModelInfo,
     ModelPricing,
     ServedCall,
@@ -386,7 +387,7 @@ def _refused(done: StreamDone) -> str | None:
 
 
 def _check_answer(
-    context: AIContext, content: str, finish_reason: str | None, provider: str
+    context: AIContext, content: str, finish_reason: FinishReason | None, provider: str
 ) -> None:
     """Refuse a whole answer that did not deliver the JSON document its
     schema asks for (RFC §6.7); none is checked without a schema."""

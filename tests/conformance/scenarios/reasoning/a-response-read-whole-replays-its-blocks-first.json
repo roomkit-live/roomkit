@@ -46,7 +46,7 @@
                   "name": "get_weather"
                 }
               ],
-              "finish_reason": "tool_use",
+              "finish_reason": "tool_calls",
               "whole_response": {
                 "thinking_parts": [
                   {

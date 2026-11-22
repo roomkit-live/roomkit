@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit.providers.ai.openai_dialect import (
+    chat_finish_reason,
     choice_refusal,
     extract_think_tags,
     json_schema_format,
@@ -217,7 +218,7 @@ class OpenAIVisionProvider(VisionProvider):
                 schema=response_schema,
                 provider="openai-vision",
                 refusal=choice_refusal(choice),
-                finish_reason=choice.finish_reason,
+                finish_reason=chat_finish_reason(choice.finish_reason),
             )
 
         return VisionResult(

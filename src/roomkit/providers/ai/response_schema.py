@@ -21,6 +21,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.json_schema import check_portable_schema, schema_mismatch
 from roomkit.providers.ai.tool_calls import is_malformed_call, is_truncation
 from roomkit.providers.utils import _aclose_stream
@@ -93,7 +94,7 @@ def check_schema_answer(
     schema: Mapping[str, Any],
     provider: str,
     refusal: str | None = None,
-    finish_reason: str | None = None,
+    finish_reason: FinishReason | None = None,
 ) -> None:
     """Refuse a constrained answer that did not deliver its JSON document.
 
@@ -109,8 +110,8 @@ def check_schema_answer(
         refusal: Why the model declined, when it did: the provider's refusal
             text or its refusal or safety stop reason.
         finish_reason: How the response ended: an answer that ran out of
-            room (its output cap or its context window, :func:`is_truncation`)
-            is ``truncated``, under every provider's word for it.
+            room (``length``: its output cap or its context window) is
+            ``truncated``.
 
     Raises:
         ResponseSchemaError: ``refusal``, ``truncated`` or ``invalid_json``.

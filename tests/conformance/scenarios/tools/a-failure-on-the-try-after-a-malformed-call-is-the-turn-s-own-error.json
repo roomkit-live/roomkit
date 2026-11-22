@@ -34,7 +34,7 @@
           "rounds": [
             {
               "text": "",
-              "finish_reason": "MALFORMED_FUNCTION_CALL"
+              "finish_reason": "malformed_call"
             },
             {
               "refuses": {

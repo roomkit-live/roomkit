@@ -222,7 +222,6 @@ class TestMockHonoursTheContract:
         [
             (AIResponse(content="", finish_reason="refusal"), "refusal"),
             (AIResponse(content='{"label": "y', finish_reason="length"), "truncated"),
-            (AIResponse(content='{"label": "y', finish_reason="model_length"), "truncated"),
             (AIResponse(content="Sure, the answer is yes.", finish_reason="stop"), "invalid_json"),
             (AIResponse(content='{"verdict": "yes"}', finish_reason="stop"), "invalid_json"),
         ],

@@ -35,6 +35,7 @@ from roomkit.providers.ai.tool_calls import CallIds
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.errors import (
     REFUSAL_FINISH_REASONS,
+    finish_reason_of,
     prompt_block_reason,
     reason_name,
     wrap_gemini_error,
@@ -52,10 +53,9 @@ logger = logging.getLogger(__name__)
 
 
 def _refusal(done: StreamDone) -> str | None:
-    """A refusal stop reason, or the reason the prompt itself was blocked."""
-    if done.finish_reason in REFUSAL_FINISH_REASONS:
-        return done.finish_reason
-    return done.metadata.get("prompt_block_reason")
+    """Gemini's refusal stop reason, or the reason the prompt itself was
+    blocked: the refusal the done event carries."""
+    return done.metadata.get("refusal")
 
 
 def _parts_layout(parts: list[Any]) -> str:
@@ -457,11 +457,14 @@ class GeminiAIProvider(AIProvider):
             for call in _round_calls(fcalls, fcall_order):
                 yield call
 
+            # A safety stop's own word stays the refusal the response carried:
+            # the contract's word for it is ``content_filter``.
+            refused = finish_reason if finish_reason in REFUSAL_FINISH_REASONS else None
             yield StreamDone(
                 usage=usage,
-                finish_reason=finish_reason,
+                finish_reason=finish_reason_of(finish_reason),
                 metadata={
-                    **answered_by(answered, self._config.model, block_reason),
+                    **answered_by(answered, self._config.model, refused or block_reason),
                     **({"prompt_block_reason": block_reason} if block_reason else {}),
                 },
             )

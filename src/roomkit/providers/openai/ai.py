@@ -45,6 +45,7 @@ from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_mes
 from roomkit.providers.ai.openai_dialect import (
     ThinkTagParser,
     ToolCallSlots,
+    chat_finish_reason,
     choice_refusal,
     extract_think_tags,
     field_reasoning,
@@ -422,7 +423,7 @@ class OpenAIAIProvider(AIProvider):
             schema=context.response_schema,
             provider=self._provider_name,
             refusal=choice_refusal(choice),
-            finish_reason=getattr(choice, "finish_reason", None),
+            finish_reason=chat_finish_reason(getattr(choice, "finish_reason", None)),
         )
 
     @staticmethod
@@ -508,7 +509,8 @@ class OpenAIAIProvider(AIProvider):
         choice = response.choices[0]
         # A message the server sent null reads as an empty one, as on the stream.
         message = getattr(choice, "message", None)
-        tool_calls = message_tool_calls(message, choice.finish_reason)
+        finish_reason = chat_finish_reason(choice.finish_reason)
+        tool_calls = message_tool_calls(message, finish_reason)
 
         # Extract <think>...</think> tags from response text.
         thinking, content = extract_think_tags(getattr(message, "content", None) or "")
@@ -518,7 +520,7 @@ class OpenAIAIProvider(AIProvider):
         return AIResponse(
             content=content,
             thinking=thinking,
-            finish_reason=choice.finish_reason,
+            finish_reason=finish_reason,
             usage=usage,
             metadata=answered_by(response.model, self._config.model, message_refusal(message)),
             tool_calls=tool_calls,
@@ -627,12 +629,11 @@ class OpenAIAIProvider(AIProvider):
                     yield StreamTextDelta(text=segment)
 
             # Yield accumulated tool calls
-            for call in tool_call_slots.calls(finish_reason):
+            ended = chat_finish_reason(finish_reason)
+            for call in tool_call_slots.calls(ended):
                 yield call
 
-            yield stream_done(
-                finish_reason, usage, model, self._config.model, "".join(refusal_parts)
-            )
+            yield stream_done(ended, usage, model, self._config.model, "".join(refusal_parts))
 
         except Exception as exc:
             raise self._wrap_error(exc) from exc

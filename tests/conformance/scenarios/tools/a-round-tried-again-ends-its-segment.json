@@ -27,7 +27,7 @@
           "rounds": [
             {
               "text": "Let me check.",
-              "finish_reason": "malformed_function_call"
+              "finish_reason": "malformed_call"
             },
             {
               "text": "Order 42 shipped."

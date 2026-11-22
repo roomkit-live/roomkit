@@ -691,7 +691,7 @@ class TestAgentReasoningBackend:
     async def test_a_call_the_provider_could_not_parse_is_tried_again(self) -> None:
         provider = MockAIProvider(
             ai_responses=[
-                AIResponse(content="", finish_reason="MALFORMED_FUNCTION_CALL"),
+                AIResponse(content="", finish_reason="malformed_call"),
                 AIResponse(content="Your flight is AF123."),
             ]
         )

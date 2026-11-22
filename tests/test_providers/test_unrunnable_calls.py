@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.channels.ai import AIChannel
-from roomkit.providers.ai import tool_arguments
+from roomkit.providers.ai import FinishReason, tool_arguments
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -83,10 +83,15 @@ class TestTheRule:
 
     @pytest.mark.parametrize(
         "finish",
-        ["model_context_window_exceeded", "model_length", "content_filter", "refusal", "error"],
+        [
+            FinishReason.LENGTH,
+            FinishReason.CONTENT_FILTER,
+            FinishReason.REFUSAL,
+            FinishReason.ERROR,
+        ],
     )
-    def test_every_ending_that_stops_a_call_cuts_it(self, finish: str) -> None:
-        """Mistral's generation ``error`` among them (RMK-438)."""
+    def test_every_ending_that_stops_a_call_cuts_it(self, finish: FinishReason) -> None:
+        """A generation's ``error`` among them (RMK-438)."""
         assert call_partial("", finish) and call_cut(_FRAGMENT, finish)
         assert not call_garbled(_FRAGMENT, finish)
 

@@ -469,7 +469,7 @@ class TestOllamaStreaming:
                         }
                     ]
                 ),
-                _stream_chunk(done=True, done_reason="tool_calls"),
+                _stream_chunk(done=True, done_reason="stop"),
             ]
         )
 
@@ -480,7 +480,25 @@ class TestOllamaStreaming:
         assert len(tool_events) == 1
         assert tool_events[0].name == "lookup"
         assert tool_events[0].arguments == {"q": "weather"}
-        assert done_events[0].finish_reason == "tool_calls"
+        assert done_events[0].finish_reason == "stop"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("done_reason", "finish_reason"), [("length", "length"), ("load", None), ("unload", None)]
+    )
+    async def test_a_done_reason_ends_in_the_contract_s_word(
+        self, done_reason: str, finish_reason: str | None
+    ) -> None:
+        """Ollama's done reasons in the contract's vocabulary: ``load`` and
+        ``unload`` end no generation, so they are no reason (RFC §6.7)."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _FakeStream(
+            [_stream_chunk(done=True, done_reason=done_reason)]
+        )
+
+        events = [e async for e in provider.generate_structured_stream(_context())]
+
+        assert events[-1].finish_reason == finish_reason
 
     @pytest.mark.asyncio
     async def test_streaming_passes_stream_true(self) -> None:

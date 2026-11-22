@@ -57,7 +57,7 @@
                   }
                 }
               ],
-              "finish_reason": "max_tokens"
+              "finish_reason": "length"
             },
             {
               "text": "Done."

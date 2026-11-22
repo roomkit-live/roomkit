@@ -14,6 +14,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar
 
 from roomkit.providers.ai.tool_calls import MALFORMED_CALL_NUDGE, is_malformed_call
+from roomkit.providers.gemini.errors import finish_reason_of, reason_name
 from roomkit.providers.gemini.realtime_state import _GeminiSessionState, _GoAwayError
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
@@ -95,7 +96,7 @@ def _ended_on_malformed_call(content: Any) -> bool:
     reason = getattr(content, "turn_complete_reason", None)
     if reason is None:
         return False
-    return is_malformed_call(getattr(reason, "name", None) or str(reason))
+    return is_malformed_call(finish_reason_of(reason_name(reason)))
 
 
 class GeminiLiveEventHandlersMixin(RealtimeVoiceProvider):

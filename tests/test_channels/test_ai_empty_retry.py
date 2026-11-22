@@ -106,7 +106,7 @@ async def test_bounded_gives_up_when_still_empty(streaming: bool) -> None:
     assert _nudged(context) == 1  # exactly one retry, then give up
 
 
-def _malformed(finish_reason: str = "MALFORMED_FUNCTION_CALL") -> AIResponse:
+def _malformed(finish_reason: str = "malformed_call") -> AIResponse:
     """A round that ended on a tool call its provider would not hand over."""
     return AIResponse(content="", tool_calls=[], finish_reason=finish_reason)
 
@@ -115,13 +115,13 @@ def _told_malformed(context: AIContext, nudge: str = MALFORMED_CALL_NUDGE) -> in
     return sum(1 for m in context.messages if m.content == nudge)
 
 
-@pytest.mark.parametrize("finish_reason", ["MALFORMED_FUNCTION_CALL", "UNEXPECTED_TOOL_CALL"])
+@pytest.mark.parametrize("finish_reason", ["malformed_call", "unexpected_call"])
 async def test_a_malformed_call_is_told_and_retried_on_the_first_round(
     streaming: bool, finish_reason: str
 ) -> None:
     """The model learns its call did not run and issues it again (RMK-314): a
-    call Gemini could not parse, or one to a tool the request did not enable
-    (RMK-438)."""
+    call its provider could not parse, or one to a tool the request did not
+    enable (RMK-438)."""
     handler = AsyncMock(return_value="ok")
     provider = MockAIProvider(ai_responses=[_malformed(finish_reason), _tool(), _final("Done")])
     ch = AIChannel(
@@ -155,9 +155,7 @@ async def test_a_malformed_call_past_the_budget_ends_the_turn_empty(streaming: b
 async def test_a_malformed_call_after_text_is_told_too(streaming: bool) -> None:
     """The model narrated, then its call failed to parse: it is still told, and
     what it said stays its turn in the context (RMK-314, RFC §6.4)."""
-    narrated = AIResponse(
-        content="Let me check.", tool_calls=[], finish_reason="MALFORMED_FUNCTION_CALL"
-    )
+    narrated = AIResponse(content="Let me check.", tool_calls=[], finish_reason="malformed_call")
     handler = AsyncMock(return_value="ok")
     provider = MockAIProvider(ai_responses=[narrated, _tool(), _final("Done")])
     ch = AIChannel("ai1", provider=provider, tool_handler=handler, tool_loop_timeout_seconds=None)

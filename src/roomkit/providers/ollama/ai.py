@@ -42,6 +42,7 @@ from roomkit.providers.ai.base import (
     stream_call_of,
     stream_done,
 )
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.ai.reasoning import nearest_level, thinking_switch
 from roomkit.providers.ai.response_schema import (
@@ -63,6 +64,15 @@ _SHOW_CONCURRENCY = 8
 
 # The ``think`` levels Ollama takes, on a model that takes any (gpt-oss).
 _THINK_LEVELS = ("low", "medium", "high")
+
+# Ollama's done reasons in the contract's vocabulary. A turn that ends on calls
+# is done with ``stop``; ``load`` and ``unload`` end no generation.
+_DONE_REASONS = {"stop": FinishReason.STOP, "length": FinishReason.LENGTH}
+
+
+def _finish_reason(done_reason: str | None) -> FinishReason | None:
+    """An Ollama done reason in the contract's vocabulary (RFC §6.7)."""
+    return None if done_reason is None else _DONE_REASONS.get(done_reason)
 
 
 def _ollama_image_payload(part: AIImagePart, *, provider: str) -> str:
@@ -376,7 +386,7 @@ class OllamaAIProvider(AIProvider):
         message = self._get_message(response)
         content = self._get_attr(message, "content", "") or ""
         thinking = self._get_attr(message, "thinking", "") or ""
-        finish_reason = self._get_attr(response, "done_reason", None)
+        finish_reason = _finish_reason(self._get_attr(response, "done_reason", None))
         usage = self._extract_usage(response)
         tool_calls = self._extract_tool_calls(message)
         if context.response_schema is not None and not tool_calls:
@@ -437,7 +447,7 @@ class OllamaAIProvider(AIProvider):
         )
         kwargs = self._build_kwargs(context, stream=True)
         first_token = FirstToken(self)
-        finish_reason: str | None = None
+        finish_reason: FinishReason | None = None
         usage: dict[str, int] = {}
         accumulated_tool_calls: list[StreamToolCall] = []
         ids = CallIds()
@@ -468,7 +478,7 @@ class OllamaAIProvider(AIProvider):
 
                 done = self._get_attr(chunk, "done", False)
                 if done:
-                    finish_reason = self._get_attr(chunk, "done_reason", None)
+                    finish_reason = _finish_reason(self._get_attr(chunk, "done_reason", None))
                     usage = self._extract_usage(chunk)
 
             for tc_event in accumulated_tool_calls:

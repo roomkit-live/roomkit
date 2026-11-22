@@ -19,6 +19,7 @@ from roomkit.providers.ai.tool_calls import (
     tool_arguments,
     unreadable_arguments,
 )
+from roomkit.providers.anthropic.stop_reasons import finish_reason_of
 
 
 class ToolUseBlocks:
@@ -79,7 +80,7 @@ class ToolUseBlocks:
         a cut stops, so a cut call ends here, often with nothing streamed yet.
         """
         opened = {held["server_id"]: held for held in self._open.values()}
-        stop = final.stop_reason
+        stop = finish_reason_of(final.stop_reason)
         calls: list[StreamToolCall] = []
         for block in final.content:
             if block.type != "tool_use" or block.id in self._closed:

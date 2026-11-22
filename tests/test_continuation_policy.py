@@ -71,12 +71,9 @@ async def _turn(
     return run, provider, policy, reported
 
 
-@pytest.mark.parametrize("stop", ["stop", "end_turn", "stop_sequence", "STOP"])
-async def test_an_announcement_is_continued_once_whatever_the_providers_stop(
-    streaming: bool, stop: str
-) -> None:
+async def test_an_announcement_the_model_ended_itself_is_continued_once(streaming: bool) -> None:
     run, provider, policy, reported = await _turn(
-        [_said("I will check the run.", stop), _said("The run finished at noon.")], streaming
+        [_said("I will check the run.", "stop"), _said("The run finished at noon.")], streaming
     )
 
     assert len(provider.calls) == 2
@@ -119,7 +116,7 @@ async def test_no_continuation_past_the_turns_budget(streaming: bool) -> None:
     assert run.reason == "budget_exceeded"
 
 
-@pytest.mark.parametrize("stop", ["length", "MAX_TOKENS", "content_filter", "SAFETY", None])
+@pytest.mark.parametrize("stop", ["length", "content_filter", "refusal", "error", None])
 async def test_a_round_the_model_did_not_end_itself_is_not_the_policys(
     streaming: bool, stop: str | None
 ) -> None:
@@ -231,7 +228,7 @@ async def test_a_cancelled_round_is_not_continued(streaming: bool) -> None:
         _said("I will check the run."),
         # A call the provider could not parse, after words of its own: tried
         # again under the same bound, and its words stay their own segment.
-        _said("Let me look.", "malformed_function_call"),
+        _said("Let me look.", "malformed_call"),
     ],
     ids=["continuation", "malformed-call"],
 )

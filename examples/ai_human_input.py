@@ -61,7 +61,7 @@ async def main() -> None:
             # Round 1: AI calls AskUserQuestion tool
             AIResponse(
                 content="",
-                finish_reason="tool_use",
+                finish_reason="tool_calls",
                 tool_calls=[
                     AIToolCall(
                         id="tc-1",

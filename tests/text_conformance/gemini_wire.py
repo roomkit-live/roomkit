@@ -212,6 +212,7 @@ class GeminiWire(Driver):
     # The round's thought_signature goes back on each of its calls; the
     # thought parts themselves are not replayed.
     reasoning: ReasoningConvention = "call_signature"
+    tool_reason = "stop"
     # FunctionResponse.response takes an "error" key for a failed call.
     error_flag = True
     calls_by_name = True

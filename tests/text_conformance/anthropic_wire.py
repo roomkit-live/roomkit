@@ -168,6 +168,7 @@ class AnthropicWire(Driver):
         USAGE_ALONE: "usage rides message_start and message_delta, never a chunk of its own",
     }
     reasoning = "blocks"
+    filtered_reason = "refusal"
     error_flag = True
     refused_names = ("files.read",)
 

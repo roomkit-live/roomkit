@@ -31,6 +31,7 @@ from roomkit.providers.ai.base import (
     StreamToolCallDelta,
     StreamUsage,
 )
+from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.round_parts import RoundTranscript
 from roomkit.providers.utils import _aclose_stream
 from roomkit.realtime.base import EphemeralEventType
@@ -54,7 +55,7 @@ class _StreamRoundState:
     tool_calls: list[StreamToolCall] = field(default_factory=list)
     provider_calls: list[StreamToolCall] = field(default_factory=list)
     provider_results: list[AIToolResultPart] = field(default_factory=list)
-    finish_reason: str | None = None
+    finish_reason: FinishReason | None = None
     refusal: str | None = None  # the provider's reason, when it refused
     cancelled: bool = False
     # Whether the provider handed any event, a call the loop serves or text

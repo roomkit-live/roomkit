@@ -80,6 +80,11 @@ class Driver(ABC):
     cannot: Mapping[str, str] = {}
     reasoning: ReasoningConvention = "dropped"
     """How the wire replays a model's earlier reasoning."""
+    tool_reason: str = "tool_calls"
+    """The contract's word a round of calls ends on: ``stop`` on a wire with no
+    word of its own for it (RFC §6.7)."""
+    filtered_reason: str = "content_filter"
+    """The contract's word a response a filter or a refusal stopped ends on."""
     error_flag: bool = False
     """The wire flags a failed tool result."""
     calls_by_name: bool = False

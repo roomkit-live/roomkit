@@ -21,6 +21,7 @@ from typing import Any
 from roomkit.providers.ai.response_schema import check_schema_answer, check_schema_request
 from roomkit.providers.gemini.errors import (
     REFUSAL_FINISH_REASONS,
+    finish_reason_of,
     prompt_block_reason,
     reason_name,
 )
@@ -256,5 +257,5 @@ def _check_answer(response: Any, description: str, schema: dict[str, Any]) -> No
         schema=schema,
         provider="gemini-vision",
         refusal=finish if finish in REFUSAL_FINISH_REASONS else prompt_block_reason(response),
-        finish_reason=finish,
+        finish_reason=finish_reason_of(finish),
     )

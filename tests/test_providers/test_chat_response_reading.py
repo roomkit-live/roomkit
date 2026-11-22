@@ -25,7 +25,11 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamToolCall,
 )
-from roomkit.providers.ai.openai_dialect import ToolCallSlots, message_tool_calls
+from roomkit.providers.ai.openai_dialect import (
+    ToolCallSlots,
+    chat_finish_reason,
+    message_tool_calls,
+)
 from roomkit.providers.azure.ai import AzureAIProvider
 from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
@@ -500,3 +504,24 @@ async def test_a_call_named_under_an_id_that_is_no_text_fails_where_it_is_named(
             seen.append(event)
 
     assert seen == []
+
+
+@pytest.mark.parametrize(
+    ("word", "reason"),
+    [
+        ("stop", "stop"),
+        ("tool_calls", "tool_calls"),
+        ("function_call", "tool_calls"),
+        ("length", "length"),
+        ("content_filter", "content_filter"),
+        ("error", "error"),
+        ("eos", None),
+        (None, None),
+    ],
+)
+def test_the_dialect_s_stop_words_end_in_the_contract_s(
+    word: str | None, reason: str | None
+) -> None:
+    """The dialect's words in the contract's vocabulary (RFC §6.7); a server's
+    own word is no reason the contract knows."""
+    assert chat_finish_reason(word) == reason
