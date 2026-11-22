@@ -6,6 +6,9 @@
     "§6.4",
     "§21.3"
   ],
+  "requirements": [
+    "RK-6.4-082"
+  ],
   "notes": "Python: chat_request._plain over OPENAI_CHAT, reached by channels/_ai_streaming.py _steered_after_answer.",
   "setup": {
     "channels": [

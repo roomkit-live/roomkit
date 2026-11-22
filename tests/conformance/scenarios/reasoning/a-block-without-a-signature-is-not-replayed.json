@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-073"
+  ],
   "notes": "Python: providers/anthropic/request.py::format_content drops reasoning without a signature. RMK-1633.",
   "setup": {
     "channels": [

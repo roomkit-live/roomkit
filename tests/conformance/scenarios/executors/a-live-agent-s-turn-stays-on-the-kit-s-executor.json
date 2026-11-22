@@ -8,7 +8,8 @@
   "requirements": [
     "RK-10.6.2-007",
     "RK-10.6.2-018",
-    "RK-10.6.7-021"
+    "RK-10.6.7-021",
+    "RK-6.4-047"
   ],
   "notes": "Python: tests/test_turns_own_executor.py test_a_host_executor_served_first_does_not_take_a_live_agent_s_turn.",
   "setup": {

@@ -6,6 +6,9 @@
     "§21.6",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: tests/test_tool_timeout.py::test_a_turns_configuration_bounds_the_tools_it_declares. Gates establish call ordering without a sleep-based oracle.",
   "setup": {
     "channels": [

@@ -6,6 +6,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-088"
   ],
   "notes": "call-1 is refused by BEFORE_TOOL_USE; call-2's handler raises. The SYNC ON_TOOL_CALL hook offers a result on every firing it gets; neither call reads it, on the model's side, the observers' or the stored row. Such a firing reaches the ASYNC hooks alone (RK-9.3-070), so the hook's calls are left unasserted: an implementation that handed it the firing would still have to ignore its override.",

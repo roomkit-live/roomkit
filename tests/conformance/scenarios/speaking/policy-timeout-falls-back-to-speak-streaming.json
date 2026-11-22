@@ -6,6 +6,12 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-134",
+    "RK-6.4-139",
+    "RK-6.4-140",
+    "RK-6.4-141"
+  ],
   "notes": "Python: tests/test_speak_policy.py::test_a_policy_that_fails_or_is_late_does_not_silence_the_agent. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

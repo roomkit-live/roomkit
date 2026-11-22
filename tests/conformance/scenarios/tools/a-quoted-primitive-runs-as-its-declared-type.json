@@ -8,6 +8,7 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-068"
   ],
   "notes": "Python's repair_tool_arguments (roomkit tools/validation.py) runs before validate_tool_arguments: a string spelling the literal of an integer, number or boolean property is read as that literal. The start row keeps the model's arguments, the end row and the hooks the ones the call ran with.",

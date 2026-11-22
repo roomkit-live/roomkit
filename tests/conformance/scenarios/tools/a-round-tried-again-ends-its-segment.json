@@ -6,6 +6,10 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-097",
+    "RK-6.4-127"
+  ],
   "notes": "Python's loop yields a SegmentBreakMarker when it asks the model again (_ai_streaming.py, _round_outcome's retry), and the kit stores the text before it as its own message (_streaming_segments.py). The next generation reads the round's text as the assistant's, then the word to the model (MALFORMED_CALL_NUDGE).",
   "setup": {
     "channels": [

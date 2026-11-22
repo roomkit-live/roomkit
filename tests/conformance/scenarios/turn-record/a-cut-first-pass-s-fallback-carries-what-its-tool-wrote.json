@@ -7,6 +7,7 @@
     "§19.6"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-8.5-007"
   ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _with_record, _pass1_answer; tests/orchestration/test_supervisor_pass1_cut.py::test_a_cut_pass_answers_with_the_supervisors_fallback (kb_source).",

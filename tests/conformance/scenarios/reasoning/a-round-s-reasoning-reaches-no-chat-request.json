@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-081",
+    "RK-6.4-082",
+    "RK-6.4-084"
+  ],
   "notes": "Python: providers/ai/chat_request.py chat_messages over OPENAI_CHAT; tests/test_providers/test_chat_request.py. Measured on a real Qwen (RMK-1369): a <think> sent back empties the server's cache at every step of a turn.",
   "setup": {
     "channels": [

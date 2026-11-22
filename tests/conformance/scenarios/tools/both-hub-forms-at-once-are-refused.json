@@ -8,6 +8,7 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-072"
   ],
   "notes": "Python's fold_hoisted_arguments refuses both forms at once as ambiguous. The words are JSON as Python's json.dumps writes them, every character past ASCII escaped.",

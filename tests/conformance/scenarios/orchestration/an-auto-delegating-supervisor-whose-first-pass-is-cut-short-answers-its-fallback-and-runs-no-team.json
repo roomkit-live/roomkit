@@ -7,6 +7,7 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/orchestration/test_strategy_supervisor.py test_pass_one_cut_by_its_round_cap_hands_on_no_task[narrated]; tests/orchestration/test_supervisor_pass1_cut.py test_a_cut_pass_answers_with_the_supervisors_fallback; tests/test_inbound_turns_record.py test_a_supervisor_whose_pass_was_cut_names_its_end. orchestration/strategies/supervisor/delegate.py _pass1_answer (FALLBACK_FAILED, loop_end_reason), core/mixins/_child_execution.py _handed_on.",

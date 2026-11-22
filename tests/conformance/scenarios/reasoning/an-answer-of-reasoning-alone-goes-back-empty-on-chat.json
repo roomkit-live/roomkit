@@ -6,6 +6,9 @@
     "§6.4",
     "§21.3"
   ],
+  "requirements": [
+    "RK-6.4-083"
+  ],
   "notes": "Python: chat_request._plain, the message's only part being reasoning (tests/test_providers/test_chat_request.py).",
   "setup": {
     "channels": [

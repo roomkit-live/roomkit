@@ -7,6 +7,7 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-6.4-055",
     "RK-8.4-038"
   ],
   "notes": "Python: channels/_ai_stream_round.py stream, _flush_text at StreamToolCall. RFC §6.4.",

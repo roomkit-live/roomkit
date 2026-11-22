@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python's retry of an empty answer is spent only while the turn's limits hold (_ai_loop_rules.py; test_turn_budget.py test_past_its_budget_a_turn_asks_for_no_retry_of_an_empty_answer): the empty answer brings the turn to 1,000 tokens, past 600.",
   "setup": {
     "channels": [

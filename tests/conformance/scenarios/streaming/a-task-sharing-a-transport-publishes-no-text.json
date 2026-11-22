@@ -7,6 +7,7 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-6.4-057",
     "RK-8.4-038"
   ],
   "notes": "tests/test_ai_streaming_text_events.py::test_an_answer_a_hook_judges_is_never_published_as_text, the task sharing the sms.",

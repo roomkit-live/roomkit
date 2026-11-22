@@ -7,6 +7,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-097"
+  ],
   "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_a_schema_turn_asks_again_instead_of_failing_its_check.",
   "setup": {
     "channels": [

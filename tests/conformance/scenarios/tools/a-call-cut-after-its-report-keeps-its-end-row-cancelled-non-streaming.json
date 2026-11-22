@@ -6,6 +6,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-054"
   ],
   "notes": "Python: tests/tools/test_turn_report_claim_lifecycle.py::test_a_claimed_local_call_keeps_its_end_row_when_cancelled. The handler claims the call's report through turn_report_claim, as a reporter of its own does, then holds at the gate: the turn is cut in the window between the report and the end row. The end row says what the turn delivered (cancelled); the report is the claimer's, so the observers hear no second one; the model is never asked again.",

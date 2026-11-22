@@ -6,6 +6,18 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-134",
+    "RK-6.4-136",
+    "RK-6.4-141",
+    "RK-6.4-180",
+    "RK-6.4-186",
+    "RK-6.4-187",
+    "RK-6.4-192",
+    "RK-6.4-195",
+    "RK-6.4-198",
+    "RK-6.4-200"
+  ],
   "notes": "Python: tests/test_thinker.py::test_with_something_to_say_in_time_the_agent_raises_its_hand. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
   "setup": {
     "channels": [

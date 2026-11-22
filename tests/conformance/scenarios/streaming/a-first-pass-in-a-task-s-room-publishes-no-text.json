@@ -7,6 +7,7 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-6.4-056",
     "RK-8.4-038"
   ],
   "notes": "Python: core/mixins/_child_execution.py persist_tool_calls never calls read_as_trace, _persist_child_stream does. RFC §19.7.3.",

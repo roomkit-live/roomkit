@@ -6,6 +6,8 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-066",
+    "RK-6.4-111",
     "RK-8.4-023"
   ],
   "notes": "Python: providers/ai/tool_intent.py take_intent, alias_owners; channels/_ai_streaming.py _intent_taker. tests/test_channels/test_tool_call_intents.py test_a_tool_that_declares_the_misspelled_name_keeps_it_as_its_argument.",

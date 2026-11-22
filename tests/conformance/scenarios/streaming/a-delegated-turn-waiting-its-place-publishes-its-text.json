@@ -7,6 +7,8 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-6.4-056",
+    "RK-6.4-058",
     "RK-8.4-038"
   ],
   "notes": "Python: core/_room_turns.py read_as_trace; tests/test_ai_streaming_text_events.py::test_a_delegated_turns_text_reaches_its_child_room_while_it_is_written, one at a time.",

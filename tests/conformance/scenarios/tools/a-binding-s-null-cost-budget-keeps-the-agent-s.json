@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: channels/_ai_context.py _turn_budget and _turn_source (a null in the binding's metadata is not set); tests/test_channels/test_turn_budget.py test_a_null_never_lifts_the_channel_budget[turn_budget_usd-binding].",
   "setup": {
     "channels": [

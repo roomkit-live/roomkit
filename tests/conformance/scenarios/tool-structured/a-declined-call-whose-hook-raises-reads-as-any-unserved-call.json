@@ -6,6 +6,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-087"
   ],
   "notes": "The tool declines both calls. On call-1 the hook raises; on call-2 it allows. Both read the same to the model and on the stored row; only call-1's observers read the hook's message on error_detail.",

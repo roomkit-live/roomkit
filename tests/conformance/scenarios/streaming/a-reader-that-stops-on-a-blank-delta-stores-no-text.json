@@ -6,6 +6,9 @@
     "§6.4",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-6.4-128"
+  ],
   "notes": "Python: core/mixins/inbound_streaming.py _stop_unread_stream, core/mixins/_streaming_segments.py flush_text, end_stopped (RMK-1300).",
   "setup": {
     "channels": [

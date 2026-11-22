@@ -7,6 +7,7 @@
     "§21.2"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-085"
   ],
   "notes": "Python: tests/test_mcp_tool_provider.py::test_tool_handler_raises_on_a_failed_call and ::test_as_tool_handler_ungated_still_raises_on_a_failed_call, the MCP provider's handler raising ToolFailedError on isError. The model reads the server's text beside the failure marker (§9.3, the body travels verbatim); the observers read it failed, not refused, not cancelled; the stored end row's outcome is failed. Only the AI channel is observed: a realtime voice channel serving an MCP tool needs a session step neither runner has.",

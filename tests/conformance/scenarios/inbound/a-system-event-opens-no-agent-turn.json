@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-051"
+  ],
   "notes": "An agent takes a turn on a MESSAGE or an INSTRUCTION only (RFC §6.4): a SYSTEM notice, a reaction or a participant's arrival an application sends is stored and handed to the memory, not answered, and the conversation a turn reads does not show it. Python answered every type but a change, its own events and tool-call records until RMK-1257, the maintainer's choice (Python as Rust).",
   "setup": {
     "channels": [

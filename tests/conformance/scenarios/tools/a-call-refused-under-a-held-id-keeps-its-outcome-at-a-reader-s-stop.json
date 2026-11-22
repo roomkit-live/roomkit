@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.6.4-014",
-    "RK-10.6.4-015"
+    "RK-10.6.4-015",
+    "RK-6.4-067"
   ],
   "notes": "Python: turns/_executor_changes.py ChannelChanges.report sends each call's end set on its start before the next item, and core/mixins/_response_reader.py closes the calls still open at a reader's stop with that end (RMK-1509).",
   "setup": {

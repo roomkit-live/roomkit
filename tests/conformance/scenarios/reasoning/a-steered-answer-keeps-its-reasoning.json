@@ -6,6 +6,9 @@
     "§6.4",
     "§21.3"
   ],
+  "requirements": [
+    "RK-6.4-075"
+  ],
   "notes": "Python: channels/_ai_streaming.py _steered_after_answer (the answer is state.transcript.parts([])); tests/test_providers/test_thinking_blocks.py's single block, as an answer.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-072"
+  ],
   "notes": "Python: channels/_ai_loop_rules.py _cap_round_tool_calls, then RoundTranscript.parts on the calls kept.",
   "setup": {
     "channels": [

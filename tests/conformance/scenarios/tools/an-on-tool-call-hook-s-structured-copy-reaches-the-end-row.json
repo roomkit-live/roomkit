@@ -7,6 +7,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.3-058"
   ],
   "notes": "Python: channels/_ai_tools.py keeps the verdict's structured_content on the call's outcome, and core/mixins/_streaming_segments.py stores it on the TOOL_CALL_END row, for the surfaces that render it.",

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-072"
+  ],
   "notes": "Python: channels/_ai_streaming.py, one transcript per round; a turn's later rounds stay on the provider that served the round before (RMK-1638).",
   "setup": {
     "channels": [

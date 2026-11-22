@@ -10,6 +10,7 @@
   ],
   "requirements": [
     "RK-10.2-010",
+    "RK-6.4-067",
     "RK-8.3-009"
   ],
   "notes": "The record is the last MESSAGE's: loop_end_reason and the usage its rounds summed (§6.4, The turn's record). A call's end rows follow its round's start rows; the model reads the result as the tool returned it.",

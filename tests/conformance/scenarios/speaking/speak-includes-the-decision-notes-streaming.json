@@ -6,6 +6,13 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-130",
+    "RK-6.4-132",
+    "RK-6.4-134",
+    "RK-6.4-135",
+    "RK-6.4-141"
+  ],
   "notes": "Python: tests/test_speak_policy.py::test_speak_runs_the_turn_with_the_decision_notes. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

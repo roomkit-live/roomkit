@@ -6,6 +6,9 @@
     "§21.6",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python's ToolTimeouts: a tool named with None is unbounded, above the default (test_tool_timeout.py test_a_text_tool_bound_lets_a_slow_tool_finish). The observer of the cut call holds at a gate, so the unbounded call answers only once the default has passed.",
   "setup": {
     "channels": [

@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-072",
+    "RK-6.4-077"
+  ],
   "notes": "Python: providers/anthropic/request.py::format_content; tests/test_providers/test_anthropic.py::test_thinking_part_round_trip. RMK-1633.",
   "setup": {
     "channels": [

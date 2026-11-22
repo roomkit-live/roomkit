@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-131"
+  ],
   "notes": "Python: tests/test_speak_policy.py::test_an_instruction_is_not_submitted_to_the_policy. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

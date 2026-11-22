@@ -6,6 +6,10 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-126",
+    "RK-6.4-127"
+  ],
   "notes": "Python: tests/test_continuation_policy.py and tests/test_continuation_policy_boundaries.py. The continuation observer records the exact arguments of the real AIChannel callable.",
   "setup": {
     "channels": [

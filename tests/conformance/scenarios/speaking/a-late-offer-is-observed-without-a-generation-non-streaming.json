@@ -7,6 +7,14 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-134",
+    "RK-6.4-141",
+    "RK-6.4-180",
+    "RK-6.4-186",
+    "RK-6.4-189",
+    "RK-6.4-190",
+    "RK-6.4-198",
+    "RK-6.4-200",
     "RK-9.2-064"
   ],
   "notes": "Python: tests/test_speak_decision_hooks.py::test_a_thought_back_late_is_decided_again_for_the_hooks_and_runs_no_turn. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",

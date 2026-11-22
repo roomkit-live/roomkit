@@ -6,6 +6,13 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-130",
+    "RK-6.4-134",
+    "RK-6.4-137",
+    "RK-6.4-138",
+    "RK-6.4-141"
+  ],
   "notes": "Python: tests/test_speak_policy.py::test_silent_runs_no_turn_but_the_memory_learns_the_event. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

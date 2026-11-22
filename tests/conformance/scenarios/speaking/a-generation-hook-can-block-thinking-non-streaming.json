@@ -7,6 +7,11 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-134",
+    "RK-6.4-141",
+    "RK-6.4-182",
+    "RK-6.4-183",
+    "RK-6.4-200",
     "RK-9.2-068"
   ],
   "notes": "Python: tests/test_thinker.py::test_the_thinker_reads_what_before_ai_generation_left. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",

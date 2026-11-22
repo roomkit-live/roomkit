@@ -6,6 +6,9 @@
     "§6.4",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-6.4-128"
+  ],
   "notes": "Python: models/tool_call.py response_transcript; tests/test_ai_response_transcript.py::test_the_transcript_drops_what_says_nothing.",
   "setup": {
     "channels": [

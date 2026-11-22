@@ -8,7 +8,11 @@
   ],
   "requirements": [
     "RK-10.6.2-017",
-    "RK-10.6.2-028"
+    "RK-10.6.2-028",
+    "RK-6.4-134",
+    "RK-6.4-180",
+    "RK-6.4-197",
+    "RK-6.4-200"
   ],
   "notes": "Python: tests/test_turns_channel_release.py; speaking/reattaching-starts-with-an-empty-thought-streaming for a detach. The thought is the build's, never the room's (§10.6.2): the second turn reads the first turn's thought in the same build; the build that replaces the one let go reads none. The closes run apart from the turns, so the executor's list is matched in any order.",
   "setup": {

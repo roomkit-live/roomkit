@@ -7,6 +7,8 @@
     "§8.4"
   ],
   "requirements": [
+    "RK-6.4-063",
+    "RK-6.4-065",
     "RK-8.4-022"
   ],
   "notes": "Python: tests/test_ai_streaming_tool_events.py (composition, coalescing and attempt closure); tests/test_ai_stream_contract.py (stream lifecycle). Fragments drive the real channel through process_inbound; tool_events are read from the room realtime subscription. No real provider or external executor is involved.",

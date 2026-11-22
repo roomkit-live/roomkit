@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.4-010",
-    "RK-10.6.8-024"
+    "RK-10.6.8-024",
+    "RK-6.4-067"
   ],
   "notes": "The target pulls past the start row and closes its stream while the handler waits at tool-running. The result hook first reaches tool-served after reader-closed, then the link first receives end after tool-served. The owner is still pending there and reads the held end. The scenario observes normal completion within the tool’s bound. It does not count heartbeat frames or exercise a tool exceeding its own bound.",
   "setup": {

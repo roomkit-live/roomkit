@@ -7,6 +7,7 @@
     "§12.2 step 13s"
   ],
   "requirements": [
+    "RK-6.4-128",
     "RK-8.1-005"
   ],
   "notes": "Python: core/mixins/_streaming_segments.py flush_text, a blank segment writes nothing (RMK-1300, HITL b3dd82fe); tests/test_interrupted_turn.py::test_a_blank_segment_writes_no_message. The blank round comes back empty, so the loop asks once more (test_ai_empty_retry.py) and the second blank ends the turn.",

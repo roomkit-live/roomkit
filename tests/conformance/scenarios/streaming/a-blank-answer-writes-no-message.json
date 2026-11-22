@@ -6,6 +6,9 @@
     "§6.4",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-6.4-128"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py flush_text, a blank segment writes nothing (RMK-1300, HITL b3dd82fe); tests/test_interrupted_turn.py::test_a_blank_segment_writes_no_message.",
   "setup": {
     "channels": [

@@ -7,6 +7,7 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-067",
     "RK-9.2-072"
   ],
   "notes": "Python applies the hooks' withdrawals for the rest of the turn and appends each message as the user's after the results, through without_mark_copies (_ai_streaming.py _after_tool_round). The hook acts on its event in place; the runner's modify patch stands for that.",

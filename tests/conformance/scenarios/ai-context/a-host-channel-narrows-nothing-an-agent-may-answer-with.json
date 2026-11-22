@@ -7,7 +7,9 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-10.5-024"
+    "RK-10.5-024",
+    "RK-6.4-002",
+    "RK-6.4-004"
   ],
   "notes": "The post asks no agent (it names none). The turn that answers ws's message reads ws's capabilities whole, as with no host channel bound.",
   "setup": {

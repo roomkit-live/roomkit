@@ -6,6 +6,9 @@
     "§21.6",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_absent_names_keep_the_channel_per_tool_bound. Gates establish call ordering without a sleep-based oracle.",
   "setup": {
     "channels": [

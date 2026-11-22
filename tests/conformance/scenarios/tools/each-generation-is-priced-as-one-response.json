@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: channels/_turn_budget.py TurnBudget.cost_of, the loop adding each generation's cost; tests/test_channels/test_turn_budget.py test_each_generation_is_priced_as_one_response: 600 input tokens a generation stay under the 1,000-token threshold and cost 0.006 each; the budget is 3.5 times that, which the fourth generation reaches; the turn's summed usage priced as one response would cross the threshold and stop it two generations early.",
   "setup": {
     "channels": [

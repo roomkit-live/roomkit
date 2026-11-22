@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-082",
+    "RK-6.4-084"
+  ],
   "notes": "Python: channels/_ai_streaming.py hands the fallback the same context; chat_request renders it (RFC §6.4, What a provider hands the loop of its reasoning).",
   "setup": {
     "channels": [

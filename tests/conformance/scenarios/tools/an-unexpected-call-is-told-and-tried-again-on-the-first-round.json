@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-097"
+  ],
   "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_a_malformed_call_is_told_and_retried_on_the_first_round[UNEXPECTED_TOOL_CALL] (malformed_call_nudge).",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-072"
+  ],
   "notes": "Python: channels/_ai_streaming.py _steered_after_answer, RoundTranscript.parts([]).",
   "setup": {
     "channels": [

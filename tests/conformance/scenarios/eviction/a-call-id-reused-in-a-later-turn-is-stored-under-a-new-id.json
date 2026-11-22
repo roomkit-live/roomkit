@@ -5,6 +5,9 @@
   "rules": [
     "§21.5"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: tests/test_tool_eviction_room_scope.py::test_a_call_id_reused_in_a_later_turn_overwrites_nothing.",
   "setup": {
     "channels": [

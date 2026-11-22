@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-142"
+  ],
   "notes": "Python: tests/test_speak_policy.py::test_without_a_policy_nothing_is_decided. The policy records actual public calls; generation and observation counts are independently asserted.",
   "setup": {
     "channels": [

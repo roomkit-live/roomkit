@@ -6,6 +6,9 @@
     "§21.6",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-067"
+  ],
   "notes": "Python: channels/_ai_context.py::_given_turn_timeouts and tools/timeout.py::ToolTimeouts.overridden. A finite bound supplied with the turn-declared tool cuts its pending handler while the channel default is unbounded.",
   "setup": {
     "channels": [

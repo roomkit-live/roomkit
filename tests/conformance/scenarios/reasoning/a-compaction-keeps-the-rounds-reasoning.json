@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-072",
+    "RK-6.4-086"
+  ],
   "notes": "Python: channels/_compaction.py keeps the messages it does not summarize as they are.",
   "setup": {
     "channels": [

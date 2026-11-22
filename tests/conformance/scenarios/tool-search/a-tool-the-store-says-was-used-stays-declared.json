@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.6.2-026",
     "RK-10.6.2-027",
-    "RK-10.6.3-014"
+    "RK-10.6.3-014",
+    "RK-6.4-068"
   ],
   "notes": "Python: tests/test_channels/test_tool_usage_memory.py::TestToolUsageInContext::test_framework_loader_reads_persisted_tool_calls, AIChannel._forget_room.",
   "setup": {
