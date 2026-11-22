@@ -7,6 +7,19 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-009",
+    "RK-19.7-012",
+    "RK-19.7-017",
+    "RK-19.7-022",
+    "RK-19.7-025",
+    "RK-19.7.3-003",
+    "RK-19.7.3-033",
+    "RK-19.7.3-034",
+    "RK-19.7.3-037"
+  ],
   "notes": "Python: tests/orchestration/test_room_installs.py::test_each_room_s_per_worker_tools_run_with_its_own_install. Real delegated child rooms expose share_channels instead of replacing kit.delegate; the second install is called first, then the first, then a room with no install.",
   "setup": {
     "channels": [

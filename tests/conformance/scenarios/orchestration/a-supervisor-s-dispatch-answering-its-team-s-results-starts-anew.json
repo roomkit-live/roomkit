@@ -6,6 +6,11 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-015",
+    "RK-19.7.3-018",
+    "RK-19.7.3-019"
+  ],
   "notes": "Python: tests/orchestration/test_supervisor_text_background.py::test_a_dispatch_answering_an_outcome_starts_anew[team-tool]; tests/orchestration/test_supervisor_background_redispatch.py::test_a_dispatch_answering_results_runs_rather_than_reading_the_last_one; _StrategyToolServer._start_team's _clear (the room freed and its dedup entry evicted before the hand-back).",
   "setup": {
     "channels": [

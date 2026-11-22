@@ -6,6 +6,12 @@
     "§19.7",
     "§19.7.3"
   ],
+  "requirements": [
+    "RK-19.7-015",
+    "RK-19.7-016",
+    "RK-19.7-019",
+    "RK-19.7-020"
+  ],
   "notes": "Python: tests/test_supervisor.py::TestStrategyToolHandler::test_strategy_tool_dedup_serves_only_the_same_asker; orchestration/strategies/supervisor/_inject_strategy.py _StrategyToolServer.serve (the dedup cache keeps who asked, current_tool_requester). The same asker's repeat reads the last answer (a-repeated-team-call-reads-the-room-s-last-answer). The window is wall-clock: the scenario runs well within it.",
   "setup": {
     "channels": [

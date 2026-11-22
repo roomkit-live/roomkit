@@ -8,6 +8,8 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-19.7-016",
+    "RK-19.7-019",
     "RK-21.4-024"
   ],
   "notes": "Python: core/_requester.py task_heading, orchestration/strategies/supervisor/prompts.py _format_supervised_digest, _inject_strategy.py _run (the digest is written under the supervisor's tool call, current_tool_requester). The run is a-supervised-team-has-each-step-framed-and-checked's, asked by Bob in a room where Alice takes part too.",

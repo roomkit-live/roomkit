@@ -6,6 +6,16 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-012",
+    "RK-19.7-015",
+    "RK-19.7-024",
+    "RK-19.7-025",
+    "RK-19.7.3-008",
+    "RK-19.7.3-010",
+    "RK-19.7.3-012",
+    "RK-19.7.3-020"
+  ],
   "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_already_running; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_guard_blocks_re_delegation; tests/orchestration/test_supervisor_room_state.py test_a_worker_busy_in_one_room_is_free_in_another. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer (its pending set by room and worker), _already_working. The two hand-backs' order is the runner's: their worker outputs and the supervisor's answers are alike. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {
     "channels": [

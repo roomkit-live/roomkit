@@ -8,6 +8,11 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-19.7-015",
+    "RK-19.7-016",
+    "RK-19.7-017",
+    "RK-19.7-019",
+    "RK-19.7-020",
     "RK-21.4-024"
   ],
   "notes": "Python: tests/test_task_requester.py::TestATaskBlockNamesWhoAskedForIt::test_the_heading_names_the_asker_out_of_the_block, test_a_worker_s_own_input_carries_no_asker; core/_requester.py task_heading, orchestration/strategies/supervisor/results.py _format_supervisor_review, _inject_strategy.py (the tool runs under the supervisor's turn, current_tool_requester).",

@@ -6,6 +6,10 @@
     "§19.7.5 rule 16",
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7-039",
+    "RK-19.7-061"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_restarted_process_takes_the_discussion_back. The run's kit closes; p2 queues a's turn and gives none until its install.",
   "setup": {
     "channels": [

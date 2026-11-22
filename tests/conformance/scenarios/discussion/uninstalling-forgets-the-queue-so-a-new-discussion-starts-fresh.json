@@ -6,6 +6,10 @@
     "§19.7.5 rule 1",
     "§19.7.5 rule 12"
   ],
+  "requirements": [
+    "RK-19.7-042",
+    "RK-19.7-047"
+  ],
   "notes": "Python: test_discussion_edges.py test_uninstalling_forgets_the_discussion_so_a_new_one_starts_fresh.",
   "setup": {
     "channels": [

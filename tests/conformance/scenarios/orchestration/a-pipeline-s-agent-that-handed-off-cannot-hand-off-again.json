@@ -13,6 +13,9 @@
     "RK-19.6-023",
     "RK-19.6-024",
     "RK-19.6-025",
+    "RK-19.7.1-002",
+    "RK-19.7.1-004",
+    "RK-19.7.1-005",
     "RK-9.2-077"
   ],
   "notes": "Python: orchestration/handoff.py HandoffHandler._caller_holds_room. Decided on RMK-1233: without it a model calling twice skipped a stage.",

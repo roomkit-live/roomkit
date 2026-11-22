@@ -7,6 +7,12 @@
     "§6.7"
   ],
   "requirements": [
+    "RK-19.7.3-033",
+    "RK-19.7.3-034",
+    "RK-19.7.3-035",
+    "RK-19.7.3-036",
+    "RK-19.7.3-037",
+    "RK-19.7.3-038",
     "RK-8.5-007"
   ],
   "notes": "A host that names its agent channels agent:<uuid>. Python: tests/orchestration/test_strategy_supervisor.py TestSupervisorInstall::test_injects_delegation_tools (every built-in provider's rule checks the names), test_delegation_tool_handler. orchestration/strategies/supervisor/_worker_tool_names.py worker_tool_names; _inject_per_worker.py _worker_tool. The tool's description still names the worker's id (the on_ai_response hook reads the supervisor's declared tools).",

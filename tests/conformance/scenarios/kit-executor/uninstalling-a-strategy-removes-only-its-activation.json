@@ -8,6 +8,11 @@
     "§17.2",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-007",
+    "RK-19.7-034",
+    "RK-19.7-040"
+  ],
   "notes": "Python: tests/test_turn_hooks.py::test_uninstalling_a_strategy_takes_back_its_room_hook_on_the_executor. A definition shared with another room survives uninstall.",
   "setup": {
     "channels": [

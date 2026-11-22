@@ -5,6 +5,10 @@
   "rules": [
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-19.7.4-012",
+    "RK-19.7.4-013"
+  ],
   "notes": "Python: test_loop_producer_cut.py test_a_producer_with_nothing_to_say_is_named_so, test_a_loop_that_runs_no_iteration_blames_no_producer.",
   "setup": {
     "channels": [

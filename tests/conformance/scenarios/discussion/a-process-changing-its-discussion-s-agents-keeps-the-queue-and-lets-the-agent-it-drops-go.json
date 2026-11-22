@@ -7,6 +7,12 @@
     "§19.7.5 rule 16",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-039",
+    "RK-19.7-061",
+    "RK-19.7-062",
+    "RK-19.7-063"
+  ],
   "notes": "Python: test_discussion_processes.py test_changing_the_agents_keeps_the_queue_and_lets_the_removed_agent_go (_two_processes_then_a_change), core/mixins/discussion.py _replace_discussion and _room.py take_over: the agents an install attached that the new configuration lets go are detached, not refused; the queue keeps b listening and drops c. The second install over the first is not refused as a strategy already held.",
   "setup": {
     "channels": [

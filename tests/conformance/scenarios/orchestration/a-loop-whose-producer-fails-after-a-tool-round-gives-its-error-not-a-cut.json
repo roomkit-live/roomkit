@@ -8,6 +8,10 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-19.7.4-012",
+    "RK-19.7.4-013",
+    "RK-19.7.4-014",
+    "RK-19.7.4-016",
     "RK-23.3-038"
   ],
   "notes": "Python: test_loop_producer_cut.py test_a_producer_failing_after_a_round_gives_its_error_not_a_cut.",

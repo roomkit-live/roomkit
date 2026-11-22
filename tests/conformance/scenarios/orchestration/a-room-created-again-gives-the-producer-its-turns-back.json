@@ -6,6 +6,9 @@
     "§19.7",
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-19.7-013"
+  ],
   "notes": "Python: core/mixins/strategies.py _forget_strategy takes back the old record's hooks, tools and turn runners (core/_turn_runners.py), whatever the new room holds. The status bus holds no entry of the producer: no task was delegated.",
   "setup": {
     "channels": [

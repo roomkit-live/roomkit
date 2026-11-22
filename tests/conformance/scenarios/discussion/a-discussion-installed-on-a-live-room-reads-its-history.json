@@ -6,6 +6,11 @@
     "§19.7",
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7-001",
+    "RK-19.7-033",
+    "RK-19.7-035"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_install.py test_a_discussion_installed_on_a_live_room_reads_its_history.",
   "setup": {
     "channels": [

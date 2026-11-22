@@ -6,6 +6,9 @@
     "§19.7",
     "§13.5"
   ],
+  "requirements": [
+    "RK-19.7-041"
+  ],
   "setup": {
     "channels": [
       {

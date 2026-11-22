@@ -5,6 +5,10 @@
   "rules": [
     "§19.7.3"
   ],
+  "requirements": [
+    "RK-19.7.3-049",
+    "RK-19.7.3-052"
+  ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _pass1_answer (the fallback is the turn's answer, delivered as any response). Found by the review of stream I lot 5b.",
   "setup": {
     "channels": [

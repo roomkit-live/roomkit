@@ -5,6 +5,14 @@
   "rules": [
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-031",
+    "RK-19.7-040",
+    "RK-19.7-041",
+    "RK-19.7-042",
+    "RK-19.7-045",
+    "RK-19.7-046"
+  ],
   "notes": "Python: orchestration/base.py uninstall; tests/orchestration/test_strategy_install.py test_a_room_moves_from_a_swarm_to_a_discussion_and_back (the Swarm's half).",
   "setup": {
     "channels": [

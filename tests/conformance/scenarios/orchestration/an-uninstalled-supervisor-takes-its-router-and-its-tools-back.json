@@ -7,6 +7,10 @@
     "§19.7.3"
   ],
   "requirements": [
+    "RK-19.7-031",
+    "RK-19.7-040",
+    "RK-19.7-042",
+    "RK-19.7-046",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/orchestration/test_strategy_install.py test_a_strategy_that_runs_turns_gives_them_back (its Supervisor case); core/mixins/strategies.py _snapshot, _take_back (a registry's room tools released). orchestration/strategies/supervisor/core.py install.",

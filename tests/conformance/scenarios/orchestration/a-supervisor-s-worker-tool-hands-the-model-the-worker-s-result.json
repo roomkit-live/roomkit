@@ -7,6 +7,17 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-19.7-009",
+    "RK-19.7-033",
+    "RK-19.7.3-002",
+    "RK-19.7.3-003",
+    "RK-19.7.3-009",
+    "RK-19.7.3-026",
+    "RK-19.7.3-027",
+    "RK-19.7.3-028",
+    "RK-19.7.3-033",
+    "RK-19.7.3-034",
+    "RK-19.7.3-037",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_wait_for_result_returns_output; tests/orchestration/test_strategy_supervisor.py TestSupervisorInstall::test_installs_router_hook, test_registers_workers_on_kit, test_injects_delegation_tools, test_sets_initial_state, test_delegation_tool_handler; tests/orchestration/test_supervisor_inline.py test_inline_delegation_returns_worker_output, test_child_room_has_no_orchestration, test_parent_state_unchanged_after_delegation. orchestration/strategies/supervisor/core.py install, _inject_per_worker.py (_worker_tool, _PerWorkerToolServer._delegate_and_wait); _worker_run.py run_worker. The router stamps the message for the supervisor; the worker's status entries are the worker run's (mode per_worker_wait), the terminal one naming its task.",

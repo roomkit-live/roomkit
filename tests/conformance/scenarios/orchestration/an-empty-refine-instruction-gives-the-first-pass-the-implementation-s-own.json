@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.3"
   ],
+  "requirements": [
+    "RK-19.7.3-039"
+  ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _formulate_task (instruction or _build_pass1_instruction()). Found by the review of stream I lot 5b.",
   "setup": {
     "channels": [

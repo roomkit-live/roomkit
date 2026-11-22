@@ -7,6 +7,18 @@
     "§19.7.3"
   ],
   "requirements": [
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-012",
+    "RK-19.7-013",
+    "RK-19.7-017",
+    "RK-19.7-022",
+    "RK-19.7-028",
+    "RK-19.7-034",
+    "RK-19.7.3-002",
+    "RK-19.7.3-003",
+    "RK-19.7.3-009",
+    "RK-19.7.3-054",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/orchestration/test_strategy_rooms.py test_a_sync_auto_supervisor_in_two_rooms_runs_once_per_message. orchestration/strategies/supervisor/_install_auto.py _install_sync_auto_delegate (kit._turn_runners.take per room and channel). Also tests/orchestration/test_room_installs.py::test_a_room_without_the_install_gets_the_supervisor_s_own_answer: the third room runs no worker and receives the unwrapped supervisor turn.",

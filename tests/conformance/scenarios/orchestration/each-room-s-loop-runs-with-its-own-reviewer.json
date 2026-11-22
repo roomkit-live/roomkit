@@ -6,6 +6,17 @@
     "§19.7",
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-012",
+    "RK-19.7-013",
+    "RK-19.7-022",
+    "RK-19.7-028",
+    "RK-19.7-034",
+    "RK-19.7.4-002",
+    "RK-19.7.4-008"
+  ],
   "notes": "Python: tests/orchestration/test_room_installs.py::test_each_room_s_loop_runs_with_its_own_reviewers; tests/orchestration/test_strategy_rooms.py::test_a_sync_loop_in_two_rooms_takes_their_turns_and_wraps_nothing. Public outputs and exact model calls replace inspection of private turn runners.",
   "setup": {
     "channels": [

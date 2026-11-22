@@ -9,7 +9,9 @@
   "requirements": [
     "RK-10.1-102",
     "RK-10.1-112",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-19.7.3-053",
+    "RK-19.7.3-055"
   ],
   "notes": "Python: core/mixins/_child_execution.py persist_tool_calls (_ToolRowsOnly), orchestration/strategies/supervisor/delegate.py _pass1_answer. A first pass's record is no row's: a turn that keeps its text out of the room hands it on (RMK-1344).",
   "setup": {

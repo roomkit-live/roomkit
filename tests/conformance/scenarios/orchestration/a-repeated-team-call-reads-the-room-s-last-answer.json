@@ -6,6 +6,14 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-015",
+    "RK-19.7-016",
+    "RK-19.7-017",
+    "RK-19.7.3-026",
+    "RK-19.7.3-027",
+    "RK-19.7.3-028"
+  ],
   "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_strategy_tool_dedup_cache; tests/orchestration/test_supervisor_strategy.py TestStrategyDedup::test_second_call_in_same_turn_returns_cached. orchestration/strategies/supervisor/_inject_strategy.py _StrategyToolServer (_DEDUP_WINDOW 30 s, per room). The window is wall-clock: the scenario runs well within it.",
   "setup": {
     "channels": [

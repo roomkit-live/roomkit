@@ -5,6 +5,12 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7-062",
+    "RK-19.7-064",
+    "RK-19.7-065",
+    "RK-19.7-066"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_process_that_installed_none_or_whose_discussion_went_is_not_current. The run's kit reads the uninstall before its driver looks again.",
   "setup": {
     "channels": [

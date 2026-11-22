@@ -7,6 +7,10 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-19.7-015",
+    "RK-19.7-016",
+    "RK-19.7.3-029",
+    "RK-19.7.3-031",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/test_supervisor.py TestSupervisedSequential::test_max_revisions_exhausted_flags_unvalidated, test_chain_stops_when_a_step_fails, test_digest_flags_validation_status. orchestration/strategies/supervisor/supervised.py _run_supervised_sequential, prompts.py _format_supervised_digest.",

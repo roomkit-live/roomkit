@@ -6,6 +6,11 @@
     "§19.7.5 rule 16",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-031",
+    "RK-19.7-047",
+    "RK-19.7-062"
+  ],
   "notes": "Python: core/mixins/discussion.py _install_discussion leaves the discussion another process uninstalled (_leave_uninstalled drops that discussion's own record, _drop_record(room_id, discussion.strategy)) and starts the new one, whose install is recorded; whether the run's kit's driver read the uninstall first or not. From the full review of the replaced configuration lot (RMK-1233).",
   "setup": {
     "channels": [

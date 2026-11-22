@@ -5,6 +5,11 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7-039",
+    "RK-19.7-061",
+    "RK-19.7-062"
+  ],
   "notes": "Python: test_discussion_processes.py test_the_same_configuration_installed_by_another_process_keeps_both_current.",
   "setup": {
     "channels": [

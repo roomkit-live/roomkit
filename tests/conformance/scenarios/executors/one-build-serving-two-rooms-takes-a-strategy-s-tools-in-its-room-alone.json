@@ -9,7 +9,13 @@
   ],
   "requirements": [
     "RK-10.6.1-008",
-    "RK-10.6.2-012"
+    "RK-10.6.2-012",
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-009",
+    "RK-19.7-022",
+    "RK-19.7-028",
+    "RK-19.7.3-033"
   ],
   "notes": "Python: tests/test_owner_tool_store.py test_a_strategy_s_tools_are_the_owner_s_never_the_agent_s. The owner keeps the tools the install sets up for sup in r1 and sends them with r1's requests: the same build answers in r2 without them, which a tool installed on the channel object would have reached.",
   "setup": {

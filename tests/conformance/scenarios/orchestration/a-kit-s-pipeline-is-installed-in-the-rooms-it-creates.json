@@ -6,6 +6,12 @@
     "§19.7",
     "§19.7.1"
   ],
+  "requirements": [
+    "RK-19.7-032",
+    "RK-19.7.1-003",
+    "RK-19.7.1-005",
+    "RK-19.7.1-007"
+  ],
   "notes": "Python: tests/orchestration/test_framework_orchestration.py TestCreateRoomOrchestration::test_kit_level_orchestration, test_per_room_orchestration, test_per_room_none_disables_kit_default.",
   "setup": {
     "kit": {

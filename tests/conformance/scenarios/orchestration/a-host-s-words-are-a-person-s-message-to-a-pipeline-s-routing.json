@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.2-018",
     "RK-10.5-019",
-    "RK-10.5-035"
+    "RK-10.5-035",
+    "RK-19.7.1-003"
   ],
   "notes": "Python: tests/test_host_post.py test_the_host_s_words_are_a_person_s_message_to_the_room_s_routing[Pipeline-post], [Pipeline-post to a], [Pipeline-unaddressed].",
   "setup": {

@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.3"
   ],
+  "requirements": [
+    "RK-19.7.3-052"
+  ],
   "notes": "Python: orchestration/strategies/supervisor/delegate.py _pass1_task (persist_tool_calls reads the pass's stream itself, no streaming target), RFC §19.7.3. Found by the review of stream I lot 5b.",
   "setup": {
     "channels": [

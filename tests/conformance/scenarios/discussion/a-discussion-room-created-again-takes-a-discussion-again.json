@@ -6,6 +6,9 @@
     "§19.7",
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7-032"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_install.py test_a_discussion_room_created_again_takes_a_discussion_again.",
   "setup": {
     "channels": [

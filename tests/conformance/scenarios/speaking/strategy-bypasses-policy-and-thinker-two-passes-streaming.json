@@ -10,6 +10,7 @@
   "requirements": [
     "RK-10.6.1-007",
     "RK-10.6.3-002",
+    "RK-19.7.3-002",
     "RK-6.4-143"
   ],
   "notes": "Python: tests/test_speaking_strategy.py::test_strategy_passes_bypass_both_the_silent_policy_and_its_thinker; tests/orchestration/test_strategy_turns.py::test_a_supervisors_passes_are_strategy_turns_its_on_event_sees. Actual model requests and the absence of both admission callbacks and reports are asserted.",

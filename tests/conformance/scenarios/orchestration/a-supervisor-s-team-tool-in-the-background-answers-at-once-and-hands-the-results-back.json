@@ -7,6 +7,13 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-19.7-015",
+    "RK-19.7.3-002",
+    "RK-19.7.3-008",
+    "RK-19.7.3-010",
+    "RK-19.7.3-011",
+    "RK-19.7.3-012",
+    "RK-19.7.3-019",
     "RK-19.8-022"
   ],
   "notes": "Python: tests/test_supervisor.py TestSupervisorConstructor::test_agents_keeps_supervisor_in_strategy_tool_async_delivery (the supervisor still answers in the room), TestAsyncRunAndDeliver; tests/orchestration/test_supervisor_text_background.py::test_a_dispatch_answering_an_outcome_starts_anew[team-tool]; orchestration/strategies/supervisor/_inject_strategy.py _StrategyToolServer._dispatch, _start_team; orchestration/strategies/supervisor/delegate.py _async_run_and_deliver, _outcome_text, _pipeline_ended; orchestration/_background.py run_in_background; tasks/handback.py hand_back, workers_text. The supervisor was given no task_status: its answer names none. The turns' notes listing the room's tasks (RMK-1284) are left out. Python: tests/tasks/test_delegation_result_delivery.py::test_a_supervisor_s_background_workers_hand_back_to_it: a real supervisor turn reads two outputs, the first bounded to 4000 characters, the second whole; neither is stored as participant speech.",

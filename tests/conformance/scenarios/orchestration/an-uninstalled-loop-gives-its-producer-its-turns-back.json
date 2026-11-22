@@ -6,6 +6,13 @@
     "§19.7",
     "§19.7.4"
   ],
+  "requirements": [
+    "RK-19.7-013",
+    "RK-19.7-022",
+    "RK-19.7-040",
+    "RK-19.7-042",
+    "RK-19.7-046"
+  ],
   "notes": "Python: core/mixins/strategies.py _take_back releases the turn runners an install took (core/_turn_runners.py).",
   "setup": {
     "channels": [

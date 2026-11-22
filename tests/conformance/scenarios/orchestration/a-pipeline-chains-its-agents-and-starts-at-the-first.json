@@ -11,7 +11,15 @@
     "RK-19.4-022",
     "RK-19.6-012",
     "RK-19.6-020",
-    "RK-19.6-027"
+    "RK-19.6-027",
+    "RK-19.7-001",
+    "RK-19.7-033",
+    "RK-19.7-034",
+    "RK-19.7.1-002",
+    "RK-19.7.1-003",
+    "RK-19.7.1-004",
+    "RK-19.7.1-005",
+    "RK-19.7.1-007"
   ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineBuildStages::test_linear_chain, TestPipelineInstall::test_sets_initial_state, test_wires_handoff_tools; tests/test_declared_strategies.py test_a_handoff_strategy_gives_a_declared_agent_its_handoff[Pipeline]. orchestration/strategies/pipeline.py install, _build_stages.",
   "setup": {

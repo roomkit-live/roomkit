@@ -6,6 +6,15 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-009",
+    "RK-19.7-012",
+    "RK-19.7-022",
+    "RK-19.7-023",
+    "RK-19.7-025"
+  ],
   "notes": "Python: tests/orchestration/test_room_installs.py test_each_room_s_team_tool_runs_its_own_team, test_a_room_without_the_install_gets_the_supervisor_s_own_answer; tests/orchestration/test_supervisor_room_state.py test_one_rooms_pipeline_does_not_hold_up_another_rooms_call; tests/orchestration/test_strategy_behavioral.py TestSupervisorHandlerIdempotency::test_each_room_s_install_serves_its_own_room; tests/orchestration/test_call_room.py test_a_supervisor_shared_by_two_rooms_delegates_from_the_room_that_asked. orchestration/strategies/supervisor/_inject_strategy.py (owner_tools_of(...).register(entry, room_id=room_id, owner=self), a lock per room). The bank's worker waits at its gate while the clinic's team runs and answers.",
   "setup": {
     "channels": [

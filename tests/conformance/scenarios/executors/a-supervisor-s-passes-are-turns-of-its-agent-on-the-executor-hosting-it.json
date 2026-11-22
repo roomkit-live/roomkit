@@ -10,6 +10,13 @@
     "RK-10.6.1-006",
     "RK-10.6.1-007",
     "RK-10.6.2-012",
+    "RK-19.7-007",
+    "RK-19.7-017",
+    "RK-19.7-028",
+    "RK-19.7-029",
+    "RK-19.7.3-002",
+    "RK-19.7.3-003",
+    "RK-19.7.3-009",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/orchestration/test_strategy_turns.py test_a_supervisors_runner_runs_on_the_owner; tests/test_declared_strategies.py. A runner taken by the executor inside one turn of sup would show one on_event there and make its passes in that build; on the owner each pass is a turn of its own. The workers' child room is $r1.",

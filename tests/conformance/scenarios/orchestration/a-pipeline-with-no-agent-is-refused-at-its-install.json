@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.1"
   ],
+  "requirements": [
+    "RK-19.7.1-006"
+  ],
   "notes": "Python: orchestration/strategies/pipeline.py install (ValueError \"Pipeline needs at least one agent\"), tests/orchestration/test_strategy_pipeline.py test_a_pipeline_with_no_agent_is_refused_at_its_install.",
   "setup": {
     "channels": [

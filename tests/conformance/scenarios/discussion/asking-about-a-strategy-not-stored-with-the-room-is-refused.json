@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 16"
   ],
+  "requirements": [
+    "RK-19.7-068"
+  ],
   "notes": "Python: test_discussion_processes.py test_asking_about_a_strategy_not_stored_with_the_room_is_refused, the four built-in strategies; an instance and a type that is no strategy have no form in a scenario.",
   "setup": {
     "channels": [

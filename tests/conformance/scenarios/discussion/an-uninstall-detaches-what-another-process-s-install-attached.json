@@ -6,6 +6,10 @@
     "§19.7.5 rule 16",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-041",
+    "RK-19.7-048"
+  ],
   "notes": "Python: core/mixins/strategies.py uninstall_strategy, the record's attached agents joined with the stored ones; p2's install adds c.",
   "setup": {
     "channels": [

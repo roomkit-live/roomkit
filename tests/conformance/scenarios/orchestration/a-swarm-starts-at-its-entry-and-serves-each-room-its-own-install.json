@@ -6,7 +6,16 @@
     "§19.7"
   ],
   "requirements": [
-    "RK-19.6-047"
+    "RK-19.6-047",
+    "RK-19.7-005",
+    "RK-19.7-007",
+    "RK-19.7-009",
+    "RK-19.7-012",
+    "RK-19.7-022",
+    "RK-19.7-023",
+    "RK-19.7-025",
+    "RK-19.7.2-002",
+    "RK-19.7.2-003"
   ],
   "notes": "Python: tests/orchestration/test_strategy_swarm.py TestSwarmAgents::test_custom_entry, test_agents_returns_all, TestSwarmInstall::test_double_install_skips_handoff, test_sets_initial_state. orchestration/strategies/swarm.py install.",
   "setup": {

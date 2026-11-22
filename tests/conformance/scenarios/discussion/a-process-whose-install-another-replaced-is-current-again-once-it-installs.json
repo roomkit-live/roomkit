@@ -6,6 +6,12 @@
     "§19.7.5 rule 16",
     "§19.7.5 rule 1"
   ],
+  "requirements": [
+    "RK-19.7-039",
+    "RK-19.7-061",
+    "RK-19.7-062",
+    "RK-19.7-063"
+  ],
   "notes": "Python: test_discussion_processes.py test_a_process_whose_install_another_replaced_is_current_again_once_it_installs. p2 installs without c and stops (its close gives the lease up); the run's kit routes and queues @a but gives no turn. Its install of a, b and c again takes the discussion back, binds c again, and gives the queued turn.",
   "setup": {
     "channels": [

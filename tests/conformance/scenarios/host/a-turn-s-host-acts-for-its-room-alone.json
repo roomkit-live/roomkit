@@ -10,6 +10,7 @@
   "requirements": [
     "RK-10.6.5-032",
     "RK-10.6.5-033",
+    "RK-19.7.3-028",
     "RK-21.4-028"
   ],
   "notes": "Python: tests/test_turns_host.py::test_a_host_acts_only_for_its_turns_room_and_organization, test_a_status_post_names_its_turn_s_room, test_a_turn_s_host_posts_no_worker_run_entry, test_a_turn_s_host_posts_no_task_status. Each refusal is the owner's ValueError.",

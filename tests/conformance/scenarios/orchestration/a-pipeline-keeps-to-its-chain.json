@@ -15,6 +15,9 @@
     "RK-19.6-023",
     "RK-19.6-024",
     "RK-19.6-025",
+    "RK-19.7.1-002",
+    "RK-19.7.1-004",
+    "RK-19.7.1-005",
     "RK-9.2-077"
   ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall (the handler's allowed transitions); orchestration/strategies/pipeline.py _handler, pipeline.py get_allowed_transitions.",

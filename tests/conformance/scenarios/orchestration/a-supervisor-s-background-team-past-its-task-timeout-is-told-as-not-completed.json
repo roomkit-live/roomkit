@@ -6,6 +6,10 @@
     "§19.7.3",
     "§23.3"
   ],
+  "requirements": [
+    "RK-19.7-015",
+    "RK-19.7.3-019"
+  ],
   "notes": "Python: tests/orchestration/test_supervisor_text_background.py::test_a_worker_past_its_bound_is_told_as_not_completed[team-tool]; orchestration/strategies/supervisor/delegate.py _why_failed, _outcome_text.",
   "setup": {
     "channels": [

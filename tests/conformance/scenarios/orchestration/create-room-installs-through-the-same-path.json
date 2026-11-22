@@ -5,6 +5,10 @@
   "rules": [
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.7-031",
+    "RK-19.7-032"
+  ],
   "setup": {
     "channels": [
       {

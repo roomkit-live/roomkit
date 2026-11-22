@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-19.4-018",
-    "RK-19.4-022"
+    "RK-19.4-022",
+    "RK-19.7.1-003"
   ],
   "notes": "Python: orchestration/strategies/pipeline.py install (ConversationPipeline(stages, supervisor_id=...)); tests/orchestration/test_pipeline.py TestToRouter::test_supervisor_propagated.",
   "setup": {

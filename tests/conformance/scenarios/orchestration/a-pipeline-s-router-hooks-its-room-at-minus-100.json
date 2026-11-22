@@ -7,7 +7,10 @@
     "§19.7"
   ],
   "requirements": [
-    "RK-10.1-052"
+    "RK-10.1-052",
+    "RK-19.7-034",
+    "RK-19.7.1-003",
+    "RK-19.7.1-008"
   ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall::test_installs_router_hook. orchestration/strategies/pipeline.py install (priority=-100, replace_room_hook).",
   "setup": {

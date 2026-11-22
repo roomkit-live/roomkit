@@ -7,6 +7,10 @@
     "§19.7.3"
   ],
   "requirements": [
+    "RK-19.7-013",
+    "RK-19.7-022",
+    "RK-19.7-040",
+    "RK-19.7-046",
     "RK-8.5-007"
   ],
   "notes": "Python: orchestration/strategies/supervisor/_install_auto.py (the turns taken with owner=self), core/mixins/strategies.py uninstall_strategy (the owner's turn runners released).",

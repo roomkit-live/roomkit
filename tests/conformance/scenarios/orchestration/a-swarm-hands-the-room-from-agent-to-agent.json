@@ -8,7 +8,13 @@
   "requirements": [
     "RK-19.6-012",
     "RK-19.6-020",
-    "RK-19.6-027"
+    "RK-19.6-027",
+    "RK-19.7-001",
+    "RK-19.7-033",
+    "RK-19.7-034",
+    "RK-19.7-035",
+    "RK-19.7.2-002",
+    "RK-19.7.2-003"
   ],
   "notes": "Python: tests/orchestration/test_strategy_swarm.py TestSwarmAgents::test_default_entry_is_first_agent, TestSwarmInstall::test_installs_router_hook, test_sets_initial_state, test_bidirectional_handoff_tools; tests/orchestration/test_strategy_install.py test_a_swarm_installed_on_a_live_room_reaches_the_agent_it_hands_off_to. orchestration/strategies/swarm.py install.",
   "setup": {
