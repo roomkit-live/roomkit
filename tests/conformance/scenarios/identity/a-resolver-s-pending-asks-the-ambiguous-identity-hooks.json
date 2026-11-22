@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-resolver-s-pending-asks-the-ambiguous-identity-hooks",
+  "title": "A resolver's PENDING asks the identity hooks of ON_IDENTITY_AMBIGUOUS, which read it as PENDING, never those of ON_IDENTITY_UNKNOWN: with no answer the sender is pending, a hook's challenge is committed and the message held",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2"
+  ],
+  "requirements": [
+    "RK-10.1-035",
+    "RK-11.2-004",
+    "RK-11.2-006",
+    "RK-11.2-007",
+    "RK-11.3-004"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "pending"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "when": {
+              "text": "challenge me"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "inject": {
+                "event": {
+                  "content": {
+                    "type": "text",
+                    "body": "Who are you?"
+                  }
+                },
+                "target_channel_ids": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hi"
+            },
+            "source": {
+              "participant_id": "pending-915e25f899c26f82"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "challenge me"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "ambiguous": [
+        {
+          "trigger": "on_identity_ambiguous",
+          "identity_result": {
+            "status": "pending"
+          }
+        },
+        {
+          "trigger": "on_identity_ambiguous",
+          "identity_result": {
+            "status": "pending"
+          }
+        }
+      ],
+      "unknown": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hi"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "pending-915e25f899c26f82"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Who are you?"
+          },
+          "source": {
+            "channel_id": "system"
+          },
+          "visibility": "sms"
+        }
+      ]
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "pending-915e25f899c26f82",
+          "identification": "pending"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "hi"
+            }
+          }
+        ],
+        "sms": [
+          {
+            "content": {
+              "body": "Who are you?"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

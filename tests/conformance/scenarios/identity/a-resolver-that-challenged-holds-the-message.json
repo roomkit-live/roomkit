@@ -1,13 +1,15 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "identity/a-resolver-that-challenged-holds-the-message",
-  "title": "A resolver that answers CHALLENGE_SENT has put the question itself: the message is blocked, its reason the resolver's message or identity_challenge_sent, no identity hook asked, nothing stored",
+  "title": "A resolver that answers CHALLENGE_SENT has put the question itself: the message is blocked, its reason the resolver's message unless empty, else identity_challenge_sent; neither identity trigger fires and nothing is stored",
   "rules": [
     "§10.1 step 5",
     "§11.2"
   ],
   "requirements": [
     "RK-10.1-037",
+    "RK-11.1-002",
+    "RK-11.2-023",
     "RK-5.5-004"
   ],
   "setup": {
@@ -33,6 +35,17 @@
             "result": {
               "status": "challenge_sent",
               "challenge_type": "sms_code"
+            }
+          },
+          {
+            "when": {
+              "text": "third"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "challenge_type": "sms_code",
+              "message": ""
             }
           }
         ]
@@ -63,8 +76,28 @@
     ],
     "identity_hooks": [
       {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous"
+      },
+      {
         "name": "unknown",
         "trigger": "on_identity_unknown"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observes_ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "execution": "async"
+      },
+      {
+        "name": "observes_unknown",
+        "trigger": "on_identity_unknown",
+        "execution": "async"
+      },
+      {
+        "name": "filters",
+        "trigger": "before_broadcast"
       }
     ]
   },
@@ -106,11 +139,34 @@
           "event": null
         }
       }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "third"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
     }
   ],
   "expect": {
     "hooks": {
-      "unknown": []
+      "ambiguous": [],
+      "unknown": [],
+      "observes_ambiguous": [],
+      "observes_unknown": [],
+      "filters": []
     },
     "timeline": {
       "room-1": []
