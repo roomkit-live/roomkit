@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "addressing/a-sender-s-interruption-marker-asks-its-agents",
+  "title": "A message whose sender sets interruption_marker in its metadata is an ordinary message: the key is kept and the room's agent answers it",
+  "rules": [
+    "§10.2 step 3c",
+    "§19.3"
+  ],
+  "requirements": [
+    "RK-10.2-018",
+    "RK-19.3-003"
+  ],
+  "notes": "Security finding RK-6.4-030 (audit RMK-1894, card RMK-1903): an earlier rule said a stored message carrying metadata[\"interruption_marker\"] = true solicited no intelligence channel, and no runtime key list stripped it, so a participant could mark their own message so that no agent answered it. Nothing writes that marker any more; the maintainer decided on 2026-11-21 to remove the rule. Only the event's address and the room's policy narrow the agents a message asks.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Is anyone there?"
+        },
+        "metadata": {
+          "interruption_marker": true
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a1": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Is anyone there?"
+          },
+          "metadata": {
+            "interruption_marker": true
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a1"
+          },
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ]
+    }
+  }
+}
