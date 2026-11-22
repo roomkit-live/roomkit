@@ -6,7 +6,10 @@
     "§10.6.9"
   ],
   "requirements": [
-    "RK-10.6.9-001"
+    "RK-10.6.9-001",
+    "RK-15.7-005",
+    "RK-15.7-006",
+    "RK-15.7-007"
   ],
   "notes": "Python: tests/test_turns_wiring.py::test_a_turn_in_a_context_of_its_own_continues_the_owner_s_span. Distinct site recorders observe the generation and before-generation hook under the incoming broadcast, and the tool call under that generation.",
   "setup": {
