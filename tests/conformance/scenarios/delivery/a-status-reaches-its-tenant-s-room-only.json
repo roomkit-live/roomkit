@@ -64,7 +64,7 @@
       "channel_id": "sms",
       "organization_id": "acme",
       "meta": {
-        "provider": "telnyx",
+        "provider": "acme-sms",
         "sender": "+15559999999",
         "recipient": "+15550000001",
         "body": "",
@@ -96,7 +96,7 @@
           "trigger": "on_delivery_status",
           "room_id": "acme-alice",
           "delivery_status": {
-            "provider": "telnyx",
+            "provider": "acme-sms",
             "message_id": "m-1",
             "status": "delivered",
             "channel_id": "sms",

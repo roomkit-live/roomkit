@@ -69,7 +69,7 @@
       "room_id": "r1",
       "verb": "keep",
       "arguments": {
-        "model": "opus"
+        "model": "acme-large"
       }
     },
     {
@@ -78,7 +78,7 @@
       "room_id": "r1",
       "verb": "restore",
       "arguments": {
-        "model": "opus"
+        "model": "acme-large"
       },
       "background": true,
       "as": "restoring"
@@ -92,7 +92,7 @@
       "room_id": "r1",
       "verb": "keep",
       "arguments": {
-        "model": "sonnet"
+        "model": "acme-small"
       }
     },
     {
@@ -102,7 +102,7 @@
         "result": {
           "metadata": {
             "roomkit:channel_state:agent": {
-              "model": "sonnet"
+              "model": "acme-small"
             }
           }
         }
@@ -125,7 +125,7 @@
       "arguments": {},
       "expect": {
         "result": {
-          "model": "opus"
+          "model": "acme-large"
         }
       }
     }
@@ -135,7 +135,7 @@
       "r1": {
         "metadata": {
           "roomkit:channel_state:agent": {
-            "model": "opus"
+            "model": "acme-large"
           }
         }
       }

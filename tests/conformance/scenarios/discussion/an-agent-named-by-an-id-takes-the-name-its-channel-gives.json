@@ -25,12 +25,12 @@
         "id": "agent:3f2a",
         "type": "ai",
         "agent": {
-          "name": "Jev"
+          "name": "Analyst"
         },
         "model": {
           "rounds": [
             {
-              "text": "Jev here"
+              "text": "Analyst here"
             }
           ]
         }
@@ -71,7 +71,7 @@
         "sender_id": "oncall",
         "content": {
           "type": "text",
-          "body": "@jev hello"
+          "body": "@analyst hello"
         }
       },
       "expect": {
@@ -93,7 +93,7 @@
             "channel_id": "ops"
           },
           "content": {
-            "body": "@jev hello"
+            "body": "@analyst hello"
           },
           "addressed_to": [
             "agent:3f2a"
@@ -104,7 +104,7 @@
             "channel_id": "agent:3f2a"
           },
           "content": {
-            "body": "Jev here"
+            "body": "Analyst here"
           }
         }
       ]

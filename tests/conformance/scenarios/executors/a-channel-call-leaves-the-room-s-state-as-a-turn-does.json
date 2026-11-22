@@ -70,11 +70,11 @@
       "room_id": "r1",
       "verb": "keep",
       "arguments": {
-        "m": "sonnet"
+        "m": "acme-small"
       },
       "expect": {
         "result": {
-          "m": "sonnet"
+          "m": "acme-small"
         }
       }
     },
@@ -97,7 +97,7 @@
       "verb": "read",
       "expect": {
         "result": {
-          "m": "sonnet"
+          "m": "acme-small"
         }
       }
     },
@@ -115,11 +115,11 @@
       "room_id": "r1",
       "verb": "keep",
       "arguments": {
-        "m": "opus"
+        "m": "acme-large"
       },
       "expect": {
         "result": {
-          "m": "opus"
+          "m": "acme-large"
         }
       }
     },
@@ -150,7 +150,7 @@
       "verb": "read",
       "expect": {
         "result": {
-          "m": "opus"
+          "m": "acme-large"
         }
       }
     }

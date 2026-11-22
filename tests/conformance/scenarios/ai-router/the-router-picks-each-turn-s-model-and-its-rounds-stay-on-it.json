@@ -31,8 +31,8 @@
           }
         ],
         "model": {
-          "name": "qwen",
-          "provider": "llamacpp",
+          "name": "acme-small",
+          "provider": "acme-local",
           "rounds": [
             {
               "calls": [
@@ -50,8 +50,8 @@
         "router": {
           "models": {
             "hosted": {
-              "name": "kimi",
-              "provider": "moonshot",
+              "name": "acme-large",
+              "provider": "acme-cloud",
               "rounds": [
                 {
                   "text": "Hosted."
@@ -136,8 +136,8 @@
             "body": "Local."
           },
           "metadata": {
-            "ai_model": "qwen",
-            "ai_provider": "llamacpp"
+            "ai_model": "acme-small",
+            "ai_provider": "acme-local"
           }
         },
         {
@@ -152,8 +152,8 @@
             "body": "Hosted."
           },
           "metadata": {
-            "ai_model": "kimi",
-            "ai_provider": "moonshot"
+            "ai_model": "acme-large",
+            "ai_provider": "acme-cloud"
           }
         }
       ]

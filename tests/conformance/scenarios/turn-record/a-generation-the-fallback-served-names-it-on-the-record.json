@@ -28,8 +28,8 @@
           "base_delay_ms": 1
         },
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "refuses": {
@@ -41,8 +41,8 @@
           ]
         },
         "fallback_model": {
-          "name": "gpt",
-          "provider": "openai",
+          "name": "acme-medium",
+          "provider": "acme-cloud",
           "rounds": [
             {
               "text": "Hello.",
@@ -109,8 +109,8 @@
               "output_tokens": 2
             },
             "ai_usage_complete": true,
-            "ai_model": "gpt",
-            "ai_provider": "openai"
+            "ai_model": "acme-medium",
+            "ai_provider": "acme-cloud"
           }
         }
       ]

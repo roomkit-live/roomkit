@@ -35,8 +35,8 @@
           "base_delay_ms": 1
         },
         "model": {
-          "name": "qwen",
-          "provider": "llamacpp",
+          "name": "acme-small",
+          "provider": "acme-local",
           "rounds": [
             {
               "refuses": {
@@ -50,8 +50,8 @@
         "router": {
           "models": {
             "hosted": {
-              "name": "kimi",
-              "provider": "moonshot",
+              "name": "acme-large",
+              "provider": "acme-cloud",
               "rounds": [
                 {
                   "text": "Checking.",
@@ -130,8 +130,8 @@
             "body": "Done."
           },
           "metadata": {
-            "ai_model": "kimi",
-            "ai_provider": "moonshot"
+            "ai_model": "acme-large",
+            "ai_provider": "acme-cloud"
           }
         }
       ]

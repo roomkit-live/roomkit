@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `LlamaCppAIProvider` and `LlamaCppClassifier` run llama.cpp v1.0.0 (build b12359), where they ran v0.8.0 (build b11960) (RMK-1895). The build loads the models llama.cpp added in its v0.9.0 and v1.0.0 releases: `Lernex/Metis-1.6-Praxis-GGUF:Q4_K_M`, refused before with `unknown model architecture: 'metis16'`, runs from its Hugging Face reference. llama.cpp v1.0.0 removed `llama-server`'s `--defrag-thold` (`-dt`) option, deprecated and without effect before: an `extra_args` that still passes it stops the server at start with `invalid argument: --defrag-thold`; remove it. The Linux CUDA 13 archives are built with the CUDA 13.5 toolkit, where they were built with 13.4.
 
+- The supervisor's default first-pass instruction gives a neutral example, `'analyse electric cars' → 'Electric cars'`, where it named a vendor (RFC §19.7.3, RMK-1982).
+
 ### Fixed
 
 - An ACP turn cancelled while the agent's permission request waits on its decision answers that request `cancelled`, as ACP requires of a client that cancels a prompt (RFC §6.4, RMK-423): the external tool handler's `process_tool_call` is cancelled and its decision abandoned, even one made as `session/cancel` goes out, where the agent got the reject option once the handler withdrew, or the handler's answer whenever it came. A handler that withdrew its pending decision in `on_tool_cancelled` no longer needs to; its `process_tool_call` now sees `asyncio.CancelledError`. The call is reported once, cancelled, and the handler hears of it through `on_tool_cancelled`, a call the agent never announced included, which was reported nowhere (RFC §9.3).

@@ -24,8 +24,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "refuses": {
@@ -41,8 +41,8 @@
           "base_delay_ms": 1
         },
         "fallback_model": {
-          "name": "gpt",
-          "provider": "openai",
+          "name": "acme-medium",
+          "provider": "acme-cloud",
           "rounds": [
             {
               "text": "Hello.",
@@ -99,8 +99,8 @@
               "input_tokens": 5,
               "output_tokens": 2
             },
-            "model": "gpt",
-            "provider": "openai"
+            "model": "acme-medium",
+            "provider": "acme-cloud"
           },
           {
             "row": {

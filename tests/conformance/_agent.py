@@ -29,7 +29,6 @@ from roomkit.models.channel import RetryPolicy
 from roomkit.models.event import RoomEvent
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import (
-    OPENAI_CHAT,
     AIContext,
     AIImagePart,
     AIProvider,
@@ -38,6 +37,7 @@ from roomkit.providers.ai import (
     AIThinkingPart,
     AITool,
     AIToolCall,
+    ChatDialect,
     ModelInfo,
     ModelPricing,
     ServedCall,
@@ -61,11 +61,6 @@ from roomkit.providers.ai.response_schema import (
     schema_for_generate,
 )
 from roomkit.providers.ai.tool_calls import is_malformed_call
-from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
-from roomkit.providers.kimi.ai import KIMI_CHAT
-from roomkit.providers.minimax.ai import MINIMAX_CHAT
-from roomkit.providers.openai.ai import OpenAIAIProvider
-from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
 from roomkit.tasks import CancelTaskTool, TaskStatusTool, post_task_progress
 from roomkit.tools import (
@@ -109,16 +104,30 @@ TOOL_SEARCH_SETTINGS = (
 )
 
 
-CHAT_DIALECTS = {
-    "openai": OPENAI_CHAT,
-    "openai_thinking_field": OpenAIAIProvider(
-        OpenAIConfig(api_key="scripted", model="scripted", thinking_field="reasoning_content")
-    )._dialect(),
-    "deepseek": DEEPSEEK_CHAT,
-    "minimax": MINIMAX_CHAT,
-    "kimi": KIMI_CHAT,
+CHAT_DIALECT_OPTIONS: dict[str, type] = {
+    "thinking_field": str,
+    "names_tool_results": bool,
+    "flattens_text": bool,
+    "round_thinking_required": bool,
+    "round_thinking_placeholder": str,
 }
-"""The renderings a scripted model's ``chat_dialect`` names."""
+"""The core's ``ChatDialect`` options a scripted model's ``chat_dialect``
+states, each with its type."""
+
+
+def chat_dialect_of(options: Any) -> ChatDialect:
+    """The core's ``ChatDialect`` under the options *options* states (README,
+    ``model.chat_dialect``); one that does not read, or that the core
+    refuses, fails the scenario."""
+    if not isinstance(options, Mapping):
+        raise TypeError(f"chat_dialect {options!r}: not an object of options")
+    for name, value in options.items():
+        kind = CHAT_DIALECT_OPTIONS.get(name)
+        if kind is None:
+            raise TypeError(f"chat_dialect.{name}: no such option")
+        if not isinstance(value, kind):
+            raise TypeError(f"chat_dialect.{name}: {value!r} is not of its type")
+    return ChatDialect(**options)
 
 
 class ModelPastItsScriptError(Exception):
@@ -146,20 +155,15 @@ class ScriptedModel(AIProvider):
         context_window: int | None = None,
         name: str = "scripted",
         provider: str = "scripted",
-        chat_dialect: str | None = None,
+        chat_dialect: Mapping[str, Any] | None = None,
         response_schema: bool = False,
         response_schema_with_tools: bool = False,
         streaming: bool = True,
         fails_once_closed: bool = False,
     ) -> None:
-        self._anthropic_dialect = chat_dialect == "anthropic"
         self._fails_once_closed = fails_once_closed
         self._closed = False
-        self._chat_dialect = (
-            None
-            if chat_dialect is None or self._anthropic_dialect
-            else CHAT_DIALECTS[chat_dialect]
-        )
+        self._chat_dialect = None if chat_dialect is None else chat_dialect_of(chat_dialect)
         self._response_schema = response_schema
         self._streaming = streaming
         self._response_schema_with_tools = response_schema_with_tools
@@ -350,11 +354,7 @@ class ScriptedModel(AIProvider):
                 },
             }
         )
-        if self._anthropic_dialect:
-            from roomkit.providers.anthropic.request import build_messages
-
-            self.requests[-1]["chat_messages"] = build_messages(context.messages)
-        elif self._chat_dialect is not None:
+        if self._chat_dialect is not None:
             self.requests[-1]["chat_messages"] = chat_messages(
                 context.messages,
                 context.system_prompt,

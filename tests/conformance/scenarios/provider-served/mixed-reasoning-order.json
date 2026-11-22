@@ -285,5 +285,5 @@
   },
   "id": "provider-served/mixed-reasoning-order",
   "title": "A provider-served call keeps its position among signed reasoning and local calls",
-  "notes": "Python: tests/test_providers/test_thinking_blocks.py::TestTheLoopReplaysTheRound::test_a_call_the_provider_ran_keeps_its_place. The next model request is observed through the public channel."
+  "notes": "Python: providers/ai/round_parts.py RoundTranscript, the round the tool loop replays. The next model request is observed through the public channel."
 }

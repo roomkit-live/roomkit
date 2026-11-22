@@ -24,8 +24,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "text": "One."
@@ -82,8 +82,8 @@
                 "$absent": true
               }
             },
-            "model": "opus",
-            "provider": "anthropic"
+            "model": "acme-large",
+            "provider": "acme"
           },
           {
             "row": {

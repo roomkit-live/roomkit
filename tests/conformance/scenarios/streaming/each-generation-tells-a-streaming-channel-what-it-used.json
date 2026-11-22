@@ -26,8 +26,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "text": "One.",
@@ -117,8 +117,8 @@
               "input_tokens": 1000,
               "output_tokens": 10
             },
-            "model": "opus",
-            "provider": "anthropic"
+            "model": "acme-large",
+            "provider": "acme"
           },
           {
             "row": {
@@ -151,8 +151,8 @@
               "input_tokens": 2000,
               "output_tokens": 10
             },
-            "model": "opus",
-            "provider": "anthropic"
+            "model": "acme-large",
+            "provider": "acme"
           },
           {
             "row": {
@@ -185,8 +185,8 @@
               "input_tokens": 3000,
               "output_tokens": 10
             },
-            "model": "opus",
-            "provider": "anthropic"
+            "model": "acme-large",
+            "provider": "acme"
           },
           {
             "row": {
@@ -237,8 +237,8 @@
               "output_tokens": 10
             },
             "ai_usage_complete": true,
-            "ai_model": "opus",
-            "ai_provider": "anthropic"
+            "ai_model": "acme-large",
+            "ai_provider": "acme"
           }
         }
       ]

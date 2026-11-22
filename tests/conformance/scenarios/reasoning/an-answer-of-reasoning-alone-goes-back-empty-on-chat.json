@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/an-answer-of-reasoning-alone-goes-back-empty-on-chat",
-  "title": "An answer that only reasoned goes back on Chat Completions as an empty text, the way a reasoning field's dialect sends it",
+  "title": "An answer that only reasoned goes back in a chat request as an empty text, the way a reasoning field's dialect sends it",
   "rules": [
     "§6.4",
     "§21.3"
@@ -9,7 +9,7 @@
   "requirements": [
     "RK-6.4-083"
   ],
-  "notes": "Python: chat_request._plain, the message's only part being reasoning (tests/test_providers/test_chat_request.py).",
+  "notes": "Python: chat_request._plain, the message's only part being reasoning.",
   "setup": {
     "channels": [
       {
@@ -22,7 +22,7 @@
         "type": "ai",
         "steer_room_turns": true,
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "gate": "answer",

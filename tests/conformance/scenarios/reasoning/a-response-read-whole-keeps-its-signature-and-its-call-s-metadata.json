@@ -13,7 +13,7 @@
     "RK-6.7-027",
     "RK-6.7-031"
   ],
-  "notes": "Python: thinking_parts_of, providers/ai/round_parts.py call_part; tests/test_providers/test_stream_adapter.py test_a_wrapped_response_keeps_its_thinking_signature_and_call_metadata.",
+  "notes": "Python: thinking_parts_of, providers/ai/round_parts.py call_part.",
   "setup": {
     "channels": [
       {

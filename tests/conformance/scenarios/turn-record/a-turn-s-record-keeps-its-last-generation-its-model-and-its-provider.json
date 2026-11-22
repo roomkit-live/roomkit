@@ -29,8 +29,8 @@
           }
         ],
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "text": "Checking.",
@@ -127,8 +127,8 @@
               "output_tokens": 7
             },
             "ai_usage_complete": true,
-            "ai_model": "opus",
-            "ai_provider": "anthropic"
+            "ai_model": "acme-large",
+            "ai_provider": "acme"
           }
         }
       ]

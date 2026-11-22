@@ -12,7 +12,7 @@
     "RK-21.1-072",
     "RK-6.4-388"
   ],
-  "notes": "Python: tests/test_deferred_tools.py::test_a_tool_the_policy_denies_is_not_even_held. RMK-1306. Role-selection counterpart of anthropic/a-denied-tool-is-not-held; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "notes": "Python: tests/test_deferred_tools.py::test_a_tool_the_policy_denies_is_not_even_held. RMK-1306. Role-selection counterpart of tool-search/a-denied-tool-is-not-held; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {
     "channels": [
       {

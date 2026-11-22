@@ -21,8 +21,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "qwen",
-          "provider": "llamacpp",
+          "name": "acme-small",
+          "provider": "acme-local",
           "rounds": [
             {
               "text": "Local."
@@ -32,8 +32,8 @@
         "router": {
           "models": {
             "hosted": {
-              "name": "kimi",
-              "provider": "moonshot",
+              "name": "acme-large",
+              "provider": "acme-cloud",
               "rounds": [
                 {
                   "text": "Hosted."
@@ -93,7 +93,7 @@
           "room_id": "room-1",
           "generation": {
             "channel_id": "agent",
-            "provider_name": "moonshot"
+            "provider_name": "acme-cloud"
           }
         }
       ]

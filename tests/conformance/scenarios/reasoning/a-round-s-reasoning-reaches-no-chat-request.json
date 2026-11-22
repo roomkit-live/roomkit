@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/a-round-s-reasoning-reaches-no-chat-request",
-  "title": "A round's reasoning reaches no Chat Completions request, in no form, and still reaches the room's reader and the request's parts",
+  "title": "A round's reasoning reaches no chat request, in no form, and still reaches the room's reader and the request's parts",
   "rules": [
     "§6.4"
   ],
@@ -10,7 +10,7 @@
     "RK-6.4-082",
     "RK-6.4-084"
   ],
-  "notes": "Python: providers/ai/chat_request.py chat_messages over OPENAI_CHAT; tests/test_providers/test_chat_request.py. Measured on a real Qwen (RMK-1369): a <think> sent back empties the server's cache at every step of a turn.",
+  "notes": "Python: providers/ai/chat_request.py chat_messages over the default dialect, which names no reasoning field. Measured on a real model server (RMK-1369): a <think> sent back empties the server's cache at every step of a turn.",
   "setup": {
     "channels": [
       {
@@ -30,7 +30,7 @@
           }
         ],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "stream": [

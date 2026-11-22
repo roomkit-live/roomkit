@@ -29,7 +29,7 @@
         "type": "ai",
         "tools": [],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "text": "Done, as asked."
@@ -45,7 +45,7 @@
         "type": "ai",
         "tools": [],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "text": "I saw a's answer."

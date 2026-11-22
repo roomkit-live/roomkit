@@ -1,14 +1,15 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "reasoning/minimax-s-dialect-sends-a-round-s-reasoning-in-its-field",
-  "title": "MiniMax's dialect carries a round's reasoning in reasoning_content, nothing for a round that did not reason, and a later turn none",
+  "id": "reasoning/a-required-reasoning-field-carries-a-placeholder-where-empty-reads-as-missing",
+  "title": "A dialect that requires its reasoning field and reads an empty one as missing carries a round's reasoning in it, a single space for a round with none, a later turn's rounds included",
   "rules": [
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-079"
+    "RK-6.4-077",
+    "RK-6.4-078"
   ],
-  "notes": "Python: providers/minimax/ai.py MINIMAX_CHAT; tests/test_providers/test_minimax_kimi.py. MiniMax's API documentation asks for the reasoning_content of each message back in a tool loop, and says a round that did not think has none (https://platform.minimax.io/docs/guides/text-m2-function-call). Its chat templates, M2's and M3's, read that field; llama.cpp hands it to them (run on b11960), and vLLM too (read in its source). A later turn replays the round's text and its calls in one message, as the turn sent them, without the round's reasoning (RMK-1370).",
+  "notes": "The dialect of a server that requires the reasoning field on every round that called tools and reads an empty field as missing (RK-6.4-078): round_thinking_placeholder fills the field of a round that did not reason, and a later turn's rounds hold no reasoning (§6.4). The reasoning goes in that field only (RK-6.4-077). A later turn replays the round's text and its calls in one message, as the turn sent them, without the round's reasoning (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -28,7 +29,11 @@
           }
         ],
         "model": {
-          "chat_dialect": "minimax",
+          "chat_dialect": {
+            "thinking_field": "reasoning_content",
+            "round_thinking_required": true,
+            "round_thinking_placeholder": " "
+          },
           "rounds": [
             {
               "stream": [
@@ -166,9 +171,7 @@
             {
               "role": "assistant",
               "content": null,
-              "reasoning_content": {
-                "$absent": true
-              },
+              "reasoning_content": " ",
               "reasoning": {
                 "$absent": true
               },
@@ -200,9 +203,7 @@
             {
               "role": "assistant",
               "content": "Let me look.",
-              "reasoning_content": {
-                "$absent": true
-              },
+              "reasoning_content": " ",
               "reasoning": {
                 "$absent": true
               },
@@ -226,9 +227,7 @@
             {
               "role": "assistant",
               "content": null,
-              "reasoning_content": {
-                "$absent": true
-              },
+              "reasoning_content": " ",
               "reasoning": {
                 "$absent": true
               },

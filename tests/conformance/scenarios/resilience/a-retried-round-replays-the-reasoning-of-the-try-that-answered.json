@@ -24,7 +24,10 @@
           "base_delay_ms": 1
         },
         "model": {
-          "chat_dialect": "deepseek",
+          "chat_dialect": {
+            "thinking_field": "reasoning_content",
+            "round_thinking_required": true
+          },
           "rounds": [
             {
               "thinking": [

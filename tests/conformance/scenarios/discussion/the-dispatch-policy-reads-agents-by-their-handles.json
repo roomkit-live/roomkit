@@ -31,7 +31,7 @@
           ]
         },
         "agent": {
-          "name": "Jev",
+          "name": "Analyst",
           "description": "reads the contract"
         }
       },
@@ -92,7 +92,7 @@
         "sender_id": "oncall",
         "content": {
           "type": "text",
-          "body": "@Jev clause 4?"
+          "body": "@Analyst clause 4?"
         }
       },
       "expect": {
@@ -134,7 +134,7 @@
           "candidates": [
             {
               "channel_id": "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
-              "handle": "Jev"
+              "handle": "Analyst"
             },
             {
               "channel_id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
@@ -148,7 +148,7 @@
             ],
             [
               "r1#1",
-              "@Jev"
+              "@Analyst"
             ],
             [
               "r1#2",

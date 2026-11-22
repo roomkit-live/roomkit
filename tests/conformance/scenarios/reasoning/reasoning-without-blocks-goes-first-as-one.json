@@ -8,7 +8,7 @@
   "requirements": [
     "RK-6.4-075"
   ],
-  "notes": "Python: RoundTranscript.parts on a round not keyed; tests/test_providers/test_thinking_blocks.py TestTheLoopReplaysTheRound::test_reasoning_without_blocks_goes_first_as_one, tests/test_ai_streaming_thinking.py test_assistant_message_keeps_the_whole_round_reasoning.",
+  "notes": "Python: RoundTranscript.parts on a round not keyed; tests/test_ai_streaming_thinking.py test_assistant_message_keeps_the_whole_round_reasoning.",
   "setup": {
     "channels": [
       {

@@ -35,7 +35,7 @@
           }
         ],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "text": "Let me look it up.",

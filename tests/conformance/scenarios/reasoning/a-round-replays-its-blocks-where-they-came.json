@@ -10,7 +10,7 @@
     "RK-6.4-072",
     "RK-6.7-027"
   ],
-  "notes": "Python: providers/ai/round_parts.py RoundTranscript.parts, providers/ai/thinking_blocks.py; tests/test_providers/test_thinking_blocks.py TestThinkingBlocks::test_each_block_keeps_its_text_and_signature, TestTheLoopReplaysTheRound::test_blocks_go_back_where_they_came.",
+  "notes": "Python: providers/ai/round_parts.py RoundTranscript.parts, providers/ai/thinking_blocks.py.",
   "setup": {
     "channels": [
       {

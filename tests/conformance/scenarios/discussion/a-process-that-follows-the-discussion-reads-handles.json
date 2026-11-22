@@ -11,7 +11,7 @@
     "RK-19.7.5-125",
     "RK-19.7.5-127"
   ],
-  "notes": "Python: test_discussion_handles.py test_a_process_that_follows_the_discussion_reads_handles. everyone names Jev, so a message read without the handles would ask Jev.",
+  "notes": "Python: test_discussion_handles.py test_a_process_that_follows_the_discussion_reads_handles. everyone names Analyst, so a message read without the handles would ask Analyst.",
   "setup": {
     "channels": [
       {
@@ -25,12 +25,12 @@
         "model": {
           "rounds": [
             {
-              "text": "Jev here"
+              "text": "Analyst here"
             }
           ]
         },
         "agent": {
-          "name": "Jev",
+          "name": "Analyst",
           "description": "reads the contract"
         }
       },

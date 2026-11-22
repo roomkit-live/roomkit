@@ -31,28 +31,28 @@
             {
               "refuses": {
                 "status": 429,
-                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "message": "Request too large for acme-large in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
                 "retryable": true
               }
             },
             {
               "refuses": {
                 "status": 429,
-                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "message": "Request too large for acme-large in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
                 "retryable": true
               }
             },
             {
               "refuses": {
                 "status": 429,
-                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "message": "Request too large for acme-large in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
                 "retryable": true
               }
             },
             {
               "refuses": {
                 "status": 429,
-                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "message": "Request too large for acme-large in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
                 "retryable": true
               }
             }

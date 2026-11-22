@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/a-fallback-s-chat-request-reads-no-signed-block",
-  "title": "A round whose blocks another vendor signed reaches a Chat Completions fallback without them, as they stay in the request's parts",
+  "title": "A round whose blocks another vendor signed reaches a fallback's chat request without them, as they stay in the request's parts",
   "rules": [
     "§6.4"
   ],
@@ -65,7 +65,7 @@
           "max_retries": 0
         },
         "fallback_model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "text": "Sunny."

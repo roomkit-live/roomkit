@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/a-steered-answer-s-reasoning-reaches-no-chat-request",
-  "title": "An answer a steered message asks the model after goes back on Chat Completions without its reasoning",
+  "title": "An answer a steered message asks the model after goes back in a chat request without its reasoning",
   "rules": [
     "§6.4",
     "§21.3"
@@ -12,7 +12,7 @@
     "RK-21.3-010",
     "RK-6.4-082"
   ],
-  "notes": "Python: chat_request._plain over OPENAI_CHAT, reached by channels/_ai_streaming.py _steered_after_answer.",
+  "notes": "Python: chat_request._plain over the default dialect, reached by channels/_ai_streaming.py _steered_after_answer.",
   "setup": {
     "channels": [
       {
@@ -25,7 +25,7 @@
         "type": "ai",
         "steer_room_turns": true,
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "gate": "answer",

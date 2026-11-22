@@ -28,8 +28,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "text": "One.",
@@ -182,8 +182,8 @@
               "output_tokens": 10
             },
             "ai_usage_complete": true,
-            "ai_model": "opus",
-            "ai_provider": "anthropic",
+            "ai_model": "acme-large",
+            "ai_provider": "acme",
             "executor_id": "first"
           }
         },

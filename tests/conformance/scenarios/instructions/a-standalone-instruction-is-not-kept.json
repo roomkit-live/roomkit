@@ -24,7 +24,7 @@
         "type": "ai",
         "tools": [],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "text": "Noted."

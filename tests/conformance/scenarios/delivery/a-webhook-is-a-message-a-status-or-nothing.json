@@ -48,7 +48,7 @@
       "call": "process_webhook",
       "channel_id": "sms",
       "meta": {
-        "provider": "twilio",
+        "provider": "acme-cloud",
         "sender": "+15550000001",
         "recipient": "+15559999999",
         "body": "Hello",
@@ -65,7 +65,7 @@
       "call": "process_webhook",
       "channel_id": "sms",
       "meta": {
-        "provider": "telnyx",
+        "provider": "acme-sms",
         "sender": "+15559999999",
         "recipient": "+15550000001",
         "body": "",
@@ -83,7 +83,7 @@
       "call": "process_webhook",
       "channel_id": "sms",
       "meta": {
-        "provider": "telnyx",
+        "provider": "acme-sms",
         "sender": "+15559999999",
         "recipient": "+15550000001",
         "body": "",
@@ -123,7 +123,7 @@
             "external_id": "SM1"
           },
           "metadata": {
-            "provider": "twilio",
+            "provider": "acme-cloud",
             "recipient": "+15559999999",
             "timestamp": null
           }
@@ -136,7 +136,7 @@
           "trigger": "on_delivery_status",
           "room_id": "room-alice",
           "delivery_status": {
-            "provider": "telnyx",
+            "provider": "acme-sms",
             "message_id": "m-2",
             "status": "failed",
             "channel_id": "sms",

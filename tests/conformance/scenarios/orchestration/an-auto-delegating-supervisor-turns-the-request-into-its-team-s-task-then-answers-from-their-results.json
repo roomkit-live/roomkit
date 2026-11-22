@@ -150,7 +150,7 @@
     "models": {
       "sup": [
         {
-          "system_prompt": "Extract the core topic or subject from the user's request. Output only the topic, nothing else. No questions, no instructions, no formatting. Example: user says 'analyse anthropic' → 'Anthropic'\n--- Agent Identity ---\nRole: Coordinator",
+          "system_prompt": "Extract the core topic or subject from the user's request. Output only the topic, nothing else. No questions, no instructions, no formatting. Example: user says 'analyse electric cars' → 'Electric cars'\n--- Agent Identity ---\nRole: Coordinator",
           "messages": [
             {
               "role": "user",

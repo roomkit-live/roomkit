@@ -31,7 +31,7 @@
           }
         ],
         "model": {
-          "chat_dialect": "openai",
+          "chat_dialect": {},
           "rounds": [
             {
               "calls": [

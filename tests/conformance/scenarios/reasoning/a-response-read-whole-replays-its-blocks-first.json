@@ -12,7 +12,7 @@
     "RK-6.7-031",
     "RK-A.9-022"
   ],
-  "notes": "Python: providers/ai/base.py response_stream_events, thinking_parts_of; tests/test_providers/test_thinking_blocks.py test_a_wrapped_response_hands_each_block_on, test_a_response_read_through_generate_replays_its_blocks_first.",
+  "notes": "Python: providers/ai/base.py response_stream_events, thinking_parts_of.",
   "setup": {
     "channels": [
       {

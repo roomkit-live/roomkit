@@ -9,7 +9,7 @@
     "RK-6.4-075",
     "RK-6.7-027"
   ],
-  "notes": "Python: ThinkingBlocks.add; tests/test_providers/test_thinking_blocks.py TestThinkingBlocks::test_reasoning_without_blocks_is_one_block.",
+  "notes": "Python: providers/ai/thinking_blocks.py ThinkingBlocks.add.",
   "setup": {
     "channels": [
       {

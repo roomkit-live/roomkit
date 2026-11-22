@@ -6,10 +6,12 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-077",
+    "RK-6.4-079",
     "RK-6.4-080",
     "RK-6.4-086"
   ],
-  "notes": "Python: providers/openai/config.py OpenAIConfig.thinking_field, providers/openai/ai.py _dialect; tests/test_providers/test_chat_request.py. Z.ai's documentation asks for reasoning_content back with the tool results; strict servers (Mistral, Cerebras, Groq, SambaNova) answer 400 on a field they do not know, so only a named field sends it. Measured on Terminal-Bench 2.1, GLM-5.3-Flash, 40 tasks (2026-11-09): rounds 1614 without, 846 with; rounds that reason 15 % without, 60 % with.",
+  "notes": "A dialect that names the field its server reads a model's earlier reasoning in (ChatDialect thinking_field, as a provider's configuration names it, RK-6.4-080) carries there the reasoning of a round or an answer that reasoned, and nothing on one that did not (RK-6.4-079), in that field only (RK-6.4-077); a later turn reads none (RK-6.4-086). A server that does not know the field may refuse the request, so only a named field sends it. Python: providers/ai/chat_request.py chat_messages.",
   "setup": {
     "channels": [
       {
@@ -29,7 +31,9 @@
           }
         ],
         "model": {
-          "chat_dialect": "openai_thinking_field",
+          "chat_dialect": {
+            "thinking_field": "reasoning_content"
+          },
           "rounds": [
             {
               "stream": [

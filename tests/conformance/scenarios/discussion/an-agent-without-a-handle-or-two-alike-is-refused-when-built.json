@@ -97,11 +97,11 @@
       "agents": [
         {
           "id": "agent:1",
-          "name": "Jev"
+          "name": "Analyst"
         },
         {
           "id": "agent:2",
-          "name": "jev"
+          "name": "analyst"
         }
       ],
       "expect": {

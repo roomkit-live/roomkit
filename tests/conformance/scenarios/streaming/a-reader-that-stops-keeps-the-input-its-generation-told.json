@@ -29,8 +29,8 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
+          "name": "acme-large",
+          "provider": "acme",
           "rounds": [
             {
               "usage_at_start": {
@@ -140,8 +140,8 @@
               }
             },
             "ai_usage_complete": false,
-            "ai_model": "opus",
-            "ai_provider": "anthropic"
+            "ai_model": "acme-large",
+            "ai_provider": "acme"
           }
         }
       ]

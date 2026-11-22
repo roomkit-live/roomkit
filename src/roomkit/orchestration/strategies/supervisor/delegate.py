@@ -65,7 +65,7 @@ def _build_pass1_instruction() -> str:
     return (
         "Extract the core topic or subject from the user's request. "
         "Output only the topic, nothing else. No questions, no instructions, "
-        "no formatting. Example: user says 'analyse anthropic' → 'Anthropic'"
+        "no formatting. Example: user says 'analyse electric cars' → 'Electric cars'"
     )
 
 

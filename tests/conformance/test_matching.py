@@ -46,7 +46,7 @@ def test_contains_refuses_what_is_no_text_nor_list_of_texts(malformed: object) -
 
 def test_acp_option_ids_are_not_event_ids() -> None:
     options = [
-        {"id": "model", "type": "select", "currentValue": "opus"},
+        {"id": "model", "type": "select", "currentValue": "large"},
         {"id": "fast", "type": "boolean", "currentValue": True},
     ]
     normalizer = Normalizer(Observed(literal_rooms=set(), steps=[{"result": options}]))
