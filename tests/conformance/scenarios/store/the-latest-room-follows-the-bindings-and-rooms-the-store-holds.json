@@ -5,6 +5,11 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-015",
+    "RK-14.1-043",
+    "RK-14.1-044"
+  ],
   "notes": "Python: tests/test_store_memory.py::TestFindLatestRoomIndex::test_update_binding_reassigning_participant_matches_new_pid, test_removed_binding_no_longer_matches, test_removed_binding_keeps_participant_row_match, test_deleted_room_no_longer_matches.",
   "steps": [
     {

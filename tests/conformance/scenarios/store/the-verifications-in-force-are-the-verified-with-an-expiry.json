@@ -7,6 +7,7 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-14.1-051",
     "RK-5.5-005"
   ],
   "notes": "Python: tests/test_identity_verification.py::test_the_store_lists_the_verifications_in_force, its store part (RMK-1122). The list is read when the framework starts, to arm the timers that end them (§11.7.5); a verification without an expiry has no timer to arm.",

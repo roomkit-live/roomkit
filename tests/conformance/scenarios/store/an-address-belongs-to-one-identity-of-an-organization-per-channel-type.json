@@ -7,6 +7,8 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-14.1-049",
+    "RK-14.1-050",
     "RK-5.6-003"
   ],
   "notes": "Python: tests/test_store_identity_scoping.py::TestOneIdentityPerAddress and TestUnlinkingAnAddress::test_an_unlinked_address_moves_to_another_identity. The refused creation names a free address before the held one, and that address still resolves to no one once id-bob exists, so a store that filed it before refusing shows it. The same address on another channel type, or in another organization, belongs to another identity; the identities of no organization hold their addresses alike.",

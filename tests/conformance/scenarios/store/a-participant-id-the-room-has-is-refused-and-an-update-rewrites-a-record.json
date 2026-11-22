@@ -8,6 +8,9 @@
     "§14.3"
   ],
   "requirements": [
+    "RK-14.1-046",
+    "RK-14.1-047",
+    "RK-14.3-014",
     "RK-5.5-029"
   ],
   "notes": "Python: tests/test_store_room_contract.py::test_a_participant_is_added_once. The refused addition names another channel and name, so a store that replaced or merged the record shows it; the update leaves out the metadata the record held, so a store that merged shows it. An update is no creation: a record the room does not hold is refused (participant not found, §14.3), and the room keeps two participants.",

@@ -6,6 +6,10 @@
     "§12.2 step 11s",
     "§6.1"
   ],
+  "requirements": [
+    "RK-14.1-075",
+    "RK-14.1-076"
+  ],
   "notes": "Python: the target is the first of the room's bindings, in the order they were bound, that the answer reaches and that streams (`_find_streaming_targets`). Here `st2` is bound before `st1`.",
   "setup": {
     "channels": [

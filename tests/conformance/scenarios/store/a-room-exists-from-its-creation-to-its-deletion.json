@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-009"
+  ],
   "steps": [
     {
       "call": "store.room_exists",

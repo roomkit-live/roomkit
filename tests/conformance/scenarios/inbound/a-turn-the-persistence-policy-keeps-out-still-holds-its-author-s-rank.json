@@ -7,7 +7,9 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-10.1-069"
+    "RK-10.1-069",
+    "RK-14.3-007",
+    "RK-14.3-008"
   ],
   "notes": "Python: core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes is delivered with its author record, _with_author), core/_authors.py with_author (the register written first, set_private_state).",
   "setup": {

@@ -7,7 +7,8 @@
     "§14.3"
   ],
   "requirements": [
-    "RK-10.3-033"
+    "RK-10.3-033",
+    "RK-14.3-005"
   ],
   "notes": "The edit's hooks have run; its target's read again (step 8a) is held once it answered, and the store's own delete_event removes the target meanwhile, outside the lock. The edit's commit, whose target is gone by then, fails whole: the room holds neither the edit nor the target written back, and no ON_EVENT_UPDATED fires.",
   "setup": {

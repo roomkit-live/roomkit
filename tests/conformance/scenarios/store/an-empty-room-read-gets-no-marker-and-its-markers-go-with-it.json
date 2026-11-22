@@ -5,6 +5,11 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-055",
+    "RK-14.1-056",
+    "RK-14.1-057"
+  ],
   "notes": "Python: tests/test_store_room_contract.py::test_marking_an_empty_room_read_leaves_its_first_event_unread; tests/test_store_memory.py::TestDeleteRoomCleanup::test_full_cleanup_on_delete (its markers).",
   "steps": [
     {

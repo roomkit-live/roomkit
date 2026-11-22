@@ -8,6 +8,8 @@
     "§17.2"
   ],
   "requirements": [
+    "RK-14.1-049",
+    "RK-14.1-050",
     "RK-5.6-004"
   ],
   "notes": "Python: tests/test_store_identity_scoping.py::TestInMemory and TestSQLite. One address is held in acme and by an identity of no organization; another in acme alone.",

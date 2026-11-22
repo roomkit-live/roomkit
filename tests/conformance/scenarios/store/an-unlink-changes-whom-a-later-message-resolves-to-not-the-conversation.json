@@ -8,6 +8,7 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-14.1-049",
     "RK-5.6-007"
   ],
   "notes": "Python: tests/test_store_identity_scoping.py::TestUnlinkingAnAddress::test_the_conversations_that_named_the_address_stay_as_they_are. The scripted router reads the identity the kit resolved the sender's address to (§10.4), before and after the unlink.",

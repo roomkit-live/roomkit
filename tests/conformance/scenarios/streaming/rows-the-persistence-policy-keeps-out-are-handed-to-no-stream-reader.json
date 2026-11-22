@@ -6,6 +6,10 @@
     "§12.2 step 14s",
     "§14.3"
   ],
+  "requirements": [
+    "RK-14.3-007",
+    "RK-14.3-009"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py _write_now and _hand_to_target (a row is handed to the stream's reader, and counted among the turn's rows, only once stored).",
   "setup": {
     "kit": {

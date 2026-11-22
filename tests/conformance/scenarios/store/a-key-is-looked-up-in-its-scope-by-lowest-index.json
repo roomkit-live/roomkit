@@ -9,7 +9,10 @@
   ],
   "requirements": [
     "RK-13.4-002",
-    "RK-13.4-014"
+    "RK-13.4-014",
+    "RK-14.1-039",
+    "RK-14.1-040",
+    "RK-14.3-027"
   ],
   "notes": "Python: tests/test_store_binding_contract.py::test_a_key_is_found_within_its_channel_or_within_the_room. RMK-1609.",
   "steps": [

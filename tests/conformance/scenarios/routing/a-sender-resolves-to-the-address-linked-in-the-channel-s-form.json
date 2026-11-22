@@ -9,6 +9,7 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-14.1-049",
     "RK-5.6-008"
   ],
   "notes": "The SMS channel takes its type's addressing, with the country code 1. Alice's address is linked in E.164, Bob's as a person types it. Each identity's room has a binding naming it, which routing finds through the identity the sender's address resolves to (§10.4). Bob, written +15550000002 in the channel's form, resolves to no one: a room is opened for him, his own room left alone. The store compares an address as stored, a spelling being no address of its own.",

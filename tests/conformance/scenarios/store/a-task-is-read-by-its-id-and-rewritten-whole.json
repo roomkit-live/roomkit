@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-058"
+  ],
   "notes": "Python: tests/test_store_memory.py::TestTaskOperations::test_add_and_get, test_get_nonexistent, test_update_task, test_list_tasks_by_room, test_list_tasks_by_status. A task's id is normalized as any id of no timeline ($e1, $e2... by first appearance).",
   "steps": [
     {

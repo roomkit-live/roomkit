@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-015"
+  ],
   "notes": "Python: tests/test_store_memory.py::TestFindLatestRoomIndex::test_finds_via_binding_participant, test_channel_type_filter_applies_to_binding_matches, test_participant_row_match_ignores_channel_type, test_unknown_participant_is_a_fast_none.",
   "steps": [
     {

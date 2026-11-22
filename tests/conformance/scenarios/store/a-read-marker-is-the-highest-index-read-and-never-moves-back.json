@@ -5,6 +5,12 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-054",
+    "RK-14.1-055",
+    "RK-14.1-056",
+    "RK-14.1-057"
+  ],
   "notes": "Python: tests/test_store_room_contract.py::test_the_marker_is_the_read_events_index_whatever_was_deleted_or_written_first, test_the_marker_never_moves_back, test_an_event_of_another_room_marks_nothing; tests/test_store_memory.py::TestReadTracking::test_unread_count_initial, test_mark_read, test_mark_all_read, test_list_read_markers. Written 1, 0, 2, 3: write order is not index order.",
   "steps": [
     {

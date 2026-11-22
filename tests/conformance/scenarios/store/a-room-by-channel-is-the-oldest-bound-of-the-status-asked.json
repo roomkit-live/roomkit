@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-016"
+  ],
   "notes": "The oldest, as find_room_ids_by_channel orders rooms, cut at one: the Python implementation's stores answer so.",
   "steps": [
     {

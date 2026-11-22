@@ -8,7 +8,14 @@
     "§10.3"
   ],
   "requirements": [
-    "RK-10.3-034"
+    "RK-10.3-034",
+    "RK-14.1-029",
+    "RK-14.1-032",
+    "RK-14.1-035",
+    "RK-14.1-036",
+    "RK-14.1-037",
+    "RK-14.3-023",
+    "RK-14.3-024"
   ],
   "notes": "Python: tests/test_store_binding_contract.py::test_only_a_delivery_record_writes_the_results. The record replaces the map and writes nothing else: an edit committed since stands. A record naming another room leaves the event alone. update_event, a change's target and a target written alone each carry stale results, which the store does not write.",
   "steps": [

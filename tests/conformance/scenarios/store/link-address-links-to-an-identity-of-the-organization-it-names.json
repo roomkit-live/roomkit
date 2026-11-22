@@ -8,6 +8,7 @@
     "§17.2"
   ],
   "requirements": [
+    "RK-14.1-049",
     "RK-5.6-005"
   ],
   "notes": "Python: tests/test_store_identity_scoping.py::TestOneIdentityPerAddress::test_linking_an_address_the_identity_holds_changes_nothing, test_another_organizations_identity_is_refused, test_an_unknown_identity_is_refused. No organization counts as another: an identity of acme is not linked for none, and one of no organization is linked for none.",

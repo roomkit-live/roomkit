@@ -5,6 +5,10 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-042",
+    "RK-14.1-044"
+  ],
   "notes": "Python: tests/test_store_binding_contract.py::test_binding_exists_answers_as_get_binding_does.",
   "steps": [
     {

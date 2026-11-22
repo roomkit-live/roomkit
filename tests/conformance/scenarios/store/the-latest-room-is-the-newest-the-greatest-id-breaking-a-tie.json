@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-015"
+  ],
   "notes": "Python: tests/test_store_room_contract.py::test_the_latest_room_breaks_a_tie_by_id_in_every_store, test_ids_compare_by_code_point_in_every_store; tests/test_store_memory.py::TestFindLatestRoomIndex::test_latest_wins_across_rooms. A room of a greater id created earlier is not the latest; ids compare by code point, \"room-B\" before \"room-a\".",
   "steps": [
     {

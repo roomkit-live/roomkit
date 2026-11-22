@@ -5,6 +5,15 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-14.1-020",
+    "RK-14.1-061",
+    "RK-14.1-063",
+    "RK-14.1-064",
+    "RK-14.1-065",
+    "RK-14.1-066",
+    "RK-14.1-067"
+  ],
   "notes": "Python: tests/test_store_activity.py::TestConvenienceMethods::test_get_timeline_returns_all, test_get_timeline_with_filter. get_timeline is list_events with its own defaults: the oldest 50, no visibility of its own.",
   "steps": [
     {
