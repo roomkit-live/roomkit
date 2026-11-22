@@ -7,6 +7,9 @@
     "§21.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-037"
+  ],
   "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_tool_handler.py test_no_override_keeps_the_default_without_leaking_a_previous_turn (both cases). room-1's configuration gives lookup and a handler serving it; room-2's gives lookup alone; room-3 has none.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-032"
+  ],
   "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestConfigProvider::test_provider_overrides_prompt_and_tools. The binding's metadata declares outlook; the turn's configuration declares gmail, which the model calls.",
   "setup": {
     "channels": [

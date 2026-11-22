@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-035"
+  ],
   "notes": "Python: channels/_ai_context.py _build_context builds AIContext(**settings), whose validation raises pydantic's ValidationError: the turn fails with it, the trigger's delivery result for the agent failed under its class's name. Its text names each refused field in the model's order, then pydantic's words, type, input and input type; the line pydantic adds after each, a link to its documentation, is not asserted. room-1 'hot'; room-2 1.5; room-3 [1] and '1.5', both named.",
   "setup": {
     "channels": [

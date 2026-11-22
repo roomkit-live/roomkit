@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-A.9.1-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance::test_model_snapshots_and_no_carry_into_next_prompt. This shared case covers active notifications and the next prompt. Native tests cover owned report snapshots; the off-turn callback is covered by a native test. This case additionally asserts the actual CUSTOM subscriber publications.",
   "setup": {
     "channels": [

@@ -8,7 +8,11 @@
   "requirements": [
     "RK-6.4-467",
     "RK-6.4-483",
-    "RK-6.4-502"
+    "RK-6.4-502",
+    "RK-A.9.1-005",
+    "RK-A.9.1-006",
+    "RK-A.9.1-007",
+    "RK-A.9.1-028"
   ],
   "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_sessions_are_isolated_by_room_and_can_be_cancelled. The prompt's text is matched as holding the message: the catch-up the RFC's §19.3.2 adds before it is lot 8's of stream L.",
   "setup": {

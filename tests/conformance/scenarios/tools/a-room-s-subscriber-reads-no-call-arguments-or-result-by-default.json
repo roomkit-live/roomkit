@@ -12,7 +12,8 @@
     "RK-8.4-022",
     "RK-8.4-023",
     "RK-8.4-024",
-    "RK-8.4-037"
+    "RK-8.4-037",
+    "RK-A.9-017"
   ],
   "notes": "A hook blocks every row the agent writes, the tool-call rows and the answer. The call's arguments and its result, which those rows carry, reach the room's subscriber only for an agent that publishes them.",
   "setup": {

@@ -8,7 +8,11 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-5.7-025"
+    "RK-5.7-025",
+    "RK-A.13-005",
+    "RK-A.13-006",
+    "RK-A.4-006",
+    "RK-A.4-007"
   ],
   "notes": "Both channels take their type's addressing. No value: null, an empty or a blank string. Not a recipient: a boolean, a float, a whole one included, a list, an object. On WhatsApp Personal, whose replies go to the sender, each such message reaches its sender's room; the group id as a string is the group's. On Telegram, whose replies go to a chat only, each opens a room of its own naming the framework's name and no recipient (§10.4).",
   "setup": {

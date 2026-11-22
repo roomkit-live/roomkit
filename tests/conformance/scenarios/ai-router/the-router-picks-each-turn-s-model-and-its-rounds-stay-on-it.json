@@ -9,7 +9,8 @@
   "requirements": [
     "RK-6.4-425",
     "RK-6.4-517",
-    "RK-6.4-521"
+    "RK-6.4-521",
+    "RK-A.9-006"
   ],
   "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
   "setup": {

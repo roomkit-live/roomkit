@@ -7,7 +7,8 @@
     "Appendix A.9.1"
   ],
   "requirements": [
-    "RK-6.4-479"
+    "RK-6.4-479",
+    "RK-A.9.1-027"
   ],
   "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance. The real prompt and response-hook boundary; arbitrary metadata is trusted only when the transport opts in. Native tests cover callback timing and object ownership.",
   "setup": {

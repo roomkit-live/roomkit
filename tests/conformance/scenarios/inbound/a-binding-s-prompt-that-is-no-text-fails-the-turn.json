@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-035"
+  ],
   "notes": "Python: channels/_ai_context.py _turn_settings reads a resolved system prompt that is no text as AIContext reads it, before the turn reads it as a text (RMK-1237, maintainer's decision): AIContext(**settings) raises pydantic's ValidationError, each refused setting named in the model's order, ahead of the token budget's check. room-1 5; room-2 0 and the temperature 'hot', both named; room-3 false and the token budget '1200', the prompt's refusal first.",
   "setup": {
     "channels": [

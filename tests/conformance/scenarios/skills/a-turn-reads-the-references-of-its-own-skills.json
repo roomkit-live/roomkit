@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-24.3-020",
-    "RK-24.3-021"
+    "RK-24.3-021",
+    "RK-A.9-036"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _handle_read_reference reads _turn_skills().",
   "setup": {

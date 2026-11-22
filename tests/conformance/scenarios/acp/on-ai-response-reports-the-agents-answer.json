@@ -9,7 +9,9 @@
   "requirements": [
     "RK-6.4-477",
     "RK-6.4-479",
-    "RK-9.2-070"
+    "RK-9.2-070",
+    "RK-A.9.1-025",
+    "RK-A.9.1-027"
   ],
   "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_on_ai_response_fires_for_a_channel_that_is_not_an_aichannel, test_the_counters_are_relayed_exactly_as_the_agent_sent_them, test_a_finished_turn_reports_what_it_produced.",
   "setup": {

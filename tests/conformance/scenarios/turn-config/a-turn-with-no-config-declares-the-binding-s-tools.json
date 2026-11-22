@@ -6,6 +6,12 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-019",
+    "RK-A.9-027",
+    "RK-A.9-031",
+    "RK-A.9-033"
+  ],
   "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestConfigProvider::test_provider_returning_none_keeps_static_path, test_no_provider_is_byte_identical_to_static_path, TestANullDefers::test_a_null_tools_declares_no_toolset, test_a_binding_null_keeps_the_channel_default (system_prompt, temperature, max_tokens, reasoning_effort). The configuration returns none for room-1 and names no other room. In room-4 the binding declares a tool under the agent's own tool's name: the agent's stands, at its place, with its definition. In room-5 an agent with no configuration reads its binding's tools.",
   "setup": {
     "channels": [

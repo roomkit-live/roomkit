@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-9.2-094",
-    "RK-9.2-095"
+    "RK-9.2-095",
+    "RK-A.15-021"
   ],
   "requires_features": [
     "conference"

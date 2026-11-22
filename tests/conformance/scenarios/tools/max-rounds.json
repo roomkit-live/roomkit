@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-6.4-067",
-    "RK-6.4-425"
+    "RK-6.4-425",
+    "RK-A.9-008",
+    "RK-A.9-023"
   ],
   "notes": "max_tool_rounds is 2: two rounds of calls run, the third generation's call is neither stored nor run, and its text carries the turn's record.",
   "setup": {

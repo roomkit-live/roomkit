@@ -12,7 +12,8 @@
     "RK-21.6-012",
     "RK-21.6-014",
     "RK-6.4-397",
-    "RK-6.7-111"
+    "RK-6.7-111",
+    "RK-A.9-038"
   ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_a_turn_bound_applies_to_a_tool_that_waits_by_design. The named turn bound applies ahead of the human-input handler timeout.",
   "setup": {

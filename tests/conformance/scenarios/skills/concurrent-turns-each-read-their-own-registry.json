@@ -9,7 +9,8 @@
   "requirements": [
     "RK-24.3-020",
     "RK-24.3-021",
-    "RK-24.3-022"
+    "RK-24.3-022",
+    "RK-A.9-036"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_concurrent_turns_each_read_their_own_registry. An agent given an empty registry serves them both; room-1's round is held while room-2's turn runs whole, then activates what only room-2's registry holds.",
   "setup": {

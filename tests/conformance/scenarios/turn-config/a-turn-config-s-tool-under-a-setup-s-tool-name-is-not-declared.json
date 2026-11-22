@@ -12,7 +12,8 @@
     "RK-19.7.3-038",
     "RK-21.1-052",
     "RK-21.1-057",
-    "RK-21.1-060"
+    "RK-21.1-060",
+    "RK-A.9-033"
   ],
   "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. channels/_ai_tools.py _declared_once (the names the channel and orchestration serve in the room). The supervisor's configuration gives delegate_to_researcher, the name its install serves.",
   "setup": {

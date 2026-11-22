@@ -9,7 +9,8 @@
   "requirements": [
     "RK-6.4-478",
     "RK-8.4-017",
-    "RK-8.4-018"
+    "RK-8.4-018",
+    "RK-A.9.1-026"
   ],
   "notes": "Python: channels/_acp_events.py::_on_thought_chunk, channels/_acp_turn.py::_stream and _report_response; tests/test_channels/test_acp.py::TestACPChannel::test_streams_updates_and_reuses_room_session, TestEndOfTurnReport::test_a_finished_turn_reports_what_it_produced; test_acp_backend.py thinking privacy and per-room cases. This case covers thoughts only, not tool or plan updates.",
   "setup": {

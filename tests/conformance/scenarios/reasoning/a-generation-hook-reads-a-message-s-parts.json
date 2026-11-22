@@ -10,7 +10,8 @@
     "RK-25.3-005",
     "RK-6.7-024",
     "RK-6.7-025",
-    "RK-9.2-068"
+    "RK-9.2-068",
+    "RK-A.9-020"
   ],
   "notes": "Python: tests/conformance _ai_hooks.py generation_record, messages(context): what the context carries. README: `generation`'s messages, as `models` reads them.",
   "setup": {

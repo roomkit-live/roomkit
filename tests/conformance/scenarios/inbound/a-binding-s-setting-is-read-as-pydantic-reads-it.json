@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-034"
+  ],
   "notes": "Python: channels/_ai_context.py _turn_settings hands the binding's values to AIContext(temperature: float, max_tokens: int | None), which pydantic validates in its lax mode: a float from a number, a boolean or a text that parses as one, blanks around it and underscores between digits taken; an integer from an integer, a boolean, a float with no fraction, or a text that parses as one, a fraction of zeros after it taken. room-1 '0.3' and '100'; room-2 1 and 64.0; room-3 true and false; room-4 ' 1e-1 ' and ' 1_000.00 '.",
   "setup": {
     "channels": [

@@ -13,7 +13,8 @@
     "RK-6.7-085",
     "RK-6.7-086",
     "RK-9.2-034",
-    "RK-9.2-101"
+    "RK-9.2-101",
+    "RK-A.9-040"
   ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestStreamedTurnThroughTheRoom::test_an_answer_that_fails_the_check_is_never_stored_nor_sent.",
   "setup": {

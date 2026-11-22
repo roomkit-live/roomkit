@@ -11,7 +11,8 @@
     "RK-24.3-020",
     "RK-24.3-021",
     "RK-24.3-024",
-    "RK-24.3-026"
+    "RK-24.3-026",
+    "RK-A.9-033"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _register_channel_tools registers the skill tools for a registry given, an empty one too, so _declared_once drops a host's tool under their names (RFC §21.1).",
   "setup": {

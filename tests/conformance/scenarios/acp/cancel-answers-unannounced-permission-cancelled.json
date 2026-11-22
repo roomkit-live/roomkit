@@ -15,7 +15,8 @@
     "RK-6.4-506",
     "RK-6.4-507",
     "RK-9.3-048",
-    "RK-9.3-072"
+    "RK-9.3-072",
+    "RK-A.9.1-030"
   ],
   "notes": "Python: channels/_acp_events.py::_request_permission, _close_open_tools; channels/acp.py::cancel; tests/test_channels/test_acp_handler_cancellation.py. The agent's permission request is not awaited (prompts[].permission) and the agent holds its reply at a gate. The public cancel, sent while the handler is held at its decision gate, answers the request cancelled and abandons the decision; the turn then ends, and the call, never announced, is announced by its permission request for the cut: it is reported once, cancelled, the handler hearing of it through on_tool_cancelled (RK-9.3-048). The decision gate opens only once the turn has ended. Active room turns only.",
   "setup": {

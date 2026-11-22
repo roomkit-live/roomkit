@@ -11,7 +11,8 @@
     "RK-6.4-405",
     "RK-8.2-034",
     "RK-8.2-035",
-    "RK-9.2-070"
+    "RK-9.2-070",
+    "RK-A.9-008"
   ],
   "notes": "Python's AIResponseEvent carries the loop's end reason (test_ai_response_loop_end_reason.py): counting calls never told a cut-off turn from a finished one.",
   "setup": {

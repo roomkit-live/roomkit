@@ -14,7 +14,8 @@
     "RK-6.4-504",
     "RK-6.4-506",
     "RK-9.3-048",
-    "RK-9.3-072"
+    "RK-9.3-072",
+    "RK-A.9.1-030"
   ],
   "notes": "Python: channels/_acp_events.py::_request_permission, _close_open_tools; channels/acp.py::cancel; tests/test_channels/test_acp_handler_cancellation.py. The handler is held at its decision gate while the public cancel sends session/cancel: ACP requires the pending permission request to be answered with the cancelled outcome, so the agent ends its prompt without the handler's decision, which the gate opened afterwards no longer reaches. The call was announced before its permission request. Active room turns only.",
   "setup": {

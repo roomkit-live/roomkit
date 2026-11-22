@@ -6,6 +6,10 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-034",
+    "RK-A.9-035"
+  ],
   "notes": "Python: providers/ai/base.py AIContext(thinking_budget: int | None, enable_thinking: bool | None), validated by pydantic; RFC Appendix A.9, a value read as its setting's type reads one of another kind.",
   "setup": {
     "channels": [

@@ -10,7 +10,8 @@
     "RK-6.4-066",
     "RK-8.4-022",
     "RK-8.4-023",
-    "RK-8.4-024"
+    "RK-8.4-024",
+    "RK-A.9-017"
   ],
   "notes": "Python: tests/test_ai_streaming_tool_events.py::test_streaming_tool_end_result_preview_capped; channels/_ai_events.py _RESULT_PREVIEW = 500, part.as_text()[:500]. A call's id is read under `id`, so it is normalized as `$e1`.",
   "setup": {

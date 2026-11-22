@@ -7,6 +7,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-041"
+  ],
   "notes": "Python: tests/test_channels/test_turn_budget.py::test_a_schema_turn_stopped_by_its_budget_has_no_document.",
   "setup": {
     "channels": [

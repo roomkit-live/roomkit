@@ -13,7 +13,8 @@
     "RK-8.4-026",
     "RK-8.4-027",
     "RK-8.4-029",
-    "RK-8.4-030"
+    "RK-8.4-030",
+    "RK-A.9.1-017"
   ],
   "notes": "RMK-1747. The subscriber observes a call on a real ACP turn. The private values are test fixtures.",
   "setup": {

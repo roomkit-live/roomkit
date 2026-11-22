@@ -7,6 +7,9 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-035"
+  ],
   "notes": "Python: channels/_ai_context.py _build_context builds AIContext(**settings), whose reasoning_effort is a str | None pydantic does not read from an integer: the turn fails with its ValidationError, the trigger's delivery result for the agent failed under its class's name. The line pydantic adds after the error, a link to its documentation, is not asserted.",
   "setup": {
     "channels": [

@@ -7,6 +7,12 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-019",
+    "RK-A.9-026",
+    "RK-A.9-027",
+    "RK-A.9-028"
+  ],
   "notes": "Python: channels/_ai_context.py _turn_settings, _turn_source (binding metadata, then the config provider's result, then the channel default; None is not set at every level, an explicit null included); tests/test_channels/test_turn_config.py TestReasoningOverrides::test_channel_default_reaches_context, test_binding_metadata_wins_over_turn_config (its binding half), TestANullDefers::test_a_binding_null_keeps_the_channel_default[reasoning_effort]. The agent's effort is low; room-1 binds it with high, room-2 with null, room-3 with no metadata, room-4 with none, which states reasoning off for that room (Appendix A.9).",
   "setup": {
     "channels": [

@@ -10,7 +10,8 @@
     "RK-6.4-425",
     "RK-6.4-430",
     "RK-6.7-067",
-    "RK-6.7-084"
+    "RK-6.7-084",
+    "RK-A.9-040"
   ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_the_answer_is_the_json_document, TestStreamedTurnThroughTheRoom::test_an_answer_that_passes_is_stored_and_sent_whole.",
   "setup": {

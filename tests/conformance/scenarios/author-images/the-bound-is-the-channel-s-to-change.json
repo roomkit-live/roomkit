@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-318"
+    "RK-6.4-318",
+    "RK-A.9-015"
   ],
   "notes": "Python's AIChannel(max_author_images=1).",
   "setup": {

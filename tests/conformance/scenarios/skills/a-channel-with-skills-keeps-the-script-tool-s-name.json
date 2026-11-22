@@ -8,7 +8,8 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-21.1-053"
+    "RK-21.1-053",
+    "RK-A.9-033"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _register_channel_tools registers run_skill_script for a registry given, so _declared_once drops a host's tool under it (RFC §21.1).",
   "setup": {

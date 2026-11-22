@@ -14,7 +14,8 @@
     "RK-19.7.5-199",
     "RK-19.7.5-200",
     "RK-6.4-509",
-    "RK-6.4-511"
+    "RK-6.4-511",
+    "RK-A.9.1-019"
   ],
   "notes": "Python: tests/test_channels/test_acp_discussion.py. Real Discussion scheduling and ACP JSON-RPC; native tests cover exact note ordering, header count and issued-mark lifetime. No remote executor or agent-output guarantee is inferred.",
   "setup": {

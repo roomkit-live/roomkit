@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-346"
+    "RK-6.4-346",
+    "RK-A.9-012"
   ],
   "notes": "Python: tests/test_channels/test_ai_retry.py::TestRetry::test_no_retry_when_policy_is_none.",
   "setup": {

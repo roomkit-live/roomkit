@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-6.4-067",
-    "RK-6.4-425"
+    "RK-6.4-425",
+    "RK-A.9-022"
   ],
   "notes": "Python's stream round reads the provider's events to the stream's end; a done event only adds its finish reason and usage (_ai_stream_round.py). The loop's end reason stays completed.",
   "setup": {

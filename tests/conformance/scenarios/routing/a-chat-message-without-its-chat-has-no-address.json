@@ -9,7 +9,9 @@
     "§10.4"
   ],
   "requirements": [
-    "RK-5.7-027"
+    "RK-5.7-027",
+    "RK-A.13-005",
+    "RK-A.13-006"
   ],
   "notes": "The Telegram channel takes its type's addressing: it reads a message's chat under chat_id and replies to the chat only. A message with no chat_id is routed as a message with no address: the binding names the framework's name, and the author's next message without its chat opens another room. The author is the event's sender either way. Once the integrator writes a chat under the recipient key, deliveries reach it.",
   "setup": {

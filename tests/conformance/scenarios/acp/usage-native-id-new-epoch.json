@@ -6,6 +6,10 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-A.9.1-036",
+    "RK-A.9.1-039"
+  ],
   "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance::test_same_native_id_after_reset_keeps_distinct_epochs.",
   "setup": {
     "channels": [

@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-5.7-022",
-    "RK-5.7-023"
+    "RK-5.7-023",
+    "RK-A.13-005",
+    "RK-A.13-006"
   ],
   "notes": "The Telegram channel takes its type's addressing: its chat key is chat_id, its recipient key telegram_chat_id. A provider hands Telegram's chat ids as integers. An attach naming its recipient as an integer names its correspondent as a string too.",
   "setup": {

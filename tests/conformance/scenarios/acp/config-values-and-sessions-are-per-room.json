@@ -10,7 +10,8 @@
     "RK-10.6.2-030",
     "RK-10.6.2-040",
     "RK-6.4-467",
-    "RK-6.4-493"
+    "RK-6.4-493",
+    "RK-A.9.1-007"
   ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_the_hosts_values_are_per_room. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {

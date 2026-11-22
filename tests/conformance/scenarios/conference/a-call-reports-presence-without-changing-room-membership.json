@@ -10,7 +10,9 @@
   "requirements": [
     "RK-5.5-041",
     "RK-9.2-090",
-    "RK-9.2-091"
+    "RK-9.2-091",
+    "RK-A.15-015",
+    "RK-A.15-019"
   ],
   "requires_features": [
     "conference"

@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-6.4-263",
-    "RK-6.4-403"
+    "RK-6.4-403",
+    "RK-A.9-020"
   ],
   "notes": "Python's _execute_round_tools appends one role=tool message whose parts are the round's results ([*answered, *result_parts]), and _tool_history._round replays a round as two messages, its calls then its results.",
   "setup": {

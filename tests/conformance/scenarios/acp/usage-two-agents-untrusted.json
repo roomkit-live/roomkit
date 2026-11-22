@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-A.9.1-033"
+  ],
   "notes": "Python: tests/test_channels/test_acp_usage_boundaries.py::test_two_real_sdk_sessions_in_one_room_reach_framework_hooks. Two real JSON-RPC pipes and the framework response hooks; no SDK-only scheduling is asserted.",
   "setup": {
     "channels": [

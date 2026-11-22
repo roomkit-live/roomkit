@@ -11,7 +11,8 @@
   "requirements": [
     "RK-6.4-468",
     "RK-6.4-471",
-    "RK-6.7-058"
+    "RK-6.7-058",
+    "RK-A.9.1-006"
   ],
   "notes": "The shared response record of RFC §6.7 also belongs to ACP hooks (maintainer decision 0a3b774c). Python source: tools/context.py::current_response_metadata; channels/_acp_client.py::_TurnState and _acp_turn.py::_turn_stream. Source tests: test_tool_turn_context.py::TestWhatTheHandlerWritesBack::test_the_response_record_is_the_turns_one; test_response_metadata.py::TestInboundResultResponseMetadata. Each room writes its own values while both prompts are active on the same connection. No remote executor or late write after turn completion is claimed. Both prompts are held after their callbacks; the second room completes before the first.",
   "setup": {

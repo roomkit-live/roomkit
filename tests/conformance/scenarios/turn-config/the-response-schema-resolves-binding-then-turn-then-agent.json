@@ -6,6 +6,14 @@
     "Appendix A.9",
     "§6.7"
   ],
+  "requirements": [
+    "RK-A.9-007",
+    "RK-A.9-019",
+    "RK-A.9-026",
+    "RK-A.9-027",
+    "RK-A.9-030",
+    "RK-A.9-039"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestResolution::test_the_channel_default_reaches_the_context, test_the_config_provider_overrides_the_default, test_the_binding_metadata_wins; tests/test_channels/test_turn_config.py TestANullDefers test_a_binding_null_keeps_the_channel_default, test_a_binding_null_keeps_the_turn_value, test_a_turn_none_keeps_the_channel_default [response_schema]. room-1: the agent's; room-2: the configuration's over it; room-3: the binding's over both; room-4: a binding's null keeps the configuration's; room-5: a configuration's null keeps the agent's.",
   "setup": {
     "channels": [

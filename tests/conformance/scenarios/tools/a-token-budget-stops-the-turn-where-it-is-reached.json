@@ -10,7 +10,8 @@
     "RK-6.4-067",
     "RK-6.4-405",
     "RK-6.4-417",
-    "RK-6.4-425"
+    "RK-6.4-425",
+    "RK-A.9-010"
   ],
   "notes": "Python counts each generation's input, output and cache tokens against turn_budget_tokens and checks it, after the deadline, where a round's calls would start (_ai_loop_rules.py limit_reached; test_turn_budget.py test_a_token_budget_stops_the_turn_where_it_is_reached): 500 tokens a generation, the third reaches 1,200.",
   "setup": {

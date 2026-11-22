@@ -13,7 +13,9 @@
     "RK-21.5-018",
     "RK-6.4-067",
     "RK-6.4-425",
-    "RK-8.3-009"
+    "RK-8.3-009",
+    "RK-A.9-023",
+    "RK-A.9-025"
   ],
   "notes": "The record is the last MESSAGE's: loop_end_reason and the usage its rounds summed (§6.4, The turn's record). A call's end rows follow its round's start rows; the model reads the result as the tool returned it.",
   "setup": {

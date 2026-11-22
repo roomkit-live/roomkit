@@ -12,7 +12,8 @@
     "RK-6.4-414",
     "RK-6.4-415",
     "RK-6.4-417",
-    "RK-6.4-425"
+    "RK-6.4-425",
+    "RK-A.9-010"
   ],
   "notes": "Python: channels/_turn_budget.py (TurnBudget.cost_of prices each generation's usage with the model's catalogue ModelPricing.cost_for, reached once the cost is at the budget), _ai_loop_rules.py limit_reached; tests/test_channels/test_turn_budget.py test_a_cost_budget_stops_the_turn_at_the_catalogue_price: a generation costs (300 x 10 + 100 x 1 + 100 x 50) / 1,000,000 = 0.0081, the budget 2.5 times that; the third reaches it.",
   "setup": {

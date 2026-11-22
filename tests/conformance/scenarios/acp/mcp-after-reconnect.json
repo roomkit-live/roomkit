@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-490"
+    "RK-6.4-490",
+    "RK-A.9.1-009"
   ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_the_function_is_asked_again_for_a_reopened_session (reconnect boundary). Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
   "setup": {

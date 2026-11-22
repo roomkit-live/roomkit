@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-510"
+    "RK-6.4-510",
+    "RK-A.9.1-020"
   ],
   "notes": "Python: tests/test_channels/test_acp_discussion.py::test_instructions_open_a_session_s_first_prompt_only. Exact prompt attempts through public RoomKit calls. Message-only persistence isolates conversation indices. The fixture supplies the option; it never composes the prompt.",
   "setup": {

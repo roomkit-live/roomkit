@@ -11,7 +11,8 @@
     "RK-6.2-006",
     "RK-8.2-010",
     "RK-8.2-020",
-    "RK-8.2-023"
+    "RK-8.2-023",
+    "RK-A.14.1-002"
   ],
   "notes": "Both refusals write nothing: no event, no binding, no attachment. The post after them, from the host channel, attaches it as a transport.",
   "setup": {

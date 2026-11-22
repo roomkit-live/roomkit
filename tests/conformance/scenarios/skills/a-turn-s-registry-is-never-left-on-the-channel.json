@@ -10,7 +10,8 @@
     "RK-24.3-020",
     "RK-24.3-021",
     "RK-24.3-022",
-    "RK-24.3-023"
+    "RK-24.3-023",
+    "RK-A.9-036"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turns_registry_is_never_left_on_the_channel.",
   "setup": {

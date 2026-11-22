@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-A.9-009"
+  ],
   "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_no_retry_when_budget_zero.",
   "setup": {
     "channels": [

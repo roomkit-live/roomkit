@@ -13,7 +13,8 @@
     "RK-6.4-004",
     "RK-6.4-397",
     "RK-6.7-029",
-    "RK-6.7-111"
+    "RK-6.7-111",
+    "RK-A.9-021"
   ],
   "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
   "setup": {
