@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-refusal-under-a-schema-fails-the-turn-refused",
+  "title": "A turn under a response schema whose model declines to answer, its response ending on the stop reason refusal, fails refused: no document is stored or sent",
+  "rules": [
+    "§6.7"
+  ],
+  "requirements": [
+    "RK-6.7-081"
+  ],
+  "notes": "The scripted model reports the refusal as its provider would: the stop reason refusal (§6.4). A refusal field or a blocked prompt is each provider's own reading of its vendor's wire.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "I can't help with that.",
+              "finish_reason": "refusal"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the model declined to answer"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/an-answer-cut-for-room-under-a-schema-fails-truncated",
+  "title": "A turn under a response schema whose answer ran out of room, its response ending on the stop reason length, fails truncated: the cut document is neither stored nor sent",
+  "rules": [
+    "§6.7"
+  ],
+  "requirements": [
+    "RK-6.7-082"
+  ],
+  "notes": "The answer's text is the start of a valid document; the stop reason length makes it truncated before any JSON check, which would read invalid_json.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"bil",
+              "finish_reason": "length"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the JSON answer was cut (length)"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    }
+  }
+}
