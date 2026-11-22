@@ -6,6 +6,9 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-410"
+  ],
   "notes": "Python's _PrefixDeduplicator.finish: a generation ending inside the prefix gets its withheld text back.",
   "setup": {
     "channels": [

@@ -5,6 +5,11 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-522",
+    "RK-6.4-524"
+  ],
   "notes": "Python: channels/_ai_streaming.py _StreamTurnState.count_generation (RMK-1056), channels/_ai_resilience.py _rerouted (RMK-1638). roomkit-rs: tool_loop/mod.rs end_of (RMK-1029). The fallback serves the first round and keeps the turn; its second round is refused, and the fallback router hands it back to the primary.",
   "setup": {
     "channels": [

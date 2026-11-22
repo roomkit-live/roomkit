@@ -7,7 +7,8 @@
     "§10.6.3"
   ],
   "requirements": [
-    "RK-10.6.2-040"
+    "RK-10.6.2-040",
+    "RK-6.4-492"
   ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_a_value_the_session_already_has_is_not_set_again; tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_it_and_the_hosts_values_survive_an_agent_restart. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts.",
   "setup": {

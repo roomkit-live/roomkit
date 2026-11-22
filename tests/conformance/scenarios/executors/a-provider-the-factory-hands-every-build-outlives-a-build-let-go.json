@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.2-015",
-    "RK-10.6.3-018"
+    "RK-10.6.3-018",
+    "RK-6.4-526"
   ],
   "notes": "RMK-1635. Each agent's model is one object every build of the agent is handed, as a host's factory shares one client; it fails once closed, as a real client does. An executor closes a build it lets go of (§10.6.3); what the build was handed is its owner's.",
   "setup": {

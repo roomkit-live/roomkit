@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-468",
+    "RK-6.4-483",
+    "RK-6.4-502"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_a_function_gives_each_room_its_servers (concurrency boundary). Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
   "setup": {
     "channels": [

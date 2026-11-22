@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-425"
+  ],
   "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_retries_empty_after_tool_and_recovers.",
   "setup": {
     "channels": [

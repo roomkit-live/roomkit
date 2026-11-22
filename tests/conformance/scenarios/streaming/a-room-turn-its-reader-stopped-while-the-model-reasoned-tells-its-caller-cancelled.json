@@ -8,7 +8,8 @@
     "§10.1 step 18"
   ],
   "requirements": [
-    "RK-10.1-129"
+    "RK-10.1-129",
+    "RK-6.4-441"
   ],
   "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_room_turn_its_transport_stopped_tells_its_caller_cancelled[while-thinking].",
   "setup": {

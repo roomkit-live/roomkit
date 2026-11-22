@@ -7,7 +7,9 @@
     "§21.3"
   ],
   "requirements": [
-    "RK-10.6.8-020"
+    "RK-10.6.8-020",
+    "RK-6.4-425",
+    "RK-6.4-440"
   ],
   "notes": "Python: channels/_ai_streaming.py _StreamTurnState.count_generation (RMK-1056). roomkit-rs: tool_loop/generation.rs Generation::cut (RMK-1029).",
   "setup": {

@@ -12,7 +12,10 @@
     "RK-10.1-112",
     "RK-10.1-115",
     "RK-10.6.8-018",
-    "RK-10.6.8-022"
+    "RK-10.6.8-022",
+    "RK-6.4-425",
+    "RK-6.4-435",
+    "RK-6.4-441"
   ],
   "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). ",
   "setup": {

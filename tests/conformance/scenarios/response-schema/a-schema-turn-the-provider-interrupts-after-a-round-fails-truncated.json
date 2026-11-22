@@ -7,6 +7,11 @@
     "Appendix A.9",
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-406",
+    "RK-6.4-409",
+    "RK-6.4-413"
+  ],
   "notes": "Python: tests/test_turn_that_did_not_complete.py::test_a_schema_turn_the_provider_interrupts_fails_in_either_loop.",
   "setup": {
     "channels": [

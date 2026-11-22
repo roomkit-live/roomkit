@@ -9,7 +9,9 @@
   "requirements": [
     "RK-10.6.4-007",
     "RK-21.3-011",
-    "RK-21.3-016"
+    "RK-21.3-016",
+    "RK-6.4-425",
+    "RK-6.4-430"
   ],
   "notes": "Python: turns/_codec.py, the usage item is read ahead as a delta (RMK-1333 review): channels/_ai_streaming.py _steered_after_answer runs ahead of the reader.",
   "setup": {

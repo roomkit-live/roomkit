@@ -5,6 +5,12 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-426",
+    "RK-6.4-430",
+    "RK-6.4-440"
+  ],
   "notes": "RMK-369 (HITL 69bc2a10). Python: channels/_ai_stream_round.py _count_told, _StreamTurnState.count_generation (usage_whole). roomkit-rs: tool_loop/generation.rs count_told.",
   "setup": {
     "channels": [

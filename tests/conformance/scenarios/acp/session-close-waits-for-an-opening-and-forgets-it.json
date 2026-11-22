@@ -7,7 +7,8 @@
     "§10.6.3"
   ],
   "requirements": [
-    "RK-10.6.2-040"
+    "RK-10.6.2-040",
+    "RK-6.4-493"
   ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestOneOpeningAtATime::test_close_session_waits_for_an_opening_then_closes_it. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts. This scenario checks public outcomes and the wire trace. Starting a background owner call does not guarantee that its executor has reached the opening; the matching native opening tests establish that contention by polling the real channel work while session/new is unanswered.",
   "setup": {

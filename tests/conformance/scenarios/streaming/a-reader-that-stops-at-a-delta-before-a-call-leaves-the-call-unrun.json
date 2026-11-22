@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.4-004",
-    "RK-10.6.4-005"
+    "RK-10.6.4-005",
+    "RK-6.4-425"
   ],
   "notes": "Python: turns/_executor_pulls.py PullGate, which never reads past a call's start until a pull its reader sent once it read that item. The reader never asks past the text delta it stops at, so the call's start the executor may have read ahead is dropped and the call never starts.",
   "setup": {

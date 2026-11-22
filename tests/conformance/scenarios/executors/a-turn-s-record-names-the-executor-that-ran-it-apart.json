@@ -5,6 +5,9 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-427"
+  ],
   "notes": "The room learns the executor from the turn it took. A room run in one process keeps the record it had.",
   "setup": {
     "channels": [

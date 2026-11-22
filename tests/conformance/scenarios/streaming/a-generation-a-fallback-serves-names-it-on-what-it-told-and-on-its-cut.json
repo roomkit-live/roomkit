@@ -8,7 +8,10 @@
     "§21.3"
   ],
   "requirements": [
-    "RK-10.6.8-020"
+    "RK-10.6.8-020",
+    "RK-6.4-436",
+    "RK-6.4-439",
+    "RK-6.4-441"
   ],
   "notes": "RMK-369 (HITL 242a9f5e). The primary refuses, the fallback tells its input, then holds; the Cancel stops it. Python: channels/_ai_resilience.py (the loop's serving provider), channels/_ai_streaming.py _told_usage and _stream_generation. roomkit-rs: tool_loop/resilience.rs rerouted.",
   "setup": {

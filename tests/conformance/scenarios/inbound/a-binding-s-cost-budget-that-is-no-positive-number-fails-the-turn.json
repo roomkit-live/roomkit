@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-418"
+  ],
   "notes": "Python: channels/_turn_budget.py turn_budget, _check_positive: a cost budget is an int or a float, no boolean, above zero, else ValueError 'turn_budget_usd must be a positive number, got <repr>', before the turn reads anything; the binding's value is read strictly, not as a lenient number. The scripted model has a price, so the value alone fails the turn.",
   "setup": {
     "channels": [

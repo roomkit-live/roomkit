@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-473",
+    "RK-6.4-478",
+    "RK-6.4-482"
+  ],
   "notes": "Python: ACPChannel.close/_say_goodbye cancel a preparing turn. The native full-review reproduction used kit.process_inbound and public channel.close; Rust previously left the initial MCP callback pending after closing the transport. acp.close invokes public channel.close directly, so kit shutdown cannot mask an orphaned preparation. The callback gate is never released.",
   "setup": {
     "channels": [

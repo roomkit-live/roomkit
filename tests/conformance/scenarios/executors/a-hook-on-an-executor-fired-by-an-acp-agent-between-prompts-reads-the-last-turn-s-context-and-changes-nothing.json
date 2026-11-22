@@ -11,7 +11,8 @@
     "RK-10.6.6-023",
     "RK-10.6.6-025",
     "RK-21.4-014",
-    "RK-21.4-028"
+    "RK-21.4-028",
+    "RK-6.4-471"
   ],
   "notes": "Python: turns/_wiring_env.py WiringEnv.context (the last contexts kept per room) and channels/_acp_events.py _for_session (what the agent sends outside any prompt runs in a context of its own). In the first turn the agent asks permission for a call: the channel's external tool handler fires BEFORE_TOOL_USE on the executor inside the turn, where a turn's host is bound, and the event the hook sends through it reaches the room. The room's metadata changes, a second turn runs, the metadata changes again, then the agent, on its own once it answered the second prompt, asks permission for another call in the same session: the hook fires outside any turn, with the context the second turn had (the metadata between the two changes), finds no turn's host, and the room holds nothing more. Left uncovered of RK-10.6.6-023: no context where the executor ran no turn, after every channel whose turns it ran there was detached, and for a room created again under its id.",
   "setup": {

@@ -9,7 +9,11 @@
   "requirements": [
     "RK-21.3-006",
     "RK-21.3-009",
-    "RK-21.3-010"
+    "RK-21.3-010",
+    "RK-6.4-425",
+    "RK-6.4-430",
+    "RK-6.4-455",
+    "RK-6.4-457"
   ],
   "notes": "The answer is a stop too (§21.3): a loop reads its directives once the model has answered, and an InjectMessage that came meanwhile asks the model again in the same turn. The first answer is a message of its own; the turn's record is on its last.",
   "setup": {

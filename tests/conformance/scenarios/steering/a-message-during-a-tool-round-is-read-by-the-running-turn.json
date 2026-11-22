@@ -8,7 +8,10 @@
     "§10.1"
   ],
   "requirements": [
-    "RK-21.3-009"
+    "RK-21.3-009",
+    "RK-6.4-425",
+    "RK-6.4-455",
+    "RK-6.4-457"
   ],
   "notes": "The message is committed and delivered as any message (§10.1); the room's owner steers it into the turn its line holds alone, as an InjectMessage of its text, read after the round's results (§21.3). The model is asked twice, once per round of the one turn: a second turn would ask a third generation, past the script.",
   "setup": {

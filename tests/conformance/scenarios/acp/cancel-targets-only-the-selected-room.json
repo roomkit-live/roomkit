@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-467"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestACancelReachesATurnWhileItsSessionOpens; tests/test_channels/test_acp_recovery.py::test_public_cancel_stops_reconstruction_before_prompt; test_acp.py::TestACPChannel::test_sessions_are_isolated_by_room_and_can_be_cancelled. Actual public cancel and wire ordering; no runner mutation of channel state. Standalone and the config-publication callback are distinct follow-ups.",
   "setup": {
     "channels": [

@@ -5,6 +5,11 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-429",
+    "RK-6.4-431",
+    "RK-6.4-435"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py write_owed_record (RMK-1344, HITL 5f58e3e3). The blank round comes back empty, so the loop asks once more (test_ai_empty_retry.py) and the second blank ends the turn.",
   "setup": {
     "channels": [

@@ -8,7 +8,8 @@
     "§21.3"
   ],
   "requirements": [
-    "RK-10.3-068"
+    "RK-10.3-068",
+    "RK-6.4-465"
   ],
   "notes": "The edit and the message after it are committed while the tool is held (their deliveries deferred, §10.1 step 18), then the tool goes on. The running turn's second round holds a line for neither: the edit keeps its place in line for no turn, and the message behind it waits for a turn of its own, the third and last generation.",
   "setup": {

@@ -8,7 +8,11 @@
   ],
   "requirements": [
     "RK-10.6.2-043",
-    "RK-10.6.3-016"
+    "RK-10.6.3-016",
+    "RK-6.4-481",
+    "RK-6.4-482",
+    "RK-6.4-498",
+    "RK-6.4-499"
   ],
   "notes": "Python: tests/test_channels/test_acp_backend.py::test_detaching_an_acp_agent_closes_the_room_s_session; tests/test_channels/test_acp_backend.py::test_a_detach_never_waits_for_an_agent_that_does_not_answer. RPC gates prove ordering without sleeps or runner state mutation. Standalone and remote turn-backend control failures are separate contracts.",
   "setup": {

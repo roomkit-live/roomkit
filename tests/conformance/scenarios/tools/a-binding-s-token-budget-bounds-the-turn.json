@@ -7,7 +7,10 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-6.4-067"
+    "RK-6.4-067",
+    "RK-6.4-414",
+    "RK-6.4-418",
+    "RK-6.4-425"
   ],
   "notes": "Python: channels/_ai_context.py _turn_budget resolves turn_budget_tokens as the turn's other settings (binding metadata, config provider, channel), and _turn_budget.py turn_budget checks it strictly: an int, no boolean, above zero, else ValueError 'turn_budget_tokens must be a positive number, got <repr>'. The channel's budget is 100000; room-1's binding sets 1200, reached by the third generation (500 tokens each), whose calls do not run; room-2 '1200', room-3 64.0 and room-4 0 fail.",
   "setup": {

@@ -6,6 +6,10 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-6.4-471",
+    "RK-6.4-477"
+  ],
   "notes": "Python: tests/test_channels/test_acp_backend.py::test_each_room_s_agent_updates_reach_that_room. One connection serves two rooms; every notification retains its room and session. This case additionally asserts the actual CUSTOM subscriber publications.",
   "setup": {
     "channels": [

@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-19.7.5-006",
-    "RK-19.7.5-115"
+    "RK-19.7.5-115",
+    "RK-6.4-511",
+    "RK-6.4-512"
   ],
   "notes": "Review regression: an addressed empty request still carries real Discussion notes; no metadata mark is fabricated by the fixture.",
   "setup": {

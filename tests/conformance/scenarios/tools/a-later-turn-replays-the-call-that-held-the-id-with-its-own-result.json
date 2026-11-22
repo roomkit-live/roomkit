@@ -7,7 +7,8 @@
     "§12.4"
   ],
   "requirements": [
-    "RK-6.4-268"
+    "RK-6.4-268",
+    "RK-6.4-403"
   ],
   "notes": "Python: channels/_tool_history.py _rounds. A provider that repeats an id breaks RFC §6.4's rule; the history still reads each call with its own result. Pairing the end row to the latest start under the id gave the next turn other(q=second) reading lookup's result, and lookup(q=first) gone. A later turn replays every call its turn ended, under the id the model gave it (RMK-1370).",
   "setup": {

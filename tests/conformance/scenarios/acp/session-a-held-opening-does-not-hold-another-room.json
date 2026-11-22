@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.2-030",
-    "RK-10.6.2-040"
+    "RK-10.6.2-040",
+    "RK-6.4-468"
   ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_the_hosts_values_are_per_room. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts.",
   "setup": {

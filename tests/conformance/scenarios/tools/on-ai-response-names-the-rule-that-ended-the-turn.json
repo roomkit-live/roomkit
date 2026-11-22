@@ -8,6 +8,7 @@
     "Appendix A.9"
   ],
   "requirements": [
+    "RK-6.4-405",
     "RK-8.2-034",
     "RK-8.2-035",
     "RK-9.2-070"

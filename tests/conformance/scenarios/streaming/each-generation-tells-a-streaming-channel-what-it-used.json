@@ -6,6 +6,11 @@
     "§6.1",
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-436",
+    "RK-6.4-437"
+  ],
   "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). The maintainer's choice of form: HITL 23e2e1c2.",
   "setup": {
     "channels": [

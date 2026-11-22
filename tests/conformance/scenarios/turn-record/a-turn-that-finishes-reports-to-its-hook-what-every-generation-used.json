@@ -5,6 +5,11 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-426",
+    "RK-6.4-439"
+  ],
   "notes": "RMK-369, the neighbour of turn-record/a-cancel-during-a-generation-counts-the-input-it-told: the done event's usage replaces what the generation told first. Python: channels/_ai_streaming.py _StreamTurnState.count_generation.",
   "setup": {
     "channels": [

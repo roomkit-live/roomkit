@@ -5,6 +5,10 @@
   "rules": [
     "§6.7"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-430"
+  ],
   "notes": "Python: tests/test_response_metadata.py::TestResponseMetadataDirect::test_no_hook_means_empty_response_metadata.",
   "setup": {
     "channels": [

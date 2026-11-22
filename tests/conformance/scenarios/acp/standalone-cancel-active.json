@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.1.1-034",
-    "RK-10.1.1-037"
+    "RK-10.1.1-037",
+    "RK-6.4-473"
   ],
   "notes": "Python: tests/test_channels/test_acp_instruction.py; test_acp_session_setup.py; test_acp_recovery.py::test_standalone_never_rebuilds_or_changes_the_room_session (RMK-1655); test_acp_backend.py::test_a_detach_during_a_standalone_turn_closes_the_room_s_session. Actual public calls and ordered ACP RPCs. Native tests cover reader abandonment, exact cancellation boundaries and logs; no Discussion or model-output guarantee is inferred.",
   "setup": {

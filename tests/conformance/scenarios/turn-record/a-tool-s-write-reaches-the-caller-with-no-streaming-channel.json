@@ -6,7 +6,8 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-10.1-130"
+    "RK-10.1-130",
+    "RK-6.4-425"
   ],
   "notes": "Python: tests/test_response_metadata.py::TestLiveRecord::test_tool_handler_write_lands_on_the_answer[buffered]. One loop, streamed or not (§6.4).",
   "setup": {

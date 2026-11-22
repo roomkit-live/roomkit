@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-21.4-024",
-    "RK-6.4-036"
+    "RK-6.4-459",
+    "RK-6.4-460"
   ],
   "notes": "Alice's turn calls who (current_tool_requester(): Alice) and a tool that holds; Bob's message comes meanwhile. A turn runs in its author's name: read inside Alice's turn, Bob's request ran under her id and her role's tools, and a gate that let her requests through let his through (RMK-1840). The room's owner hands a running turn a message from its own author only; Bob's waits, and its own turn's who answers Bob. Four generations: two for Alice's turn, two for Bob's. Python: core/_room_turns.py RoomTurns._steered; tests/test_steering_during_turn.py::test_another_person_s_message_waits_a_turn_of_its_own.",
   "setup": {

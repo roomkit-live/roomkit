@@ -5,6 +5,10 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-440"
+  ],
   "notes": "Python: _StreamRound.stream records a generation's usage at its StreamDone (_record_stream_usage), and _StreamTurnState.generation_failed clears the last usage.",
   "setup": {
     "channels": [

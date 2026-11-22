@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-6.4-491"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_it_is_set_before_the_first_prompt. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425"
+  ],
   "notes": "Python: channels/_ai_streaming.py _StreamTurnState.end, core/mixins/_streaming_segments.py end_turn (RMK-1056). roomkit-rs: tests/turn/main.rs last_generation_usage_is_distinct_from_turn_totals (RMK-1029).",
   "setup": {
     "channels": [

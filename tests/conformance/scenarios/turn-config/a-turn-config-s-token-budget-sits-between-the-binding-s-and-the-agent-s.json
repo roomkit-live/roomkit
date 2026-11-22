@@ -7,7 +7,9 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-6.4-067"
+    "RK-6.4-067",
+    "RK-6.4-414",
+    "RK-6.4-425"
   ],
   "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_budget.py test_the_turn_config_and_the_room_outrank_the_channel, test_a_null_never_lifts_the_channel_budget[turn-turn_budget_tokens]. Each generation bills 500 tokens; the agent's budget is 1200. room-1's configuration sets 700; room-2's sets 700 under a binding's 100000; room-3's sets null.",
   "setup": {

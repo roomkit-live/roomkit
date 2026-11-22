@@ -5,6 +5,10 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-431"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py write_owed_record reads the row back ({**stored.metadata, **record}) and replaces it in the turn's rows (RMK-1344's review).",
   "setup": {
     "channels": [

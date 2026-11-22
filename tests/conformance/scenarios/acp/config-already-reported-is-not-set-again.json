@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-6.4-492"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_a_value_the_session_already_has_is_not_set_again. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [

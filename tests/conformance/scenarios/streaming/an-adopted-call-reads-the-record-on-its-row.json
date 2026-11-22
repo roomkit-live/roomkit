@@ -5,6 +5,9 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-431"
+  ],
   "setup": {
     "channels": [
       {

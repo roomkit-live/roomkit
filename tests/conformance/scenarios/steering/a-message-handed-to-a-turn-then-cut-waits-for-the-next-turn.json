@@ -11,7 +11,9 @@
     "RK-10.1-102",
     "RK-10.1-112",
     "RK-10.1-115",
-    "RK-21.3-011"
+    "RK-21.3-011",
+    "RK-6.4-425",
+    "RK-6.4-462"
   ],
   "notes": "The message's delivery is over before the cut: the turn's loop took it. Python: core/_room_turns.py RoomTurns._steered; channels/_ai_steering.py (RMK-1371). The cut turn's call, cancelled before it answered, is not replayed: no model read its result (RFC §6.4, HITL 4ffcc5e0, RMK-1370).",
   "setup": {

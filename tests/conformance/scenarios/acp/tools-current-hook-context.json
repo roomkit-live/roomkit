@@ -8,6 +8,7 @@
     "Appendix A.9.1"
   ],
   "requirements": [
+    "RK-6.4-471",
     "RK-9.3-002"
   ],
   "notes": "Python: turns/_tool_hooks.py::run_tool_call_chain and report_tool_call rebuild the room context when a report fires. The room is changed through the public API while the agent is held before its tool update. Both hook modes read that current room. Active room tools only; no permission handler or out-of-turn claim.",

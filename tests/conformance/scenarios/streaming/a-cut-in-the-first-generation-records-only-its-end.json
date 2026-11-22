@@ -7,6 +7,11 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-430",
+    "RK-6.4-443"
+  ],
   "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). The text it was handed is kept, cancelled (§12.2 step 13s).",
   "setup": {
     "channels": [

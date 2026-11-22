@@ -11,7 +11,8 @@
     "RK-23.3-027",
     "RK-23.3-029",
     "RK-23.3-072",
-    "RK-23.3-078"
+    "RK-23.3-078",
+    "RK-6.4-425"
   ],
   "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_cut_helper_leaves_a_worker_that_owes_its_result[transport], [trace]; core/mixins/_child_execution.py _collect_answer (the end is the delegated agent's alone, RMK-834), _run_with_structured_result. helper answers each of the child room's prompts (the task, then the re-prompt) with a message its turn's record says ended max_rounds, for the transport alone, so that worker is never handed it: Python's helper is an agent looping past its round cap, whose narration the worker would answer. worker answers in text, is re-prompted and submits, which ends its turn.",
   "setup": {

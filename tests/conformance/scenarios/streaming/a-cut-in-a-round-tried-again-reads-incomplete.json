@@ -10,7 +10,9 @@
     "RK-10.1-112",
     "RK-10.1-115",
     "RK-10.6.8-018",
-    "RK-10.6.8-022"
+    "RK-10.6.8-022",
+    "RK-6.4-425",
+    "RK-6.4-442"
   ],
   "notes": "Python: core/mixins/_streaming_segments.py _GenerationsRead, a segment break starts the next (RMK-1333).",
   "setup": {

@@ -8,6 +8,8 @@
     "Appendix A.9.1"
   ],
   "requirements": [
+    "RK-6.4-504",
+    "RK-6.4-505",
     "RK-9.3-074"
   ],
   "notes": "Python: tests/test_external_tool_handler.py, tests/test_channels/test_acp_decided_calls.py, tests/test_refused_reports.py, tests/test_handler_report_raise.py; channels/_acp_events.py. Actual permission replies, handler callbacks, stored rows and hook reports. Active ACP room turns only; no standalone or lifecycle coverage is inferred.",

@@ -7,7 +7,10 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-6.4-067"
+    "RK-6.4-067",
+    "RK-6.4-405",
+    "RK-6.4-414",
+    "RK-6.4-425"
   ],
   "notes": "Python: channels/_turn_budget.py TurnBudget.tokens_of sums BILLED_USAGE_COUNTERS (providers/ai/base.py): input, output, cache read, cache creation, input image and output image tokens. 250 input and 250 output image tokens a generation; the third reaches 1,200.",
   "setup": {

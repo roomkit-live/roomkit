@@ -6,6 +6,10 @@
     "§6.4",
     "§9.2"
   ],
+  "requirements": [
+    "RK-6.4-410",
+    "RK-6.4-411"
+  ],
   "notes": "Python's _PrefixDeduplicator (channels/_ai_stream_round.py): the text of the last round of calls that said something is the next rounds' prefix; a round's text that repeats it then goes on is delivered from where it goes on (tests/test_ai_response_transcript.py test_the_streaming_transcript_reports_what_the_room_saw).",
   "setup": {
     "channels": [

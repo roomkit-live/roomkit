@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-6.4-247",
-    "RK-6.4-250"
+    "RK-6.4-250",
+    "RK-6.4-405"
   ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; the force stop at limit + _REPEAT_FORCE_STOP_AT, the limit 2 for a pure tool.",
   "setup": {

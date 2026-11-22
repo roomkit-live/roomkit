@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-328"
+    "RK-6.4-328",
+    "RK-6.4-524"
   ],
   "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_a_rate_limit_worded_like_an_overflow_keeps_its_retries.",
   "setup": {

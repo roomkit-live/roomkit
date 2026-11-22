@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-418"
+  ],
   "notes": "Python: channels/_turn_budget.py turn_budget raises ValueError for a cost budget on a model whose catalogue entry has no price, before the turn reads anything; tests/test_channels/test_turn_budget.py test_a_room_budget_the_model_cannot_price_fails_the_turn. The scripted model has no price.",
   "setup": {
     "channels": [

@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-477",
+    "RK-6.4-481",
+    "RK-6.4-482"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestTurnOutcomeMetadata::test_a_truncated_turn_is_named_too. This case exercises max_tokens explicitly; the refusal case alone does not cover that variant.",
   "setup": {
     "channels": [

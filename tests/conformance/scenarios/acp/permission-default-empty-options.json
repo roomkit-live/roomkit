@@ -8,6 +8,8 @@
     "Appendix A.9.1"
   ],
   "requirements": [
+    "RK-6.4-503",
+    "RK-6.4-505",
     "RK-9.3-072"
   ],
   "notes": "Python: tests/test_channels/test_acp.py::test_default_permission_policy_rejects, tests/test_tool_call_reports.py::test_an_acp_call_whose_permission_was_refused_is_refused, and channels/_acp_events.py::_permission_response/_record_decision. The wire reply is awaited before the agent reports an outcome. No external handler is installed; no custom-handler API credit.",

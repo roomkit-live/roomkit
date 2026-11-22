@@ -7,6 +7,9 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-405",
+    "RK-6.4-406",
+    "RK-6.4-420",
     "RK-9.2-070"
   ],
   "notes": "RFC §6.4, A turn that did not complete: a turn the provider interrupted after a round reaches its end on the error. The kit reads the turn's end before the error and fires the hook; the failed round's words, delivered as they streamed, are the turn's last segment.",

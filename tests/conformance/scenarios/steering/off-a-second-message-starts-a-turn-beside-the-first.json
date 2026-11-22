@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-430",
+    "RK-6.4-454"
+  ],
   "notes": "Without serialize_room_turns or steer_room_turns, the channel's turns in a room run side by side, each on the room as it stood when it was asked (§6.4): the second turn answers while the first still waits for its model.",
   "setup": {
     "channels": [

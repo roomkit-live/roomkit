@@ -6,6 +6,11 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-6.4-481",
+    "RK-6.4-482",
+    "RK-6.4-500"
+  ],
   "notes": "Python: tests/test_channels/test_acp_backend.py::test_a_session_opened_by_a_turn_across_a_detach_is_closed. RPC gates prove ordering without sleeps or runner state mutation. Standalone and remote turn-backend control failures are separate contracts.",
   "setup": {
     "channels": [

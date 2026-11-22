@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-510"
+  ],
   "notes": "Python: tests/test_channels/test_acp_discussion.py::test_without_instructions_the_prompt_is_unchanged. Exact prompt attempts through public RoomKit calls. Message-only persistence isolates conversation indices. The fixture supplies the option; it never composes the prompt.",
   "setup": {
     "kit": {

@@ -11,7 +11,8 @@
     "RK-21.1-041",
     "RK-21.1-070",
     "RK-21.1-072",
-    "RK-6.4-036"
+    "RK-6.4-459",
+    "RK-6.4-460"
   ],
   "notes": "The channel's tool policy denies send_email to members, and is resolved for the role of a turn's author. The owner's turn holds a tool when a member asks for the email: read inside the owner's turn, the member's request ran under the owner's tools, and send_email went out (RMK-1840). A running turn reads its own author's messages only; the member's waits its turn, in which the model's send_email call is refused by the policy. Four generations: two for the owner's turn, two for the member's. Python: core/_room_turns.py RoomTurns._steered; tests/test_steering_during_turn.py::test_another_person_s_message_waits_a_turn_of_its_own.",
   "setup": {

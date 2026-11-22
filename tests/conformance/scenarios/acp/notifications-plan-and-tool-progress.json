@@ -7,6 +7,9 @@
     "Appendix A.9.1"
   ],
   "requirements": [
+    "RK-6.4-470",
+    "RK-6.4-477",
+    "RK-6.4-508",
     "RK-8.4-030"
   ],
   "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_streams_updates_and_reuses_room_session. Real JSON-RPC updates and the realtime subscriber, not a synthetic notification oracle.",

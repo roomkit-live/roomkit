@@ -6,6 +6,10 @@
     "§6.7",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-430"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_the_answer_is_the_json_document, TestStreamedTurnThroughTheRoom::test_an_answer_that_passes_is_stored_and_sent_whole.",
   "setup": {
     "channels": [

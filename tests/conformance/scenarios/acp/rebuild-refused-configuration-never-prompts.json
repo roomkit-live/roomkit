@@ -5,6 +5,12 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-478",
+    "RK-6.4-481",
+    "RK-6.4-482",
+    "RK-6.4-497"
+  ],
   "notes": "Python: tests/test_channels/test_acp_recovery.py. Host-native refusal, never wire authorization. Standalone and public cancel are separate follow-ups.",
   "setup": {
     "channels": [

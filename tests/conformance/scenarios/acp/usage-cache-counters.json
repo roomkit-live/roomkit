@@ -6,6 +6,9 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-6.4-479"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestEndOfTurnReport::test_cache_counters_survive_the_report. Read the real response hook; compare reported numbers without arithmetic.",
   "setup": {
     "channels": [

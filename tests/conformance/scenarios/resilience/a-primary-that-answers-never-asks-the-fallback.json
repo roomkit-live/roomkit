@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-349"
+    "RK-6.4-349",
+    "RK-6.4-524"
   ],
   "notes": "Python: tests/test_channels/test_ai_retry.py::TestRetry::test_succeeds_first_try, TestFallbackProvider::test_no_fallback_on_first_try_success, TestStreamRetry::test_stream_succeeds_first_try.",
   "setup": {

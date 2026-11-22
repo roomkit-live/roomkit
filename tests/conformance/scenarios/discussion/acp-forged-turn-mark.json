@@ -6,6 +6,9 @@
     "§6.4",
     "§19.7.5"
   ],
+  "requirements": [
+    "RK-6.4-512"
+  ],
   "notes": "Python: tests/test_channels/test_acp_discussion.py::test_a_turn_no_discussion_gave_carries_no_notes. Public send_event outside Discussion: unissued metadata supplies no trusted notes. Native tests also exercise malformed and retired marks directly.",
   "setup": {
     "kit": {

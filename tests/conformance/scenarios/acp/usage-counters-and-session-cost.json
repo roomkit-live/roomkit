@@ -6,6 +6,10 @@
     "§6.4",
     "Appendix A.9.1"
   ],
+  "requirements": [
+    "RK-6.4-479",
+    "RK-6.4-480"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestEndOfTurnReport::test_the_counters_are_relayed_exactly_as_the_agent_sent_them. Read the real response hook; compare reported numbers without arithmetic.",
   "setup": {
     "channels": [

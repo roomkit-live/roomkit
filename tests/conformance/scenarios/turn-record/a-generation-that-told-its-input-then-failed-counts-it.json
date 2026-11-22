@@ -5,6 +5,13 @@
   "rules": [
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-6.4-420",
+    "RK-6.4-421",
+    "RK-6.4-425",
+    "RK-6.4-426",
+    "RK-6.4-440"
+  ],
   "notes": "RMK-369 (HITL 69bc2a10). The second generation tells its input, then its provider fails before its end: the turn ends error after a round. Python: channels/_ai_stream_round.py _count_told (in the round's finally), _StreamTurnState.generation_failed. roomkit-rs: tool_loop/generation.rs count_told on the failure, tool_loop/mod.rs failed.",
   "setup": {
     "channels": [

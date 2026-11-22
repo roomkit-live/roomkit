@@ -6,6 +6,10 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-6.4-425",
+    "RK-6.4-441"
+  ],
   "notes": "RMK-369 (HITL 69bc2a10, 242a9f5e), as a barge-in stops the voice channel's reader. The generation's partial UsageMarker reaches the reader before it stops. Python: channels/_ai_stream_round.py (StreamUsage), core/mixins/_streaming_segments.py _GenerationsRead.",
   "setup": {
     "channels": [
