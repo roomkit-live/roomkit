@@ -8,6 +8,8 @@
     "§10.6.6"
   ],
   "requirements": [
+    "RK-17.2-009",
+    "RK-17.2-026",
     "RK-9.1-006"
   ],
   "notes": "Before room-1 exists, one hook is added through the kit, which holds it for the room, one on the kit's hook engine and one given to the kit's executor. The kit creates the room: the kit's hook fires for the creation and stays the room's, the two below it are forgotten. A global hook on the tool call shows the turn's call ran. Python: tests/test_framework.py::TestRoomHooks::test_a_hook_registered_below_the_kit_ends_with_the_next_creation.",

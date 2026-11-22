@@ -9,6 +9,7 @@
   "requirements": [
     "RK-10.1-009",
     "RK-10.5-023",
+    "RK-17.1-002",
     "RK-A.14.1-006"
   ],
   "notes": "The first message names its room, the second is left to the router, which would route it to room-1: neither reaches the router or the room.",

@@ -6,6 +6,10 @@
     "§17.2",
     "§19.7"
   ],
+  "requirements": [
+    "RK-17.2-008",
+    "RK-17.2-010"
+  ],
   "notes": "The run's kit installs a discussion in acme's room; the store deletes the room; another process creates a room under the same id for globex, with no strategy, and attaches its channel; a message arrives in it through the run's kit. The deleted room's discussion asks no agent of globex's room.",
   "setup": {
     "channels": [

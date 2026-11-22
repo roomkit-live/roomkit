@@ -8,6 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.3-039",
+    "RK-17.2-008",
+    "RK-17.2-010",
     "RK-8.4-012"
   ],
   "notes": "An executor's agent answers acme's message and publishes after its turn, held at a gate; the store deletes the room; globex creates a room under the same id, attaches the same agent and subscribes to the room's ephemerals; then the gate opens. The deleted room's turn publishes to no one in globex's room.",

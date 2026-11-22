@@ -7,6 +7,11 @@
     "§10.6.6",
     "§17.2"
   ],
+  "requirements": [
+    "RK-17.2-011",
+    "RK-17.2-013",
+    "RK-17.2-014"
+  ],
   "notes": "Python: tests/test_room_org_scoping.py::TestScopedRoomHooks. An unscoped call remains permitted.",
   "setup": {
     "channels": [

@@ -7,6 +7,8 @@
     "§17.2"
   ],
   "requirements": [
+    "RK-17.2-009",
+    "RK-17.2-010",
     "RK-9.1-015"
   ],
   "notes": "Before any room holds the id, the run's kit holds the hook for it. Another process creates the room for acme; a message through the run's kit runs the hook, whose room is now acme's. The store deletes the room, the other process creates it again for globex, and a message through the run's kit does not run it.",

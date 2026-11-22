@@ -7,6 +7,7 @@
     "§9.1"
   ],
   "requirements": [
+    "RK-17.2-010",
     "RK-9.1-014"
   ],
   "notes": "acme's agent turn waits on a tool; the store deletes the room; the same process creates a room under the same id for globex, which adds an ASYNC AFTER_BROADCAST hook. acme's turn goes on and its delivery set ends: its hooks run with acme's context, of a room earlier than the one the id's hooks are registered for, which runs none of them and leaves them in place. globex's message then reaches globex's hook.",

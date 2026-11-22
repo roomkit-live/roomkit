@@ -15,7 +15,8 @@
     "RK-10.1-116",
     "RK-11.7.6-004",
     "RK-11.7.6-011",
-    "RK-11.7.6-013"
+    "RK-11.7.6-013",
+    "RK-17.2-012"
   ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, cancel), src/roomkit/core/mixins/verification.py (_name_held, _answer_released); tests/test_verification_release_cancel.py::test_another_organizations_cancel_reaches_no_held_message, its own organization's cancel; review of RMK-1173/RMK-1182, finding 4 (RMK-1195).",
   "setup": {

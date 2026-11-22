@@ -9,7 +9,8 @@
   "requirements": [
     "RK-10.4-045",
     "RK-10.4-050",
-    "RK-10.4-051"
+    "RK-10.4-051",
+    "RK-17.2-012"
   ],
   "notes": "Both organizations' rooms bind the shared number to alice. The webhook's status, acting for acme, reaches acme's room, never globex's; a status naming globex's room while acting for acme finds no room.",
   "setup": {

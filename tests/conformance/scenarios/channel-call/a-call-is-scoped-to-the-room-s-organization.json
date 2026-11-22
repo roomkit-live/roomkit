@@ -7,7 +7,9 @@
     "§10.6.3"
   ],
   "requirements": [
-    "RK-10.6.3-026"
+    "RK-10.6.3-026",
+    "RK-17.2-013",
+    "RK-17.2-014"
   ],
   "notes": "Python: ChannelStateMixin.channel_call.",
   "setup": {

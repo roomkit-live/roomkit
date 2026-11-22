@@ -9,7 +9,9 @@
   "requirements": [
     "RK-11.7.1-004",
     "RK-11.7.2-005",
-    "RK-11.7.7-009"
+    "RK-11.7.7-009",
+    "RK-17.2-002",
+    "RK-17.2-013"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_organizations_are_kept_apart (RMK-1171).",
   "setup": {

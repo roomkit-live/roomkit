@@ -11,7 +11,9 @@
     "RK-10.1-010",
     "RK-10.1-013",
     "RK-10.4-009",
-    "RK-10.4-058"
+    "RK-10.4-058",
+    "RK-17.2-003",
+    "RK-17.2-013"
   ],
   "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_the_router_is_given_the_organization_and_the_identity. The scripted router returns null deliberately, so every request creates a separate room.",
   "setup": {

@@ -9,7 +9,9 @@
   "requirements": [
     "RK-10.1-024",
     "RK-10.4-041",
-    "RK-10.4-042"
+    "RK-10.4-042",
+    "RK-17.2-012",
+    "RK-17.2-013"
   ],
   "notes": "Review probe. Found by the review of RMK-1396.",
   "setup": {
