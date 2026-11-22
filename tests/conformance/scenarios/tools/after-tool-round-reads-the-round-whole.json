@@ -7,6 +7,8 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-256",
+    "RK-6.4-257",
     "RK-9.2-072"
   ],
   "notes": "Python hands the round to the room's SYNC hooks once its calls ended (_ai_streaming.py _after_tool_round; turns/_wiring.py build_after_tool_round_hook).",

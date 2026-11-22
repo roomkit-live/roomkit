@@ -14,7 +14,8 @@
     "RK-6.4-182",
     "RK-6.4-196",
     "RK-6.4-199",
-    "RK-6.4-200"
+    "RK-6.4-200",
+    "RK-6.4-218"
   ],
   "notes": "Python: tests/test_thinker.py::test_a_failing_thinker_keeps_the_thought. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
   "setup": {

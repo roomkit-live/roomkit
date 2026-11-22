@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-329"
+  ],
   "notes": "Python's _generate_stream_with_retry never re-enters a stream that has yielded: a replay would hand the room the text twice. The turn fails before any round of calls: it reports no response (ON_AI_RESPONSE fires for the two turns before it only).",
   "setup": {
     "channels": [

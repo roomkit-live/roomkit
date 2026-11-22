@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-239"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_streaming.py: the round's declaration is recorded after the cancel check, just before the provider call.",
   "setup": {
     "channels": [

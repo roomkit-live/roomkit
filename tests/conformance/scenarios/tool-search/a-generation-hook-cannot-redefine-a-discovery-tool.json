@@ -10,7 +10,8 @@
     "RK-21.1-052",
     "RK-21.1-053",
     "RK-21.1-057",
-    "RK-21.1-060"
+    "RK-21.1-060",
+    "RK-6.4-223"
   ],
   "notes": "Python: tests/test_policy_served_exemption.py::TestEveryEntryReadsTheSameDeclaration::test_a_generation_hook_cannot_declare_a_served_name.",
   "setup": {

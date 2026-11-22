@@ -9,7 +9,8 @@
   "requirements": [
     "RK-19.7.3-033",
     "RK-21.1-064",
-    "RK-21.1-068"
+    "RK-21.1-068",
+    "RK-6.4-239"
   ],
   "notes": "Python: tests/test_tool_search_orchestration.py::test_an_orchestration_tool_is_declared_always_even_once_used.",
   "setup": {

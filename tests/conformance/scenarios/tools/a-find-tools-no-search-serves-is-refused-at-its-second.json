@@ -7,7 +7,8 @@
     "§9.3"
   ],
   "requirements": [
-    "RK-21.1-044"
+    "RK-21.1-044",
+    "RK-6.4-247"
   ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; channels/_ai_tools.py _register_channel_tools registers the discovery tools unless tool_search is False, their traits pure whether the search is active or not.",
   "setup": {

@@ -9,6 +9,8 @@
   ],
   "requirements": [
     "RK-21.1-063",
+    "RK-6.4-222",
+    "RK-6.4-400",
     "RK-9.2-068"
   ],
   "notes": "Python: tests/test_hook_tool_restrictions.py::test_under_tool_search_a_tool_the_hook_added_is_declared_at_every_round, test_under_tool_search_find_tools_never_names_a_tool_the_hook_added.",

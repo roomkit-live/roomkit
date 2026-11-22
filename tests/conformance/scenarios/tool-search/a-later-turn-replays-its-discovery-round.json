@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-266"
+  ],
   "notes": "Python: channels/_tool_history.py tool_rounds; tests/test_channels/test_tool_history.py::test_every_call_the_turn_ended_is_replayed_but_a_cancelled_one. A discovery round left out rewrote the history from that round on, and the provider's prompt cache lost it (RMK-1370).",
   "setup": {
     "channels": [

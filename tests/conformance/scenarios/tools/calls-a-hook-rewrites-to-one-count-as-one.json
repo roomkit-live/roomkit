@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-248"
+  ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; _channel_tool_handler reads the arguments BEFORE_TOOL_USE left.",
   "setup": {
     "channels": [

@@ -7,7 +7,7 @@
     "§10.1 step 12"
   ],
   "requirements": [
-    "RK-6.4-025"
+    "RK-6.4-377"
   ],
   "notes": "The room's participant p-alice is named Alice; a second sender's transport stamps the name ALICE, which reads like it. The model reads the second sender's turn under 'ALICE (2, not ALICE)': a rank alone, 'ALICE (2)', was read as the first Alice more than one time in two by a tool-calling model (RMK-1835). Python: channels/_speaker.py _ranked; tests/test_speaker_attribution.py::TestMultiSpeakerAttribution::test_senders_who_take_another_s_name_are_told_apart.",
   "setup": {

@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-254"
+  ],
   "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; tests/test_repeated_result_note.py test_two_tools_returning_the_same_string_are_counted_apart.",
   "setup": {
     "channels": [

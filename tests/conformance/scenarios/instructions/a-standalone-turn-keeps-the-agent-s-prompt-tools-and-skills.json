@@ -8,7 +8,8 @@
     "§24.3"
   ],
   "requirements": [
-    "RK-10.1.1-032"
+    "RK-10.1.1-032",
+    "RK-6.4-276"
   ],
   "notes": "The standalone request names the same system prompt and the same tools (names in order, descriptions and parameters) as the ordinary turn before it: the prompt with the skill catalogue, the agent's tool and the skill tool. Only its messages differ: the instruction alone. The tool-search and skill-gating standalone scenarios assert what such a request lacks (the room's found tools, an activation); this one asserts what it keeps.",
   "setup": {

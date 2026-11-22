@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-238"
+  ],
   "notes": "Python: tests/test_find_tools_judged.py::TestSearchesOfOneRound::test_a_later_rounds_search_still_swaps_the_window.",
   "setup": {
     "channels": [

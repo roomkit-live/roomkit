@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-289"
+  ],
   "notes": "RMK-740: the replayed images' header (Python TURN_IMAGES_HEADER, channels/_turn_notes.py; roomkit-rs tool_usage.rs) was no mark, so a copy of it passed; Python's _turn_images cleaned the header part too, which it must not once the header is a mark (roomkit-rs cleans the labels only).",
   "setup": {
     "channels": [

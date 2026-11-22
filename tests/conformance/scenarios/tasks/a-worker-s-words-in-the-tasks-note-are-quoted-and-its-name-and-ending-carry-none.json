@@ -9,7 +9,9 @@
   "requirements": [
     "RK-23.4-060",
     "RK-23.4-062",
-    "RK-23.4-063"
+    "RK-23.4-063",
+    "RK-6.4-356",
+    "RK-6.4-358"
   ],
   "notes": "Python: tests/tasks/test_task_progress_note.py::test_a_workers_text_is_quoted_on_one_line_and_bounded, test_a_workers_text_cannot_close_its_quote, test_a_workers_name_and_a_tasks_status_carry_no_text_of_their_own; channels/_tasks_note.py _task_line (identifier, one_of, quoted). The durations depend on the run's clock: the text is matched around them.",
   "setup": {

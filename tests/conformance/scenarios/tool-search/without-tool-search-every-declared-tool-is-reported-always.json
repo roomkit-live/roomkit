@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-241"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_declared_tools.py::test_without_tool_search_the_whole_declaration_is_reported.",
   "setup": {
     "channels": [

@@ -5,6 +5,12 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-288",
+    "RK-6.4-291",
+    "RK-6.4-371",
+    "RK-6.4-375"
+  ],
   "notes": "RMK-988: Python read a mark's opening only behind a square or fullwidth bracket, and the notes header's only whole; roomkit-rs reads any opening punctuation (general category Ps) and the header's opening (marks.rs). Python: channels/_mark_copies.py, channels/_turn_notes.py header_copies. One room per message, so each generation reads one message.",
   "setup": {
     "channels": [

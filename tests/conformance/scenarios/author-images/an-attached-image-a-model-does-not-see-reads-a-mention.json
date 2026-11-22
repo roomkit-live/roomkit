@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-314",
+    "RK-6.4-321"
+  ],
   "notes": "Python's with_attached_media then unseen_images: the attached media are the event's parts, an image among them read as the mention a model that does not see reads.",
   "setup": {
     "kit": {

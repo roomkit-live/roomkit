@@ -10,7 +10,7 @@
     "RK-19.7.5-050",
     "RK-19.7.5-083",
     "RK-19.7.5-117",
-    "RK-6.4-025"
+    "RK-6.4-379"
   ],
   "notes": "The room's participant is named 'Alice Martin de la Fontaine'; another sender signs the same name and asks the agent. Its label is ranked, 56 characters long with the name it disclaims: quoted within 48 characters, as a discussion's notes quoted a label before RMK-1835, it lost that name. Both the message a turn answers and who asked are quoted whole (RMK-1864). Python: orchestration/strategies/discussion/_driver.py _LABEL; tests/orchestration/test_discussion_edges.py::test_a_turn_names_the_message_it_answers_and_who_asked.",
   "setup": {

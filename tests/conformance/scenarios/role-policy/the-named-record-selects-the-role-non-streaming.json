@@ -12,7 +12,8 @@
     "RK-21.1-070",
     "RK-21.1-073",
     "RK-5.5-030",
-    "RK-5.5-033"
+    "RK-5.5-033",
+    "RK-6.4-397"
   ],
   "notes": "Python: test_sender_reach.py::TestToolPolicyRole and core/_authors.py::People.named. The reached record, direct-id priority, identity ordering, secondary channel and own-record fallback determine policy. A foreign-channel owner grants no privilege.",
   "setup": {

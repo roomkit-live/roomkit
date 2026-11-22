@@ -15,7 +15,9 @@
     "RK-6.4-192",
     "RK-6.4-195",
     "RK-6.4-198",
-    "RK-6.4-200"
+    "RK-6.4-200",
+    "RK-6.4-218",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_thinker.py::test_the_decision_taken_again_after_thinking_says_so. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
   "setup": {

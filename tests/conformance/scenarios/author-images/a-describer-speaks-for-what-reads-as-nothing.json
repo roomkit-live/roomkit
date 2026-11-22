@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-322"
+  ],
   "notes": "Python's AIChannel(describe_empty_event=...) and _transcript_content: the describer is asked only where the extraction is empty, before the media label.",
   "setup": {
     "channels": [

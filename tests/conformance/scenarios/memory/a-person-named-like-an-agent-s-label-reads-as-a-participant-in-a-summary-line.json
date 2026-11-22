@@ -9,7 +9,8 @@
   "requirements": [
     "RK-20.3-010",
     "RK-20.3-016",
-    "RK-20.3-021"
+    "RK-20.3-021",
+    "RK-6.4-381"
   ],
   "notes": "Python: memory/_summary.py SummaryLines reads channels/_speaker.py turn_speakers, whose _ranked adds ' (a participant)' to a name whose skeleton is one of the labels a model reads as its own turns or a one-to-one user's (RMK-1435). The summarizing memory and its numbers are memory/a-summary-stands-for-the-older-turns's; the first sender is named You, the second Alice. Only the summarizer's request is compared.",
   "setup": {

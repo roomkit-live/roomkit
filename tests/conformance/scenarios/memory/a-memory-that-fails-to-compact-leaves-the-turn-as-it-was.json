@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-20.1-003",
-    "RK-20.1-007"
+    "RK-20.1-007",
+    "RK-6.4-341"
   ],
   "notes": "Python's _compact_after_round logs the memory's error at warning (tests/test_channels/test_ai_compaction_between_rounds.py::test_a_memory_that_fails_to_compact_leaves_the_turn_as_it_was reads the log) and changes nothing.",
   "setup": {

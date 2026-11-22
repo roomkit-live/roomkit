@@ -9,7 +9,8 @@
     "§9.3"
   ],
   "requirements": [
-    "RK-24.6-011"
+    "RK-24.6-011",
+    "RK-6.4-397"
   ],
   "notes": "Python: CHANNEL_TOOL_TRAITS[run_skill_script] sets deferrable=False independently of exempt=False. The same host invocation stays visible with forced discovery and at the catalogue threshold.",
   "setup": {

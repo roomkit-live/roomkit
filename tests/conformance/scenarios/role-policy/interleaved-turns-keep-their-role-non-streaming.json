@@ -11,7 +11,8 @@
   "requirements": [
     "RK-21.1-070",
     "RK-21.1-074",
-    "RK-5.5-033"
+    "RK-5.5-033",
+    "RK-6.4-397"
   ],
   "notes": "The same AIChannel serves two rooms. Its observer generation is held while the owner reaches its final generation. The resumed observer keeps its captured restriction; neither its reader nor its forced call inherits owner permissions. Gates reserve rounds before holding; no sleep establishes ordering.",
   "setup": {

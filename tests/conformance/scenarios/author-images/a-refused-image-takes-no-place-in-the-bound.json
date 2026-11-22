@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-325"
+  ],
   "notes": "Python's _decide: an image refused in the room reads as refused before the bound is counted, and is not counted.",
   "setup": {
     "channels": [

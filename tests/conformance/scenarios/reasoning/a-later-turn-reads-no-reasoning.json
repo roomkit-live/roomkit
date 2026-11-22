@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-086"
+    "RK-6.4-086",
+    "RK-6.4-272"
   ],
   "notes": "Python: nothing of a round's reasoning is stored (RFC §6.4).",
   "setup": {

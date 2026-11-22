@@ -16,7 +16,8 @@
     "RK-24.3-030",
     "RK-24.3-031",
     "RK-24.3-032",
-    "RK-24.4-017"
+    "RK-24.4-017",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_an_offered_required_tool_lets_the_activation_through; channels/_ai_tools.py::_missing_required_tools includes the candidate in opened patterns.",
   "setup": {

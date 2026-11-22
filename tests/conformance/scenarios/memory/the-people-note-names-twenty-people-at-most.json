@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-370"
+  ],
   "notes": "Thirty members of ws take part; Member 29, who joined twenty-ninth, speaks. The note names Member 29 first, then the first nineteen silent members in the order they joined, and ends with “and 10 others”. Before RMK-917 it named all thirty in every turn.",
   "setup": {
     "channels": [

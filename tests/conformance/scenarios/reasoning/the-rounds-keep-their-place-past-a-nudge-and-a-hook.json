@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-072"
+    "RK-6.4-072",
+    "RK-6.4-258"
   ],
   "notes": "Python: one list of messages; roomkit-rs keeps a round's parts by its message's place. channels/_ai_loop_rules.py _try_round_again, channels/_ai_streaming.py _after_tool_round.",
   "setup": {

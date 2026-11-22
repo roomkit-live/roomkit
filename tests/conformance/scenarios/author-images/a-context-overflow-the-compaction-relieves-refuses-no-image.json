@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-25.3-005"
+    "RK-25.3-005",
+    "RK-6.4-330"
   ],
   "notes": "Python marks the images refused only when the error ends the turn's first request; a compaction whose replay succeeds raises nothing.",
   "setup": {

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-335"
+  ],
   "notes": "Python's _compact_context raises a ProviderError, not retryable, for a context of four messages or fewer; it ends the turn. A window of four events holds four messages.",
   "setup": {
     "channels": [

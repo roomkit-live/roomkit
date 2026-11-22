@@ -11,6 +11,7 @@
     "RK-10.6.5-058",
     "RK-10.6.5-059",
     "RK-10.6.5-062",
+    "RK-6.4-397",
     "RK-9.3-112"
   ],
   "notes": "Python: tests/test_turns_inputs.py. input_request reads the owner record while open, preserves request fields, and returns None after settlement. Original creation time is checked with a controlled clock in the native reference; these reads also pin a stable timestamp.",

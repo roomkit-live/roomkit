@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-221",
+    "RK-6.4-239"
+  ],
   "notes": "Python: tests/test_find_tools_judged.py::TestText::test_a_served_search_reveals_for_the_next_round_and_turn, tests/test_channels/test_ai_response_declared_tools.py::test_a_tool_found_in_an_earlier_turn_is_sticky.",
   "setup": {
     "channels": [

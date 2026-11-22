@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-21.1-063"
+    "RK-21.1-063",
+    "RK-6.4-221"
   ],
   "notes": "Python: tests/test_tool_search_text.py::TestFindToolsReveal::test_find_tools_reveals_next_round.",
   "setup": {

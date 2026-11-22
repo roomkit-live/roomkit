@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-239"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_policy.py::_declaration_origin.",
   "setup": {
     "channels": [

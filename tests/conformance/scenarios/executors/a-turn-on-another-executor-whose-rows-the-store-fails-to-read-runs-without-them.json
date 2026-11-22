@@ -8,7 +8,8 @@
     "§14.1"
   ],
   "requirements": [
-    "RK-10.6.5-039"
+    "RK-10.6.5-039",
+    "RK-6.4-269"
   ],
   "notes": "The agent's first turn, on the executor first, calls lookup (c1). The next turn runs on second, which never ran the agent in the room, so what it reads of the agent's own rows comes with its request, the channel_rows its owner reads for it (§10.6.5). That read fails once. The gate only orders the fault: it holds the turn at its first read of the room's events after the message's commit, which implementations make with different operations (get_timeline for the agent's latest tool rows, or list_events for the turn's messages). Once the step arms the fault, the next list_events fails: the read of the room's last message before the turn's history, which only the read of the rows makes. The failure costs the turn those rows, not the turn: its request replays the room's messages without c1, in its history and in its tool memory, and the agent answers. The unit's deleted row is executors/a-turn-on-another-executor-reads-none-of-the-rows-a-delete-removed. Python: tests/test_executor_without_store.py::test_a_store_that_fails_costs_the_turn_its_rows_not_the_turn; roomkit-rs: crates/roomkit/tests/remote_channel_rows.rs::one_failed_read_costs_the_remote_turn_its_rows.",
   "setup": {

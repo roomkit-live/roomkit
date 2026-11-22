@@ -8,7 +8,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.5-037"
+    "RK-10.5-037",
+    "RK-6.4-377"
   ],
   "notes": "Marie on sms and the desk's member on the host channel take part, so the agent's turns are labelled with their speaker (§6.4): the post reads as its member's name.",
   "setup": {

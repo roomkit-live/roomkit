@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-285",
+    "RK-6.4-383"
+  ],
   "notes": "Python's _turn_images replaces each copy of a runtime mark in the labels (without_mark_copies), whose arguments the model wrote (tests/test_tool_result_images.py::test_the_images_labels_quote_no_runtime_mark).",
   "setup": {
     "channels": [

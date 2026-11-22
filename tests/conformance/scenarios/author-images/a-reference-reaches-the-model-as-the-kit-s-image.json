@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-309",
+    "RK-6.4-311"
+  ],
   "notes": "Python's RoomKit(media_resolver=...) and _resolved: the resolver, serving every AI channel registered on the kit, gives a reference's bytes, sent as a data URI of the media's type; none, or none past 5 MiB, takes the mention [Image unavailable: “<name>”].",
   "setup": {
     "kit": {

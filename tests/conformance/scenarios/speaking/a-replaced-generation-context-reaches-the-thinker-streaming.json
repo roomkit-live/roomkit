@@ -14,6 +14,7 @@
     "RK-6.4-184",
     "RK-6.4-198",
     "RK-6.4-200",
+    "RK-6.4-218",
     "RK-9.2-068"
   ],
   "notes": "Python: tests/test_thinker.py::test_a_replacement_event_is_what_the_thinker_reads. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",

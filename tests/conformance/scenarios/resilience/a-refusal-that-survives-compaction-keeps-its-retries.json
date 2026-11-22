@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-348"
+  ],
   "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_a_refusal_that_survives_compaction_falls_through_to_retry. One retry: the compacted replay spends none, so the refusal after it still has its retry.",
   "setup": {
     "channels": [

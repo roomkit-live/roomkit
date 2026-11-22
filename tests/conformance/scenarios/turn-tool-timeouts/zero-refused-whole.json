@@ -7,7 +7,8 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-21.6-010"
+    "RK-21.6-010",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_tool_timeout.py::test_a_turns_bound_that_is_not_positive_fails_the_turn. Validation must fail before the model receives any request.",
   "setup": {

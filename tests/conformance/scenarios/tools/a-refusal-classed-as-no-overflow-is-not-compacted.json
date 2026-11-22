@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-328"
+  ],
   "notes": "Python's _is_context_overflow believes a structural classification in both directions: context_overflow False beats the prose 'maximum context length'.",
   "setup": {
     "channels": [

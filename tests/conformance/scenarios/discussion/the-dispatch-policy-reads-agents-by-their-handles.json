@@ -9,7 +9,8 @@
   "requirements": [
     "RK-19.7.5-155",
     "RK-19.7.5-199",
-    "RK-19.7.5-200"
+    "RK-19.7.5-200",
+    "RK-6.4-359"
   ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py test_the_dispatch_policy_reads_agents_by_their_handles.",
   "setup": {

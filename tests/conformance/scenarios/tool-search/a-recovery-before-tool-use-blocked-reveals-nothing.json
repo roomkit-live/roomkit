@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-236"
+  ],
   "notes": "Python: tests/test_tool_search_recovered_reveal.py::test_a_call_refused_before_it_ran_reveals_nothing[before-tool-use-block].",
   "setup": {
     "channels": [

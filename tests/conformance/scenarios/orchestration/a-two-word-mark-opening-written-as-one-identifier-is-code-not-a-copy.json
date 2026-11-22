@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-292"
+  ],
   "notes": "HITL 2edb51ef (option A): since HITL 0e813328 a mark's opening counts behind any opening bracket, which rewrote code and JSON naming conversation_summary in both implementations (Python channels/_mark_copies.py, roomkit-rs marks.rs). The narrowing proposed to the maintainer: a two-word opening written as one token is an identifier. One room per message, so each generation reads one message. A braille blank (U+2800) or an invisible character Python counts as one (U+17B4, U+034F) between the two words is a word break: the copy counts, in a short mark as in a long one (review of the lot, HITL f77ed389).",
   "setup": {
     "channels": [

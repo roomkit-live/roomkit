@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-282"
+  ],
   "notes": "Python's refuses_content and _stream_generation: only the turn's first request, before anything streamed, failing on an error not retried of another status than 401, 402, 403, 404 and 429, marks its images refused. A later round, or a stream under way, shows the provider took the content.",
   "setup": {
     "channels": [

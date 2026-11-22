@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-347"
+  ],
   "notes": "Python: tests/test_channels/test_ai_retry.py::TestRetry::test_non_retryable_error_raises_immediately and TestFallbackProvider::test_no_fallback_on_non_retryable_error.",
   "setup": {
     "channels": [

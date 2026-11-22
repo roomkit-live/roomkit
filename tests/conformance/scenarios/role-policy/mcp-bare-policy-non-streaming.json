@@ -11,7 +11,8 @@
   "requirements": [
     "RK-21.1-026",
     "RK-21.2-015",
-    "RK-21.2-018"
+    "RK-21.2-018",
+    "RK-6.4-397"
   ],
   "notes": "The archive's handler is first in the chain, the CRM's tools are declared bare. The policy is an allow list of bare names (allow delete_records): it names no server, so it keeps none out, and the bare call runs on the archive, the first server that serves it. Role-selection counterpart of mcp/a-policy-that-names-no-server-leaves-a-bare-name-on-the-first-server; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {

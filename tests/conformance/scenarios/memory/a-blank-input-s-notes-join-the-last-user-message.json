@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-20.2-002",
-    "RK-20.2-009"
+    "RK-20.2-009",
+    "RK-6.4-278"
   ],
   "notes": "Python's with_turn_notes: the notes follow the last message's text when it is a user message, or come as a user message of their own when the conversation does not end on one; some chat formats refuse two user messages in a row. The agent's first answer is empty, so no answer of its own follows the first message; the second message reads as nothing (the describer says nothing of it) and is left out.",
   "setup": {

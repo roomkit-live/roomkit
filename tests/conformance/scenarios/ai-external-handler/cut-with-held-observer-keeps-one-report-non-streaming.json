@@ -7,6 +7,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-6.4-397",
     "RK-9.3-052"
   ],
   "notes": "Python: tests/test_external_call_cut.py::test_a_call_cut_while_its_observers_run_is_reported_once. Both the real observer and next generation reach deterministic gates, proving the turn remains live before cancellation; close drains the released observer. Each local/external occurrence is observed once.",

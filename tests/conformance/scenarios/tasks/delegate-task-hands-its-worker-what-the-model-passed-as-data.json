@@ -17,7 +17,8 @@
     "RK-23.4-016",
     "RK-23.4-017",
     "RK-23.4-018",
-    "RK-23.5-002"
+    "RK-23.5-002",
+    "RK-6.4-351"
   ],
   "notes": "Python: tests/tasks/test_delegate.py; tasks/delegate.py DelegateHandler._do_delegate, tasks/brief.py task_brief. The JSON is Python's json.dumps of the context, on one line, in the order of its keys.",
   "setup": {

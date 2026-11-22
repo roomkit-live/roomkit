@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-386",
+    "RK-6.4-389"
+  ],
   "notes": "Python: channels/_ai_tools.py::_serve_gated_call (no references on failed outcomes). RMK-1306.",
   "setup": {
     "channels": [

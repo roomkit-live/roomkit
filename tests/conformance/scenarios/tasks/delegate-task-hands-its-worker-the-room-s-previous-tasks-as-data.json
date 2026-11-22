@@ -13,7 +13,8 @@
     "RK-23.4-019",
     "RK-23.4-020",
     "RK-23.4-032",
-    "RK-23.4-034"
+    "RK-23.4-034",
+    "RK-6.4-356"
   ],
   "notes": "Python: tests/tasks/test_cache.py::TestDelegateHandlerWithCache::test_the_worker_s_model_reads_the_previous_tasks; tasks/delegate.py DelegateHandler, tasks/cache.py, tasks/brief.py previous_tasks_block. Each task is bounded at 600 characters, as a message of the conversation is, and written as json_text_line writes it. An agent hands over its own tasks only (HITL 673c8148): another agent's may quote what it may not read. Python's public recent_context still lists the room's, what a host reads. A shared intelligence channel stops them as it stops the conversation, what the framework rebuilds (§7.5 rule 8); the context stays, the model's own text of this call, as the task is.",
   "setup": {

@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-076"
+    "RK-6.4-076",
+    "RK-6.4-398"
   ],
   "notes": "Python: providers/ai/base.py response_stream_events, thinking_parts_of; tests/test_providers/test_thinking_blocks.py test_a_wrapped_response_hands_each_block_on, test_a_response_read_through_generate_replays_its_blocks_first.",
   "setup": {

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-239"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_declared_tools.py::test_the_union_keeps_a_tool_the_reveal_window_dropped.",
   "setup": {
     "channels": [

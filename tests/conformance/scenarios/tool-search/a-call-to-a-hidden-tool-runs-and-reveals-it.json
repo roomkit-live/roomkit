@@ -6,6 +6,10 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-6.4-225",
+    "RK-6.4-232"
+  ],
   "notes": "Python: tests/test_tool_search_text.py::TestDeferredCallRecovery::test_undeclared_catalogue_call_executes.",
   "setup": {
     "channels": [

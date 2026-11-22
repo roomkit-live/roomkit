@@ -16,7 +16,8 @@
     "RK-19.7-022",
     "RK-19.7-023",
     "RK-19.7-025",
-    "RK-19.7.3-003"
+    "RK-19.7.3-003",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/orchestration/test_room_installs.py::test_each_room_s_team_tool_runs_its_own_team. Both installs share a supervisor but use different workers with async_delivery=True; the second room is called first, then the first, then a room with no install. Gates keep each dispatch separate from its hand-back. This variant uses generate() through the default provider adapter; every model request asserts the actual generation method.",
   "setup": {

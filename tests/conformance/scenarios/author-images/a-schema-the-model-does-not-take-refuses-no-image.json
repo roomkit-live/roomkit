@@ -7,7 +7,8 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-25.3-005"
+    "RK-25.3-005",
+    "RK-6.4-283"
   ],
   "notes": "Python: tests/test_author_images.py TestRefusal::test_a_refusal_before_any_request_refuses_nothing (HITL fb46b635, d91b8137, RMK-1436). A provider's refusal before any request (ProviderError.before_request, an unsupported ResponseSchemaError's) says nothing of the content.",
   "setup": {

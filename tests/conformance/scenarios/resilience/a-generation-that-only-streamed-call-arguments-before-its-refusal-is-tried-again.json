@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-344"
+  ],
   "notes": "Python: channels/_ai_resilience.py::_StreamEmission.note. RMK-1633.",
   "setup": {
     "channels": [

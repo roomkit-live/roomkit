@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-331"
+  ],
   "notes": "Python's compaction_cut: the input at index 2 of 7 messages, before the half (3); the summary of messages[:2] joins the input.",
   "setup": {
     "channels": [

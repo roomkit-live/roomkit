@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-386"
+  ],
   "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_held_tool_with_invalid_arguments_references_its_schema. RMK-1306.",
   "setup": {
     "channels": [

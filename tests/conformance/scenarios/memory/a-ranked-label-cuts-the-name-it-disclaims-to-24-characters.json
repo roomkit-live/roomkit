@@ -6,7 +6,7 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-025"
+    "RK-6.4-378"
   ],
   "notes": "Three names of more than 24 characters, each signed by two senders, so each second sender is ranked. 'Jean-Sébastien Tremblay-Lafontaine': the last space of its first 23 characters is its fifteenth, so the name is cut there. 'Bartholomew-Maximilian-Fitzgerald' holds no space: cut after 23 characters. 'Alexandria Ocasio-Tremblay': its only space is its eleventh character, too early to cut at, so 23 characters are kept. Each cut ends with '…'. Python: roomkit/_text.py bounded_text, channels/_speaker.py _ranked; tests/test_external_text.py::test_a_ranked_label_keeps_the_name_it_disclaims_within_24_characters.",
   "setup": {

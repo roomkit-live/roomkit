@@ -11,7 +11,8 @@
     "RK-21.1-061",
     "RK-21.1-063",
     "RK-24.3-037",
-    "RK-24.4-017"
+    "RK-24.4-017",
+    "RK-6.4-397"
   ],
   "notes": "Python: channels/_ai_policy.py::_reachable_tools and _apply_tool_filters; tests/test_toolset_edges.py discovery and activation assertions. Gating narrows the discovery catalogue before Tool Search applies its own visibility.",
   "setup": {

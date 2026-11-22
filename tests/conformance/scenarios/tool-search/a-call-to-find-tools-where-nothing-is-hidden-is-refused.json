@@ -7,7 +7,8 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-21.1-044"
+    "RK-21.1-044",
+    "RK-6.4-226"
   ],
   "notes": "Python: tests/test_tool_list_parity.py::TestAnUndeclaredInfrastructureTool::test_a_text_turn_refuses_it.",
   "setup": {

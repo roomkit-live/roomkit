@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-291",
+    "RK-6.4-371",
+    "RK-6.4-375"
+  ],
   "notes": "HITL 5d5e8776, option 1: fail closed on both sides, Python first (the automated security review's findings on marks.rs). Python: channels/_mark_copies.py. The timeline keeps the sender's text.",
   "setup": {
     "channels": [

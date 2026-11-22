@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-246"
+  ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _repeated_result_note; json.dumps(arguments, sort_keys=True).",
   "setup": {
     "channels": [

@@ -9,7 +9,8 @@
   "requirements": [
     "RK-20.2-002",
     "RK-20.2-003",
-    "RK-20.2-006"
+    "RK-20.2-006",
+    "RK-6.4-297"
   ],
   "notes": "Python tests/test_runtime_mark_copies.py::test_a_split_copy_never_takes_a_labelled_message_s_label and the public MockMemoryProvider witness from the ScriptExecutor integration review. Messages whose metadata contains speaker stop the split-copy scan. They are not pieces of an unlabelled mark. The final user memory text still joins the input as the memory contract specifies.",
   "setup": {

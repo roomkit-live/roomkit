@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-318"
+  ],
   "notes": "Python's DEFAULT_MAX_AUTHOR_IMAGES = 4 and _decide, which walks the events newest first.",
   "setup": {
     "channels": [

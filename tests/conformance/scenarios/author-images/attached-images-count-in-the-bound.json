@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-314",
+    "RK-6.4-318"
+  ],
   "notes": "Python's author_images over the events with_attached_media reads: the newest max_author_images images go, an event's own media before the ones attached to it.",
   "setup": {
     "kit": {

@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-281",
+    "RK-6.4-282"
+  ],
   "notes": "Python's _forget_sent_images: on a provider error not retried, of no status about the key, the bill, a permission, the model or the rate, on the turn's first request before anything streamed, a request that carried the replayed images (carries_turn_images) has ToolUsageMemory forget them (tests/test_tool_result_images.py::test_a_turn_the_provider_refuses_replays_no_image_after).",
   "setup": {
     "channels": [

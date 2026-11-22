@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-228"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_tools.py::_handle_find_tools.",
   "setup": {
     "channels": [

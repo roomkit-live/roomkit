@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-228"
+  ],
   "notes": "Python: tests/test_find_tools_judged.py::TestText::test_a_search_that_finds_nothing_keeps_the_window.",
   "setup": {
     "channels": [

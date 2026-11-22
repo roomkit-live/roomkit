@@ -7,7 +7,8 @@
     "§21.5"
   ],
   "requirements": [
-    "RK-21.5-003"
+    "RK-21.5-003",
+    "RK-6.4-332"
   ],
   "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_long_loop_keeps_its_input_and_notes_and_stores_older_results (channels/_compaction.py with_results_stored, _STORED_OVER_CHARS 2000, _STORED_PREVIEW_CHARS 1000). Nine messages, the input at 0: the half (4) is c2's result, which the cut moves past to 5, so c1's and c2's rounds are shortened, c3's and c4's kept. c1's result is exactly 2000 characters (2333 bytes), kept; c2's is one line of 2500 characters, stored, its preview the line cut to 1000 characters (the store's own preview would hold it whole). Every result is under the threshold (5000 tokens), so none is stored at its call.",
   "setup": {

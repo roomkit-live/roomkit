@@ -11,7 +11,8 @@
     "RK-23.4-060",
     "RK-23.4-061",
     "RK-23.4-064",
-    "RK-23.4-065"
+    "RK-23.4-065",
+    "RK-6.4-277"
   ],
   "notes": "Python: tests/tasks/test_task_progress_note.py::test_only_the_latest_tasks_are_listed_and_none_means_no_note, test_a_room_without_tasks_and_a_standalone_turn_carry_no_tasks; channels/_tasks_note.py TASKS_NOTE_LIMIT, channels/_ai_context.py _tasks_notes (standalone).",
   "setup": {

@@ -7,7 +7,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-19.7.5-199"
+    "RK-19.7.5-199",
+    "RK-6.4-381"
   ],
   "notes": "Python: orchestration/strategies/discussion/_dispatching.py _turn reads channels/_speaker.py turn_labels, whose _ranked adds '(a participant)' (lot 9 review, finding 1).",
   "setup": {

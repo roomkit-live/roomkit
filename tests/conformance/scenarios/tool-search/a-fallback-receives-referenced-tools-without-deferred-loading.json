@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-390"
+  ],
   "notes": "Python: tests/test_deferred_tools.py::test_a_fallback_that_cannot_hold_receives_what_the_turn_shows. RMK-1306.",
   "setup": {
     "channels": [

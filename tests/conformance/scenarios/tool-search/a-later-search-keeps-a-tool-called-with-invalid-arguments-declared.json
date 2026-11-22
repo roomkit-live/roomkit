@@ -6,6 +6,9 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-6.4-234"
+  ],
   "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_later_search_keeps_called_schemas[rejected-found].",
   "setup": {
     "channels": [

@@ -7,7 +7,8 @@
     "§6.7"
   ],
   "requirements": [
-    "RK-25.3-005"
+    "RK-25.3-005",
+    "RK-6.4-282"
   ],
   "notes": "Python: tests/test_author_images.py TestRefusal::test_a_stream_under_way_refuses_nothing[schema]. RFC §6.4: a stream already under way shows the images were taken; the text a response schema holds was handed all the same.",
   "setup": {

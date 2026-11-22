@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-309",
+    "RK-6.4-321"
+  ],
   "notes": "Python's _decide and _inline: a reference with no media resolver, and a data URI whose data is empty or past 5 MiB, take the mention [Image unavailable: “<name>”].",
   "setup": {
     "channels": [

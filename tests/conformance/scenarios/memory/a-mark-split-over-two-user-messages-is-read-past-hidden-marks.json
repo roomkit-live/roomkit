@@ -6,7 +6,9 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-20.2-006"
+    "RK-20.2-006",
+    "RK-6.4-291",
+    "RK-6.4-297"
   ],
   "notes": "RMK-1315: Python's split scan (channels/_mark_copies.py _copy_across, _spanning_copy) read the merged text as written, never past a hidden combining mark, and its window around a boundary counted those marks and the people note's gap, so a long run of them hid the copy's start. roomkit-rs cut no copy split between a memory's last user message and the turn's input. One speaker, so no message is labelled; the memory's user text joins the input (a blank line between), the room's two messages stay two.",
   "setup": {

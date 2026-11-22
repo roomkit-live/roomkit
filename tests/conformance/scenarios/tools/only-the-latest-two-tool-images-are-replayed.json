@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-279"
+  ],
   "notes": "Python's _IMAGES_REPLAYED = 2: ToolUsageMemory.record keeps the room's last two replayable images (tests/test_tool_result_images.py::test_only_the_latest_images_are_kept).",
   "setup": {
     "channels": [

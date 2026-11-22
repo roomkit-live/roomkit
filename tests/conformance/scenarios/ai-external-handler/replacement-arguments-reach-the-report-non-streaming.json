@@ -8,6 +8,7 @@
   ],
   "requirements": [
     "RK-6.4-067",
+    "RK-6.4-397",
     "RK-9.3-068"
   ],
   "notes": "Python: channels/_ai_stream_external_tools.py::_decide and tests/test_external_tool_handler.py. A replacement decision changes the report and END arguments; the decision and START still read the original input.",

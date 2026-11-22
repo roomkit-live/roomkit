@@ -7,6 +7,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-6.4-258",
+    "RK-6.4-397"
+  ],
   "notes": "Python: tests/test_toolset_edges.py::test_a_withdrawn_tool_leaves_the_allowed_names; channels/_ai_policy.py::_apply_tool_filters, channels/_ai_tools.py::_execute_single_tool_call. The hook withdraws search_web after safe_read, BEFORE the activation; activation opens fetch_v1 but must not restore search_web.",
   "setup": {
     "channels": [

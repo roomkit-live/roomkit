@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-239",
+    "RK-6.4-240"
+  ],
   "notes": "Python: tests/test_channels/test_ai_response_declared_tools.py::test_a_revealed_tool_is_reported_with_its_schema.",
   "setup": {
     "channels": [

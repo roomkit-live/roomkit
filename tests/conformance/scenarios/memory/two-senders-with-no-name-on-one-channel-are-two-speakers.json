@@ -5,6 +5,12 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-359",
+    "RK-6.4-360",
+    "RK-6.4-363",
+    "RK-6.4-364"
+  ],
   "notes": "An event the application sends from ws, with no participant, then a message alice sends through ws, with no name: two sources under one channel label. The second source to speak in the turns read reads '@ws (2)', as a look-alike name carries its rank, and speakers are counted by source, so the room's turns are labelled and carry the speaker note. roomkit-rs's rule, which Python adopts (RMK-1221, the maintainer's choice): Python read both as '@ws', one speaker, unlabelled.",
   "setup": {
     "channels": [

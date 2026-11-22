@@ -10,7 +10,8 @@
   "requirements": [
     "RK-21.1-072",
     "RK-24.4-020",
-    "RK-24.4-025"
+    "RK-24.4-025",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_tool_policy_exemptions.py::test_a_skill_name_hint_offers_only_reachable_tools. The model result excludes tenant_delete; the hook independently confirms tenant_export is present in that same hint. No ordinary handler runs.",
   "setup": {

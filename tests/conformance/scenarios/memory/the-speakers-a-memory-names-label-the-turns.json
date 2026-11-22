@@ -9,7 +9,8 @@
   "requirements": [
     "RK-20.1-002",
     "RK-20.2-002",
-    "RK-20.2-008"
+    "RK-20.2-008",
+    "RK-6.4-373"
   ],
   "notes": "Python's MemoryResult.speakers: the labels a summary names participants by count with the history's speakers, so a conversation a summary named several people in labels its turns (RFC §6.4). The sender has no name: the label is its channel, @ws.",
   "setup": {

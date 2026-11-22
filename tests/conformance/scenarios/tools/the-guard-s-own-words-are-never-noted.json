@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-255"
+  ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _repeated_result_note; _ADVISORY_MARKER; tests/test_repeated_result_note.py test_the_advisory_error_is_not_itself_annotated.",
   "setup": {
     "channels": [

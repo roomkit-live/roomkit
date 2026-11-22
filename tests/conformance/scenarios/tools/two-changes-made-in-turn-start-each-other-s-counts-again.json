@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-251"
+  ],
   "notes": "Python: channels/_ai_tools.py _forget_repeats_on_change, _repeated_call_guard, _repeated_result_note; tests/test_tool_repeat_guard.py. RMK-1541 (HITL a3a67086, 3368d06c, a634216e).",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-266"
+  ],
   "notes": "Python: channels/_tool_history.py _answered. Sent back, such a name makes every later request of the room a 400.",
   "setup": {
     "channels": [

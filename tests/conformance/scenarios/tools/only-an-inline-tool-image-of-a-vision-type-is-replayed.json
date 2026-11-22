@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-280"
+  ],
   "notes": "Python's _replayable: a data URI (its scheme and type read in any case) of a VISION_IMAGE_TYPES type, of 2,000,000 characters at most (tests/test_tool_result_images.py::test_only_an_inline_image_every_provider_takes_is_replayed). The round itself carries every part as the tool returned it.",
   "setup": {
     "channels": [

@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.4-014",
-    "RK-6.4-067"
+    "RK-6.4-067",
+    "RK-6.4-268"
   ],
   "notes": "Python: channels/_ai_streaming.py _run_announced_calls answers in call order. Pairing a round's results first in, first out rests on this order.",
   "setup": {

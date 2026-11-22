@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-246"
+  ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; the name comes from the model, inside json.dumps.",
   "setup": {
     "channels": [

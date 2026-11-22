@@ -9,7 +9,8 @@
   "requirements": [
     "RK-23.3-012",
     "RK-23.3-013",
-    "RK-23.3-014"
+    "RK-23.3-014",
+    "RK-6.4-381"
   ],
   "notes": "Python: tasks/brief.py conversation_block reads channels/_speaker.py turn_labels, whose _ranked adds '(a participant)' to a name whose skeleton is one of the labels a model reads as its own turns or a one-to-one user's (RMK-1435). The worker reads the brief, the description the delegation returns.",
   "setup": {

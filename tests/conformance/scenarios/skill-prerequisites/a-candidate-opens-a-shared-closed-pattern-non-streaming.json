@@ -13,7 +13,8 @@
     "RK-24.3-030",
     "RK-24.3-032",
     "RK-24.3-036",
-    "RK-24.4-017"
+    "RK-24.4-017",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_required_tool_only_a_closed_gate_holds_is_missing[text], test_an_activated_skill_opens_a_gate_an_unavailable_one_shares[text].",
   "setup": {

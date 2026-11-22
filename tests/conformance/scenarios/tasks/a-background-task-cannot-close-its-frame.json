@@ -7,7 +7,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-23.4-046"
+    "RK-23.4-046",
+    "RK-6.4-352"
   ],
   "notes": "Python: tasks/background.py worker_brief (the task under `Your task, as it was asked:` in `<task>`, HITL 3737a1a2), _text.py fence. start_task gives the task as work_in_background does; tasks/delegate-task-frames-and-bounds-what-the-model-passed holds the same case for delegate_task.",
   "setup": {

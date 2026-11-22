@@ -12,6 +12,7 @@
     "RK-21.4-025",
     "RK-5.3-014",
     "RK-6.4-067",
+    "RK-6.4-397",
     "RK-9.3-057"
   ],
   "notes": "Python: tests/test_tool_context.py::TestCurrentToolCall and tests/test_tool_call_structured_copy.py; the handler writes the actual current_tool_call record before the result hook reads it.",

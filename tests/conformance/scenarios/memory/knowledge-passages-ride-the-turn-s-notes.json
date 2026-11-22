@@ -12,7 +12,8 @@
     "RK-20.2-009",
     "RK-20.2-011",
     "RK-20.3-011",
-    "RK-20.3-033"
+    "RK-20.3-033",
+    "RK-6.4-277"
   ],
   "notes": "Python's RetrievalMemory: the query is the author's words in the turn's event; every source is searched concurrently, a failing one logged and left out; the results, one per content at its best score, sorted by score and cut to max_results, become one note, 'Relevant context from knowledge sources:' then each passage as [source] content fenced as knowledge. A query shorter than min_query_length searches nothing.",
   "setup": {

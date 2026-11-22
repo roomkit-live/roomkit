@@ -7,7 +7,9 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.6.2-023"
+    "RK-10.6.2-023",
+    "RK-6.4-309",
+    "RK-6.4-312"
   ],
   "notes": "Python: TurnExecutor(media_resolver=, attached_media=), turns/_wiring.py. Different owner and executor keys and different bytes for the same reference distinguish both readers.",
   "setup": {

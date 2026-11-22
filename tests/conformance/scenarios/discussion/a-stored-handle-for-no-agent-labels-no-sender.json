@@ -6,6 +6,10 @@
     "§19.7.5 rule 4",
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-359",
+    "RK-6.4-360"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py test_a_stored_handle_counts_for_an_agent_and_if_it_can_name_one. The forged configuration holds no room, so the agent answers and its transcript shows the labels. Before: @b and @b (2) (HITL 9247da98). room-2 stores no max_depth: a configuration that reads as none, whose handle of an agent labels nobody either.",
   "setup": {
     "channels": [

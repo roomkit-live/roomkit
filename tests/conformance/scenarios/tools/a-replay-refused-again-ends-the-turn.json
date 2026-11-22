@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-329"
+  ],
   "notes": "Python's _generate_stream_with_retry compacts once per call; the second overflow raises. When the input is the last message but one of the older half, summary and cut fall at the half, and a summary followed by an assistant message is a user message of its own.",
   "setup": {
     "channels": [

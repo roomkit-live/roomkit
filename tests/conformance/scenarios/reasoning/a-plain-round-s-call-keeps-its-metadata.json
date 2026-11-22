@@ -6,6 +6,7 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-6.4-257",
     "RK-9.2-072"
   ],
   "notes": "Python: providers/ai/round_parts.py call_part; channels/_ai_streaming.py _after_tool_round hands the calls themselves.",

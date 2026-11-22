@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-21.1-063",
+    "RK-6.4-239",
     "RK-9.3-115"
   ],
   "notes": "Python: tests/test_toolset_names_across_doors.py::test_the_person_s_tools_are_never_hidden_by_tool_search_on_a_text_turn.",

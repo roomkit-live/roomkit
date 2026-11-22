@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-254"
+  ],
   "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; tests/test_repeated_result_note.py test_the_note_reaches_the_model_where_the_argument_guard_is_silent, test_the_note_counts_what_it_saw.",
   "setup": {
     "channels": [

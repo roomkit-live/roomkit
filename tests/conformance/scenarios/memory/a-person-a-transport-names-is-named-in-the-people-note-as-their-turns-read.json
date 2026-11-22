@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-367"
+  ],
   "notes": "Alice's record names her Alice M; her message through ws carries metadata.sender_name Alice Martin, the label her turn reads under. Python's people_taking_part names a person the turns read by the label of their latest turn read, Bob, silent, by his record. Before RMK-917 the note read “Alice M”, “Bob”, naming no Alice Martin.",
   "setup": {
     "channels": [

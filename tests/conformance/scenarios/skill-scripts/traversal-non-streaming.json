@@ -10,7 +10,8 @@
   ],
   "requirements": [
     "RK-24.6-002",
-    "RK-24.6-010"
+    "RK-24.6-010",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_skills_integration.py, tests/test_skill_reference_unknown_skill.py, tests/test_tool_policy_exemptions.py and tests/skills/test_script_executor.py. The fixture records actual host invocations; no process is executed.",
   "setup": {

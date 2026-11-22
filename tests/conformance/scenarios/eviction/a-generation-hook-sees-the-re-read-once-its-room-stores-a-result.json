@@ -7,7 +7,9 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-067"
+    "RK-6.4-067",
+    "RK-6.4-220",
+    "RK-6.4-244"
   ],
   "notes": "Python: tests/test_hook_tool_restrictions.py::test_a_withdrawn_eviction_re_read_is_neither_declared_nor_served; tests/test_toolset_edges.py::test_after_tool_round_sees_the_toolset_before_ai_generation_sees; tests/test_tool_declaration_stability.py::test_a_whitelisting_hook_keeps_the_re_read_it_never_saw.",
   "setup": {

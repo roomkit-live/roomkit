@@ -7,6 +7,7 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-6.4-257",
     "RK-9.2-072"
   ],
   "notes": "Python: tests/test_after_tool_round.py::test_under_tool_search_the_event_names_the_whole_catalogue.",

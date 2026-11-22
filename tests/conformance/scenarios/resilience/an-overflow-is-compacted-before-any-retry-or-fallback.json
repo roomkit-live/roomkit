@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-329"
+  ],
   "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_overflow_is_recovered_before_retry_and_fallback.",
   "setup": {
     "channels": [

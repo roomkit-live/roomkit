@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-345"
+  ],
   "notes": "Python: channels/_ai_loop_rules.py _try_round_again.",
   "setup": {
     "channels": [

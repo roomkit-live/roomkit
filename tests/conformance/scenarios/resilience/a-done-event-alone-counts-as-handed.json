@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-343"
+  ],
   "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_stream_done_counts_as_emission.",
   "setup": {
     "channels": [

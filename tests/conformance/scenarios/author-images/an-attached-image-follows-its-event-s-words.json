@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-314"
+  ],
   "notes": "Python's with_attached_media: the kit's attached-media reader names the media an event carries outside its content; the AI channel reads the event as its content's parts, then those media, the store and the broadcasts keeping the event as stored.",
   "setup": {
     "kit": {

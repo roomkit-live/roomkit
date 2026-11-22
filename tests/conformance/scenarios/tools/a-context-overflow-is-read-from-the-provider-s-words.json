@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-328"
+  ],
   "notes": "Python's _is_context_overflow: with ProviderError.context_overflow None, is_context_overflow_message reads the message ('prompt is too long').",
   "setup": {
     "channels": [

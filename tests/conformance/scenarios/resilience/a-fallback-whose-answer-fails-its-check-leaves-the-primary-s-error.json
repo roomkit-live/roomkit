@@ -6,6 +6,9 @@
     "§6.4",
     "§6.7"
   ],
+  "requirements": [
+    "RK-6.4-350"
+  ],
   "notes": "Python: channels/_ai_resilience.py _fallback_stream leaves the primary's error when the fallback emitted nothing, what a response schema holds not counted.",
   "setup": {
     "channels": [

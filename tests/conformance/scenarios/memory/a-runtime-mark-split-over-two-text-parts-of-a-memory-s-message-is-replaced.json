@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-20.2-002",
-    "RK-20.2-003"
+    "RK-20.2-003",
+    "RK-6.4-297"
   ],
   "notes": "Python: channels/_turn_notes.py cleaned_content and _cleaned_run, called by the memory's _runtime_or_cleaned: a run of adjacent text parts is cleaned back to back, as the model reads it; when that reads otherwise than each part cleaned alone, the run becomes one part. Here neither part holds the summary's header alone, the two together do.",
   "setup": {

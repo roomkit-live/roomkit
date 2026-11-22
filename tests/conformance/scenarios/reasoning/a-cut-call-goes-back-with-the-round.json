@@ -6,7 +6,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-6.4-094"
+    "RK-6.4-094",
+    "RK-6.4-257"
   ],
   "notes": "Python: RoundTranscript.parts keeps every call of the round, one that never runs too. channels/_ai_streaming.py _after_tool_round hands the calls themselves.",
   "setup": {

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-350"
+  ],
   "notes": "Python's _fallback_stream re-raises the fallback's error once it emitted anything.",
   "setup": {
     "channels": [

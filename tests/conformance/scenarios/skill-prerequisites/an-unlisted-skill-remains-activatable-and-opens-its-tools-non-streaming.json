@@ -11,7 +11,8 @@
   "requirements": [
     "RK-24.3-013",
     "RK-24.3-017",
-    "RK-24.4-017"
+    "RK-24.4-017",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_skills.py::TestSkillRegistry::test_mark_unlisted_hides_from_manifest_but_keeps_activation.",
   "setup": {

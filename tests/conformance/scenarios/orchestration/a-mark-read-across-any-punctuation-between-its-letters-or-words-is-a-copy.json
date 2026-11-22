@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-288",
+    "RK-6.4-291"
+  ],
   "notes": "HITL 7371b8c4 (option 1): a reader reads a mark's letters across any punctuation, as roomkit-rs reads them (marks.rs reading: every character that reads as no letter or digit is read past). Python read only spacing, markup, combining and invisible characters and the mark's own punctuation between its words and letters (channels/_mark_copies.py, _lookalike.py phrase_pattern). One room per message, so each generation reads one message.",
   "setup": {
     "channels": [

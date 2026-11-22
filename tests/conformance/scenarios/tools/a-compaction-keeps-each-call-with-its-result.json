@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-335"
+  ],
   "notes": "Python's compaction_cut moves the half past the tool messages there (_past_results): an earlier turn's round replayed in the history is summarized whole.",
   "setup": {
     "channels": [

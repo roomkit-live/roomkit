@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-331"
+  ],
   "notes": "Python sets the turn's input from the context the hook left (_fire_before_generation_hook: loop_ctx.turn_input = turn_input(messages)). The hook leaves two messages where the conversation had three: the input it left is at index 1, not 2.",
   "setup": {
     "channels": [

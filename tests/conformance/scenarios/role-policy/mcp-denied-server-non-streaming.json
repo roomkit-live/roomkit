@@ -14,7 +14,8 @@
     "RK-21.1-026",
     "RK-21.1-072",
     "RK-21.2-015",
-    "RK-21.2-018"
+    "RK-21.2-018",
+    "RK-6.4-397"
   ],
   "notes": "Two labelled servers serve delete_records; the archive's handler is first in the chain, the CRM's tools are declared under their bare names. The policy keeps the archive out (deny mcp__archive__*). The bare call names no server. Role-selection counterpart of mcp/a-bare-name-never-runs-on-a-server-the-policy-keeps-out; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {

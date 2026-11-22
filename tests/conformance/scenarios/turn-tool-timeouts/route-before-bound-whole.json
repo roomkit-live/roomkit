@@ -8,7 +8,8 @@
     "Appendix A.9"
   ],
   "requirements": [
-    "RK-21.6-010"
+    "RK-21.6-010",
+    "RK-6.4-397"
   ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_the_router_is_asked_before_a_turn_bound_is_refused. Routing and budget validation precede per-turn tool bound validation, and no model generation occurs.",
   "setup": {

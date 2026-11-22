@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-255"
+  ],
   "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; _model_part: only when outcome.result is a str.",
   "setup": {
     "channels": [

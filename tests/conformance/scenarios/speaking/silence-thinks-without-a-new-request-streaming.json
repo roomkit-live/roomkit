@@ -13,7 +13,8 @@
     "RK-6.4-180",
     "RK-6.4-181",
     "RK-6.4-198",
-    "RK-6.4-200"
+    "RK-6.4-200",
+    "RK-6.4-218"
   ],
   "notes": "Python: tests/test_thinker.py::test_a_silent_turn_is_thought_about_from_its_context. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
   "setup": {

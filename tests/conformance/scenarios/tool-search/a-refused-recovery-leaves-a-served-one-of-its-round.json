@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-6.4-236"
+  ],
   "notes": "Python: tests/test_tool_search_recovered_reveal.py::test_a_refused_recovery_leaves_a_served_one_of_the_same_round.",
   "setup": {
     "channels": [

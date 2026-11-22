@@ -14,6 +14,8 @@
     "RK-6.4-187",
     "RK-6.4-198",
     "RK-6.4-200",
+    "RK-6.4-218",
+    "RK-6.4-397",
     "RK-9.2-064"
   ],
   "notes": "Python: tests/test_speak_decision_hooks.py::test_the_decision_taken_again_once_the_agent_thought_goes_through_the_hooks. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",

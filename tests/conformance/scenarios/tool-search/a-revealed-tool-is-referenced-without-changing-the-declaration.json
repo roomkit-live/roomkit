@@ -5,6 +5,10 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-385",
+    "RK-6.4-386"
+  ],
   "notes": "Python: tests/test_deferred_tools.py::test_a_revealed_tool_is_referenced_not_declared. RMK-1306.",
   "setup": {
     "channels": [

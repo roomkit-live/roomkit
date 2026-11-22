@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-279"
+  ],
   "notes": "Python's ToolUsageMemory keeps the room's latest tool images and with_turn_images places them at the end of the turn's input, after its notes, a text input split into its own text part (tests/test_tool_result_images.py::test_a_tools_image_rides_the_next_turns_input). The history replays a stored result of parts as its texts, an image as [non-text part] (_tool_history._result_text).",
   "setup": {
     "channels": [

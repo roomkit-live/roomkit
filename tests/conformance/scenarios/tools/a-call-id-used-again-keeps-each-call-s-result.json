@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-274"
+  ],
   "notes": "A model may give a call the id an earlier round's call had (a server that numbers the calls of each response): Python's tool loop appends each round's results as they came and _tool_history replays each stored row, so a result of parts never stands for an earlier call of the same id, each under the id the model gave it, as its turn sent it (RMK-1370).",
   "setup": {
     "channels": [

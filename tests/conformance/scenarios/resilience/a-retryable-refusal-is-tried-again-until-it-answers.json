@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-346"
+  ],
   "notes": "Python: tests/test_channels/test_ai_retry.py::TestRetry::test_retries_on_retryable_error and TestStreamRetry::test_stream_retries_on_retryable_error.",
   "setup": {
     "channels": [

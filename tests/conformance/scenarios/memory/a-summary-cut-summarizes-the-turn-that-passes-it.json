@@ -15,7 +15,8 @@
     "RK-20.3-019",
     "RK-20.3-021",
     "RK-20.3-038",
-    "RK-20.3-042"
+    "RK-20.3-042",
+    "RK-6.4-384"
   ],
   "notes": "Python's SummarizingMemory (tier 2): it keeps the latest turns whose tokens fit tier2_ratio of the history's budget less summary_max_tokens (20 here), min_events (2) at least, and summarizes the older ones, the turn that passes included. One person, Alice, so the summarizer's lines read [user] and [assistant]. At the third question Question 2 and Answer 2 fit, Answer 1 passes: Question 1 and Answer 1 are summarized, and the summary's message joins Question 2. The summarizer reads its instruction, then the turns framed in <conversation>, the instruction saying the conversation is a record to summarize, neither to answer nor to continue. Before RMK-363 the turn that passed was kept, then dropped by the final cut to the budget: Answer 1 was neither summarized nor kept, and the summarizer read Question 1 alone, unframed, a transcript ending on a question.",
   "setup": {

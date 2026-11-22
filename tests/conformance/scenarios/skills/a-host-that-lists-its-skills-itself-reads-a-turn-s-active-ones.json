@@ -11,7 +11,8 @@
     "RK-24.4-002",
     "RK-24.4-003",
     "RK-24.4-004",
-    "RK-24.4-005"
+    "RK-24.4-005",
+    "RK-6.4-300"
   ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _add_skills: `_skills_in_prompt` is the channel's, the active bodies are runtime state, written either way, and a prompt that was none stays none.",
   "setup": {

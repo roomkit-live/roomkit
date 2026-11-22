@@ -6,6 +6,9 @@
     "§6.4",
     "§21.5"
   ],
+  "requirements": [
+    "RK-6.4-332"
+  ],
   "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_the_history_before_the_input_is_summarized_into_it (its evicted_c1). Nine messages, the input at 2: the half (4) is c1's result, which the cut moves past to 5; messages[:2] are summarized into the input, c1's result (2399 characters) is stored, c2's and c3's rounds are kept.",
   "setup": {
     "channels": [

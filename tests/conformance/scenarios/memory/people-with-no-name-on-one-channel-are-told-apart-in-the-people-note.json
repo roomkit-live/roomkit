@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-6.4-367"
+  ],
   "notes": "p1 and p2 are members of ws with no display name. At the first turn p1 reads @ws and p2, silent, the next rank, @ws (2); at the second p2's turn reads @ws (2), and the note names both as their turns do. Before RMK-917 the note read “@ws”, “@ws” at both turns.",
   "setup": {
     "channels": [
