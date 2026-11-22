@@ -25,7 +25,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -41,7 +41,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -62,7 +62,7 @@
     {
       "call": "mute",
       "room_id": "room-1",
-      "channel_id": "claude"
+      "channel_id": "coder"
     },
     {
       "call": "send_event",
@@ -73,13 +73,13 @@
         "body": "silenced"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
       "call": "unmute",
       "room_id": "room-1",
-      "channel_id": "claude"
+      "channel_id": "coder"
     },
     {
       "call": "send_event",
@@ -90,7 +90,7 @@
         "body": "heard"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -99,7 +99,7 @@
   ],
   "expect": {
     "acp_prompts": {
-      "claude": [
+      "coder": [
         {
           "text": "[Room context — 2 messages you did not receive. Context only; the request follows.]\n[1] @ws: “missed”\n[2] @ws: “silenced”\n[End of room context]\n\nheard"
         }

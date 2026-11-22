@@ -19,7 +19,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -145,7 +145,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -174,7 +174,7 @@
     },
     {
       "call": "channel_call",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "verb": "close_session",
       "arguments": {}

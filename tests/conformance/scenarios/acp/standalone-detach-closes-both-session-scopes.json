@@ -28,7 +28,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -58,7 +58,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -75,7 +75,7 @@
         "body": "first"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -87,7 +87,7 @@
         "body": "Summarize."
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ],
       "event_type": "instruction",
       "standalone": true,
@@ -99,7 +99,7 @@
     },
     {
       "call": "detach_channel",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1"
     },
     {
@@ -116,7 +116,7 @@
     },
     {
       "call": "attach_channel",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "category": "intelligence"
     },
@@ -129,7 +129,7 @@
         "body": "next"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -138,7 +138,7 @@
   ],
   "expect": {
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize"
         },

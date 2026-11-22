@@ -29,7 +29,7 @@
         "streams": true
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "publish_tool_call_text": true,
@@ -84,7 +84,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -173,7 +173,7 @@
         {
           "type": "tool_call_start",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e1",
@@ -184,7 +184,7 @@
         {
           "type": "tool_call_start",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e2",
@@ -195,7 +195,7 @@
         {
           "type": "tool_call_end",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e2",
@@ -207,7 +207,7 @@
         {
           "type": "tool_call_end",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e1",
@@ -251,7 +251,7 @@
         {
           "room_id": "room-1",
           "response": {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "segments": [],
             "response_content": "",
             "tool_calls_count": 2,

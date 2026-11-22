@@ -21,7 +21,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv//project/./",
@@ -76,7 +76,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -88,7 +88,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -150,7 +150,7 @@
       ]
     },
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize",
           "params": {

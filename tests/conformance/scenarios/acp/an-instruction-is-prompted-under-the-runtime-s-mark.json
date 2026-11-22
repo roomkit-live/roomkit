@@ -19,7 +19,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -49,7 +49,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -69,7 +69,7 @@
         },
         "event_type": "instruction",
         "addressed_to": [
-          "claude"
+          "coder"
         ]
       },
       "expect": {
@@ -87,7 +87,7 @@
   ],
   "expect": {
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize"
         },
@@ -119,7 +119,7 @@
             "body": "Hello, I can help."
           },
           "source": {
-            "channel_id": "claude"
+            "channel_id": "coder"
           }
         }
       ]

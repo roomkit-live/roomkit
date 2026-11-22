@@ -30,7 +30,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -73,7 +73,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -106,7 +106,7 @@
               }
             },
             "turns": {
-              "claude": {
+              "coder": {
                 "loop_end_reason": "completed"
               }
             }
@@ -136,7 +136,7 @@
             "body": "Hi there."
           },
           "source": {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "channel_type": "ai",
             "direction": "outbound"
           },
@@ -150,7 +150,7 @@
       ]
     },
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize",
           "params": {

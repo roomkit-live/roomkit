@@ -25,7 +25,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -38,15 +38,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "sonnet",
+                      "currentValue": "small",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         },
                         {
                           "value": "default",
@@ -68,15 +68,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "opus",
+                      "currentValue": "large",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         },
                         {
                           "value": "default",
@@ -96,7 +96,7 @@
               {
                 "error": {
                   "code": -32000,
-                  "message": "No sonnet"
+                  "message": "No small"
                 }
               }
             ]
@@ -112,7 +112,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -129,7 +129,7 @@
         "body": "first"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -141,20 +141,20 @@
         "body": "Summarize."
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ],
       "event_type": "instruction",
       "standalone": true
     },
     {
       "call": "channel_call",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "verb": "session_config",
       "arguments": {},
       "expect": {
         "result": {
-          "model": "sonnet"
+          "model": "small"
         }
       }
     },
@@ -167,7 +167,7 @@
         "body": "next"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -176,7 +176,7 @@
   ],
   "expect": {
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize"
         },
@@ -209,7 +209,7 @@
           "params": {
             "sessionId": "session-2",
             "configId": "model",
-            "value": "sonnet"
+            "value": "small"
           }
         },
         {

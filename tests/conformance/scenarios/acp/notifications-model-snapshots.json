@@ -18,7 +18,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -42,15 +42,15 @@
                         "id": "model",
                         "name": "Model",
                         "type": "select",
-                        "currentValue": "sonnet",
+                        "currentValue": "small",
                         "options": [
                           {
-                            "value": "opus",
-                            "name": "Opus"
+                            "value": "large",
+                            "name": "Large"
                           },
                           {
-                            "value": "sonnet",
-                            "name": "Sonnet"
+                            "value": "small",
+                            "name": "Small"
                           }
                         ]
                       }
@@ -79,15 +79,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "opus",
+                      "currentValue": "large",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         }
                       ]
                     }
@@ -107,7 +107,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -170,13 +170,13 @@
                 "name": "scripted-agent"
               },
               "prompt": {
-                "model_at_start": "opus",
+                "model_at_start": "large",
                 "source": "session/prompt",
                 "scope": "unspecified",
                 "stop_reason": "end_turn"
               },
               "usage_report": {
-                "model_at_observation": "opus",
+                "model_at_observation": "large",
                 "identity_source": "roomkit",
                 "source_result_id": {
                   "$absent": true
@@ -223,7 +223,7 @@
             },
             "usage_metadata": {
               "prompt": {
-                "model_at_start": "sonnet"
+                "model_at_start": "small"
               },
               "usage_report": {
                 "$absent": true
@@ -237,18 +237,18 @@
       "room-1": [
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_config_options",
             "session_id": "session-1",
             "values": {
-              "model": "opus"
+              "model": "large"
             }
           }
         },
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_usage",
             "usage": {
@@ -263,7 +263,7 @@
             "usage_metadata": {
               "session_id": "session-1",
               "usage_report": {
-                "model_at_observation": "opus",
+                "model_at_observation": "large",
                 "identity_source": "roomkit",
                 "update": {
                   "sessionUpdate": "usage_update",
@@ -283,12 +283,12 @@
         },
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_config_options",
             "session_id": "session-1",
             "values": {
-              "model": "sonnet"
+              "model": "small"
             }
           }
         }

@@ -26,7 +26,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -42,12 +42,12 @@
                       "currentValue": "auto",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         },
                         {
                           "value": "default",
@@ -72,12 +72,12 @@
                       "currentValue": "auto",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         },
                         {
                           "value": "default",
@@ -110,12 +110,12 @@
                       "currentValue": "default",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         },
                         {
                           "value": "default",
@@ -146,7 +146,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -163,7 +163,7 @@
         "body": "Summarize."
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ],
       "event_type": "instruction",
       "standalone": true
@@ -177,7 +177,7 @@
         "body": "next"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -186,7 +186,7 @@
   ],
   "expect": {
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize"
         },

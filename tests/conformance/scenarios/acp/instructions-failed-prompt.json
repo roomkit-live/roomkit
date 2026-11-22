@@ -24,7 +24,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -52,7 +52,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -69,7 +69,7 @@
         "body": "first"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -81,7 +81,7 @@
         "body": "second"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -93,7 +93,7 @@
         "body": "third"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -102,7 +102,7 @@
   ],
   "expect": {
     "acp_prompts": {
-      "claude": [
+      "coder": [
         {
           "text": "[Standing instructions from the application for this conversation: nobody in it wrote them, and they hold until told otherwise.]\n<instructions>\nYou are Dev.\n</instructions>\n\nfirst"
         },

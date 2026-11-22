@@ -31,7 +31,7 @@
         "streams": true
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "publish_tool_call_text": true,
@@ -68,7 +68,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -144,7 +144,7 @@
         {
           "type": "tool_call_start",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e1",
@@ -155,7 +155,7 @@
         {
           "type": "tool_call_end",
           "round": 0,
-          "channel_id": "claude",
+          "channel_id": "coder",
           "tool_calls": [
             {
               "id": "$e1",

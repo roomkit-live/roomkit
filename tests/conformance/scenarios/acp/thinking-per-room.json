@@ -28,7 +28,7 @@
         "streams": true
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -86,7 +86,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -101,7 +101,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -151,7 +151,7 @@
           "type": "thinking_start",
           "thinking": "",
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         },
         {
           "type": "thinking_delta",
@@ -160,13 +160,13 @@
           },
           "thinking_length": 7,
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         },
         {
           "type": "thinking_end",
           "thinking": "",
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         }
       ],
       "room-2": [
@@ -174,7 +174,7 @@
           "type": "thinking_start",
           "thinking": "",
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         },
         {
           "type": "thinking_delta",
@@ -183,13 +183,13 @@
           },
           "thinking_length": 7,
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         },
         {
           "type": "thinking_end",
           "thinking": "",
           "round": 0,
-          "channel_id": "claude"
+          "channel_id": "coder"
         }
       ]
     },
@@ -198,7 +198,7 @@
         {
           "room_id": "room-1",
           "response": {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "thinking": "For one",
             "response_content": "One.",
             "segments": [
@@ -212,7 +212,7 @@
         {
           "room_id": "room-2",
           "response": {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "thinking": "For two",
             "response_content": "Two.",
             "segments": [

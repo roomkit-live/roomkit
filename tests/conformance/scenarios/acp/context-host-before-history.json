@@ -25,7 +25,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -51,7 +51,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -78,7 +78,7 @@
         "body": "go"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -87,7 +87,7 @@
   ],
   "expect": {
     "acp_prompts": {
-      "claude": [
+      "coder": [
         {
           "text": "Member note: prefers Rust\n\nPolicy: no force-push\n\n[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] @ws: “missed”\n[End of room context]\n\ngo"
         }

@@ -20,7 +20,7 @@
       {
         "id": "first",
         "hosts": [
-          "claude"
+          "coder"
         ],
         "hooks": [
           {
@@ -39,7 +39,7 @@
                   {
                     "call": "host.send_event",
                     "room_id": "r1",
-                    "channel_id": "claude",
+                    "channel_id": "coder",
                     "content": {
                       "type": "text",
                       "body": "Read during the turn."
@@ -70,7 +70,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "declared": true,
         "acp": {
@@ -163,7 +163,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -276,7 +276,7 @@
           {
             "type": "message",
             "source": {
-              "channel_id": "claude"
+              "channel_id": "coder"
             },
             "content": {
               "type": "text",
@@ -286,7 +286,7 @@
           {
             "type": "message",
             "source": {
-              "channel_id": "claude"
+              "channel_id": "coder"
             },
             "content": {
               "type": "text",
@@ -296,7 +296,7 @@
           {
             "type": "tool_call_start",
             "source": {
-              "channel_id": "claude"
+              "channel_id": "coder"
             },
             "content": {
               "type": "tool_call",
@@ -306,7 +306,7 @@
           {
             "type": "tool_call_end",
             "source": {
-              "channel_id": "claude"
+              "channel_id": "coder"
             },
             "content": {
               "type": "tool_call",
@@ -323,7 +323,7 @@
           {
             "type": "message",
             "source": {
-              "channel_id": "claude"
+              "channel_id": "coder"
             },
             "content": {
               "type": "text",

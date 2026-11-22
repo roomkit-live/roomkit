@@ -21,7 +21,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -61,7 +61,7 @@
     },
     {
       "call": "setup_delegation",
-      "agent_id": "claude",
+      "agent_id": "coder",
       "handler": "tool",
       "expect": {
         "error": "invalid_argument"
@@ -69,15 +69,15 @@
     },
     {
       "call": "setup_task_tools",
-      "agent_id": "claude",
+      "agent_id": "coder",
       "expect": {
         "error": "invalid_argument"
       }
     },
     {
       "call": "setup_background",
-      "agent_id": "claude",
-      "worker": "claude",
+      "agent_id": "coder",
+      "worker": "coder",
       "expect": {
         "error": "invalid_argument"
       }
@@ -85,7 +85,7 @@
     {
       "call": "delegate",
       "room_id": "room-1",
-      "agent_id": "claude",
+      "agent_id": "coder",
       "task": "Look it up.",
       "wait": true,
       "require_structured_result": true,
@@ -107,7 +107,7 @@
   ],
   "expect": {
     "acp_prompts": {
-      "claude": [
+      "coder": [
         {
           "text": {
             "$contains": "Look it up."

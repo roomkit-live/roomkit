@@ -22,7 +22,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -45,7 +45,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -79,7 +79,7 @@
     },
     {
       "call": "steer",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "directive": {
         "type": "inject_message",
@@ -91,7 +91,7 @@
     },
     {
       "call": "steer",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "directive": {
         "type": "update_system_prompt",
@@ -103,7 +103,7 @@
     },
     {
       "call": "steer",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "room_id": "room-1",
       "expect": {
         "result": 1
@@ -151,7 +151,7 @@
   ],
   "expect": {
     "acp_wire": {
-      "claude": [
+      "coder": [
         {
           "method": "initialize"
         },

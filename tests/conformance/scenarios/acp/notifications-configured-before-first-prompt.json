@@ -15,7 +15,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -35,15 +35,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "opus",
+                      "currentValue": "large",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         }
                       ]
                     }
@@ -59,15 +59,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "sonnet",
+                      "currentValue": "small",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         }
                       ]
                     }
@@ -81,15 +81,15 @@
                       "id": "model",
                       "name": "Model",
                       "type": "select",
-                      "currentValue": "opus",
+                      "currentValue": "large",
                       "options": [
                         {
-                          "value": "opus",
-                          "name": "Opus"
+                          "value": "large",
+                          "name": "Large"
                         },
                         {
-                          "value": "sonnet",
-                          "name": "Sonnet"
+                          "value": "small",
+                          "name": "Small"
                         }
                       ]
                     }
@@ -109,7 +109,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -127,30 +127,30 @@
     {
       "call": "channel_call",
       "room_id": "room-1",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "verb": "set_config_option",
       "arguments": {
         "config_id": "model",
-        "value": "sonnet"
+        "value": "small"
       },
       "expect": {
         "result": {
-          "model": "sonnet"
+          "model": "small"
         }
       }
     },
     {
       "call": "channel_call",
       "room_id": "room-1",
-      "channel_id": "claude",
+      "channel_id": "coder",
       "verb": "set_config_option",
       "arguments": {
         "config_id": "model",
-        "value": "opus"
+        "value": "large"
       },
       "expect": {
         "result": {
-          "model": "opus"
+          "model": "large"
         }
       }
     },
@@ -163,30 +163,30 @@
       "room-1": [
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_config_options",
             "session_id": "session-1",
             "values": {
-              "model": "sonnet"
+              "model": "small"
             },
             "labels": {
-              "model": "Sonnet"
+              "model": "Small"
             },
             "config_options": [
               {
                 "id": "model",
                 "name": "Model",
                 "type": "select",
-                "currentValue": "sonnet",
+                "currentValue": "small",
                 "options": [
                   {
-                    "value": "opus",
-                    "name": "Opus"
+                    "value": "large",
+                    "name": "Large"
                   },
                   {
-                    "value": "sonnet",
-                    "name": "Sonnet"
+                    "value": "small",
+                    "name": "Small"
                   }
                 ]
               }
@@ -195,30 +195,30 @@
         },
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_config_options",
             "session_id": "session-1",
             "values": {
-              "model": "sonnet"
+              "model": "small"
             },
             "labels": {
-              "model": "Sonnet"
+              "model": "Small"
             },
             "config_options": [
               {
                 "id": "model",
                 "name": "Model",
                 "type": "select",
-                "currentValue": "sonnet",
+                "currentValue": "small",
                 "options": [
                   {
-                    "value": "opus",
-                    "name": "Opus"
+                    "value": "large",
+                    "name": "Large"
                   },
                   {
-                    "value": "sonnet",
-                    "name": "Sonnet"
+                    "value": "small",
+                    "name": "Small"
                   }
                 ]
               }
@@ -227,30 +227,30 @@
         },
         {
           "room_id": "room-1",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "data": {
             "type": "acp_config_options",
             "session_id": "session-1",
             "values": {
-              "model": "opus"
+              "model": "large"
             },
             "labels": {
-              "model": "Opus"
+              "model": "Large"
             },
             "config_options": [
               {
                 "id": "model",
                 "name": "Model",
                 "type": "select",
-                "currentValue": "opus",
+                "currentValue": "large",
                 "options": [
                   {
-                    "value": "opus",
-                    "name": "Opus"
+                    "value": "large",
+                    "name": "Large"
                   },
                   {
-                    "value": "sonnet",
-                    "name": "Sonnet"
+                    "value": "small",
+                    "name": "Small"
                   }
                 ]
               }

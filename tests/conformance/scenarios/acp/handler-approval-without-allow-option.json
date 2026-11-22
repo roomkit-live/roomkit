@@ -29,7 +29,7 @@
         "streams": true
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -86,7 +86,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -186,7 +186,7 @@
         {
           "room_id": "room-1",
           "response": {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "segments": [],
             "response_content": "",
             "tool_calls_count": 1,
@@ -209,7 +209,7 @@
       ]
     },
     "acp_permissions": {
-      "claude": [
+      "coder": [
         {
           "session_id": "session-1",
           "tool_call_id": "call-1",
@@ -222,14 +222,14 @@
       ]
     },
     "acp_handlers": {
-      "claude": [
+      "coder": [
         {
           "method": "start",
-          "channel_id": "claude"
+          "channel_id": "coder"
         },
         {
           "method": "process_tool_call",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "name": "Read",
           "arguments": {
             "path": "notes.txt"
@@ -240,7 +240,7 @@
         },
         {
           "method": "on_tool_cancelled",
-          "channel_id": "claude",
+          "channel_id": "coder",
           "name": "Read",
           "arguments": {
             "path": "notes.txt"

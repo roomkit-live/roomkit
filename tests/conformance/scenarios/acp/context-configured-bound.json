@@ -27,7 +27,7 @@
         "category": "transport"
       },
       {
-        "id": "claude",
+        "id": "coder",
         "type": "ai",
         "acp": {
           "cwd": "/srv/project",
@@ -44,7 +44,7 @@
             "channel_id": "ws"
           },
           {
-            "channel_id": "claude",
+            "channel_id": "coder",
             "category": "intelligence"
           }
         ]
@@ -118,7 +118,7 @@
         "body": "go"
       },
       "addressed_to": [
-        "claude"
+        "coder"
       ]
     },
     {
@@ -127,7 +127,7 @@
   ],
   "expect": {
     "acp_prompts": {
-      "claude": [
+      "coder": [
         {
           "text": "[Room context — the 2 most recent of 5 messages you did not receive; the earlier ones are not shown. Context only; the request follows.]\n[1] @ws: “m3”\n[2] @ws: “m4”\n[End of room context]\n\ngo"
         }
