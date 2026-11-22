@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's RefusedImages: a provider error not retried, of no status about the key, the bill, a permission, the model or the rate (401, 402, 403, 404, 429), on the turn's first request before anything streamed, marks the images that request sent refused in the room: [Image refused by the model's provider: “<name>”] in their place.",
   "setup": {
     "kit": {

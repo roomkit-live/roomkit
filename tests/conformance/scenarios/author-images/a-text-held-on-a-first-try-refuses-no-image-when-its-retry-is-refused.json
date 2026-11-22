@@ -6,6 +6,9 @@
     "§6.4",
     "§6.7"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python: channels/_ai_stream_round.py keeps a round's `received` across its tries and its fallback (note_received), which _forget_sent_images reads (RFC §6.4).",
   "setup": {
     "channels": [

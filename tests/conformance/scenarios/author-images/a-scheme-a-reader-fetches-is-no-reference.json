@@ -6,6 +6,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "setup": {
     "channels": [
       {

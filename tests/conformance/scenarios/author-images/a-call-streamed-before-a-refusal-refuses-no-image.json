@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "RFC §6.4: a stream already under way shows the images were taken. Any event the provider handed counts, a call the loop serves included, though it reaches no reader (RMK-1220, HITL 449aa7ac).",
   "setup": {
     "channels": [

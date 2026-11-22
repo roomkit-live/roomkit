@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's _generate_stream_with_retry compacts and replays once on a context overflow; a context of four messages or fewer cannot be compacted, the compaction's own error (not retryable, of no status) ends the turn, and RefusedImages marks the images the request sent.",
   "setup": {
     "channels": [

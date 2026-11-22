@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's MediaContent._validate_url (roomkit._media_url.is_safe_reference) and roomkit-rs's model::media_url: the rest after the scheme's :// is percent-decoded until it no longer changes, three times at most, a byte sequence that is no UTF-8 reading as U+FFFD; one a fourth decoding would still change is refused, and so is one where a backslash, a control character (Unicode Cc) or a segment, between /, ? and #, that is .. once trimmed of Unicode White_Space is left, or when the decoded rest starts with ~, a letter and a colon, or a / the raw rest does not start with. A link and a data URI are not read this way. A refused content takes no index: the first accepted event is index 0.",
   "setup": {
     "channels": [

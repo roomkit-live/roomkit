@@ -6,6 +6,9 @@
     "§6.4",
     "§6.6"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's AuthorImages.parts: a media sent as an image is its caption (when it has one), then its image part; one that is no image of a type every vision provider takes (png, jpeg, gif, webp) reads as its label. image/jpg is sent as image/jpeg.",
   "setup": {
     "channels": [

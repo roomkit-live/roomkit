@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's _build_context reads the input with its author images, then with_turn_images appends the room's tool images after it (tests/test_author_images.py::test_the_authors_image_comes_before_the_replayed_tool_images).",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-25.3-005"
+  ],
   "notes": "Python's _inline and canonical_data_uri: a data URI is refused only when its data is empty or past 5 MiB, read off its length; a parameter beside base64, a header without it, unpadded or URL-safe base64 and a line break in the data are the provider's to judge (RMK-1197, HITL 9dc47ced). A header that declares no type takes the media's (Python's vision_image_type: data_uri_media_type or media_type).",
   "setup": {
     "channels": [

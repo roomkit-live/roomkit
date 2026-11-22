@@ -8,7 +8,8 @@
     "§10.6.3"
   ],
   "requirements": [
-    "RK-10.6.3-014"
+    "RK-10.6.3-014",
+    "RK-25.3-005"
   ],
   "notes": "Python's AIChannel._forget_room, which on_room_attached and on_room_detached call, drops the room's RefusedImages (RMK-1219). Translates the refused images of tests/test_ai_author_images.py with the detach of tests/test_channel_attach_contract.py.",
   "setup": {
