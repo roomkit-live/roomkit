@@ -9,7 +9,12 @@
     "§17.2"
   ],
   "requirements": [
-    "RK-10.1-040"
+    "RK-10.1-040",
+    "RK-11.7.3-002",
+    "RK-11.7.3-005",
+    "RK-11.7.3-007",
+    "RK-11.7.7-009",
+    "RK-11.7.7-010"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_sender_identity); tests/test_verification_inbound.py::test_a_verification_in_one_organization_does_not_label_another (RMK-1172). The resolver's identity names organization A in both rooms: the room's organization decides.",
   "setup": {

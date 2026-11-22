@@ -7,6 +7,10 @@
     "§11.7.7",
     "§14.1"
   ],
+  "requirements": [
+    "RK-11.7.1-002",
+    "RK-11.7.7-009"
+  ],
   "notes": "Python: the verification records of src/roomkit/store/memory.py and sqlite.py, which tests/test_identity_verification.py::test_organizations_are_kept_apart and test_a_request_is_scoped_to_its_rooms_organization read through the kit (RMK-1122). A verification is keyed by its identity and its organization, none being an organization of its own.",
   "steps": [
     {

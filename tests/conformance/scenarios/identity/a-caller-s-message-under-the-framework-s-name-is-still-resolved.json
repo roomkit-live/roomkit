@@ -8,7 +8,9 @@
     "§11.6"
   ],
   "requirements": [
-    "RK-11.6-001"
+    "RK-11.2-002",
+    "RK-11.2-004",
+    "RK-11.6-008"
   ],
   "notes": "What the identity step leaves alone is the message the framework wrote itself (a deliver(), an orchestration cue), known by where it comes from. The sender system is a value any caller of process_inbound can write: a message under it in a room its caller names enters (§10.4) and is resolved like any other. Here the resolver answers ambiguous and a hook challenges: the message is blocked and the agent is not asked. Skipping resolution on the name would let a client that picks it past the host's identity hooks (RMK-1874). Python: core/mixins/inbound_identity.py _resolve_identity, models/delivery.py is_framework_message.",
   "setup": {

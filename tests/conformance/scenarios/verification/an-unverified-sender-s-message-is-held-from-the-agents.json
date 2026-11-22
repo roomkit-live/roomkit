@@ -11,6 +11,11 @@
   "requirements": [
     "RK-10.1-040",
     "RK-10.1-041",
+    "RK-11.7.3-002",
+    "RK-11.7.3-004",
+    "RK-11.7.3-005",
+    "RK-11.7.3-007",
+    "RK-11.7.3-009",
     "RK-9.2-026"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_an_unverified_message_is_held_from_the_agent (RMK-1172). The hook allows without passing: a hook that only watches never lets a message through.",

@@ -6,6 +6,7 @@
     "§9.4 Injected events"
   ],
   "requirements": [
+    "RK-11.7.3-009",
     "RK-9.4-039"
   ],
   "setup": {

@@ -10,7 +10,9 @@
     "RK-10.1-111",
     "RK-10.1-112",
     "RK-10.1-114",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-11.7.6-004",
+    "RK-11.7.6-013"
   ],
   "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_a_cancel_during_the_released_answer_cuts_it (RMK-1182).",
   "setup": {

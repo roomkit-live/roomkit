@@ -7,6 +7,10 @@
     "§11.7.3"
   ],
   "requirements": [
+    "RK-11.7.3-002",
+    "RK-11.7.3-018",
+    "RK-11.7.6-003",
+    "RK-11.7.6-004",
     "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_only_a_message_the_pipeline_held_is_released (RMK-1173). A held message carries the pipeline's label beside its marker; this one has no label.",

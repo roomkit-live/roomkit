@@ -11,7 +11,10 @@
     "RK-10.1-111",
     "RK-10.1-112",
     "RK-10.1-114",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-11.7.6-004",
+    "RK-11.7.6-011",
+    "RK-11.7.6-013"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py (_prepare_event_inner: the adopted call is located and named as any call), src/roomkit/core/mixins/verification.py (_name_held); review of RMK-1173/RMK-1182, finding 1a (RMK-1195).",
   "setup": {

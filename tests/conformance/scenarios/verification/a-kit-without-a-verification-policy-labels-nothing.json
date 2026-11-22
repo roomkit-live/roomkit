@@ -7,7 +7,8 @@
     "§11.7.3"
   ],
   "requirements": [
-    "RK-10.1-039"
+    "RK-10.1-039",
+    "RK-11.7.3-013"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_verification_inbound); tests/test_verification_inbound.py::test_a_kit_without_a_policy_keeps_its_pipeline (RMK-1172).",
   "setup": {

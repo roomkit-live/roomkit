@@ -9,6 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-041",
+    "RK-11.7.3-004",
+    "RK-11.7.3-010",
     "RK-9.2-026"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_hook_blocks_a_message_before_it_is_stored (RMK-1172).",

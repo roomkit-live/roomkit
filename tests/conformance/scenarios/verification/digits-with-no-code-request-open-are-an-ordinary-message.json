@@ -9,7 +9,11 @@
   ],
   "requirements": [
     "RK-10.1-039",
-    "RK-10.1-041"
+    "RK-10.1-041",
+    "RK-11.7.3-002",
+    "RK-11.7.3-005",
+    "RK-11.7.3-007",
+    "RK-11.7.4-005"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_digits_with_no_code_request_open_are_an_ordinary_message (RMK-1172).",
   "setup": {

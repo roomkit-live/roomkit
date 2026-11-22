@@ -7,6 +7,12 @@
     "§11.7.3",
     "§10.3"
   ],
+  "requirements": [
+    "RK-11.7.3-002",
+    "RK-11.7.3-005",
+    "RK-11.7.3-007",
+    "RK-11.7.3-011"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_an_unverified_edit_cannot_rewrite_a_message (RMK-1172).",
   "setup": {
     "kit": {

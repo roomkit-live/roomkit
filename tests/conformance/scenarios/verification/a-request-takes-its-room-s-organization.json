@@ -7,6 +7,11 @@
     "§11.7.7",
     "§17.2"
   ],
+  "requirements": [
+    "RK-11.7.1-004",
+    "RK-11.7.2-005",
+    "RK-11.7.7-009"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_request_is_scoped_to_its_rooms_organization (RMK-1171).",
   "setup": {
     "rooms": [

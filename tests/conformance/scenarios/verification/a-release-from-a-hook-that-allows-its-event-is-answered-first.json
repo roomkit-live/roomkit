@@ -8,6 +8,10 @@
     "§13.6",
     "§9.5.1 Reentrance"
   ],
+  "requirements": [
+    "RK-11.7.6-004",
+    "RK-11.7.6-009"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_answer_released), src/roomkit/core/mixins/regenerate.py (_enqueue_regeneration: after the room's latest index); light review of RMK-1195, finding A.",
   "setup": {
     "kit": {

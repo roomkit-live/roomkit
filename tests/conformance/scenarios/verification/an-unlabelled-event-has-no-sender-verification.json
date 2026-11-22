@@ -5,6 +5,9 @@
   "rules": [
     "§11.7.3"
   ],
+  "requirements": [
+    "RK-11.7.3-013"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (sender_verification); tests/test_verification_inbound.py::test_an_unlabelled_event_has_no_sender_verification (RMK-1172).",
   "setup": {
     "kit": {
