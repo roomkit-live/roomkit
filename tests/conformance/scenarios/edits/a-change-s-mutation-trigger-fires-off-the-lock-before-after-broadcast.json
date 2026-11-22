@@ -7,7 +7,9 @@
     "§10.1 step 16"
   ],
   "requirements": [
-    "RK-10.3-045"
+    "RK-10.3-045",
+    "RK-26.1-020",
+    "RK-26.1-022"
   ],
   "notes": "check and after observe wa's events only. While ON_EVENT_UPDATED is held at its gate, a message from ws commits: the trigger holds no room lock. hook_order is recorded as each hook is called, before its gate. The delete that follows shows the order alone.",
   "setup": {

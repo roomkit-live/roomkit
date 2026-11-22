@@ -7,6 +7,7 @@
     "§9.5.1 Reentrance"
   ],
   "requirements": [
+    "RK-13.5-013",
     "RK-9.5.1-029"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, the nested process_inbound's _process_inbound_inner collects every failed release of its own call, step 2's attach among them, and makes the first its result's error. Found by the light review of RMK-1443's lot 1 (G2).",

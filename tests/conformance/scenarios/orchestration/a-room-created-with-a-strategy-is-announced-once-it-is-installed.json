@@ -7,7 +7,8 @@
     "§9.1"
   ],
   "requirements": [
-    "RK-19.7-032"
+    "RK-19.7-032",
+    "RK-26.1-004"
   ],
   "notes": "create_room(orchestration=...) installs through install_strategy's path before the room's creation is announced, so what the install set up (its agents, its room hooks) is in place when the ON_ROOM_CREATED hooks run.",
   "setup": {

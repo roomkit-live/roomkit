@@ -10,7 +10,8 @@
   "requirements": [
     "RK-10.1-024",
     "RK-10.1-128",
-    "RK-10.4-041"
+    "RK-10.4-041",
+    "RK-13.5-013"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, a room step 2 created that the message keeps is claimed on a normal exit of its lock, whose failed release is collected as the call's error; the release of the room a hook took is only logged (locks/a-room-taken-from-its-message-leaves-its-failed-release-out). The off-lock gate holds the call before its pass takes the lock, so that only the attach's release fails. Found by the light review of RMK-1443.",
   "setup": {

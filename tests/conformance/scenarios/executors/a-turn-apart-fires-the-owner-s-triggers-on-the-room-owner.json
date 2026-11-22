@@ -7,7 +7,11 @@
     "§9.2"
   ],
   "requirements": [
-    "RK-10.6.6-006"
+    "RK-10.6.6-006",
+    "RK-26.1-014",
+    "RK-26.1-016",
+    "RK-26.1-018",
+    "RK-26.1-020"
   ],
   "notes": "Python: tests/test_turns_wiring.py and turns/owner.py. The hooks are the kit's, registered on the room owner; helper is held by its declaration alone and runs on first. Its first turn answers and hands a task in its output; its second raises. Every trigger here is fired by the owner from what the turn's frames carry: no hook of the kit could fire on the executor, which holds none.",
   "setup": {

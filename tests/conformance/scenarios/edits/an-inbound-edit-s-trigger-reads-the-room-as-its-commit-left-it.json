@@ -7,7 +7,8 @@
     "§9.5.1"
   ],
   "requirements": [
-    "RK-10.3-047"
+    "RK-10.3-047",
+    "RK-26.1-022"
   ],
   "notes": "The edit's BEFORE_BROADCAST hook sends an event into the room, which commits ahead of the edit (index 1), then redacts the edit's new content. The trigger's context holds the target as rewritten with the redacted text, the nested event, and the edit at index 2 as redacted; the room counts three events.",
   "setup": {

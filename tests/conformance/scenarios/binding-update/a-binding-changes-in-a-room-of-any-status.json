@@ -7,6 +7,7 @@
     "§5.1"
   ],
   "requirements": [
+    "RK-26.1-008",
     "RK-7.2-013"
   ],
   "notes": "The rooms reach their status through the kit's transitions before the steps. Whether a lifecycle record is written in a room that is not active is §5.1's, and not compared.",

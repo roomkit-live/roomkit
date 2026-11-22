@@ -9,6 +9,7 @@
     "§10.1 step 10"
   ],
   "requirements": [
+    "RK-13.5-010",
     "RK-9.5.1-005"
   ],
   "notes": "The variant of hooks/off-lock-tickets-keep-arrival-order where the second message's check, ended first, blocks it: its record waits for the first message's ticket, so it takes the next index. A blocked first message releasing the next is the blocked path of hooks/an-admission-ticket-is-released-on-every-path.",

@@ -11,7 +11,9 @@
     "RK-10.6.6-006",
     "RK-23.3-005",
     "RK-23.4-067",
-    "RK-23.5-002"
+    "RK-23.5-002",
+    "RK-26.1-014",
+    "RK-26.1-020"
   ],
   "notes": "Python: tests/test_turns_owner_tools.py, turns/owner.py. coder runs on first; its delegate_task is served on the room owner, which fires ON_TASK_DELEGATED. Its answer is stored as segments, the text before its call and the text after, each passing the owner's BEFORE_BROADCAST and AFTER_BROADCAST. The hooks are the kit's, filtered to coder's events.",
   "setup": {

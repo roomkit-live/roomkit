@@ -12,6 +12,7 @@
     "RK-11.7.6-002",
     "RK-11.7.6-004",
     "RK-11.7.6-005",
+    "RK-26.1-022",
     "RK-8.5-007"
   ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_held_question_is_answered_once_verified (RMK-1173). The bank's message after the question is not the one the agents answer: the release names its last message.",

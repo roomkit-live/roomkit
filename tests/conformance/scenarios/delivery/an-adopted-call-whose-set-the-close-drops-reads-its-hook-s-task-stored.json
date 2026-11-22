@@ -9,7 +9,8 @@
     "§12.10.4"
   ],
   "requirements": [
-    "RK-10.1-092"
+    "RK-10.1-092",
+    "RK-26.1-016"
   ],
   "notes": "Python: src/roomkit/core/lanes.py (_drop_entry, _keep_side_effects, DeliveryCascade.keep_write, wait_drained), src/roomkit/core/mixins/lane_execution.py (_store_dropped_side_effects); RMK-1514 item 1, after RMK-1499. hello's off-lock hook makes the deferred call side, whose set waits in the room's lane behind the first message's, held at its transport; a second off-lock hook of hello waits at a gate while the close starts, then waits on side's handle and reads the room's tasks: the drop's write is side's cascade's, which its handle's wait joins, while hello's call is still in its hooks; the first message's transport is let go once hello's call returned.",
   "setup": {

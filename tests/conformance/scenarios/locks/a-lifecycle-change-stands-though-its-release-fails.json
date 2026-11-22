@@ -6,6 +6,10 @@
     "§13.5 A release that fails",
     "§10.5"
   ],
+  "requirements": [
+    "RK-13.5-012",
+    "RK-13.5-014"
+  ],
   "setup": {
     "kit": {
       "lock_manager": {

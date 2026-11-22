@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-19.7-032",
+    "RK-26.1-004",
     "RK-9.2-114"
   ],
   "notes": "The hook lists the room's bindings while it runs: only the strategy's agent. Once the message is processed, the room holds the sms binding too. It reads the room as stored, not the hook's context, which no runner records. Python: core/mixins/inbound.py `_open_room` creates the room through create_room, which installs the kit's strategy before the hooks run, then attaches the channel.",

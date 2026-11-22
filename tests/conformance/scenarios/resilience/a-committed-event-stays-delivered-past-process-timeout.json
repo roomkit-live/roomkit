@@ -7,7 +7,13 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.1-072"
+    "RK-10.1-072",
+    "RK-13.6-007",
+    "RK-13.6-008",
+    "RK-13.6-012",
+    "RK-13.6-013",
+    "RK-13.6-014",
+    "RK-13.6-015"
   ],
   "notes": "The message commits well within its 2 s process_timeout; its delivery to ws is then held at a gate, and its delivery to bad fails. A message to room-2, held at a hook gate, is refused at its own 2 s deadline: it starts once the first message's delivery is held, so the first message's deadline has passed when the gate opens. The first message's event is never re-marked: its result reads it delivered, not blocked, and so does the timeline.",
   "setup": {

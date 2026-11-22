@@ -8,7 +8,9 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.1-077"
+    "RK-10.1-077",
+    "RK-13.5-008",
+    "RK-13.5-009"
   ],
   "notes": "ws holds the first message's delivery at a gate no step opens before the second message returns. The second message, deferring its delivery, returns at its commit: it took the room lock while the first delivery still ran. Its own delivery waits its turn in the room's lane, after the first.",
   "setup": {

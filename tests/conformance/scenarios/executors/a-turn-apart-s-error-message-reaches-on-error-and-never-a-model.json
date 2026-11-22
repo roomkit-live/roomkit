@@ -10,7 +10,8 @@
   ],
   "requirements": [
     "RK-10.6.6-006",
-    "RK-10.6.8-050"
+    "RK-10.6.8-050",
+    "RK-26.1-018"
   ],
   "notes": "Python: turns/_error_codec.py; tests/test_turns_failures.py. coder runs on first; its first generation fails with a message holding a key. The error crosses as an error record and the owner rebuilds it: the kit's ON_ERROR hook fires on the owner from the turn's error frame, and it and the caller read the message. The room's timeline holds only the messages, and the next turn's request to the model carries the two messages people wrote and nothing of the error.",
   "setup": {

@@ -6,6 +6,7 @@
     "§6.4 The turn's record"
   ],
   "requirements": [
+    "RK-26.1-022",
     "RK-6.4-429",
     "RK-6.4-431",
     "RK-6.4-435"

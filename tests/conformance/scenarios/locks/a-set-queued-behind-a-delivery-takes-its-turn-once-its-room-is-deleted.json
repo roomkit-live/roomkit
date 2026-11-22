@@ -8,7 +8,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.2-010"
+    "RK-10.2-010",
+    "RK-13.5-037"
   ],
   "notes": "One process. `zero` is delivered and moves the cursor past it. `one` is held at `held` in its delivery; `two` is committed behind it and waits in the lane. The room is then deleted: its cursor reads -1 from then on, and no lane moves or skips it any more. Once `one` is delivered, `two` takes its turn, the lane's order kept, rather than waiting for `zero`'s and `one`'s indexes to reach a cursor that will never move. Indexes are not asserted: the room's lifecycle records, which they are read without, are deleted with it. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {

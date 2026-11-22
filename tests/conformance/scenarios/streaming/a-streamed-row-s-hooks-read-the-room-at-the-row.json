@@ -8,6 +8,7 @@
     "§10.2"
   ],
   "requirements": [
+    "RK-26.1-014",
     "RK-9.5.1-068"
   ],
   "notes": "The integrator commits web's “Any news?” while the agent's tool runs. Each row's hooks read the room's latest events when the row comes, that message included (tool-call rows are no part of them), and the row at the index it takes; a row's hooks still run off the room lock (§9.5.1).",

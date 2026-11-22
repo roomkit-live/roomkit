@@ -8,7 +8,8 @@
     "§5.1"
   ],
   "requirements": [
-    "RK-10.1-088"
+    "RK-10.1-088",
+    "RK-13.5-040"
   ],
   "notes": "One process. `held` is held at `held` in its delivery to `ws`, which returns the metadata update `stale`; the agent `ai` returns `stale_ai`, the task `Stale` and an observation, and the `triage` hook gave `held` the task `Stale hook` and an observation. The room is deleted, and not created again. Once `held` is let go, its set ends in a room gone: none of its side effects is written, so the store holds no task under the room's id and no ON_TASK_CREATED fires.",
   "setup": {

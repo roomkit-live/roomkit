@@ -10,6 +10,7 @@
     "§10.1 step 5a"
   ],
   "requirements": [
+    "RK-13.5-010",
     "RK-9.5.1-009"
   ],
   "notes": "The first message comes on the slow channel, whose off-lock and locked hooks each hold at a gate no step opens and time out (200 ms, fail-open): the first commits, and the second, whose check ended long before, commits after it. The check hook gives both messages a ticket. That no setting of its own bounds the wait is shown only for a setting shorter than these timeouts.",

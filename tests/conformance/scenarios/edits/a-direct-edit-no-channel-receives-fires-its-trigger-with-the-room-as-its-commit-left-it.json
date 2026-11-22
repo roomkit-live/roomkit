@@ -7,7 +7,8 @@
     "§10.5"
   ],
   "requirements": [
-    "RK-10.3-047"
+    "RK-10.3-047",
+    "RK-26.1-022"
   ],
   "notes": "src is the room's only channel and the edit's source: its delivery set is empty, as is the one of the event the edit's BEFORE_BROADCAST hook sends, which commits ahead of the edit (index 1). The hook then redacts the edit's new content.",
   "setup": {

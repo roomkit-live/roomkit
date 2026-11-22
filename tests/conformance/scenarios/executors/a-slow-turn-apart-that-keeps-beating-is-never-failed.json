@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.8-006",
-    "RK-10.6.8-013"
+    "RK-10.6.8-013",
+    "RK-13.6-015"
   ],
   "notes": "Python: turns/_executor_turn.py _beat and turns/_owner_turn.py _beat_while_open; tests/test_turns_failures.py::test_a_tool_blocking_the_loop_past_the_heartbeat_timeout_is_not_lost. coder is a scripted intelligence channel held by its declaration alone; its turn waits 1.6 seconds before it answers, four times heartbeat_timeout, and sends nothing else meanwhile. The heartbeats tell this slow turn from a lost executor: the framework sets no timeout of its own around on_event, the answer is stored and the caller reads no error.",
   "setup": {

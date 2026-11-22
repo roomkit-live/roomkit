@@ -9,7 +9,8 @@
     "§8.3 Reentry cap"
   ],
   "requirements": [
-    "RK-10.5-041"
+    "RK-10.5-041",
+    "RK-13.4-009"
   ],
   "reentrancy": [
     "inject@locked",

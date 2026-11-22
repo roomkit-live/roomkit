@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-10.5-009",
+    "RK-13.4-009",
     "RK-9.5.1-058"
   ],
   "reentrancy": [

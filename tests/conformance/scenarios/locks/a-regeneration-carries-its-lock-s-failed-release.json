@@ -6,6 +6,11 @@
     "§13.5 A release that fails",
     "§13.6"
   ],
+  "requirements": [
+    "RK-13.5-012",
+    "RK-13.5-013",
+    "RK-13.5-015"
+  ],
   "notes": "Python: src/roomkit/core/mixins/regenerate.py, _finish_regeneration: a failed release of the planning lock is met before the cascade's errors (RFC §13.5).",
   "setup": {
     "kit": {

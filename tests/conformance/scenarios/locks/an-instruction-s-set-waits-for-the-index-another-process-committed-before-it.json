@@ -9,6 +9,8 @@
   ],
   "requirements": [
     "RK-10.1.1-018",
+    "RK-13.5-026",
+    "RK-13.5-033",
     "RK-5.1-001"
   ],
   "notes": "The run's kit delivers `zero`, index 0, held at `held` under the room's delivery claim. The process `other` then commits `first`, index 1, whose set waits for the cursor to reach 0, off the claim. The instruction the run's kit takes next is decided while the room's latest index is 1, and its set waits in the run's lane behind `zero`'s. Once `zero` is delivered, the cursor is at 0: the instruction's set waits on, until `other` has delivered `first` and moved the cursor to 1, so its agent's turn reads the cursor at 1. The instruction, never stored, consumes no index and moves the cursor no further. `agent` answers nothing. The gap timeout is the implementation's default, far above the run: nothing is skipped.",

@@ -9,7 +9,9 @@
   "requirements": [
     "RK-10.1-111",
     "RK-10.1-112",
-    "RK-10.1-115"
+    "RK-10.1-115",
+    "RK-13.6-007",
+    "RK-13.6-008"
   ],
   "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancelled_call_that_times_out_before_its_commit_names_nothing_after[parsing]. Context and identity expiry require separate proofs. The normalized result omits the completion handle; its actual absence is asserted in native tests.",
   "setup": {

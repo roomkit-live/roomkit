@@ -7,7 +7,8 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.3-056"
+    "RK-10.3-056",
+    "RK-26.1-022"
   ],
   "notes": "The delete's read of the room under its lock is held once it answered; the next read, once the lock is released, is held in its place, then fails, while a message is committed: the call does not fail, the event stays removed, and the hook fires with the event as it was stored. Which events the context it is handed holds is not asserted: RK-10.3-056 names the context the call held under the lock, and whether it still holds the removed event is left open; edits/a-direct-update-whose-room-read-fails-after-its-lock-fires-with-the-room-it-held reads that context. The failure's log is not observed.",
   "setup": {

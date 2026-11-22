@@ -7,6 +7,7 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-1.4-007",
     "RK-5.2-002"
   ],
   "notes": "One event of each EventType a room stores, committed through the store and read back in index order. INSTRUCTION is never stored (§10.1.1), nor are TASK_DELEGATED and TASK_COMPLETED, the payloads of their hooks (§23.5), nor TYPING and PRESENCE, published without being stored (§8.4): their behaviours are their own units'. An INSTRUCTION_READ is visible to its agent alone (§10.1.1), so it is written with that visibility; the store reads every row back whatever its visibility.",

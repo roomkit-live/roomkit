@@ -7,7 +7,8 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.3-056"
+    "RK-10.3-056",
+    "RK-26.1-022"
   ],
   "notes": "The update's read of the room under its lock is held once it answered; the next read, once the lock is released, is held in its place, then fails. Meanwhile a message is committed: a room read then would hold it, the context the update held does not. The failure's log is not observed.",
   "setup": {

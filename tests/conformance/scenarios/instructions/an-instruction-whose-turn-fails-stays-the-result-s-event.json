@@ -8,7 +8,9 @@
     "§13.6"
   ],
   "requirements": [
-    "RK-10.1.1-021"
+    "RK-10.1.1-021",
+    "RK-13.6-018",
+    "RK-13.6-019"
   ],
   "notes": "The same as inbound/a-headless-turn-s-provider-error-reaches-the-caller-and-on-error, for an instruction: the instruction was decided (allowed) before its delivery set ran the turn that failed, so the result keeps it as its event, DELIVERED, and carries the failure on `error` (post-commit phase).",
   "setup": {

@@ -7,7 +7,8 @@
     "§9.5.1"
   ],
   "requirements": [
-    "RK-10.3-054"
+    "RK-10.3-054",
+    "RK-13.5-010"
   ],
   "reentrancy": [
     "change@admitted"

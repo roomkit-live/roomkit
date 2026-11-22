@@ -8,7 +8,8 @@
     "§10.5"
   ],
   "requirements": [
-    "RK-10.3-047"
+    "RK-10.3-047",
+    "RK-26.1-022"
   ],
   "notes": "The agent's earlier message is committed as a record with an id of the scenario's (commit_event stores it as given), which the agent's response names: a response template's strings are not references. Alice's go makes the agent answer with the delete of its message. The delete's BEFORE_BROADCAST hook sends an event into the room, which commits ahead of it (index 2), then gives the delete a reason. A hook's context keeps a deleted event's content (§10.3, What a channel is handed of a deleted event).",
   "setup": {

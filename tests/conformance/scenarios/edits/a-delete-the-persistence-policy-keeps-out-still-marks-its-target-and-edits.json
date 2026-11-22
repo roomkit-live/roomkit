@@ -11,7 +11,8 @@
     "RK-10.3-031",
     "RK-10.3-038",
     "RK-10.3-044",
-    "RK-10.3-048"
+    "RK-10.3-048",
+    "RK-26.1-022"
   ],
   "notes": "Python: tests/test_edit_delete_authorization.py::TestAnEditOutsideItsTargetsWindow::test_an_edit_is_withheld_with_the_message_it_corrected[deleted, the delete unstored]; core/mixins/helpers.py _write_unstored_change (the store's write_change_target: the target alone, a delete marking its edits deleted).",
   "setup": {

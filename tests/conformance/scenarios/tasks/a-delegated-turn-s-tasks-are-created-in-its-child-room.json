@@ -11,6 +11,7 @@
     "RK-10.1-090",
     "RK-10.1-091",
     "RK-23.3-024",
+    "RK-26.1-016",
     "RK-9.2-032"
   ],
   "notes": "Python: core/mixins/_child_execution.py _broadcast_and_collect, which persists the broadcast's side effects; core/mixins/helpers.py _persist_side_effects: ON_TASK_CREATED's payload is a task_created event of the room, internal, carrying the trigger's source and content, its metadata the task's id and title.",

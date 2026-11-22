@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.1-030",
-    "RK-10.1-047"
+    "RK-10.1-047",
+    "RK-13.4-008"
   ],
   "notes": "The provider redelivers a webhook; the caller passes it on with no key, and the channel reads the provider's message id off the payload as the event's key. The second delivery returns the first's result, reprocessing nothing.",
   "setup": {

@@ -8,7 +8,10 @@
     "§10.1"
   ],
   "requirements": [
-    "RK-10.1-128"
+    "RK-10.1-128",
+    "RK-13.5-013",
+    "RK-13.6-007",
+    "RK-13.6-008"
   ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects every failed release of the call, step 2's attach among them, and makes the first the result's error when none was met. Found by the review of RMK-1443.",
   "setup": {
