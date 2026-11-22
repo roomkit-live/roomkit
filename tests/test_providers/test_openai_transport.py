@@ -354,12 +354,13 @@ async def test_a_generation_that_may_have_run_is_never_sent_again(
 ) -> None:
     """A paid generation is never retried automatically (RFC §25.2), and no
     config asks the SDK to, whose own default would: the first request timed
-    out, and may have run and been billed. It is sent once, and its error is
-    ambiguous: the attempt ``unknown``, the error not retryable."""
+    out, and may have run and been billed. It is sent once, a ``max_retries``
+    an older config still passes ignored, and its error is ambiguous: the
+    attempt ``unknown``, the error not retryable."""
     monkeypatch.setattr("openai._base_client.INITIAL_RETRY_DELAY", 0.0)
     transport = _Scripted(httpx2.ReadTimeout, then)
     client = _CALLS[kind]
-    provider = client.build("https://models.example", transport)
+    provider = client.build("https://models.example", transport, max_retries=1)
     try:
         with pytest.raises(ProviderError) as caught:
             await client.call(provider)
