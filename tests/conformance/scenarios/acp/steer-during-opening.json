@@ -8,7 +8,8 @@
     "§21.3"
   ],
   "requirements": [
-    "RK-10.6.8-039"
+    "RK-10.6.8-039",
+    "RK-21.3-016"
   ],
   "notes": "Python: tests/test_channels/test_acp_backend.py steering tests. Public kit steering reaches a turn, preserving the remote outcome; idle sessions are not cancelled. Exact ordered RPC trace. Direct turn-id addressing has a native test; the context_contributor boundary, standalone turns and publications remain separate.",
   "setup": {

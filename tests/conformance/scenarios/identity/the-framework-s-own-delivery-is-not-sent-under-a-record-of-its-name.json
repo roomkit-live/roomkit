@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-11.6-001",
+    "RK-21.4-020",
     "RK-22.1-028"
   ],
   "notes": "Before RMK-1874 a deliver() under a resolver that answers pending left a participant pending-5aeb2fe61380ef9f in the room, the id resolution gives the sender system on this channel. Once that record is identified, a sender whose own record the room identified is sent under it (§11.6 case 2). The framework's own message is no sender's: it stays under system, and its turn's actor reads system. Python: core/mixins/inbound_identity.py _resolve_identity returns before _as_the_record_named.",

@@ -6,6 +6,9 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-045"
+  ],
   "notes": "Python: tests/test_tool_search_text.py::TestDeferredCallRecovery::test_unknown_name_fails_with_find_tools_hint.",
   "setup": {
     "channels": [

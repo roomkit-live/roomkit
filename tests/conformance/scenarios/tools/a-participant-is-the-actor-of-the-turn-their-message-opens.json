@@ -6,7 +6,8 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-21.4-001"
+    "RK-21.4-019",
+    "RK-21.4-032"
   ],
   "notes": "The room's participant p-alice writes through the channel that reaches her. current_tool_actor_id() answers her id: what a tool gate compares with the id it expects (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
   "setup": {

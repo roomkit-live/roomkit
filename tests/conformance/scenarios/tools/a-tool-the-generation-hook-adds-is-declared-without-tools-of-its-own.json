@@ -7,6 +7,7 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-21.4-009",
     "RK-9.2-068"
   ],
   "notes": "Python's _adopt_hook_toolset adds the hook's tool to the turn's base toolset whatever the channel serves; a call nothing serves is answered as unserved (RFC §9.3).",

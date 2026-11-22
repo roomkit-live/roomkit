@@ -6,6 +6,10 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-064",
+    "RK-21.1-065"
+  ],
   "notes": "Python: tests/test_tool_search_orchestration.py::test_orchestration_tools_do_not_count_when_the_window_is_unknown.",
   "setup": {
     "channels": [

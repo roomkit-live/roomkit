@@ -6,6 +6,11 @@
     "§21.5",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.4-002",
+    "RK-21.5-002",
+    "RK-21.5-004"
+  ],
   "notes": "Python: tests/test_channels/test_multimodal_tool_result.py::test_an_oversized_part_list_is_evicted_with_its_images_kept; tests/test_tool_eviction_preview.py::test_oversized_text_is_replaced_by_one_placeholder, test_medium_parts_adding_up_are_evicted.",
   "setup": {
     "channels": [

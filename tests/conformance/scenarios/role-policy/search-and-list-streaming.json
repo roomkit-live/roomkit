@@ -7,6 +7,13 @@
     "§21.1",
     "§5.5"
   ],
+  "requirements": [
+    "RK-21.1-016",
+    "RK-21.1-061",
+    "RK-21.1-062",
+    "RK-21.1-063",
+    "RK-21.1-073"
+  ],
   "notes": "Python: tests/test_tool_search_text.py::TestPolicyExemption::test_find_tools_runs_under_whitelist_policy, tests/test_tool_policy_exemptions.py::test_tool_search_names_no_denied_or_gated_tool. Role-selection counterpart of tool-search/tool-search-names-no-denied-tool-and-runs-under-an-allow-list; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit. widget_0 is denied by the selected role; widget_1 is admitted by the role but gated by an inactive skill. Model results assert an allowed tool is found and listed; separate tool-hook observers assert both hidden names are absent from both results.",
   "setup": {
     "channels": [

@@ -6,7 +6,8 @@
     "§10.6.5"
   ],
   "requirements": [
-    "RK-10.6.5-023"
+    "RK-10.6.5-023",
+    "RK-21.4-028"
   ],
   "notes": "Python: tests/test_turns_between.py::test_a_verb_that_needs_its_turn_is_refused_after_it; turns/host.py TurnHost._send, which refuses a verb outside BETWEEN_TURNS once the turn is over, with a RuntimeError naming it. roomkit-rs: TurnHost in turn.rs, RoomKitError::Runtime naming it. The metadata update after the refusals shows the host still reaches the owner. room_vision, the other reader of owner-process state, has no call here.",
   "setup": {

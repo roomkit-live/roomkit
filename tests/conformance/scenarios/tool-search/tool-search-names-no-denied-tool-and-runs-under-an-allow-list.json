@@ -6,6 +6,15 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-009",
+    "RK-21.1-015",
+    "RK-21.1-016",
+    "RK-21.1-027",
+    "RK-21.1-061",
+    "RK-21.1-062",
+    "RK-21.1-063"
+  ],
   "notes": "Python: tests/test_tool_search_text.py::TestPolicyExemption::test_find_tools_runs_under_whitelist_policy, tests/test_tool_policy_exemptions.py::test_tool_search_names_no_denied_or_gated_tool.",
   "setup": {
     "channels": [

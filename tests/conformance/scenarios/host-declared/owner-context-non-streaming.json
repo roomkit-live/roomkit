@@ -8,7 +8,16 @@
   ],
   "requirements": [
     "RK-10.6.5-028",
-    "RK-10.6.5-029"
+    "RK-10.6.5-029",
+    "RK-21.4-012",
+    "RK-21.4-016",
+    "RK-21.4-017",
+    "RK-21.4-019",
+    "RK-21.4-022",
+    "RK-21.4-024",
+    "RK-21.4-025",
+    "RK-21.4-026",
+    "RK-21.4-029"
   ],
   "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
   "setup": {

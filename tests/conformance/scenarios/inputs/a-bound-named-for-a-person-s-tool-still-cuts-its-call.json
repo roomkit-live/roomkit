@@ -7,6 +7,12 @@
     "§9.3",
     "§10.6.5"
   ],
+  "requirements": [
+    "RK-21.6-002",
+    "RK-21.6-005",
+    "RK-21.6-012",
+    "RK-21.6-014"
+  ],
   "notes": "Python: tests/test_human_input_doors.py::test_a_bound_named_for_the_tool_still_applies[text-stream], [text-nostream]; tools/timeout.py ToolTimeouts.for_call (a tool's own bound before a handler that bounds itself). The handler's timeout is 5 s, the tool's bound 20 ms, and nobody answers.",
   "setup": {
     "channels": [

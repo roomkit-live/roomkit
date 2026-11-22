@@ -6,6 +6,12 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-052",
+    "RK-21.1-053",
+    "RK-21.1-057",
+    "RK-21.1-060"
+  ],
   "notes": "Python: tests/test_policy_served_exemption.py::TestEveryEntryReadsTheSameDeclaration.",
   "setup": {
     "channels": [

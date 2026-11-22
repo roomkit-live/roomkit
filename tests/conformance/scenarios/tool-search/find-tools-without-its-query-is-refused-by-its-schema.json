@@ -6,6 +6,10 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-032",
+    "RK-21.1-039"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_tools.py::_declared_schema.",
   "setup": {
     "channels": [

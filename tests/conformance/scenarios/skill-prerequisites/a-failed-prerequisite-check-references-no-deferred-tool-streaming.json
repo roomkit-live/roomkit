@@ -8,6 +8,9 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-042"
+  ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_text_turn_refuses_an_activation_missing_its_tool, with deferred provider references observed as in tests/test_deferred_tools.py.",
   "setup": {
     "channels": [

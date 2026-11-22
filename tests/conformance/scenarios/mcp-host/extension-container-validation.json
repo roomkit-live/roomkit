@@ -5,6 +5,9 @@
   "rules": [
     "§21.2"
   ],
+  "requirements": [
+    "RK-21.2-045"
+  ],
   "notes": "Public MCPToolProvider model boundaries; exact observations retain the distinction between arbitrary JSON extensions and typed metadata.",
   "steps": [
     {

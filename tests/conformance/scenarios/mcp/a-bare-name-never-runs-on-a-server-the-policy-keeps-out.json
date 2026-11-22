@@ -7,6 +7,15 @@
     "§21.2",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.1-011",
+    "RK-21.1-025",
+    "RK-21.1-026",
+    "RK-21.2-015",
+    "RK-21.2-016",
+    "RK-21.2-018",
+    "RK-21.2-032"
+  ],
   "notes": "Two labelled servers serve delete_records; the archive's handler is first in the chain, the CRM's tools are declared under their bare names. The policy keeps the archive out (deny mcp__archive__*). The bare call names no server.",
   "setup": {
     "channels": [

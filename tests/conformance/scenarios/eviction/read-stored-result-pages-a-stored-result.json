@@ -5,6 +5,9 @@
   "rules": [
     "§21.5"
   ],
+  "requirements": [
+    "RK-21.5-013"
+  ],
   "notes": "Python: tests/test_channels/test_ai_tool_loop.py::TestEvictedResultReading::test_multiline_pagination_keeps_line_semantics, test_partial_page_carries_explicit_warning_final_page_does_not, test_advertised_default_limit_is_the_one_applied. A threshold of 300 bounds a page to 88 characters: 2 * 300 - 512.",
   "setup": {
     "channels": [

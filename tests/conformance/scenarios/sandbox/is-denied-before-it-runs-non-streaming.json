@@ -8,6 +8,12 @@
     "§21.1"
   ],
   "requirements": [
+    "RK-21.1-015",
+    "RK-21.1-020",
+    "RK-21.1-027",
+    "RK-21.1-031",
+    "RK-21.1-041",
+    "RK-21.1-048",
     "RK-9.3-072"
   ],
   "notes": "Python: tests/test_sandbox_contract.py and tests/test_tool_policy_exemptions.py. The host fixture records invocations; it starts no process and applies no framework guards.",

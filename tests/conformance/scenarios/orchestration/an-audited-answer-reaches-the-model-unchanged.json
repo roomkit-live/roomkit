@@ -6,6 +6,11 @@
     "§15.8.1",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.4-002",
+    "RK-21.4-004",
+    "RK-21.4-042"
+  ],
   "notes": "Python's audit_tool_handler returns the handler's answer itself and records result_text(answer)[:500] (tests/orchestration/test_tool_audit.py: test_audit_returns_the_answer_unchanged, test_audit_tool_handler_truncates).",
   "setup": {
     "channels": [

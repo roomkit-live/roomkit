@@ -7,6 +7,9 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-21.6-002",
+    "RK-21.6-005",
+    "RK-21.6-014",
     "RK-6.4-067"
   ],
   "notes": "Python's ToolTimeouts.for_call reads a tool's own bound before the default (tools/timeout.py); answer_within cancels the handler past it and the call fails as a ToolTimeoutError (test_tool_timeout.py).",

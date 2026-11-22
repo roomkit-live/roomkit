@@ -6,7 +6,13 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-21.1-004"
+    "RK-21.1-031",
+    "RK-21.1-032",
+    "RK-21.1-033",
+    "RK-21.1-034",
+    "RK-21.1-036",
+    "RK-21.1-037",
+    "RK-21.1-039"
   ],
   "notes": "RMK-1848, HITL 48daeee0 option B. A model sent objective_title for title three times, reading each time that title was missing and never that objective_title was unknown. One argument that does not fit reads as it always has. Python: tools/validation.py validate_tool_arguments.",
   "setup": {

@@ -6,6 +6,9 @@
     "§6.4",
     "§21.5"
   ],
+  "requirements": [
+    "RK-21.1-062"
+  ],
   "notes": "Python: tests/test_toolset_edges.py::test_the_reread_tool_is_offered_before_any_result_is_stored. The catalogue list_tools reads is the turn's offered tools, read_stored_result included once a round declared it (ToolLoopContext.offered_tools).",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§21.1",
     "§23.3"
   ],
+  "requirements": [
+    "RK-21.1-055"
+  ],
   "notes": "Python: tests/orchestration/test_room_installs.py::test_a_structured_delegation_to_an_agent_with_its_own_result_tool_fails_naming_it.",
   "setup": {
     "channels": [

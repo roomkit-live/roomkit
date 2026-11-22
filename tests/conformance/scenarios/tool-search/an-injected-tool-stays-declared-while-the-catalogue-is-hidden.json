@@ -6,6 +6,12 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-063",
+    "RK-21.1-064",
+    "RK-21.1-067",
+    "RK-21.1-068"
+  ],
   "notes": "Python: tests/test_tool_search_orchestration.py::test_the_tools_orchestration_injects_stay_declared, test_find_tools_does_not_name_an_orchestration_tool, tests/test_tool_list_parity.py::TestListTools::test_a_text_turn_lists_the_tools_always_declared.",
   "setup": {
     "channels": [

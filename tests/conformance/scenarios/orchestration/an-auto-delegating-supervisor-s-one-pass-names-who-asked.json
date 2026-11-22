@@ -7,6 +7,9 @@
     "§19.7.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.4-024"
+  ],
   "notes": "Python: tests/test_task_requester.py::TestATaskBlockNamesWhoAskedForIt::test_the_heading_names_the_asker_out_of_the_block; core/_requester.py asking_label, task_heading(asked_by=), orchestration/strategies/supervisor/delegate.py _one_pass_delegate, _one_pass_results. A one-to-one conversation reads The user asked: (an-auto-delegating-supervisor-that-does-not-refine-hands-its-team-the-message).",
   "setup": {
     "channels": [

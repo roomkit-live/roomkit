@@ -6,6 +6,7 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-21.4-005",
     "RK-9.3-065"
   ],
   "notes": "The SYNC hook replaces the text result with an object through a MODIFY: the model and the observer read it serialized. Python: tests/test_tool_call_hook_chain.py::test_observers_see_a_replacement_as_the_model_reads_it.",

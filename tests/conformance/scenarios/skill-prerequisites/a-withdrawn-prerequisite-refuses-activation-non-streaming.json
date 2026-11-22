@@ -8,6 +8,9 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-042"
+  ],
   "notes": "Python: channels/_ai_tools.py::_missing_required_tools reads the current catalogue; tests/test_toolset_edges.py::test_a_withdrawn_tool_leaves_the_allowed_names.",
   "setup": {
     "channels": [

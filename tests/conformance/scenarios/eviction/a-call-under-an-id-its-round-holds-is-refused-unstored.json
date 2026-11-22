@@ -6,6 +6,10 @@
     "§21.5",
     "§12.4"
   ],
+  "requirements": [
+    "RK-21.5-002",
+    "RK-21.5-016"
+  ],
   "notes": "Python: channels/_ai_tools.py _refuse_id_in_flight returns its refusal unbounded, where _reject_call bounds a gate's (RFC §12.4, §21.5). A threshold of one token stores the first call's result.",
   "setup": {
     "channels": [

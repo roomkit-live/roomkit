@@ -9,6 +9,7 @@
   "requirements": [
     "RK-10.6.8-006",
     "RK-10.6.8-013",
+    "RK-21.6-002",
     "RK-6.4-067"
   ],
   "notes": "Python: turns/_executor_turn.py _beat and turns/_owner_turn.py _beat_while_open; tests/test_turns_failures.py::test_a_tool_blocking_the_loop_past_the_heartbeat_timeout_is_not_lost. While lookup hangs, the turn has nothing to send for 1.6 seconds, four times heartbeat_timeout: each side sends its heartbeats, so the owner does not lose the executor (executor_lost) and the executor does not lose the owner (owner_lost). lookup's own bound ends the call as failed; the next round's answer is stored and the caller reads no error.",

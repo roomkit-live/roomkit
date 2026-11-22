@@ -7,6 +7,16 @@
     "§21.2",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.1-010",
+    "RK-21.1-026",
+    "RK-21.2-015",
+    "RK-21.2-016",
+    "RK-21.2-017",
+    "RK-21.2-018",
+    "RK-21.2-032",
+    "RK-21.4-008"
+  ],
   "notes": "The CRM's handler is first in the chain and its tools are declared bare; the archive serves the same name after it. No policy.",
   "setup": {
     "channels": [

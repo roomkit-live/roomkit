@@ -7,6 +7,10 @@
     "§24.3",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-21.1-016",
+    "RK-21.1-021"
+  ],
   "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_policy.py _exempt_tool_names: the channel's own tools, the skill tools among them, whichever registry the turn reads (RFC §21.1).",
   "setup": {
     "channels": [

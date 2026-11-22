@@ -6,7 +6,7 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-21.4-001",
+    "RK-21.4-020",
     "RK-22.1-028"
   ],
   "notes": "deliver() writes its message under the framework's own sender, system (§10.4), and the turn it opens reads that id as its actor, not an empty one (RMK-1854). Python: channels/ai.py _turn_loop_ctx. core/_delivery_targets.py _publication.",

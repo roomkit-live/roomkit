@@ -6,6 +6,13 @@
     "§21.1",
     "§21.2"
   ],
+  "requirements": [
+    "RK-21.1-052",
+    "RK-21.1-060",
+    "RK-21.2-003",
+    "RK-21.2-023",
+    "RK-21.2-026"
+  ],
   "notes": "The server lists lookup_order twice with two descriptions. One tool per name: the listing keeps the first definition and leaves out the second with a warning, so the agent is built and declares the tool once.",
   "setup": {
     "channels": [

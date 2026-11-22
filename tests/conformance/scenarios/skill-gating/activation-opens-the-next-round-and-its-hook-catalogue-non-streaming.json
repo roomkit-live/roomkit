@@ -7,6 +7,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-021",
+    "RK-21.1-042"
+  ],
   "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestSkillGatingExecution::test_gated_tool_allowed_after_activation; channels/_ai_policy.py::_hook_toolset, _apply_tool_filters.",
   "setup": {
     "channels": [

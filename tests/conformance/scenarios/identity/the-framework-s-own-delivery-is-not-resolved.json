@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-11.6-001",
+    "RK-21.4-020",
     "RK-22.1-028"
   ],
   "notes": "The kit's resolver answers pending for any sender. A deliver() writes under the framework's own sender, system, which names no correspondent (§10.4): there is no address to resolve, so the resolver is not asked, the room records no pending participant for it, and the turn it opens reads system as its actor. Before RMK-1874 the delivery was resolved like a stranger's message: its event was stored under a pending id, with a participant record. The delivery is known by where it comes from, not by its sender id (identity/a-caller-s-message-under-the-framework-s-name-is-still-resolved). Python: core/mixins/inbound_identity.py _resolve_identity, models/delivery.py framework_message.",

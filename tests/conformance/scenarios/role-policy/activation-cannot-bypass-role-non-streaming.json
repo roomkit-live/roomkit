@@ -8,6 +8,13 @@
     "§21.1",
     "§5.5"
   ],
+  "requirements": [
+    "RK-21.1-015",
+    "RK-21.1-016",
+    "RK-21.1-041",
+    "RK-21.1-047",
+    "RK-21.1-072"
+  ],
   "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestPolicyPlusGating::test_policy_deny_overrides_skill_activation and TestPolicyVisibilityFilter::test_skill_infra_tools_never_filtered; channels/_ai_policy.py::_gate_refusal. Role-selection counterpart of skill-gating/activation-never-overrides-policy-and-infrastructure-escapes-both-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {
     "channels": [

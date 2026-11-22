@@ -5,6 +5,10 @@
   "rules": [
     "§21.5"
   ],
+  "requirements": [
+    "RK-21.5-002",
+    "RK-21.5-006"
+  ],
   "notes": "Python: tests/test_channels/test_ai_tool_loop.py::TestToolResultTruncation::test_large_result_evicted, test_small_result_unchanged; tests/test_channels/test_tool_result_bound.py::test_the_hook_sees_the_whole_result_and_the_store_keeps_its_rewrite. The threshold is 300 tokens: 160 lines of 7 characters estimate 320.",
   "setup": {
     "channels": [

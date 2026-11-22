@@ -7,6 +7,15 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-015",
+    "RK-21.1-016",
+    "RK-21.1-021",
+    "RK-21.1-027",
+    "RK-21.1-041",
+    "RK-21.1-047",
+    "RK-21.1-048"
+  ],
   "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestPolicyPlusGating::test_policy_deny_overrides_skill_activation and TestPolicyVisibilityFilter::test_skill_infra_tools_never_filtered; channels/_ai_policy.py::_gate_refusal.",
   "setup": {
     "channels": [

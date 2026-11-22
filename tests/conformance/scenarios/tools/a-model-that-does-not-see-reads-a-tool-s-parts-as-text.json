@@ -7,6 +7,8 @@
     "§9.3"
   ],
   "requirements": [
+    "RK-21.4-002",
+    "RK-21.5-005",
     "RK-9.3-057"
   ],
   "notes": "Python's _shape_for_model flattens a part list for a provider without vision (AIToolResultPart.as_text: texts and [image] joined by new lines) before the hook, and _turn_images replays nothing to a model that does not see (tests/test_channels/test_multimodal_tool_result.py::test_a_text_only_model_gets_the_text_of_a_part_list, test_the_hook_sees_the_text_a_text_only_model_reads; tests/test_tool_result_images.py::test_a_model_that_does_not_see_reads_only_the_text).",

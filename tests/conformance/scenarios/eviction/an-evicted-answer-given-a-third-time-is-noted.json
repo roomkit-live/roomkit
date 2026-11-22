@@ -6,6 +6,9 @@
     "§21.5",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.5-002"
+  ],
   "notes": "Python: tests/test_repeated_result_note.py::test_an_evicted_answer_is_still_recognised.",
   "setup": {
     "channels": [

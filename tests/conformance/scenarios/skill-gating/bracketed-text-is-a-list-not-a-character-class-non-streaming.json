@@ -7,6 +7,9 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-042"
+  ],
   "notes": "Python: tests/test_skill_tool_gating.py::test_a_bracketed_text_reads_as_a_list. Section 21.1 permits only * and ? wildcards; [ab] is a bracketed list containing ab, never a character class. The contradictory parenthesis in section 24.2 is tracked in lot 55.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§6.4",
     "§21.5"
   ],
+  "requirements": [
+    "RK-21.5-004"
+  ],
   "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_result_of_parts_stores_its_text_and_keeps_its_image (channels/_compaction.py _stored, ToolEviction.evict_parts). Seven messages, the input at 0: the half (3) is the second round's call, so the first round is shortened. Each text part is 1199 characters, 2399 joined.",
   "setup": {
     "channels": [

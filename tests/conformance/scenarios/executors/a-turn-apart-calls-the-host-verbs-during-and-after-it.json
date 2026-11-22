@@ -11,7 +11,8 @@
     "RK-10.6.5-021",
     "RK-10.6.5-022",
     "RK-10.6.5-040",
-    "RK-10.6.5-041"
+    "RK-10.6.5-041",
+    "RK-21.4-028"
   ],
   "notes": "Python: tests/test_turns_host.py, tests/test_turns_between.py test_work_a_turn_began_writes_the_room_after_the_turn_ended.",
   "setup": {

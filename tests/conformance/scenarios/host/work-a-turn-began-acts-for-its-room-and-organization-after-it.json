@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.6.5-022",
-    "RK-10.6.5-032"
+    "RK-10.6.5-032",
+    "RK-21.4-028"
   ],
   "notes": "Python: tests/test_turns_between.py::test_the_write_verbs_between_turns_keep_their_refusals, core/_turn_host.py call_between_turns, which reads the room and runs the verb in its organization (_organization). Each refusal is the owner's ValueError.",
   "setup": {

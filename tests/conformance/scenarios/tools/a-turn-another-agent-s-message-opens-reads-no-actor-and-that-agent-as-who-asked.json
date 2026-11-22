@@ -6,7 +6,8 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-21.4-001"
+    "RK-21.4-021",
+    "RK-21.4-024"
   ],
   "notes": "The agent first answers a person; its answer wakes the agent second. The kit's chains stop at depth 3, so second's own answer wakes no one and first is asked once. An agent's event names no participant, so second's turn reads an empty actor, while current_tool_requester() names the agent whose message it answers, @first. An empty actor therefore does not single out the host's turns (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
   "setup": {

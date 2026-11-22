@@ -7,6 +7,9 @@
     "§19.7",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.4-024"
+  ],
   "notes": "Python: tests/test_task_requester.py::TestATaskBlockNamesWhoAskedForIt::test_a_turn_tells_its_tools_who_asked; channels/_ai_context.py (loop_ctx.requester from _turn_messages), tools/context.py current_tool_requester. Room pair holds Alice and Bob; in room solo one sender speaks with no name.",
   "setup": {
     "channels": [

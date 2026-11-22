@@ -9,6 +9,10 @@
     "§21.1",
     "§5.5"
   ],
+  "requirements": [
+    "RK-21.1-042",
+    "RK-21.1-072"
+  ],
   "notes": "Python: tests/test_skill_requires_parity.py::test_a_text_turn_refuses_an_activation_missing_its_tool; refusal leaves its gate shut. Role-selection counterpart of skill-prerequisites/a-denied-prerequisite-refuses-activation-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {
     "channels": [

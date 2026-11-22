@@ -10,6 +10,12 @@
     "§21.1",
     "§5.5"
   ],
+  "requirements": [
+    "RK-21.1-015",
+    "RK-21.1-020",
+    "RK-21.1-027",
+    "RK-21.1-074"
+  ],
   "notes": "Python: tests/test_skills_integration.py, tests/test_skill_reference_unknown_skill.py, tests/test_tool_policy_exemptions.py and tests/skills/test_script_executor.py. The fixture records actual host invocations; no process is executed. Role-selection counterpart of skill-scripts/arguments-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
   "setup": {
     "channels": [

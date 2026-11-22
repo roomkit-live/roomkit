@@ -6,6 +6,12 @@
     "§21.6",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-21.6-002",
+    "RK-21.6-008",
+    "RK-21.6-012",
+    "RK-21.6-014"
+  ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_a_turn_bound_applies_to_a_tool_that_waits_by_design. The named turn bound applies ahead of the human-input handler timeout.",
   "setup": {
     "channels": [

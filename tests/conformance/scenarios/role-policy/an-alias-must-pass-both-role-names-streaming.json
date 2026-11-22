@@ -7,6 +7,16 @@
     "§21.2",
     "§5.5"
   ],
+  "requirements": [
+    "RK-21.1-011",
+    "RK-21.1-024",
+    "RK-21.1-025",
+    "RK-21.1-027",
+    "RK-21.1-041",
+    "RK-21.1-048",
+    "RK-21.1-072",
+    "RK-21.2-032"
+  ],
   "notes": "Python: test_a_text_turn_judges_an_alias_under_both_names. The observer denies the bare name; the member denies only its alias. Both calls are refused before the exhaustive audited handler, even though the base policy permits them.",
   "setup": {
     "channels": [

@@ -6,6 +6,12 @@
     "§21.6",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-21.6-002",
+    "RK-21.6-008",
+    "RK-21.6-009",
+    "RK-21.6-014"
+  ],
   "notes": "Python: tests/test_turn_tool_timeouts.py::test_simultaneous_turns_keep_independent_bounds. Gates establish call ordering without a sleep-based oracle.",
   "setup": {
     "channels": [

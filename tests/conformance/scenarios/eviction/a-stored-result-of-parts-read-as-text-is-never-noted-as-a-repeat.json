@@ -6,6 +6,10 @@
     "§21.5",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.5-002",
+    "RK-21.5-005"
+  ],
   "notes": "Python: channels/_ai_tools.py _model_part hashes outcome.answer when it is a text, else the model's copy; a result of parts is no text, so the stored copy's placeholder is hashed (tests/test_repeated_result_note.py::test_an_evicted_answer_is_still_recognised for a text).",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-014",
+    "RK-21.1-042"
+  ],
   "notes": "Python: tests/test_skill_tool_gating.py::TestGlobsGate; tests/test_channels/test_ai_skill_gating.py::TestSkillGatingVisibility, TestSkillGatingExecution. The auditor proves that a refused call never reaches the host handler.",
   "setup": {
     "channels": [

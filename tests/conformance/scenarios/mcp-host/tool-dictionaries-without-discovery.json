@@ -5,6 +5,10 @@
   "rules": [
     "§21.2"
   ],
+  "requirements": [
+    "RK-21.2-004",
+    "RK-21.2-028"
+  ],
   "notes": "Python: tests/test_mcp_tool_provider.py::test_get_tools_as_dicts and the dictionary slice of test_not_connected_guard. Exact six-field snapshots and request counts complement those source assertions.",
   "steps": [
     {

@@ -7,6 +7,9 @@
     "§21.1",
     "Appendix A.9"
   ],
+  "requirements": [
+    "RK-21.1-045"
+  ],
   "notes": "Python: tests/test_channels/test_turn_tool_handler.py::test_channel_tools_stay_local_and_unoffered_tools_stay_refused.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§6.4",
     "§21.3"
   ],
+  "requirements": [
+    "RK-21.3-007"
+  ],
   "notes": "Python's _stream_local_tool_round: a stop that came while the calls were announced runs none of them (_unrun_call_ends), and only _run_announced_calls counts a round (turn.count_round), so ON_AI_RESPONSE reads round_count 0 and tool_calls_count 0. The hook on the start row steers the Cancel: the row is stored and its hooks run before the calls start.",
   "setup": {
     "channels": [

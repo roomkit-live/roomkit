@@ -7,6 +7,9 @@
     "§21.3"
   ],
   "requirements": [
+    "RK-21.3-006",
+    "RK-21.3-009",
+    "RK-21.3-010",
     "RK-6.4-082"
   ],
   "notes": "Python: chat_request._plain over OPENAI_CHAT, reached by channels/_ai_streaming.py _steered_after_answer.",

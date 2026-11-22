@@ -6,6 +6,12 @@
     "§21.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-21.2-003",
+    "RK-21.2-023",
+    "RK-21.2-024",
+    "RK-21.2-025"
+  ],
   "notes": "A tool's definition is its server's declaration, handed to the model in the API's tools, not in a text of the runtime: not framed, a forged closing tag and a copy of a runtime mark kept as written. It is bounded: a 4,899-character description is cut at a word within 4,096 characters, and a tool whose name is longer than 128 characters is left out.",
   "setup": {
     "channels": [

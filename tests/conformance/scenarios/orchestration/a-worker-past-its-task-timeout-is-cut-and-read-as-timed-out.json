@@ -7,6 +7,7 @@
     "§23.3"
   ],
   "requirements": [
+    "RK-21.6-011",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the per-worker door); tests/orchestration/test_worker_run_task_line.py (timed out, inline); tests/tasks/test_cancelled_delegation.py test_a_supervisors_task_timeout_ends_the_task_cancelled. orchestration/_worker_run.py _delegate (answer_within, the timeout's text with :g); channels/_tool_registry.py orchestration_tool(..., waits=True) (RFC §21.6: a strategy's tool waits by design). The worker's model waits at a gate no step opens. The worker must reach its model gate before the bounded call ends. The 2 s budget includes database preparation; it is not a deadline on model work alone. Native tests expire bounds at a chosen boundary; the conformance timing regression delays preparation and keeps every expectation.",

@@ -6,6 +6,7 @@
     "§21.5"
   ],
   "requirements": [
+    "RK-21.5-002",
     "RK-9.3-081"
   ],
   "notes": "Python: tests/test_channels/test_tool_result_bound.py::test_an_oversized_refusal_is_evicted_and_the_hook_sees_it_whole, test_an_oversized_exception_never_reaches_the_model (RFC §21.5: every outcome).",

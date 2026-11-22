@@ -7,6 +7,14 @@
     "§21.2",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.1-026",
+    "RK-21.2-015",
+    "RK-21.2-016",
+    "RK-21.2-018",
+    "RK-21.2-032",
+    "RK-21.4-008"
+  ],
   "notes": "The archive's handler forwards every name (gate_discovery false) and is first in the chain; the CRM's tools are declared bare; the policy keeps the archive out.",
   "setup": {
     "channels": [

@@ -6,7 +6,7 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-21.4-001"
+    "RK-21.4-021"
   ],
   "notes": "send_event() commits an event from a channel with no sender unless the host names one. The turn it opens reads an empty actor, where a deliver()'s reads system (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
   "setup": {

@@ -5,6 +5,12 @@
   "rules": [
     "§21.5"
   ],
+  "requirements": [
+    "RK-21.5-009",
+    "RK-21.5-010",
+    "RK-21.5-011",
+    "RK-21.5-013"
+  ],
   "notes": "Python: tests/test_channels/test_stored_result_search.py::test_a_search_returns_the_matching_lines_with_their_neighbours, test_a_search_that_finds_nothing_says_the_text_is_absent, test_the_model_searches_a_result_it_evicted.",
   "setup": {
     "channels": [

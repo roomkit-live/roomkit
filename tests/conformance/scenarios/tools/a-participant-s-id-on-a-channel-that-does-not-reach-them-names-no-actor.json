@@ -6,7 +6,8 @@
     "§21.4"
   ],
   "requirements": [
-    "RK-21.4-001"
+    "RK-21.4-021",
+    "RK-21.4-032"
   ],
   "notes": "p-alice is reached through sms only; a sender writes under her id on ws. An id names its participant only on a channel they are reached through (§5.5), so current_tool_actor_id() answers nothing rather than name her. An empty actor therefore does not single out the host's turns: a sender can produce it (RMK-1854). Python: channels/ai.py _turn_loop_ctx.",
   "setup": {

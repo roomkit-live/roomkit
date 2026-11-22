@@ -7,6 +7,12 @@
     "§21.4",
     "§19.7.5 rule 4"
   ],
+  "requirements": [
+    "RK-21.4-012",
+    "RK-21.4-017",
+    "RK-21.4-034",
+    "RK-21.4-035"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py::test_a_background_task_names_its_agent_by_handle; tests/test_tool_context.py::TestCurrentToolRoom; tasks/background.py::background_tool_server and start_background_task. A generation gate proves the turn loaded OldName before the store patch. This is a metadata snapshot test, not a public API for renaming an installed discussion.",
   "setup": {
     "channels": [

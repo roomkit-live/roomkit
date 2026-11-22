@@ -6,6 +6,11 @@
     "§6.4",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.4-002",
+    "RK-21.4-003",
+    "RK-21.4-004"
+  ],
   "notes": "Python's as_tool_result reads a list whose every item is a part, or a mapping in a part's exact shape, as content parts (tests/test_tool_results.py::test_content_parts_given_as_mappings_stay_content_parts, test_a_list_of_plain_mappings_is_json).",
   "setup": {
     "channels": [

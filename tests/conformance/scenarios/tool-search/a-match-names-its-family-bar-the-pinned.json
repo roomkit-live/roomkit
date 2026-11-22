@@ -6,6 +6,9 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-063"
+  ],
   "notes": "Python: tests/test_tool_list_parity.py::TestFindTools::test_a_text_search_names_no_pinned_tool_as_related.",
   "setup": {
     "channels": [

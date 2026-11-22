@@ -7,6 +7,16 @@
     "§21.2",
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.1-011",
+    "RK-21.1-024",
+    "RK-21.1-025",
+    "RK-21.1-044",
+    "RK-21.2-013",
+    "RK-21.2-018",
+    "RK-21.2-032",
+    "RK-21.4-008"
+  ],
   "notes": "Both servers' tools are declared under their aliases alone, the archive's handler first. The bare name is not declared; the CRM's alias reaches the CRM whatever the order; the archive's alias is refused by the policy.",
   "setup": {
     "channels": [

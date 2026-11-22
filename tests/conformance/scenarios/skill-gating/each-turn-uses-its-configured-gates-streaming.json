@@ -7,6 +7,9 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-21.1-042"
+  ],
   "notes": "Python: channels/_ai_policy.py::_turn_skills, _gated_tool_names; tests/test_skills_integration.py per-turn configuration; existing shared skills/a-turn-lists-and-activates-its-own-skills.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§21.4"
   ],
+  "requirements": [
+    "RK-21.4-004"
+  ],
   "notes": "Python's as_tool_result writes json.dumps of the mapping, which keeps a dict's order (RMK-1198, HITL e91c8d89: roomkit-rs keeps it with serde_json's preserve_order).",
   "setup": {
     "channels": [

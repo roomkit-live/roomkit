@@ -8,7 +8,9 @@
     "§21.1"
   ],
   "requirements": [
-    "RK-10.6.5-016"
+    "RK-10.6.5-016",
+    "RK-21.1-052",
+    "RK-21.1-055"
   ],
   "notes": "Python: tests/test_owner_tool_store.py::test_the_owner_refuses_a_tool_a_live_agent_already_has; channels/declared.py owner_tools_of, whose registry refuses a name the agent serves (ToolNameCollisionError). roomkit-rs: RoomKitError::ToolNameCollision. An agent held by its declaration alone is set up all the same, its executor refusing the turn (executors/an-executor-refuses-a-turn-whose-channel-declares-an-owner-s-tool).",
   "setup": {

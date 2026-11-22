@@ -9,6 +9,16 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-21.1-009",
+    "RK-21.1-010",
+    "RK-21.1-027",
+    "RK-21.1-041",
+    "RK-21.1-048",
+    "RK-21.1-070",
+    "RK-21.1-071",
+    "RK-21.1-072",
+    "RK-21.1-073",
+    "RK-21.1-074",
     "RK-5.5-033"
   ],
   "notes": "Python: TestRoleBasedPolicy in test_ai_skill_gating.py and test_a_text_turn_resolves_the_policy_for_its_participant. Unknown inbound senders retain the base policy. An Agent descriptive owner role grants nothing. The handler audit is exhaustive: refused calls never reach it.",

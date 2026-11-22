@@ -5,6 +5,11 @@
   "rules": [
     "§21.2"
   ],
+  "requirements": [
+    "RK-21.2-004",
+    "RK-21.2-034",
+    "RK-21.2-045"
+  ],
   "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
   "steps": [
     {

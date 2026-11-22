@@ -8,6 +8,13 @@
     "§21.4"
   ],
   "requirements": [
+    "RK-21.1-026",
+    "RK-21.2-015",
+    "RK-21.2-016",
+    "RK-21.2-018",
+    "RK-21.2-032",
+    "RK-21.4-008",
+    "RK-21.4-009",
     "RK-9.3-089"
   ],
   "notes": "Both labelled servers serve delete_records, the CRM's tools declared bare; the policy keeps both servers out by their aliases and leaves the bare name: each handler declines, and the call is served by nothing.",
