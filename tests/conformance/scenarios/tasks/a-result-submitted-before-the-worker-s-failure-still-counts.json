@@ -5,6 +5,13 @@
   "rules": [
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-026",
+    "RK-23.3-037",
+    "RK-23.3-072",
+    "RK-23.3-077",
+    "RK-23.3-078"
+  ],
   "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_result_submitted_before_the_failure_still_counts; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result (a served call of the result tool, bare or under a server's prefix, counts whatever the turn's end). Only the result tool the owner serves ends the turn (RMK-357): the gateway's is the worker's own, so its model is asked again, and that request fails.",
   "setup": {
     "channels": [

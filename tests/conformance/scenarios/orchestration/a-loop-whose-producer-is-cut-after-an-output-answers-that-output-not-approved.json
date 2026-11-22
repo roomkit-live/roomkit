@@ -8,6 +8,7 @@
     "§6.4"
   ],
   "requirements": [
+    "RK-23.3-038",
     "RK-8.5-007"
   ],
   "notes": "Python: test_loop_producer_cut.py test_a_producer_cut_after_an_output_keeps_it_not_approved.",

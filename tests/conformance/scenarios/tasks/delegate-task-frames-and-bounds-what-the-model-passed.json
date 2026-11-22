@@ -6,6 +6,16 @@
     "§23.4",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-006",
+    "RK-23.3-012",
+    "RK-23.4-010",
+    "RK-23.4-014",
+    "RK-23.4-015",
+    "RK-23.4-016",
+    "RK-23.4-017",
+    "RK-23.4-018"
+  ],
   "notes": "Python: tests/tasks/test_delegate_reach.py; tasks/delegate.py _passed_context, tasks/brief.py context_block, task_brief (the task under `Your task, as the delegating agent wrote it:` in `<task>` once a block follows it, HITL 90c4e28a; a task with no block after it is the worker's whole instruction, read as it is). The bound is on the JSON text, 4000 characters, its cut ending in … as bounded_text writes it. Each string, a key included, at any depth, is read as json_text_line reads a text (a look-alike of a double quote made a single one) and for a tag before it is written as JSON, which would hide a line break or a slash as an escape. A model may send a string where the tool says object: `{**context}` and the task's metadata both read an object, so the handler makes it one. 0 and false are values: only null, an empty string, an empty list and an empty object are no context.",
   "setup": {
     "channels": [

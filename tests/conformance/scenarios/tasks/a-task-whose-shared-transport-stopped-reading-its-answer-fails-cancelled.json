@@ -7,6 +7,10 @@
     "§12.2 step 13s",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.2-008",
+    "RK-23.3-028"
+  ],
   "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_delegated_turn_its_transport_stopped_fails_cancelled[after-text] (while-thinking: tasks/a-task-whose-shared-transport-stopped-reading-while-its-model-reasoned-fails-cancelled; acp-finished needs an ACP agent). ws stops reading after the answer's second delta, as a barge-in does.",
   "setup": {
     "channels": [

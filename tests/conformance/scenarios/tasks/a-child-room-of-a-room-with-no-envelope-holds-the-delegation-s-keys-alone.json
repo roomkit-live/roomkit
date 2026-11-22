@@ -5,6 +5,9 @@
   "rules": [
     "§23.3 step 1"
   ],
+  "requirements": [
+    "RK-23.3-112"
+  ],
   "notes": "Python: tests/tasks/test_integration.py::TestDelegateIntegration::test_delegate_without_envelope_leaves_child_metadata_minimal; core/mixins/delegation.py _open_child_room. An object expectation names the members it checks: the envelope is asserted an object holding none of the identity keys an envelope carries (tests/tasks/test_integration.py::TestDelegateIntegration::test_child_metadata_envelope_copied_to_child_room).",
   "setup": {
     "channels": [

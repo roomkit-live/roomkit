@@ -7,7 +7,9 @@
     "§23.3"
   ],
   "requirements": [
-    "RK-21.1-044"
+    "RK-21.1-044",
+    "RK-23.3-072",
+    "RK-23.3-073"
   ],
   "notes": "Python: tests/orchestration/test_strategy_rooms.py::test_a_result_tool_is_declared_in_the_child_room_only; core/mixins/_result_capture.py capture_result. A held structured delegation makes the capture overlap a real turn in the agent's other room.",
   "setup": {

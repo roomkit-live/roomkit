@@ -5,6 +5,12 @@
   "rules": [
     "§23.4"
   ],
+  "requirements": [
+    "RK-23.4-020",
+    "RK-23.4-031",
+    "RK-23.4-032",
+    "RK-23.4-034"
+  ],
   "notes": "Python: tests/tasks/test_delegate_cache_outcome.py::test_a_task_that_did_not_complete_is_run_again, test_a_completed_task_answers_a_repeat_from_the_cache; tests/tasks/test_cache.py::TestDelegateHandlerWithCache; tasks/cache.py, tasks/delegate.py DelegateHandler (decided in HITL dc39a85d: the key is the task and its context). An entry the host writes with put answers any agent: tests/tasks/test_cache.py. The answer is the receipt with the task's result, as task_status gives it.",
   "setup": {
     "channels": [

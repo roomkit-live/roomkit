@@ -6,6 +6,12 @@
     "§23.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-005",
+    "RK-23.4-025",
+    "RK-23.4-027",
+    "RK-23.4-067"
+  ],
   "notes": "RMK-1621, HITL 2b8ac53e and d4ede844. Python: tests/tasks/test_delegate.py::TestWaitInTaskRooms::test_the_call_answers_with_its_task_s_result_on_the_option, test_a_call_from_the_conversation_s_room_starts_a_background_task; tasks/delegate.py DelegateHandler. A task's room is a child room the kit made for a delegated task (its metadata names the task). Without the option, the researcher's call answers with the receipt, its task ends with that, and the digger's result comes back after it.",
   "setup": {
     "channels": [

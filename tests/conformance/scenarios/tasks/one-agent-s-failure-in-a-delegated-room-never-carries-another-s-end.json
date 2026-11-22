@@ -6,6 +6,11 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-029",
+    "RK-23.3-032",
+    "RK-23.3-033"
+  ],
   "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_one_agents_failure_never_carries_anothers_end, the task's part of test_another_agent_s_provider_failure_is_logged_once_as_its_turn[trace], [transport] (its log line is no scenario's); core/mixins/_child_execution.py _responder_failures (RMK-879: the task is its delegated agent's). helper fails on the task, before any end, on each delegation: worker loops on lookup past max_tool_rounds 1, finder answers.",
   "setup": {
     "channels": [

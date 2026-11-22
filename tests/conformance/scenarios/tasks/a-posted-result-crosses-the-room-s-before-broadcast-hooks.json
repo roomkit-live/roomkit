@@ -6,6 +6,12 @@
     "§23.3 step 8",
     "§9.4"
   ],
+  "requirements": [
+    "RK-23.3-063",
+    "RK-23.3-066",
+    "RK-23.3-069",
+    "RK-23.3-070"
+  ],
   "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_posted_result_crosses_before_broadcast; tasks/posting.py post_result, send_posted (through the room's pipeline). The hook blocks what room-1 broadcasts, never the child room's events.",
   "setup": {
     "channels": [

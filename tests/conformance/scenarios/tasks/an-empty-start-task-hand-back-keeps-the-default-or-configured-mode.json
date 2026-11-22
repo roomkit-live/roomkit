@@ -6,6 +6,14 @@
     "§23.4",
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.3-041",
+    "RK-23.3-062",
+    "RK-23.3-063",
+    "RK-23.3-066",
+    "RK-23.4-045",
+    "RK-23.4-049"
+  ],
   "notes": "Python: tests/tasks/test_background_tasks.py::test_start_task_without_a_setup_runs_on_the_agent_and_relays, test_start_task_overrides_the_setup_s_hand_back, test_setup_refuses_an_unknown_hand_back; tasks/background.py::start_background_task uses hand_back or setup.hand_back. Empty fallback belongs to start_task, not setup_background.",
   "setup": {
     "channels": [

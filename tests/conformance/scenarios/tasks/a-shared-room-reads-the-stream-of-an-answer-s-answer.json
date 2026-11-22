@@ -8,6 +8,8 @@
     "§12.2 step 13s"
   ],
   "requirements": [
+    "RK-23.3-021",
+    "RK-23.3-025",
     "RK-8.5-007"
   ],
   "notes": "Python: core/mixins/_child_execution.py _deliver_answer, which reads every stream its cascade starts (lane_execution.py _finish_cascade), the chained turns' too; tests/tasks/test_worker_cut_short.py::test_the_answer_and_its_end_are_read_off_one_responder[transport-streams]. helper is shared into the child room with email; it answers the task buffered, worker streams. helper's answer chains to worker, whose second turn streams too.",

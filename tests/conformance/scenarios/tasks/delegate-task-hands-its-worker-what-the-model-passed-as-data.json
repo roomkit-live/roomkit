@@ -7,6 +7,18 @@
     "§23.3 step 4",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-006",
+    "RK-23.3-012",
+    "RK-23.4-010",
+    "RK-23.4-013",
+    "RK-23.4-014",
+    "RK-23.4-015",
+    "RK-23.4-016",
+    "RK-23.4-017",
+    "RK-23.4-018",
+    "RK-23.5-002"
+  ],
   "notes": "Python: tests/tasks/test_delegate.py; tasks/delegate.py DelegateHandler._do_delegate, tasks/brief.py task_brief. The JSON is Python's json.dumps of the context, on one line, in the order of its keys.",
   "setup": {
     "channels": [

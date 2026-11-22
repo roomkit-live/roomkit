@@ -6,6 +6,18 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.2-004",
+    "RK-23.2-005",
+    "RK-23.2-008",
+    "RK-23.3-026",
+    "RK-23.3-028",
+    "RK-23.3-037",
+    "RK-23.3-071",
+    "RK-23.3-072",
+    "RK-23.3-074",
+    "RK-23.3-078"
+  ],
   "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_worker_owing_a_result_fails_when_cut_without_one, tests/tasks/test_structured_result.py::TestTheWorkersResultCall::test_a_served_call_is_the_result_and_ends_the_turn; core/mixins/_child_execution.py _run_with_structured_result (a cut turn is not re-prompted; _scan_for_submitted_result reads a served call whatever the turn's end). submitter submits on its first round, which ends its turn (RMK-357): its model is asked once, never for the lookups past max_tool_rounds 1; looper loops without submitting: its model is asked twice, no re-prompt.",
   "setup": {
     "channels": [

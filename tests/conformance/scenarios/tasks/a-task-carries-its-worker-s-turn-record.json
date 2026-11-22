@@ -6,6 +6,11 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.2-004",
+    "RK-23.2-008",
+    "RK-23.3-035"
+  ],
   "notes": "Python: tests/tasks/test_task_turn_record.py::test_a_task_carries_its_workers_turn; core/mixins/_child_execution.py (the turn's record under turns), tasks/models.py finished_task_fields. Inline then in the background, each on the trace then with email shared. A scripted model has one provider path: Python's buffered/stream parameter is not varied. DelegatedTaskResult.exception is never serialized: Python's exception None is not read here.",
   "setup": {
     "channels": [

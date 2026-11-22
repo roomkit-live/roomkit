@@ -9,6 +9,13 @@
     "§19.8"
   ],
   "requirements": [
+    "RK-23.1-004",
+    "RK-23.2-004",
+    "RK-23.3-039",
+    "RK-23.3-106",
+    "RK-23.3-108",
+    "RK-23.5-002",
+    "RK-23.5-003",
     "RK-9.2-080"
   ],
   "notes": "Python: tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _buffered_outcome, a target that raised is not responded and carries no error to the task; tasks/models.py finished_task_fields (no response: failed); tasks/status.py post_task_ended (detail failed).",

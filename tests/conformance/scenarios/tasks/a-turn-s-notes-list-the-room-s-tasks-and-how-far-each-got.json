@@ -6,6 +6,12 @@
     "§23.4",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-115",
+    "RK-23.4-060",
+    "RK-23.4-061",
+    "RK-23.4-064"
+  ],
   "notes": "Python: tests/tasks/test_task_progress_note.py::test_the_note_tells_running_from_ended_tasks; channels/_tasks_note.py render_tasks_note, channels/_ai_context.py _tasks_notes. The durations depend on the run's clock: the text is matched around them.",
   "setup": {
     "channels": [

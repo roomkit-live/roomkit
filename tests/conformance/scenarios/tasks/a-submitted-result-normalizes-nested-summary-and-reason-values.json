@@ -5,6 +5,11 @@
   "rules": [
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-026",
+    "RK-23.3-072",
+    "RK-23.3-078"
+  ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestResultHelpers::test_public_default_result_tool and roomkit.orchestration.result.normalize_result. A caller can read the same normalized fields through the default result tool or the output of a delegation. The worker uses its gateway tool, whose own schema accepts the values. The delegation reads the served call from the worker's trace.",
   "setup": {
     "channels": [

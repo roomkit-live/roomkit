@@ -5,6 +5,12 @@
   "rules": [
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-027",
+    "RK-23.3-079",
+    "RK-23.3-080",
+    "RK-23.3-081"
+  ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultViaTrace::test_fails_when_trace_has_no_submit_result; core/mixins/_child_execution.py _scan_for_submitted_result, orchestration/result.py is_submit_result (the result tool's name, bare or as an MCP server prefixes it).",
   "setup": {
     "channels": [

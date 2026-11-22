@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-22.1-048",
-    "RK-22.3-002"
+    "RK-22.3-002",
+    "RK-23.3-040"
   ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_before_deliver_hook_gates_the_result; tasks/handback.py hand_back (through deliver(), whose BEFORE_DELIVER hooks gate it).",
   "setup": {

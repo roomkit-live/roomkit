@@ -8,7 +8,9 @@
     "§23.4"
   ],
   "requirements": [
-    "RK-10.6.2-012"
+    "RK-10.6.2-012",
+    "RK-23.4-003",
+    "RK-23.4-005"
   ],
   "notes": "Python: tests/test_turns_owner_tools.py test_a_supervisors_strategy_tool_is_served_on_the_owner; executors/a-turn-apart-calls-a-tool-the-room-owner-serves. The setup is made on the owner before any build; the build made after release_channel finds the tool all the same, so nothing was installed on a build. The close runs apart from the turns, so the executor's list is matched in any order.",
   "setup": {

@@ -7,6 +7,16 @@
     "§23.3 step 8",
     "§10.6.5"
   ],
+  "requirements": [
+    "RK-23.1-004",
+    "RK-23.3-039",
+    "RK-23.3-083",
+    "RK-23.3-088",
+    "RK-23.3-089",
+    "RK-23.4-051",
+    "RK-23.4-053",
+    "RK-23.5-003"
+  ],
   "notes": "Python: tests/tasks/test_cancel_task.py::test_a_turn_s_cancel_task_is_served_by_the_owner (which room owner's task serves the call is each implementation's); core/mixins/delegation.py _cancel_task_for, _cancelled_by_notified. The agent's model is asked twice only: a hand-back would ask it a third time.",
   "setup": {
     "channels": [

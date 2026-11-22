@@ -6,6 +6,11 @@
     "§6.4",
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.3-047",
+    "RK-23.3-048",
+    "RK-23.3-054"
+  ],
   "notes": "A model reads a tag name's separator as any dash, underscore or space, or none, as it reads a letter in any of its forms (RMK-1320). Python: tests/test_external_text.py::test_a_closing_tag_with_its_separator_in_any_form_cannot_close_its_block (every kit name with a separator, each form); tasks/handback.py fences the output in worker_output.",
   "setup": {
     "channels": [

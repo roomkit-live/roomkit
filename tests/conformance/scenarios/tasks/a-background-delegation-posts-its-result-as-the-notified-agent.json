@@ -5,6 +5,13 @@
   "rules": [
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.3-061",
+    "RK-23.3-063",
+    "RK-23.3-066",
+    "RK-23.3-069",
+    "RK-23.3-070"
+  ],
   "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_posted_result_is_the_agent_s_message_without_a_turn_of_its_model; tasks/posting.py posted_text, post_result, send_posted.",
   "setup": {
     "channels": [

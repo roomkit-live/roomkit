@@ -8,6 +8,17 @@
     "§23.5",
     "§23.4"
   ],
+  "requirements": [
+    "RK-23.1-004",
+    "RK-23.1-007",
+    "RK-23.2-004",
+    "RK-23.3-039",
+    "RK-23.3-050",
+    "RK-23.3-093",
+    "RK-23.3-106",
+    "RK-23.3-108",
+    "RK-23.5-003"
+  ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_failed_task_with_nothing_to_say_is_still_handed_back[empty-answer], [bare-exception]; core/mixins/delegation.py _deliver_delegation_result (only a completed task with nothing to say is not handed back), _delegation_result_text ('No output'). The Python test tells a realtime voice session; the rule holds for any notified agent. Also checks the observable end surfaces in tests/tasks/test_delegation_ends_failed.py::_assert_ended_failed: the child room, completion hook and status bus agree; a later host cancellation cannot change the failed result. Native tests cover runner refusal, callbacks and telemetry separately.",
   "setup": {
     "channels": [

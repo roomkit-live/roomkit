@@ -8,7 +8,9 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.1-089"
+    "RK-10.1-089",
+    "RK-23.3-023",
+    "RK-23.3-024"
   ],
   "notes": "Python: core/mixins/_child_execution.py _broadcast_and_collect persists the broadcast's side effects as a room's (core/mixins/helpers.py _persist_side_effects): the tasks, then the observations, then _write_metadata_updates, which writes the merged updates with patch_room_metadata inside self._lock_manager.locked(room_id), then the stored tasks' ON_TASK_CREATED, before the turn's answer is committed. A call into the child room, whose before_broadcast hook holds the lock while the worker answers, writes its key first; the turn's write waits for that call's locked region, and follows it; the task's observer, started after the write, reads it. RMK-1521.",
   "setup": {

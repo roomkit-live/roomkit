@@ -9,6 +9,7 @@
   ],
   "requirements": [
     "RK-10.1-089",
+    "RK-23.3-023",
     "RK-5.1-025"
   ],
   "notes": "Python: core/event_router.py collects each output's metadata_updates through without_framework_keys (core/_room_metadata.py), and core/mixins/helpers.py _write_metadata_updates patches the room (patch_room_metadata, which stamps updated_at) under its lock; _child_execution.py _broadcast_and_collect persists them as a room's (_persist_side_effects). RMK-1188.",

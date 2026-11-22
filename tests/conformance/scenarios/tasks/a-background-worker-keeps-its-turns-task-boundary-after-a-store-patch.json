@@ -10,7 +10,8 @@
     "RK-21.4-012",
     "RK-21.4-017",
     "RK-21.4-034",
-    "RK-21.4-035"
+    "RK-21.4-035",
+    "RK-23.4-048"
   ],
   "notes": "Python: tests/tasks/test_background_tasks.py::test_the_tool_is_refused_in_a_task_s_child_room; tasks/background.py::background_tool_server reads current_tool_room. The gate proves the child turn loaded its task marker before the low-level store patch; no new task may be started.",
   "setup": {

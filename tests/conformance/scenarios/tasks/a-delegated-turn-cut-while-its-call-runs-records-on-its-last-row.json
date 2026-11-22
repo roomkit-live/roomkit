@@ -6,6 +6,9 @@
     "§23.3 step 5",
     "§6.4 The turn's record"
   ],
+  "requirements": [
+    "RK-23.3-019"
+  ],
   "notes": "Python: core/mixins/_child_execution.py _persist_child_stream, by the same writer as a room's turn, write_owed_record (RMK-1344, HITL 5f58e3e3).",
   "setup": {
     "channels": [

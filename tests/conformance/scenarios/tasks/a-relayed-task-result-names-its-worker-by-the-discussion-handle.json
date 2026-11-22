@@ -10,7 +10,12 @@
   "requirements": [
     "RK-22.1-048",
     "RK-22.3-009",
-    "RK-22.3-013"
+    "RK-22.3-013",
+    "RK-23.3-041",
+    "RK-23.3-043",
+    "RK-23.3-051",
+    "RK-23.3-056",
+    "RK-23.4-037"
   ],
   "notes": "Python: tests/orchestration/test_discussion_handles.py::test_a_background_task_names_its_agent_by_handle; core/mixins/delegation.py::_deliver_delegation_result. The result is relayed to the same agent as a new turn, not posted. The worker is the agent itself. The task metadata retains its channel id.",
   "setup": {

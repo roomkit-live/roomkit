@@ -6,6 +6,12 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.2-004",
+    "RK-23.2-005",
+    "RK-23.2-008",
+    "RK-23.3-028"
+  ],
   "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_buffered_worker_whose_record_names_a_cut_fails (its _BufferedWorker answers responded, its rows the narration or none, its response_metadata loop_end_reason timeout); core/mixins/_child_execution.py _buffered_outcome reads the end off the output's record. tasks/a-buffered-turn-cut-short-fails-its-task-with-its-narration reads it off the last message's metadata instead (RMK-1214).",
   "setup": {
     "channels": [

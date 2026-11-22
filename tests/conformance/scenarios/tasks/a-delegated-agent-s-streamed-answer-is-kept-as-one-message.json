@@ -7,6 +7,9 @@
     "§8.5"
   ],
   "requirements": [
+    "RK-23.2-004",
+    "RK-23.3-015",
+    "RK-23.3-025",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::TestPersistChildStream::test_text_only_stream_persists_single_message; core/mixins/_child_execution.py _persist_child_stream (the turn's text segment, one row, responds_to the task's message; its text the answer). No transport is shared: the trace's path.",

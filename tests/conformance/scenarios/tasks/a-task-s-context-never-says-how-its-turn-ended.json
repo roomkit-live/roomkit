@@ -7,7 +7,11 @@
     "§23.4"
   ],
   "requirements": [
-    "RK-23.3-001"
+    "RK-23.2-008",
+    "RK-23.3-034",
+    "RK-23.3-035",
+    "RK-23.3-039",
+    "RK-23.5-003"
   ],
   "notes": "Security finding RK-23.3-001 (card RMK-1418, item 2; audit RMK-1894): the result's metadata was built from the context first, so a model could write a task's end. Step 6 says the task's metadata carries how the turn ended (loop_end_reason), whether its failure was reported (error_reported) and the turn's record (turns): those are the framework's, and win over the context. Whether the rest of the context reaches the result's metadata is not asserted: the RFC does not say.",
   "setup": {

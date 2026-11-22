@@ -7,6 +7,12 @@
     "§23.3 step 4",
     "§23.3 step 5"
   ],
+  "requirements": [
+    "RK-23.3-008",
+    "RK-23.3-010",
+    "RK-23.3-015",
+    "RK-23.3-017"
+  ],
   "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestWithoutASharedTransport::test_the_trace_crosses_no_hook, test_a_shared_agent_still_reads_the_task; core/mixins/_child_execution.py _collect_answer. The task is scoped to the room's agents, not hidden from them.",
   "setup": {
     "channels": [

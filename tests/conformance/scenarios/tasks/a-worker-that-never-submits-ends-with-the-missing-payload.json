@@ -5,6 +5,11 @@
   "rules": [
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-079",
+    "RK-23.3-080",
+    "RK-23.3-081"
+  ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_orchestration_fail_when_never_submits, TestResultHelpers::test_orchestration_fail_shape; orchestration/result.py orchestration_fail. The role is the channel's role, its description, else its id: an AI channel has neither.",
   "setup": {
     "channels": [

@@ -8,6 +8,7 @@
     "§5.1"
   ],
   "requirements": [
+    "RK-23.3-009",
     "RK-5.1-016"
   ],
   "notes": "Python: core/mixins/delegation.py _open_child_room, attach_channel(..., metadata=parent_binding.metadata) (RMK-1341). The child room's lifecycle records: the agent's attach, then the shared channel's.",

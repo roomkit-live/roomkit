@@ -7,7 +7,8 @@
     "§23.4"
   ],
   "requirements": [
-    "RK-10.6.2-022"
+    "RK-10.6.2-022",
+    "RK-23.4-060"
   ],
   "notes": "Python: turns/_wiring.py build_room_tasks_loader, core/_turn_host.py room_tasks. The status exists only on the owning kit. The executor’s recorded generation and its actual model input identify the build that read the task. This exercises the background-task reader; the vision last-frame reader is outside this text scenario.",
   "setup": {

@@ -6,6 +6,11 @@
     "§23.4",
     "§19.8"
   ],
+  "requirements": [
+    "RK-23.4-052",
+    "RK-23.4-053",
+    "RK-23.4-057"
+  ],
   "notes": "Python: tests/tasks/test_cancel_task.py::test_a_forged_status_line_reaches_no_other_rooms_task, test_a_line_for_a_task_the_room_does_not_hold_is_no_task_here; tasks/status.py CancelTaskTool._answer_running, _out_of_reach; tasks/_room_tasks.py RoomTaskRecord.reach. What the room holds is the kit's record, never what the bus lists: any code holding the kit may post a line. The agent's turn answers before the kit cancels the other room's task, its second round held until then.",
   "setup": {
     "channels": [

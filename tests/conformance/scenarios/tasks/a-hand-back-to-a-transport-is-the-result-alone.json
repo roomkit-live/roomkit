@@ -9,7 +9,12 @@
   "requirements": [
     "RK-22.1-023",
     "RK-22.1-028",
-    "RK-22.1-029"
+    "RK-22.1-029",
+    "RK-23.3-040",
+    "RK-23.3-047",
+    "RK-23.3-048",
+    "RK-23.3-051",
+    "RK-23.3-054"
   ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_the_turn_a_result_opens_gives_that_result_only (its transport half; tasks/a-background-delegation-relays-its-result-to-the-notified-agent pins the agent's, closed by RESULT_TURN_NOTE); tasks/handback.py _target, _addressed_text (a transport is handed the text as it is).",
   "setup": {

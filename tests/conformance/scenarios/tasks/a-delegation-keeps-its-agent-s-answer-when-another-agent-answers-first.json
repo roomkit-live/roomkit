@@ -5,6 +5,10 @@
   "rules": [
     "§23.3 step 6"
   ],
+  "requirements": [
+    "RK-23.3-025",
+    "RK-23.3-029"
+  ],
   "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_delegation_keeps_its_agent_s_answer_when_another_returns_first[transport-generates], [trace-generates]; core/mixins/_child_execution.py _collect_answer (the answer is the delegated agent's, whatever the order its responders returned in, RMK-834). worker's turn is held at a gate until the step opens it; helper answers the task at once. Both answer buffered: a streaming agent's turn returns its stream before its model writes, so a gate on its model holds no turn's return (Python's streams parameter is not varied).",
   "setup": {
     "channels": [

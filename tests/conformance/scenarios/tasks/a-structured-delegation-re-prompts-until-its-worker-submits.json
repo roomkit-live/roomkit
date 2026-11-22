@@ -5,6 +5,15 @@
   "rules": [
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-026",
+    "RK-23.3-071",
+    "RK-23.3-072",
+    "RK-23.3-073",
+    "RK-23.3-074",
+    "RK-23.3-078",
+    "RK-23.3-079"
+  ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_reprompts_until_worker_submits, test_returns_structured_payload_when_worker_submits, TestTheWorkersResultCall::test_a_served_call_is_the_result_and_ends_the_turn; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result; orchestration/result.py SUBMIT_RESULT, normalize_result. The tool answers the call {\"status\": \"received\"}; the payload is read from the worker's served call in the child room's trace. A turn that ends without the call is answered with the result tool's reminder, a message of the child room the worker reads as the user's (orchestration/result.py SUBMIT_RESULT.reminder).",
   "setup": {
     "channels": [

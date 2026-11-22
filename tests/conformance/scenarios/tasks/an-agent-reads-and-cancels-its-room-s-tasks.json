@@ -6,6 +6,17 @@
     "§23.4",
     "§10.6.5"
   ],
+  "requirements": [
+    "RK-23.4-036",
+    "RK-23.4-037",
+    "RK-23.4-038",
+    "RK-23.4-039",
+    "RK-23.4-040",
+    "RK-23.4-051",
+    "RK-23.4-052",
+    "RK-23.4-053",
+    "RK-23.4-057"
+  ],
   "notes": "Python: tests/tasks/test_cancel_task.py::test_the_owner_serves_the_task_tools_set_up_on_an_agent, test_another_rooms_task_is_out_of_reach, test_setup_task_tools_sets_up_both_tools_or_neither; tests/test_task_status.py; core/mixins/background.py setup_task_tools; tasks/status.py TaskStatusTool, CancelTaskTool. A line's instants are each implementation's; the scenario reads the members around them.",
   "setup": {
     "channels": [

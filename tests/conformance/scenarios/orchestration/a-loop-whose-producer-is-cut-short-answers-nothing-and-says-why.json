@@ -7,6 +7,9 @@
     "§23.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-038"
+  ],
   "notes": "Python: test_loop_producer_cut.py test_a_producer_cut_before_any_output_gives_no_answer_and_its_reason; test_loop_strategy.py TestExecuteLoop::test_producer_empty_output_breaks. The producer calls a tool in every round, past its bound of one round: its task fails cut short, and no reviewer is asked.",
   "setup": {
     "channels": [

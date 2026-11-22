@@ -7,6 +7,16 @@
     "§23.3 step 4",
     "§7.5"
   ],
+  "requirements": [
+    "RK-23.3-013",
+    "RK-23.3-014",
+    "RK-23.4-003",
+    "RK-23.4-010",
+    "RK-23.4-014",
+    "RK-23.4-021",
+    "RK-23.4-028",
+    "RK-23.4-029"
+  ],
   "notes": "Python: tests/tasks/test_delegate.py; tasks/delegate.py DelegateHandler, setup_delegation. An integer is JSON Schema's: 1.0 is one, 1.5 and \"1\" are not, nor is a boolean.",
   "setup": {
     "channels": [

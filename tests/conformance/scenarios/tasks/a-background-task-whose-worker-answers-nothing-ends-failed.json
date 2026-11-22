@@ -6,6 +6,9 @@
     "§23.3 step 6",
     "§23.3 step 7"
   ],
+  "requirements": [
+    "RK-23.2-004"
+  ],
   "notes": "Python: tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_agent_returns_nothing_fails; tasks/memory.py _run; tasks/models.py finished_task_fields (no response: failed). The worker's turn answers nothing, raising nothing.",
   "setup": {
     "channels": [

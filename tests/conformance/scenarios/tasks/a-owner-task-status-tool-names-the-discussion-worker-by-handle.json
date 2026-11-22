@@ -6,6 +6,10 @@
     "§23.4",
     "§19.7.5 rule 4"
   ],
+  "requirements": [
+    "RK-23.4-036",
+    "RK-23.4-037"
+  ],
   "notes": "Python: tests/test_task_status.py::test_task_status_names_a_discussions_agent_by_its_handle; tasks/status.py::_named_by_handle. The same task is read through the tool and directly on the bus. The owner serves the tool installed by setup_task_tools.",
   "setup": {
     "channels": [

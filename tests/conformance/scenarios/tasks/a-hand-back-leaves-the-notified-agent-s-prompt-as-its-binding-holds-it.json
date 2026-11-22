@@ -6,6 +6,14 @@
     "§23.3 step 8",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-041",
+    "RK-23.3-043",
+    "RK-23.3-052",
+    "RK-23.3-057",
+    "RK-23.3-058",
+    "RK-23.3-062"
+  ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_delegations_leave_the_notified_agent_s_prompt_as_configured; tasks/handback.py hand_back (the result an instruction through deliver(), never the binding's metadata); channels/_ai_context.py (a binding's metadata system_prompt is the turn's prompt over the channel's own). Each effective prompt starts with the binding persona. Both turns read their complete result as an application instruction, and the parent stores each as the notified agent's private instruction_read, never a participant message. Turn notes may follow the instruction.",
   "setup": {
     "channels": [

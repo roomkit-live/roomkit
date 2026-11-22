@@ -7,6 +7,19 @@
     "§23.4",
     "§21.4"
   ],
+  "requirements": [
+    "RK-23.3-106",
+    "RK-23.3-107",
+    "RK-23.3-109",
+    "RK-23.3-111",
+    "RK-23.3-112",
+    "RK-23.3-113",
+    "RK-23.3-114",
+    "RK-23.3-115",
+    "RK-23.4-060",
+    "RK-23.4-061",
+    "RK-23.4-064"
+  ],
   "notes": "Python: tests/tasks/test_task_progress_note.py::test_a_workers_progress_reaches_the_agents_next_turn, test_progress_outside_a_tasks_room_posts_nothing; tasks/status.py post_task_progress. The worker's call posts, then holds at its gate while the agent's turn reads the room's tasks. The agent's own call, in the room itself, posts nothing. The durations depend on the run's clock: the text is matched around them.",
   "setup": {
     "channels": [

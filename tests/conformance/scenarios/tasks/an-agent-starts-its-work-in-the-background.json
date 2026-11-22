@@ -7,6 +7,13 @@
     "§10.6.5",
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.4-042",
+    "RK-23.4-043",
+    "RK-23.4-045",
+    "RK-23.4-046",
+    "RK-23.4-047"
+  ],
   "notes": "Python: tests/tasks/test_background_tasks.py::test_setup_declares_the_tool_on_the_agent, test_setup_refuses_an_unknown_hand_back, test_the_tool_starts_the_task_and_answers_at_once, test_the_task_runs_on_the_worker_the_host_named; core/mixins/background.py setup_background; tasks/background.py background_tool_server, BACKGROUND_TOOL_DEF. The tool's answer is Python's json.dumps of its members, in their order.",
   "setup": {
     "channels": [

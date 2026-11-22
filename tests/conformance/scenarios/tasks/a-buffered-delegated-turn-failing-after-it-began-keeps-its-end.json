@@ -6,6 +6,14 @@
     "§23.3 step 6",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.2-004",
+    "RK-23.2-005",
+    "RK-23.2-008",
+    "RK-23.3-030",
+    "RK-23.3-039",
+    "RK-23.5-003"
+  ],
   "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_buffered_worker_turn_failed_after_it_began_keeps_its_end; core/mixins/_child_execution.py _buffered_outcome (_turn_end reads the end off the last message's loop_end_reason when the output's record names none), _turn_failure. worker answers on the trace, writer with email shared. Python's test hands the end in the output's response_metadata; a scripted channel writes it on its message.",
   "setup": {
     "channels": [

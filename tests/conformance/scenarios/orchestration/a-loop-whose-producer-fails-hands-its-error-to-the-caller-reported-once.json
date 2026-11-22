@@ -8,6 +8,9 @@
     "§15.2"
   ],
   "requirements": [
+    "RK-23.3-034",
+    "RK-23.3-036",
+    "RK-23.3-038",
     "RK-9.2-034"
   ],
   "notes": "Python: test_loop_producer_cut.py test_a_producer_whose_provider_fails_gives_its_error_to_the_caller (the failure logged once); loop.py _producer_failure hands on the task's exception, marked reported (core/_failure_log.mark_reported).",

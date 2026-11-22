@@ -7,7 +7,11 @@
     "§22.1"
   ],
   "requirements": [
-    "RK-22.1-031"
+    "RK-22.1-031",
+    "RK-23.3-039",
+    "RK-23.3-040",
+    "RK-23.3-059",
+    "RK-23.5-003"
   ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_room_without_transport_leaves_the_result_to_the_hook; tasks/handback.py hand_back (deliver() answers unavailable, no_transport; _log_not_delivered logs it, which the scenario cannot see).",
   "setup": {

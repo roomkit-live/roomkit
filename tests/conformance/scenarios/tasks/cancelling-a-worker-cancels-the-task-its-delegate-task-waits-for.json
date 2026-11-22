@@ -6,6 +6,12 @@
     "§23.4",
     "§23.3"
   ],
+  "requirements": [
+    "RK-23.3-005",
+    "RK-23.3-083",
+    "RK-23.4-026",
+    "RK-23.4-067"
+  ],
   "notes": "RMK-1621, HITL 2b8ac53e and d4ede844. Python: tests/tasks/test_delegate.py::TestWaitInTaskRooms::test_cancelling_the_worker_s_task_cancels_the_task_it_waits_for; tasks/delegate.py DelegateHandler. The digger is held at its gate while the researcher's call waits for it, so the cancel lands on the researcher's turn. Without the option, the digger's task runs on and completes once the gate opens.",
   "setup": {
     "channels": [

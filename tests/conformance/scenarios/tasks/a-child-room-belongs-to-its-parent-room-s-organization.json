@@ -6,6 +6,9 @@
     "§23.3 step 1",
     "§17.2"
   ],
+  "requirements": [
+    "RK-23.3-005"
+  ],
   "notes": "Python: tests/tasks/test_delegation_organization.py::test_a_read_scoped_to_the_parents_organization_finds_the_child_room, test_a_delegation_from_a_child_room_stays_in_the_organization, test_an_unscoped_parent_has_an_unscoped_child_room; core/mixins/delegation.py _create_child_room (organization_id=parent.organization_id). The scoped read is list_tasks, which reads the room for the caller's organization as get_room does; store.find_rooms(organization_id) is not a call of the suite.",
   "setup": {
     "channels": [

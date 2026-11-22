@@ -5,6 +5,13 @@
   "rules": [
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.3-048",
+    "RK-23.3-049",
+    "RK-23.4-010",
+    "RK-23.4-013",
+    "RK-23.4-024"
+  ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_delegate_task_hands_back_as_much_as_its_handler_allows; tasks/delegate.py DelegateHandler. Its bound is above the default, so a handler that silently clamps it to 4000 cannot pass. The real model calls delegate_task through setup_delegation with this configured handler, then reads the bounded result in a separate turn after its initial acknowledgement.",
   "setup": {
     "channels": [

@@ -6,6 +6,13 @@
     "§23.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-23.3-026",
+    "RK-23.3-072",
+    "RK-23.3-073",
+    "RK-23.3-075",
+    "RK-23.3-078"
+  ],
   "notes": "Python: tests/tasks/test_structured_result.py::TestTheWorkersResultCall::test_a_message_its_round_gives_the_model_is_read[after_tool_round]; channels/_ai_streaming.py (turn.submitted, _after_tool_round). The worker's second request carries the submit call's result, {\"status\": \"received\"}, and the hook's message after it; nothing is asked after that answer.",
   "setup": {
     "channels": [

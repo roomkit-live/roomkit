@@ -5,6 +5,12 @@
   "rules": [
     "§23.3 step 8"
   ],
+  "requirements": [
+    "RK-23.3-004",
+    "RK-23.3-048",
+    "RK-23.3-049",
+    "RK-23.3-052"
+  ],
   "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_the_delegation_sets_how_much_of_the_result_is_handed_back, test_a_result_within_the_limit_is_handed_back_whole; tasks/handback.py bounded.",
   "setup": {
     "channels": [

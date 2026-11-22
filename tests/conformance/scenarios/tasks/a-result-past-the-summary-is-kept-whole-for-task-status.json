@@ -7,6 +7,11 @@
     "§23.4",
     "§23.3 step 7"
   ],
+  "requirements": [
+    "RK-23.3-106",
+    "RK-23.3-107",
+    "RK-23.4-038"
+  ],
   "notes": "Python: tests/test_task_status.py::test_task_status_gives_the_whole_result_the_summary_cut (RMK-556: a summary cut inside « 14,9 » read back as 1 °C); orchestration/status_bus.py post_agent_lifecycle (DETAIL_LIMIT 200, metadata result bounded at RESULT_LIMIT); tasks/status.py room_tasks (a completed line's result from metadata result).",
   "setup": {
     "channels": [

@@ -7,6 +7,14 @@
     "§6.4",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-23.2-004",
+    "RK-23.2-005",
+    "RK-23.2-008",
+    "RK-23.3-030",
+    "RK-23.3-039",
+    "RK-23.5-003"
+  ],
   "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_worker_turn_failed_after_a_round_keeps_its_end; core/mixins/_child_execution.py _turn_failure (TaskTurnFailedError: the end and the narration the child room's record holds), tasks/models.py finished_task_fields. worker runs inline on the trace, writer inline with email shared, seeker in the background on the trace, finder in the background with email shared. Python's test fails with a ProviderError whose text leads with its provider and status (mock (400): upstream 400, providers/ai/base.py ProviderError.__str__); a scripted model names no provider, so the error is its message. The provider refuses the second generation (an error it does not retry, a ProviderError as in Python's test), after the tool round: the turn's end is error (channels/_ai_streaming.py _stream_generation).",
   "setup": {
     "channels": [

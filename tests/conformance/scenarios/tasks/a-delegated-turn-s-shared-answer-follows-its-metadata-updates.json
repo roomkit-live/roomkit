@@ -8,7 +8,9 @@
     "§13.5"
   ],
   "requirements": [
-    "RK-10.1-089"
+    "RK-10.1-089",
+    "RK-23.3-023",
+    "RK-23.3-024"
   ],
   "notes": "Python: core/mixins/_child_execution.py _broadcast_and_collect stores the broadcast's side effects (_persist_side_effects: tasks, observations, then _write_metadata_updates under the room's lock) before _answer_of_broadcast commits the answer, by the room's path when a transport is shared (_deliver_answer). A call into the child room holds the lock while the worker answers: the metadata write waits for it, and the answer's pass, whose before_broadcast hook reads the room, comes after the write. RMK-1521.",
   "setup": {

@@ -9,7 +9,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-10.6.5-017"
+    "RK-10.6.5-017",
+    "RK-23.3-082"
   ],
   "notes": "Python: channels/declared.py owner_tools_of refuses a channel whose declaration says takes_owner_tools false (ValueError), the ACP channel's (channels/base.py); core/mixins/_child_execution.py _takes_owner_tools, which runs such a worker for its text, with no submit_result and no re-prompt. A scripted ACP agent prompted past its last answer would end its turn with no text, so the one answer is the only prompt it can read.",
   "setup": {

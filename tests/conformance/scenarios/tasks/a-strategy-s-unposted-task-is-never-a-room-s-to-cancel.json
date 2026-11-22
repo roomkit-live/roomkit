@@ -6,6 +6,11 @@
     "§23.4",
     "§19.8"
   ],
+  "requirements": [
+    "RK-23.4-052",
+    "RK-23.4-053",
+    "RK-23.4-057"
+  ],
   "notes": "Python: tests/tasks/test_cancel_task.py::test_a_strategy_s_unposted_worker_is_never_a_room_s_to_cancel; tasks/_room_tasks.py TaskReach (strategy), why_not_cancelled; orchestration/_worker_run.py follow_worker, whose pending line the status.post step writes. The agent's turn answers before the kit cancels the task, its second round held until then.",
   "setup": {
     "channels": [

@@ -8,6 +8,19 @@
     "§23.3 step 8",
     "§17.2"
   ],
+  "requirements": [
+    "RK-23.3-005",
+    "RK-23.3-012",
+    "RK-23.3-013",
+    "RK-23.3-062",
+    "RK-23.3-063",
+    "RK-23.3-066",
+    "RK-23.4-043",
+    "RK-23.4-044",
+    "RK-23.4-045",
+    "RK-23.4-046",
+    "RK-23.4-049"
+  ],
   "notes": "Python: tests/tasks/test_background_tasks.py::test_start_task_without_a_setup_runs_on_the_agent_and_relays, test_start_task_overrides_the_setup_s_hand_back, test_start_task_refuses_a_channel_that_is_no_agent_of_the_room; tests/test_room_org_scoping.py::TestScopedHostDoors (start_task); core/mixins/background.py start_task; tasks/background.py start_background_task, worker_brief (the task under `Your task, as it was asked:` in `<task>`, HITL 3737a1a2), BACKGROUND_CONVERSATION (12).",
   "setup": {
     "channels": [
