@@ -6,6 +6,15 @@
     "§19.2",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-003",
+    "RK-19.6-009",
+    "RK-19.6-010",
+    "RK-19.6-013",
+    "RK-19.6-020",
+    "RK-19.6-023",
+    "RK-19.6-027"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_handoff_to_human, test_alias_resolution, test_phase_map, test_explicit_next_phase_overrides_phase_map, test_handoff_increments_count. orchestration/handoff.py HandoffHandler.handle; state.py transition.",
   "setup": {
     "channels": [

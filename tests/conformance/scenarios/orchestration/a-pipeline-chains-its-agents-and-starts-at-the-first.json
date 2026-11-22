@@ -6,6 +6,13 @@
     "§19.7.1",
     "§19.5"
   ],
+  "requirements": [
+    "RK-19.2-003",
+    "RK-19.4-022",
+    "RK-19.6-012",
+    "RK-19.6-020",
+    "RK-19.6-027"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineBuildStages::test_linear_chain, TestPipelineInstall::test_sets_initial_state, test_wires_handoff_tools; tests/test_declared_strategies.py test_a_handoff_strategy_gives_a_declared_agent_its_handoff[Pipeline]. orchestration/strategies/pipeline.py install, _build_stages.",
   "setup": {
     "channels": [

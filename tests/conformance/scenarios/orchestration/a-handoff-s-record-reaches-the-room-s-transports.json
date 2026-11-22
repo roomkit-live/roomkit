@@ -5,6 +5,11 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-027",
+    "RK-19.6-028",
+    "RK-19.6-029"
+  ],
   "notes": "Python: core/event_router.py (internal asks no agent, delivers to transports); orchestration/handoff.py handle's send_event.",
   "setup": {
     "channels": [

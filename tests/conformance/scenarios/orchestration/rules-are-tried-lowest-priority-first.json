@@ -6,6 +6,17 @@
     "§19.4 step 2",
     "§19.4 step 3"
   ],
+  "requirements": [
+    "RK-19.3-013",
+    "RK-19.4-006",
+    "RK-19.4-007",
+    "RK-19.4-008",
+    "RK-19.4-010",
+    "RK-19.4-011",
+    "RK-19.4-016",
+    "RK-19.4-017",
+    "RK-19.4-024"
+  ],
   "notes": "billing (priority 0) wins over low (priority 10) on a billing intent, and over web (priority 5) on a payment from a websocket; a websocket message of another intent goes to web; an SMS of another intent matches no rule.",
   "setup": {
     "channels": [

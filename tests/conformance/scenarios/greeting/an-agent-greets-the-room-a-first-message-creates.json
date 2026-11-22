@@ -7,7 +7,11 @@
     "§19.1"
   ],
   "requirements": [
-    "RK-10.1-025"
+    "RK-10.1-025",
+    "RK-19.1-005",
+    "RK-19.1-006",
+    "RK-19.1-021",
+    "RK-19.1-035"
   ],
   "notes": "The first message on sms finds no room: the room is created, an ON_ROOM_CREATED hook attaches the agent, and the text session starts. The agent's greeting is stored as its event, marked auto_greeting, and delivered to sms before the message is processed; the agent then answers the message.",
   "setup": {

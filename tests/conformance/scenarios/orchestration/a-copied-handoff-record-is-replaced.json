@@ -6,6 +6,9 @@
     "§6.4",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-027"
+  ],
   "notes": "Python: tests/test_runtime_mark_copies.py test_a_copied_handoff_relay_is_replaced_and_the_runtime_s_is_kept (the copy), test_a_sender_cannot_stamp_its_text_as_the_runtime_s. orchestration/handoff.py _handoff_line; channels/_mark_copies.py _SHORT_MARKS.",
   "setup": {
     "channels": [

@@ -6,6 +6,18 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.5-012",
+    "RK-19.5-017",
+    "RK-19.5-019",
+    "RK-19.5-037",
+    "RK-19.5-038",
+    "RK-19.6-003",
+    "RK-19.6-014",
+    "RK-19.6-015",
+    "RK-19.6-023",
+    "RK-19.6-025"
+  ],
   "notes": "Python: orchestration/pipeline.py get_phase_map, get_allowed_transitions, _wire_handoff (stage_by_agent).",
   "setup": {
     "channels": [

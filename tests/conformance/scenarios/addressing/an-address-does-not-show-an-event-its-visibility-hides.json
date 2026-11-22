@@ -11,6 +11,13 @@
     "RK-10.2-018",
     "RK-10.2-019",
     "RK-10.2-020",
+    "RK-19.3-001",
+    "RK-19.3-004",
+    "RK-19.3-005",
+    "RK-19.3-006",
+    "RK-19.3-007",
+    "RK-19.3-010",
+    "RK-19.3.2-003",
     "RK-8.5-007"
   ],
   "notes": "The first message is addressed to `a1` and visible to transports only: `a1` is not asked, `witness` is delivered it. The second is addressed to `a1` and visible to `a2` only: neither agent is asked (`a1` does not see it, `a2` is not addressed) and `witness` is not delivered it. The third, visible to all, asks `a1`, whose answer asks `a2` under AGENT_CHAIN (§19.3.1). Python: tests/test_addressing.py::test_visibility_and_addressing_compose.",

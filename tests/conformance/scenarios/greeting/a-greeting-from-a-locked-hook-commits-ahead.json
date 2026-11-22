@@ -6,6 +6,12 @@
     "§13.5",
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-021",
+    "RK-19.1-022",
+    "RK-19.1-026",
+    "RK-19.1-031"
+  ],
   "notes": "The message's hook greets: the greeting takes the room's next index and the message the one after, each delivered in that order.",
   "setup": {
     "channels": [

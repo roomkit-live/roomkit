@@ -7,6 +7,10 @@
     "§19.4 step 3",
     "§19.2"
   ],
+  "requirements": [
+    "RK-19.4-015",
+    "RK-19.4-022"
+  ],
   "setup": {
     "channels": [
       {

@@ -6,6 +6,16 @@
     "§19.5",
     "§19.4"
   ],
+  "requirements": [
+    "RK-19.4-005",
+    "RK-19.4-017",
+    "RK-19.4-018",
+    "RK-19.4-022",
+    "RK-19.5-005",
+    "RK-19.5-006",
+    "RK-19.5-010",
+    "RK-19.5-016"
+  ],
   "notes": "Python: tests/orchestration/test_pipeline.py TestToRouter::test_custom_default_phase, test_supervisor_propagated, TestPipelineInstall::test_install_custom_hook_priority.",
   "setup": {
     "channels": [

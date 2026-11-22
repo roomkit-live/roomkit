@@ -6,6 +6,9 @@
     "§19.1",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-051"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestSendGreeting::test_send_greeting_no_greeting_configured, test_send_greeting_no_active_agent. orchestration/handoff.py HandoffHandler.send_greeting, its three early returns. In no-agent the room binds an agent with a line, the router's default, which no fallback may take; in empty-line and no-line the agent has words of its own, which the map's silence holds back.",
   "setup": {
     "channels": [

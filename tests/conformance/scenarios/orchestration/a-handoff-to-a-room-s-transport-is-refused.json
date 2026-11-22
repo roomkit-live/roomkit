@@ -5,6 +5,12 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-003",
+    "RK-19.6-013",
+    "RK-19.6-023",
+    "RK-19.6-025"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler.handle (the target's binding, category intelligence). Decided on RMK-1233: an active agent that is a transport leaves the room with no agent to answer.",
   "setup": {
     "channels": [

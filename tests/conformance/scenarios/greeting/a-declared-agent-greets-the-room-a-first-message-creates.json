@@ -7,7 +7,10 @@
     "§19.1"
   ],
   "requirements": [
-    "RK-10.6.2-011"
+    "RK-10.6.2-011",
+    "RK-19.1-006",
+    "RK-19.1-021",
+    "RK-19.1-035"
   ],
   "notes": "Python: tests/test_channel_declaration.py test_a_declared_agent_greets_as_the_live_one_does. greeting/an-agent-greets-the-room-a-first-message-creates is the same agent registered live, with the same outcome: the owner reads the greeting from the declaration, and the executor builds the agent only for its turn.",
   "setup": {

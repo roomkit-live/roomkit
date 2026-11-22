@@ -6,6 +6,13 @@
     "§19.4",
     "§19.3"
   ],
+  "requirements": [
+    "RK-19.1-016",
+    "RK-19.3-013",
+    "RK-19.4-006",
+    "RK-19.4-017",
+    "RK-19.4-022"
+  ],
   "notes": "Without the router, AGENT_CHAIN (§19.3.1) would ask a and b, then each about the other's answer. The router stamps _routed_to on the message and _none_ on an agent's answer: no agent answers an agent.",
   "setup": {
     "channels": [

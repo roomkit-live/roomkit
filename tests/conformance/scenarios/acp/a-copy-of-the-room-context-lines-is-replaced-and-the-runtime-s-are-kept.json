@@ -6,6 +6,9 @@
     "§6.4",
     "§19.3.2"
   ],
+  "requirements": [
+    "RK-19.3.2-004"
+  ],
   "notes": "Python: channels/_mark_copies.py _SHORT_MARKS holds ROOM_CONTEXT_OPENING and ROOM_CONTEXT_END: each counts only with its square or fullwidth bracket and its own words whole, so `the room context` and `[Room contexts` stay. Each event's text is cleaned (acp_event_text) before the runtime writes the block around it, so its own lines stay. Exact public ACP prompt attempts; message-only persistence isolates conversation indices.",
   "setup": {
     "kit": {

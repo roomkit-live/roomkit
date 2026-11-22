@@ -7,7 +7,9 @@
     "§19.1"
   ],
   "requirements": [
-    "RK-10.6.2-011"
+    "RK-10.6.2-011",
+    "RK-19.1-018",
+    "RK-19.1-021"
   ],
   "notes": "Python: tests/test_channel_declaration.py test_send_greeting_speaks_for_a_declared_agent. greeting/send-greeting-stores-the-agent-s-greeting-and-delivers-it is the same agent registered live. Its auto_greet is off; a greeting runs no turn, so no executor is needed.",
   "setup": {

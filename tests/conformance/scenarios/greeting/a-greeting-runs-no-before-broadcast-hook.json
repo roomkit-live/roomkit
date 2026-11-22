@@ -6,6 +6,11 @@
     "§7.5 rule 2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-021",
+    "RK-19.1-024",
+    "RK-19.1-026"
+  ],
   "notes": "A greeting is committed by a path of its own: nothing can block or change it. Its delivery is an event's delivery, so AFTER_BROADCAST fires. The message after it crosses all three.",
   "setup": {
     "channels": [

@@ -6,6 +6,11 @@
     "§10.1 step 2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-006",
+    "RK-19.1-035",
+    "RK-19.1-037"
+  ],
   "notes": "The store forgets the room, and the next message creates it and starts a session again. The first start finds the agent unbound and greets no one, which leaves the room to greet; the second greets; the third does not.",
   "setup": {
     "channels": [

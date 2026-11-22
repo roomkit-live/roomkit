@@ -5,6 +5,9 @@
   "rules": [
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.6-047"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_swarm.py TestSwarmAgents::test_custom_entry, test_agents_returns_all, TestSwarmInstall::test_double_install_skips_handoff, test_sets_initial_state. orchestration/strategies/swarm.py install.",
   "setup": {
     "channels": [

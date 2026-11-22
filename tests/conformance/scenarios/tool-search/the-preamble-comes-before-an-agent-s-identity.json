@@ -6,6 +6,10 @@
     "§6.4",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.1-007",
+    "RK-19.1-010"
+  ],
   "notes": "Python: src/roomkit/channels/_ai_context.py::_add_channel_features.",
   "setup": {
     "channels": [

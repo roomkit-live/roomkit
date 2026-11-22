@@ -6,6 +6,11 @@
     "§19.1",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.1-021",
+    "RK-19.6-049",
+    "RK-19.6-053"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler.send_greeting: channel_id or self._event_channel_id, then self._kit.channels.get(ch_id).",
   "setup": {
     "channels": [

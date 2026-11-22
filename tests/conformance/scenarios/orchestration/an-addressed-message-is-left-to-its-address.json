@@ -7,6 +7,15 @@
     "§19.4 step 1",
     "§19.2"
   ],
+  "requirements": [
+    "RK-19.1-016",
+    "RK-19.3-001",
+    "RK-19.3-004",
+    "RK-19.3-007",
+    "RK-19.3.2-003",
+    "RK-19.4-014",
+    "RK-19.4-022"
+  ],
   "notes": "The room's conversation state names a as its active agent: a keeps the conversation (sticky affinity), except for a message addressed to another agent, which the router does not stamp.",
   "setup": {
     "channels": [

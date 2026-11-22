@@ -6,6 +6,10 @@
     "§19.7",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.5-013",
+    "RK-19.5-014"
+  ],
   "notes": "Python: orchestration/handoff.py set_up_handoffs (all or none); tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up, for a Supervisor.",
   "setup": {
     "channels": [

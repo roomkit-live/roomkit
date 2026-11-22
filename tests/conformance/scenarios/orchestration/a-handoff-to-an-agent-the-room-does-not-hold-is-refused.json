@@ -6,6 +6,16 @@
     "§19.6"
   ],
   "requirements": [
+    "RK-19.2-004",
+    "RK-19.6-003",
+    "RK-19.6-013",
+    "RK-19.6-020",
+    "RK-19.6-021",
+    "RK-19.6-022",
+    "RK-19.6-023",
+    "RK-19.6-024",
+    "RK-19.6-025",
+    "RK-19.6-028",
     "RK-9.2-077"
   ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_handoff_to_unknown_agent_rejected, TestHandoffHookFiring::test_on_handoff_rejected_fired, TestKnownAgents::test_known_agent_bypasses_binding_check, test_unknown_agent_still_rejected. orchestration/handoff.py HandoffHandler.handle.",

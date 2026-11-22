@@ -7,6 +7,11 @@
     "§19.4 step 3",
     "§19.2"
   ],
+  "requirements": [
+    "RK-19.2-003",
+    "RK-19.4-007",
+    "RK-19.4-009"
+  ],
   "notes": "The transition names no agent, so the state holds none and the rules decide: no rule matches the intake phase, and the default agent is asked.",
   "setup": {
     "channels": [

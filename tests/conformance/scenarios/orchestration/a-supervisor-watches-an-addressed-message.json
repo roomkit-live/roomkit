@@ -6,6 +6,12 @@
     "§19.4 step 0",
     "§19.4 step 4"
   ],
+  "requirements": [
+    "RK-19.1-016",
+    "RK-19.4-014",
+    "RK-19.4-018",
+    "RK-19.4-022"
+  ],
   "notes": "On an addressed message the router writes no _routed_to: the address decides, and the supervisor is added on top of it.",
   "setup": {
     "channels": [

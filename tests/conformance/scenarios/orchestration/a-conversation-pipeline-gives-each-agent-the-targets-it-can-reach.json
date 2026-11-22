@@ -6,6 +6,11 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.5-007",
+    "RK-19.5-018",
+    "RK-19.5-019"
+  ],
   "notes": "Python: tests/orchestration/test_pipeline.py TestPipelineInstall::test_install_wires_handoff_on_all_agents, TestAgentAwareInstall::test_install_per_agent_tool_with_targets, test_install_uses_agent_description, test_install_uses_stage_description_fallback, test_install_terminal_agent_gets_empty_enum. orchestration/pipeline.py _wire_handoff.",
   "setup": {
     "channels": [

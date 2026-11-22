@@ -7,8 +7,7 @@
     "§19.3"
   ],
   "requirements": [
-    "RK-10.2-018",
-    "RK-19.3-003"
+    "RK-10.2-018"
   ],
   "notes": "Security finding RK-6.4-030 (audit RMK-1894, card RMK-1903): an earlier rule said a stored message carrying metadata[\"interruption_marker\"] = true solicited no intelligence channel, and no runtime key list stripped it, so a participant could mark their own message so that no agent answered it. Nothing writes that marker any more; the maintainer decided on 2026-11-21 to remove the rule. Only the event's address and the room's policy narrow the agents a message asks.",
   "setup": {

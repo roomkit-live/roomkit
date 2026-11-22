@@ -9,6 +9,7 @@
     "§19.1"
   ],
   "requirements": [
+    "RK-19.1-029",
     "RK-5.13-006"
   ],
   "notes": "A greeting's delivery set is no root pass's: its failed delivery is on no stored event.",

@@ -6,6 +6,11 @@
     "§10.1 step 2",
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-005",
+    "RK-19.1-035",
+    "RK-19.1-037"
+  ],
   "notes": "quiet has a greeting and auto_greet off, plain has no greeting, away has a greeting and is never attached. The room a first message creates attaches quiet and plain: no greeting is stored, and both answer the message.",
   "setup": {
     "channels": [

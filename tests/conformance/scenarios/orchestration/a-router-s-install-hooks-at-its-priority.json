@@ -6,6 +6,10 @@
     "§19.4",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.4-005",
+    "RK-19.4-022"
+  ],
   "notes": "Python: orchestration/router.py install (hook_priority=-100); strategies/swarm.py install (priority=-100); tests/orchestration/test_router.py TestRouterInstall::test_install_registers_hook_and_returns_handler.",
   "setup": {
     "channels": [

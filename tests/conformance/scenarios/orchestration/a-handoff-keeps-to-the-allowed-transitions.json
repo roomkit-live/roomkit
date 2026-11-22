@@ -5,6 +5,15 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.5-037",
+    "RK-19.5-038",
+    "RK-19.6-003",
+    "RK-19.6-014",
+    "RK-19.6-023",
+    "RK-19.6-025",
+    "RK-19.6-027"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_allowed_transition_accepted, test_disallowed_transition_rejected, test_no_transition_constraints_allows_anything. orchestration/handoff.py HandoffHandler.handle.",
   "setup": {
     "channels": [

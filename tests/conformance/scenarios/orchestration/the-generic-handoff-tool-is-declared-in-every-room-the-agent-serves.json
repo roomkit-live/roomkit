@@ -5,6 +5,13 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-009",
+    "RK-19.6-010",
+    "RK-19.6-031",
+    "RK-19.6-032",
+    "RK-19.6-033"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestHandoffModels::test_handoff_tool_definition, TestSetupHandoff::test_injects_handoff_tool, TestSetupHandoffCustomTool::test_default_tool_when_none. orchestration/handoff.py HANDOFF_TOOL, setup_handoff.",
   "setup": {
     "channels": [

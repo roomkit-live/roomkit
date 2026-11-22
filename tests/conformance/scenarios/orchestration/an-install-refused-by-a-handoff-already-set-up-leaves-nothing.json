@@ -7,6 +7,10 @@
     "§19.6"
   ],
   "requirements": [
+    "RK-19.5-013",
+    "RK-19.5-014",
+    "RK-19.5-015",
+    "RK-19.6-034",
     "RK-21.1-055"
   ],
   "notes": "Python: orchestration/pipeline.py install, router.py install, handoff.py setup_handoff.",

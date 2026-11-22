@@ -5,6 +5,13 @@
   "rules": [
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-005",
+    "RK-19.1-017",
+    "RK-19.1-018",
+    "RK-19.1-019",
+    "RK-19.1-021"
+  ],
   "notes": "plain is an intelligence channel with no identity and sms a transport: neither greets, the first bound agent with an identity does. The greeting is literal, whatever the agent's language. An agent with no greeting greets only with the text given. Every agent is write-only, so nothing answers.",
   "setup": {
     "channels": [

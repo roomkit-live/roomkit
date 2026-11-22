@@ -8,6 +8,22 @@
     "§19.7.1",
     "§19.7.2"
   ],
+  "requirements": [
+    "RK-19.2-002",
+    "RK-19.2-003",
+    "RK-19.2-005",
+    "RK-19.2-006",
+    "RK-19.4-020",
+    "RK-19.4-022",
+    "RK-19.6-020",
+    "RK-19.6-024",
+    "RK-19.6-025",
+    "RK-19.6-035",
+    "RK-19.6-036",
+    "RK-19.6-037",
+    "RK-19.6-038",
+    "RK-19.6-040"
+  ],
   "notes": "Python: orchestration/state.py ConversationState.human_hold, orchestration/router.py select_agent and as_hook, orchestration/handoff.py HandoffHandler.handle. Decided on RMK-1233, answering an automated security finding: a model announced a person, and an agent answered.",
   "setup": {
     "channels": [

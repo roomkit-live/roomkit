@@ -6,6 +6,10 @@
     "§19.2",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.2-002",
+    "RK-19.6-020"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestSetLanguage::test_set_language_stores_in_state, test_a_language_change_on_a_text_channel_takes_a_declared_agent. orchestration/handoff.py HandoffHandler.set_language.",
   "setup": {
     "channels": [

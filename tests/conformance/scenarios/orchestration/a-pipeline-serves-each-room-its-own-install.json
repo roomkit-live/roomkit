@@ -6,6 +6,9 @@
     "§19.7.1",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.6-047"
+  ],
   "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall::test_double_install_skips_handoff. orchestration/strategies/pipeline.py install, _wire_handoff. A second install's own tool, declared once, is roomkit-rs tests/pipeline.rs; declared_tools here is by name.",
   "setup": {
     "channels": [

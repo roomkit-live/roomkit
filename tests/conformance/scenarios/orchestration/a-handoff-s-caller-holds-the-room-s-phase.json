@@ -6,6 +6,16 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-003",
+    "RK-19.6-015",
+    "RK-19.6-016",
+    "RK-19.6-017",
+    "RK-19.6-018",
+    "RK-19.6-019",
+    "RK-19.6-023",
+    "RK-19.6-025"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler._caller_holds_room. Decided on RMK-1233.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§19.3",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-19.4-022",
+    "RK-19.4-023"
+  ],
   "notes": "Only a hook writes _routed_to and _always_process. A sender's _routed_to would otherwise pick the agent that answers it, and its _always_process add an agent to its address. A router that leaves the message alone leaves no stamp of the sender's; one off the lock (§9.5.1) keeps its own. An off-lock hook that leaves the message alone hands on no stamp of the sender's either: the stamps are dropped before the off-lock check too.",
   "setup": {
     "channels": [

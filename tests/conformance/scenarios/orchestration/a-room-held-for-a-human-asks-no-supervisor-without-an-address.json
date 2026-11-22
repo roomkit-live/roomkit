@@ -6,6 +6,17 @@
     "§19.6",
     "§19.4"
   ],
+  "requirements": [
+    "RK-19.4-018",
+    "RK-19.4-020",
+    "RK-19.4-021",
+    "RK-19.4-022",
+    "RK-19.6-021",
+    "RK-19.6-023",
+    "RK-19.6-036",
+    "RK-19.6-037",
+    "RK-19.6-041"
+  ],
   "notes": "Python: orchestration/router.py as_hook, the supervisor's stamp left out on an event with no address during a hold. Decided on RMK-1233: no agent acts there, and a supervisor's reply reached the person who was promised a human; beside an addressed agent, which still acts, it stays. The hold here comes from the handler's call, not from a turn: Python's reply in the turn that handed off is stamped from the room as that turn began, RMK-1319.",
   "setup": {
     "channels": [

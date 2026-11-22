@@ -6,6 +6,9 @@
     "§19.1",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-050"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler.send_greeting: room = await self._kit.get_room(room_id).",
   "setup": {
     "channels": [

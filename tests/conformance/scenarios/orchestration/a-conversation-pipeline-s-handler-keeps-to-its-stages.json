@@ -6,6 +6,16 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.5-011",
+    "RK-19.5-017",
+    "RK-19.5-037",
+    "RK-19.5-038",
+    "RK-19.6-003",
+    "RK-19.6-014",
+    "RK-19.6-023",
+    "RK-19.6-025"
+  ],
   "notes": "Python: tests/orchestration/test_pipeline.py TestPipelineInstall::test_install_returns_router_and_handler, test_install_passes_aliases, test_install_enforces_transitions. orchestration/pipeline.py install.",
   "setup": {
     "channels": [

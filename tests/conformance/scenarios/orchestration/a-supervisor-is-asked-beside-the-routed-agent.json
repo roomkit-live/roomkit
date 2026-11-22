@@ -5,6 +5,12 @@
   "rules": [
     "§19.4"
   ],
+  "requirements": [
+    "RK-19.3-013",
+    "RK-19.4-006",
+    "RK-19.4-018",
+    "RK-19.4-022"
+  ],
   "notes": "_always_process is a list on the stored event, the supervisor alone in it.",
   "setup": {
     "channels": [

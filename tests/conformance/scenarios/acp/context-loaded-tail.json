@@ -6,6 +6,11 @@
     "§6.4",
     "§19.3.2"
   ],
+  "requirements": [
+    "RK-19.3.2-004",
+    "RK-19.3.2-006",
+    "RK-19.3.2-007"
+  ],
   "notes": "Python: tests/test_channels/test_acp_catch_up_integration.py::test_a_tail_short_of_the_gap_is_reported_as_partial. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
   "setup": {
     "kit": {

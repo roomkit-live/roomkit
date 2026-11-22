@@ -5,6 +5,14 @@
   "rules": [
     "§19.5"
   ],
+  "requirements": [
+    "RK-19.5-005",
+    "RK-19.5-006",
+    "RK-19.5-007",
+    "RK-19.5-009",
+    "RK-19.5-011",
+    "RK-19.5-012"
+  ],
   "notes": "Python: tests/orchestration/test_pipeline.py TestPipelineValidation (all 5), TestGetPhaseMap::test_maps_agents_to_phases, TestGetAllowedTransitions::test_linear_pipeline, test_pipeline_with_loop, test_terminal_stage. orchestration/pipeline.py.",
   "setup": {},
   "steps": [

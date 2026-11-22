@@ -6,6 +6,17 @@
     "§19.5",
     "§19.4"
   ],
+  "requirements": [
+    "RK-19.4-005",
+    "RK-19.4-009",
+    "RK-19.4-017",
+    "RK-19.4-022",
+    "RK-19.5-005",
+    "RK-19.5-006",
+    "RK-19.5-008",
+    "RK-19.5-010",
+    "RK-19.5-016"
+  ],
   "notes": "Python: tests/orchestration/test_pipeline.py TestToRouter::test_generates_rules_per_stage, test_default_agent_is_first_stage, TestPipelineInstall::test_install_registers_hook. orchestration/pipeline.py to_router, install.",
   "setup": {
     "channels": [

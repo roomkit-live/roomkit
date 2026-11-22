@@ -7,6 +7,9 @@
     "§7.3"
   ],
   "requirements": [
+    "RK-19.3-005",
+    "RK-19.3-007",
+    "RK-19.3-015",
     "RK-7.3-024"
   ],
   "notes": "Python: test_discussion_edges.py test_a_name_a_binding_hides_the_message_from_queues_nobody.",

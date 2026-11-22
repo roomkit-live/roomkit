@@ -7,6 +7,7 @@
     "§23.4"
   ],
   "requirements": [
+    "RK-19.8-022",
     "RK-23.4-041"
   ],
   "notes": "Python: tests/test_task_status.py::test_the_supervisor_names_task_status_only_to_an_agent_that_has_it; orchestration/strategies/supervisor/_inject_strategy.py _follow_hint (the turn's allowed tool names). Without task_status: orchestration/a-supervisor-s-team-tool-in-the-background-answers-at-once-and-hands-the-results-back.",

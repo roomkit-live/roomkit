@@ -5,6 +5,11 @@
   "rules": [
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-003",
+    "RK-19.6-023",
+    "RK-19.6-027"
+  ],
   "notes": "Python: orchestration/handoff.py handle (`arguments.get('next_phase') or phase_map.get(target) or 'handling'`), _handoff_line (`request.reason.strip()`).",
   "setup": {
     "channels": [

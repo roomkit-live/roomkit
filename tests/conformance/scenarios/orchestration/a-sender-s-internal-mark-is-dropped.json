@@ -8,7 +8,8 @@
   ],
   "requirements": [
     "RK-10.1-134",
-    "RK-10.1-136"
+    "RK-10.1-136",
+    "RK-19.6-030"
   ],
   "notes": "Python: security finding on an-event-marked-orchestration-internal-asks-no-agent, decided as HITL 60b35629 for _routed_to and _always_process: reserved keys, dropped at the door. core/mixins/inbound.py _RUNTIME_KEYS, _without_runtime_keys; core/event_router.py (internal). A channel's parse goes through the same door. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {

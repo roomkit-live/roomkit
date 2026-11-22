@@ -6,6 +6,10 @@
     "§19.8",
     "§6.4"
   ],
+  "requirements": [
+    "RK-19.8-007",
+    "RK-19.8-011"
+  ],
   "notes": "Python: tests/test_external_text.py::test_the_status_bus_lines_quote_what_an_agent_wrote; orchestration/status_bus.py recent_text; _text.py identifier, quoted. An entry's instant is each implementation's: the scenario reads the line after it.",
   "setup": {
     "channels": [

@@ -6,6 +6,11 @@
     "§19.1",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.1-021",
+    "RK-19.6-049",
+    "RK-19.6-053"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestSendGreeting::test_send_greeting_traditional_voice, test_send_greeting_traditional_voice_keeps_the_line_as_written, TestSendGreetingOnARealKit::test_the_greeting_is_the_agents_line_in_the_room. orchestration/handoff.py HandoffHandler.send_greeting. The agent's own greeting is not what it says: triage's differs from the map's.",
   "setup": {
     "channels": [

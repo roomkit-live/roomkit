@@ -5,6 +5,12 @@
   "rules": [
     "§19.4"
   ],
+  "requirements": [
+    "RK-19.4-007",
+    "RK-19.4-011",
+    "RK-19.4-022",
+    "RK-19.4-024"
+  ],
   "notes": "Python: tests/orchestration/test_router.py TestSelectAgent intent cases; orchestration/router.py _matches (event.metadata intent). Pinned as it stands while the security finding on the router's keys is with the maintainer: unlike _routed_to, _always_process and _orchestration_internal, no framework code writes this key.",
   "setup": {
     "channels": [

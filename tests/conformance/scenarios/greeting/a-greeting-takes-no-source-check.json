@@ -7,6 +7,10 @@
     "§19.1"
   ],
   "requirements": [
+    "RK-19.1-021",
+    "RK-19.1-024",
+    "RK-19.1-026",
+    "RK-19.1-027",
     "RK-7.5-010"
   ],
   "notes": "§7.5 rule 2 leaves a greeting to a path of its own: nothing blocks it. Its delivery set is a source's that cannot write: empty. It runs all the same, so AFTER_BROADCAST fires.",

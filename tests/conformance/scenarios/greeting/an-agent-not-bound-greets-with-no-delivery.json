@@ -5,6 +5,10 @@
   "rules": [
     "§19.1"
   ],
+  "requirements": [
+    "RK-19.1-021",
+    "RK-19.1-028"
+  ],
   "notes": "The room binds no such source, so there is nothing to broadcast from: the greeting is a record of the timeline, AFTER_BROADCAST sees none.",
   "setup": {
     "channels": [

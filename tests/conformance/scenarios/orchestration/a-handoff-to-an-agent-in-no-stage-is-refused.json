@@ -6,6 +6,16 @@
     "§19.5",
     "§19.6"
   ],
+  "requirements": [
+    "RK-19.6-003",
+    "RK-19.6-013",
+    "RK-19.6-014",
+    "RK-19.6-015",
+    "RK-19.6-016",
+    "RK-19.6-019",
+    "RK-19.6-023",
+    "RK-19.6-025"
+  ],
   "notes": "Python: orchestration/handoff.py HandoffHandler._holds_phase, refusing by default. Decided on RMK-1233, answering an automated security finding: next_phase opened the way out of the chain to any agent of the room.",
   "setup": {
     "channels": [

@@ -7,6 +7,13 @@
     "§19.2",
     "§6.4"
   ],
+  "requirements": [
+    "RK-19.1-003",
+    "RK-19.1-005",
+    "RK-19.1-007",
+    "RK-19.1-010",
+    "RK-19.1-013"
+  ],
   "notes": "Python's Agent writes its role, description and scope, then its language, under an identity header after everything else of the turn's prompt; the room's conversation state (metadata _conversation_state, context.language) gives the language over the agent's own.",
   "setup": {
     "channels": [

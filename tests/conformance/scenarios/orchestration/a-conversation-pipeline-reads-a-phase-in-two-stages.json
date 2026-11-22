@@ -5,6 +5,16 @@
   "rules": [
     "§19.5"
   ],
+  "requirements": [
+    "RK-19.4-009",
+    "RK-19.4-017",
+    "RK-19.4-022",
+    "RK-19.5-005",
+    "RK-19.5-008",
+    "RK-19.5-010",
+    "RK-19.5-018",
+    "RK-19.5-019"
+  ],
   "notes": "Python: orchestration/pipeline.py __init__ (_stage_map, whose last entry wins), to_router.",
   "setup": {
     "channels": [

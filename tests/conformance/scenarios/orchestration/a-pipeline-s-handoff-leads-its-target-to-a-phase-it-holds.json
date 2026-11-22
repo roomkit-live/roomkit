@@ -7,6 +7,12 @@
     "§19.6"
   ],
   "requirements": [
+    "RK-19.6-012",
+    "RK-19.6-015",
+    "RK-19.6-020",
+    "RK-19.6-023",
+    "RK-19.6-024",
+    "RK-19.6-025",
     "RK-9.2-077"
   ],
   "notes": "Python: orchestration/handoff.py HandoffHandler._holds_phase. Decided on RMK-1233: a model reads a sender's text and its next_phase is not checked against the tool's enum.",

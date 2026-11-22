@@ -5,6 +5,12 @@
   "rules": [
     "§19.2"
   ],
+  "requirements": [
+    "RK-19.2-002",
+    "RK-19.2-003",
+    "RK-19.2-005",
+    "RK-19.2-006"
+  ],
   "notes": "Each transition records where the state was and where it goes; an agent change counts a handoff. The second save reads the state the first one stored.",
   "setup": {
     "rooms": [

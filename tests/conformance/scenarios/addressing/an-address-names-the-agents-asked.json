@@ -10,6 +10,16 @@
   "requirements": [
     "RK-10.2-018",
     "RK-10.2-020",
+    "RK-19.3-001",
+    "RK-19.3-004",
+    "RK-19.3-005",
+    "RK-19.3-006",
+    "RK-19.3-007",
+    "RK-19.3-010",
+    "RK-19.3.1-002",
+    "RK-19.3.1-004",
+    "RK-19.3.1-006",
+    "RK-19.3.2-003",
     "RK-8.5-007"
   ],
   "notes": "The message asks a1 alone. Under AGENT_CHAIN, the default (§19.3.1), a1's unaddressed answer asks a2, whose answer asks a1 again; a1 has said what it had to, and answers nothing.",

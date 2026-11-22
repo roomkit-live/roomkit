@@ -5,6 +5,9 @@
   "rules": [
     "§19.7.5 rule 18"
   ],
+  "requirements": [
+    "RK-19.3-014"
+  ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_policy_picks_who_takes_an_unaddressed_message.",
   "setup": {
     "channels": [

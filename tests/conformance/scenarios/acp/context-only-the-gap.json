@@ -6,6 +6,9 @@
     "§6.4",
     "§19.3.2"
   ],
+  "requirements": [
+    "RK-19.3.2-004"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestRoomCatchUp::test_second_turn_carries_only_the_gap. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
   "setup": {
     "kit": {

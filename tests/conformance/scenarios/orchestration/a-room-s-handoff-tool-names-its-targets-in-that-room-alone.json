@@ -6,6 +6,13 @@
     "§19.6",
     "§19.7"
   ],
+  "requirements": [
+    "RK-19.6-009",
+    "RK-19.6-010",
+    "RK-19.6-031",
+    "RK-19.6-032",
+    "RK-19.6-033"
+  ],
   "notes": "Python: tests/orchestration/test_handoff.py TestSetupHandoff::test_a_room_s_handoff_is_declared_in_that_room_only, test_non_handoff_tool_delegates, TestSetupHandoffCustomTool::test_custom_tool_injected. orchestration/handoff.py setup_handoff, build_handoff_tool.",
   "setup": {
     "channels": [
