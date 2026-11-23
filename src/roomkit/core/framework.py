@@ -1040,8 +1040,14 @@ class RoomKit(
 
     def _log_abandoned(self) -> None:
         """Name in one line of the log, once the close's last unwind ran out,
-        each task its waits left still running, ignoring its cut."""
-        left = sorted(task.get_name() for task in self._abandoned if not task.done())
+        each task its waits left still running, ignoring its cut, by the work
+        it runs: a call into a room by the call, in the caller's own task,
+        the kit's own work by its task's name (RFC §12.10.4)."""
+        left = sorted(
+            self._door_runs.work_of(task) or task.get_name()
+            for task in self._abandoned
+            if not task.done()
+        )
         if left:
             logger.warning(
                 "Closing with %d task(s) still running after their cut: %s",

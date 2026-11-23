@@ -1097,7 +1097,9 @@ class HelpersMixin:
             return
 
         with contextlib.suppress(RuntimeError):
-            task = asyncio.get_running_loop().create_task(self._fire_trace_hook(trace, room_id))
+            task = asyncio.get_running_loop().create_task(
+                self._fire_trace_hook(trace, room_id), name=f"roomkit-trace-hook-{room_id}"
+            )
             task.add_done_callback(self._pending_hook_tasks.discard)
             self._pending_hook_tasks.add(task)
 
@@ -1269,7 +1271,8 @@ class HelpersMixin:
                 channel_id=channel_id,
                 event_id=event_id,
                 data=data,
-            )
+            ),
+            name=f"roomkit-framework-event-{event_type}",
         )
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)

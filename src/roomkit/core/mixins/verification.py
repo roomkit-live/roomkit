@@ -575,7 +575,9 @@ class VerificationMixin(HelpersMixin):
         still pending when the kit closes is dropped with its other pending
         work; the process itself no longer releases anything then."""
         task = asyncio.get_running_loop().create_task(
-            self._write_held_cancellation(*held, reason), context=contextvars.Context()
+            self._write_held_cancellation(*held, reason),
+            name=f"roomkit-verification-cancellation-{held[0]}",
+            context=contextvars.Context(),
         )
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)

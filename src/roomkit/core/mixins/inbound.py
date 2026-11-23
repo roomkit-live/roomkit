@@ -1591,7 +1591,8 @@ class InboundMixin(HelpersMixin):
                     context,
                     skip_event_filter=True,
                     exclude_name_prefix="_",
-                )
+                ),
+                name=f"roomkit-session-started-hooks-{room_id}",
             )
             task.add_done_callback(self._pending_hook_tasks.discard)
             self._pending_hook_tasks.add(task)

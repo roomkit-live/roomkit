@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
@@ -1231,19 +1232,21 @@ async def _stubborn_kit(case: str, work: _Stubborn) -> tuple[RoomKit, Any]:
     return kit, asyncio.ensure_future(kit.process_inbound(_message("hi"), room_id="r"))
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        "send",
-        "observer",
-        "hook",
-        "tool",
-        "store-read",
-        "source-start",
-        "source-stop",
-        "on-complete",
-    ],
-)
+# The work each case leaves running, as the close's log names it: never an
+# asyncio default name (``Task-4``), which says nothing of the work.
+_ABANDONED_AS = {
+    "send": r"roomkit-delivery-set-r",
+    "observer": r"roomkit-observers-after_broadcast",
+    "hook": r"process_inbound call in task .+",
+    "tool": r"roomkit-turn-turn-\w+",
+    "store-read": r"process_inbound call in task .+",
+    "source-start": r"roomkit-close-stop-source-sms",
+    "source-stop": r"roomkit-source-stop-sms",
+    "on-complete": r"roomkit-task-on-complete-task-\w+",
+}
+
+
+@pytest.mark.parametrize("case", list(_ABANDONED_AS))
 async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
     case: str,
     close_grace: float,
@@ -1256,7 +1259,8 @@ async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
     operation stuck under the kit's resource lease does not hold the close:
     it is abandoned once the grace and the unwinds ran out, and named in the
     log once. A source whose ``stop()`` ignores its cut has its receive task
-    cut all the same (RFC §12.10.4)."""
+    cut all the same, and each task is named by the work it runs (RFC
+    §12.10.4, RMK-2010)."""
     # A channel's own close waits on a budget of its own (an agent's, for
     # its turns), and so does the turn backend across Redis (its cancel
     # bound): under test as short as the kit's unwind.
@@ -1282,6 +1286,8 @@ async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
         # Abandoned, not waited for, and named once in the log.
         logged = [r for r in caplog.records if "still running after their cut" in r.getMessage()]
         assert (len(logged), work.release.is_set()) == (1, False)
+        named = logged[0].getMessage().split(": ", 1)[1]
+        assert re.fullmatch(_ABANDONED_AS[case], named), named
         if case == "source-stop":
             assert work.steps == ["receive task cut"]
     finally:

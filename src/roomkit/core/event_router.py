@@ -938,7 +938,11 @@ class EventRouter:
         if cascade is None or binding.category != ChannelCategory.INTELLIGENCE:
             return await reaction
         try:
-            return await cascade.run(reaction, turn_work=True)
+            return await cascade.run(
+                reaction,
+                name=f"roomkit-reaction-{channel.channel_id}-{binding.room_id}",
+                turn_work=True,
+            )
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if cascade.cancelled is None or (current is not None and current.cancelling()):

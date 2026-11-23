@@ -128,13 +128,15 @@ class CallCutError(KitClosedError):
 
 
 class _Run:
-    """One call into a room under way, the event its commit writes and, for
-    a block's record, the reason its hooks blocked it for."""
+    """One call into a room under way, *what* it is (its method's name), the
+    event its commit writes and, for a block's record, the reason its hooks
+    blocked it for."""
 
-    __slots__ = ("blocked_reason", "committing", "task")
+    __slots__ = ("blocked_reason", "committing", "task", "what")
 
-    def __init__(self, task: asyncio.Task[Any]) -> None:
+    def __init__(self, task: asyncio.Task[Any], what: str) -> None:
         self.task = task
+        self.what = what
         self.committing: RoomEvent | None = None
         self.blocked_reason: str | None = None
 
@@ -192,7 +194,7 @@ class DoorRuns:
         record = None
         if not nested:
             assert task is not None
-            record = _Run(task)
+            record = _Run(task, what)
             self._runs[task] = record
             self._running.add(task)
         token = _RUN.set(record) if record is not None or own else None
@@ -221,6 +223,15 @@ class DoorRuns:
                 _RUN.reset(token)
             if record is not None:
                 self._leave(record.task)
+
+    def work_of(self, task: asyncio.Task[Any]) -> str | None:
+        """The call *task* runs, as the close's log names it: the caller's
+        task is its own, named by the caller, so the call is named by what it
+        is, and the task by its name. ``None`` for a task running no call."""
+        record = self._runs.get(task)
+        if record is None:
+            return None
+        return f"{record.what} call in task {task.get_name()}"
 
     def committing(self, event: RoomEvent, *, blocked_reason: str | None = None) -> None:
         """The current call writes *event* as its commit, the record of a

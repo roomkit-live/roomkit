@@ -735,6 +735,7 @@ class LaneExecutionMixin(HelpersMixin):
                 self._process_streaming_responses(
                     cascade, room_id, response_events=cascade.response_events
                 ),
+                name=f"roomkit-stream-reader-{room_id}",
                 on_task=self._hold_reader,
                 turn_work=True,
             )

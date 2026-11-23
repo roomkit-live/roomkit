@@ -110,6 +110,12 @@ _CUTS_SCHEDULED: weakref.WeakSet[asyncio.Task[Any]] = weakref.WeakSet()
 """The tasks whose cut waits for their first step to have run."""
 
 
+def _work_name(work: Coroutine[Any, Any, Any]) -> str:
+    """The function *work* runs, by its qualified name: a native coroutine
+    carries it; any other coroutine is named by its type."""
+    return getattr(work, "__qualname__", None) or type(work).__qualname__
+
+
 def start_named[T](
     work: Coroutine[Any, Any, T],
     *,
@@ -121,7 +127,9 @@ def start_named[T](
     and every task it starts read it in :func:`held_runs`: a ``close()`` from
     under it spares it rather than wait for itself. *eager* runs its first
     step at once. *context*, when given, is the one it runs in instead of a
-    copy of the caller's."""
+    copy of the caller's. With no *name*, the task is named by the function
+    *work* runs: the kit's close names a task it abandons by its name (RFC
+    §12.10.4)."""
     # Named before it starts (a cell, since the task does not exist until it
     # is created), so what runs under it reads it from its first step on.
     run_context = context if context is not None else contextvars.copy_context()
@@ -130,7 +138,7 @@ def start_named[T](
     task = asyncio.Task(
         work,
         loop=asyncio.get_running_loop(),
-        name=name,
+        name=name if name is not None else f"roomkit-{_work_name(work)}",
         context=run_context,
         eager_start=eager,
     )

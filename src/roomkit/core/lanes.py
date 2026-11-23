@@ -312,17 +312,19 @@ class DeliveryCascade:
         self,
         work: Coroutine[Any, Any, T],
         *,
+        name: str,
         on_task: Callable[[asyncio.Task[T]], None] | None = None,
         turn_work: bool = False,
     ) -> T:
         """Execute owned work without giving its waiter cancellation
-        ownership; *on_task* receives its task as soon as it is owned.
-        *turn_work* (a turn, a stream's reader) is refused once the cascade is
-        cancelled; its delivery work still runs."""
+        ownership, as a task *name* names by the work it runs (what the kit's
+        close logs when it abandons it); *on_task* receives its task as soon
+        as it is owned. *turn_work* (a turn, a stream's reader) is refused
+        once the cascade is cancelled; its delivery work still runs."""
         if turn_work and self.cancelled is not None:
             work.close()
             raise asyncio.CancelledError(self.cancelled)
-        task = start_named(work)
+        task = start_named(work, name=name)
         self.track(task, turn_work=turn_work)
         if on_task is not None:
             on_task(task)
@@ -1348,7 +1350,9 @@ class RoomDeliveryLane:
         run = _Executed(entry)
         executed.append(run)
         try:
-            run.result = await entry.cascade.run(self._execute(entry))
+            run.result = await entry.cascade.run(
+                self._execute(entry), name=f"roomkit-delivery-set-{self.room_id}"
+            )
         except asyncio.CancelledError:
             if self._cut:
                 # The entry reports what its set has done (partial_result);
@@ -1433,7 +1437,10 @@ class RoomDeliveryLane:
                 # and its event's aftermath still follows (RFC §10.1).
                 drop_unread_streams(getattr(result, "streaming_responses", ()))
             if result is not None:
-                await entry.cascade.run(self._finish_effects(entry, result))
+                await entry.cascade.run(
+                    self._finish_effects(entry, result),
+                    name=f"roomkit-delivery-aftermath-{self.room_id}",
+                )
         except asyncio.CancelledError:
             if self._cut:
                 # Cut in its aftermath: its caller still reads what it
