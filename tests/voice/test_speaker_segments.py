@@ -40,6 +40,8 @@ class TestSpeakerLabel:
             ("speaker1", "1"),
             ("Speakerphone", "Speakerphone"),
             ("speakers", "speakers"),
+            ("speaker", "speaker"),
+            ("speaker_", "speaker_"),
             ("A", "A"),
             (0, "0"),
             (" B ", "B"),
