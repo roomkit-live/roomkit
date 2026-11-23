@@ -6,7 +6,9 @@
     "§10.3"
   ],
   "requirements": [
-    "RK-10.3-071"
+    "RK-10.3-071",
+    "RK-12.4-099",
+    "RK-12.4-102"
   ],
   "requires_features": [
     "realtime"
