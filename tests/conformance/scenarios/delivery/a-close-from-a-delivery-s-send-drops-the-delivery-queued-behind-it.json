@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-close-from-a-delivery-s-send-drops-the-delivery-queued-behind-it",
+  "title": "A send that closes the kit spares its own lane, neither waited for nor cut, and the delivery queued behind it is dropped",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-077"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_the_deliveries_queued_behind_a_lane_a_close_runs_in_are_dropped. The sender's send of Bye. holds at its gate while Again. commits, its delivery queued behind Bye.'s set in room-1's lane; let go, the send closes the kit. The grace (30 s) is longer than a call may take (10 s): Bye.'s call returns only because the close does not wait for the lane it runs in, and the close's action returns null because the lane is not cut. Again. is dropped, delivered to no one. Not observed: a delivery the spared lane holds placed while it was idle, dropped once the grace is over.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "witness",
+        "type": "websocket"
+      },
+      {
+        "id": "sender",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Bye."
+            },
+            "gate": "go",
+            "do": [
+              {
+                "call": "close",
+                "as": "closed"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "witness"
+          },
+          {
+            "channel_id": "sender"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Bye."
+        }
+      },
+      "background": true,
+      "as": "bye"
+    },
+    {
+      "wait_for": "go"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      },
+      "defer_delivery": true,
+      "as": "again"
+    },
+    {
+      "open": "go"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "again",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "sms": {
+              "$absent": true
+            },
+            "witness": {
+              "$absent": true
+            },
+            "sender": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "bye"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Bye."
+          }
+        },
+        {
+          "content": {
+            "body": "Again."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "witness": [
+          {
+            "content": {
+              "body": "Bye."
+            }
+          }
+        ],
+        "sender": [
+          {
+            "content": {
+              "body": "Bye."
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "closed": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}

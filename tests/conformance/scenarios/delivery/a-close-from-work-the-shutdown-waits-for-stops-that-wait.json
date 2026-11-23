@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-close-from-work-the-shutdown-waits-for-stops-that-wait",
+  "title": "Work the kit's shutdown waits for that closes the kit too is spared from then on, and both closes return",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-075"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_close_from_the_kit_s_own_work_joining_another_spares_that_work (its delivery-hook door). The ASYNC AFTER_BROADCAST hook, the aftermath of Bye.'s delivery, holds at its gate as the first close starts, so that close's grace waits for it; once let go it closes the kit itself and joins that shutdown. The grace (30 s) is longer than a call may take (10 s): both closes return only because the shutdown stops waiting for the hook. Whether the shutdown already waited for the hook when it joined, or reached it after, is not told apart: the scenario holds whichever branch runs, and does not show the first one in particular.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "quit",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "Bye."
+            },
+            "gate": "go",
+            "do": [
+              {
+                "call": "close",
+                "as": "joined"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Bye."
+        }
+      },
+      "background": true,
+      "as": "bye"
+    },
+    {
+      "wait_for": "go"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "first"
+    },
+    {
+      "open": "go"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "bye"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Bye."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Bye."
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "joined": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}

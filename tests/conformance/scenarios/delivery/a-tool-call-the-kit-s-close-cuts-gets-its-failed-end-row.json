@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-tool-call-the-kit-s-close-cuts-gets-its-failed-end-row",
+  "title": "A tool call running as the kit closes is cut with its turn, and its end row is stored failed, error kit_closed",
+  "rules": [
+    "§12.10.4",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.10.4-046"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_running_tool_call_is_cut_at_once_its_end_row_stored. The tool holds at a gate no step opens before the close returns; the close's grace (30 s) is longer than a call may take (10 s), so the close returns only because the turn is cut at once. Looking. is the text of a round that ended before its tool call: no cancelled mark is asserted on it, and text cut while it streams is not observed here.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "open": "tool"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r": [
+        {
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "body": "Looking."
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "status": "pending"
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup",
+            "status": "failed",
+            "error": "kit_closed"
+          }
+        }
+      ]
+    }
+  }
+}

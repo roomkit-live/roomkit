@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-in-its-hooks-as-the-kit-closes-is-stored-and-delivered-to-no-one",
+  "title": "A call still in its hooks as the kit closes commits within the grace and is delivered to no one, its lane idle or busy",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-051"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_call_waiting_for_its_room_lock_is_cut_at_once (its locker). Each call is held in its BEFORE_BROADCAST hook as the close starts, then let go within the grace (30 s): idle commits in room-1, whose lane is idle; late in room-2, whose lane still sends busy, placed before the close. Both calls return while the close still waits for busy's send: their delivery takes no place in a lane, so it waits for nothing and reaches no one.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "busy"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "holds",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "idle"
+            },
+            "gate": "idle-hooks"
+          },
+          {
+            "when": {
+              "text": "late"
+            },
+            "gate": "late-hooks"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "busy"
+        }
+      },
+      "background": true,
+      "as": "busy"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "late"
+        }
+      },
+      "background": true,
+      "as": "late"
+    },
+    {
+      "wait_for": "late-hooks"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "idle"
+        }
+      },
+      "background": true,
+      "as": "idle"
+    },
+    {
+      "wait_for": "idle-hooks"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "open": "idle-hooks"
+    },
+    {
+      "open": "late-hooks"
+    },
+    {
+      "await": "idle",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "idle"
+            }
+          },
+          "blocked": false,
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "late",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "late"
+            }
+          },
+          "blocked": false,
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "busy"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "idle"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "busy"
+          }
+        },
+        {
+          "content": {
+            "body": "late"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      },
+      "room-2": {
+        "ws": [
+          {
+            "content": {
+              "body": "busy"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

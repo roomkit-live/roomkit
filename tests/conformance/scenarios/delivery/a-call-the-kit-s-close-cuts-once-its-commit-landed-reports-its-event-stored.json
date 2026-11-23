@@ -1,0 +1,356 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-the-kit-s-close-cuts-once-its-commit-landed-reports-its-event-stored",
+  "title": "A call the kit's close cuts once its commit's write landed reads its event back and reports it stored, never a refusal",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-066",
+    "RK-12.10.4-067"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_call_whose_commit_landed_as_it_was_cut_reports_it_stored. Each call holds once its commit's write answered, at a gate no step opens, past the close's grace (100 ms, which no successful work races): the close cuts it, and it reads its event back by its id within its unwind. The inbound path returns the event with kit_closed, a record its hooks blocked as blocked with their reason; direct injection, a record's commit and a host's post return the stored event. None is delivered. The first post binds the host channel to room-4 before the faults are armed, so that the post cut is its message's commit, not its binding's.",
+  "setup": {
+    "kit": {
+      "store_faults": true,
+      "close_grace_ms": 100
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuses",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "refused"
+            },
+            "result": {
+              "action": "block",
+              "reason": "not today"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-4",
+      "content": {
+        "type": "text",
+        "body": "first"
+      }
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-1",
+      "gate": "landed-1"
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-2",
+      "gate": "landed-2"
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-3",
+      "gate": "landed-3"
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-4",
+      "gate": "landed-4"
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-5",
+      "gate": "landed-5"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "slow"
+        }
+      },
+      "background": true,
+      "as": "inbound"
+    },
+    {
+      "wait_for": "landed-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "refused"
+        }
+      },
+      "background": true,
+      "as": "blocked"
+    },
+    {
+      "wait_for": "landed-5"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "slow"
+      },
+      "background": true,
+      "as": "injection"
+    },
+    {
+      "wait_for": "landed-2"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-3",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "slow"
+        }
+      },
+      "background": true,
+      "as": "record"
+    },
+    {
+      "wait_for": "landed-3"
+    },
+    {
+      "call": "post",
+      "room_id": "room-4",
+      "content": {
+        "type": "text",
+        "body": "slow"
+      },
+      "background": true,
+      "as": "post"
+    },
+    {
+      "wait_for": "landed-4"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "inbound",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "slow"
+            }
+          },
+          "blocked": false,
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "blocked",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "refused"
+            },
+            "status": "blocked"
+          },
+          "blocked": true,
+          "reason": "not today",
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "await": "injection",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "slow"
+          }
+        }
+      }
+    },
+    {
+      "await": "record",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "slow"
+          }
+        }
+      }
+    },
+    {
+      "await": "post",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "slow"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "slow"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "slow"
+          }
+        }
+      ],
+      "room-3": [
+        {
+          "content": {
+            "body": "slow"
+          }
+        }
+      ],
+      "room-4": [
+        {
+          "content": {
+            "body": "first"
+          }
+        },
+        {
+          "content": {
+            "body": "slow"
+          }
+        }
+      ],
+      "room-5": [
+        {
+          "content": {
+            "body": "refused"
+          },
+          "status": "blocked"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      },
+      "room-2": {
+        "ws": []
+      },
+      "room-3": {
+        "ws": []
+      },
+      "room-4": {
+        "ws": [
+          {
+            "content": {
+              "body": "first"
+            }
+          }
+        ]
+      },
+      "room-5": {
+        "ws": []
+      }
+    }
+  }
+}

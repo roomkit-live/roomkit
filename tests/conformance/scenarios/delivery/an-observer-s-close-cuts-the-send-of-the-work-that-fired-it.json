@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-observer-s-close-cuts-the-send-of-the-work-that-fired-it",
+  "title": "An ASYNC observer that closes the kit does not spare the lane whose work fired it: the send that lane runs gets the grace, then is cut, failed kit_closed",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-079"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_close_from_a_hook_cuts_another_call_s_send_under_way. One's ASYNC AFTER_BROADCAST observer, fired by the aftermath of One's delivery in room-1's lane, holds at its gate while the lane sends Two, held at a gate no step opens; let go, the observer closes the kit. The observer is not the work that fired it: the close spares the observer, not the lane, so Two's send gets the grace (100 ms, which no successful work races), then is cut: Two's call reports it failed, kit_closed, retryable, and the observer's close returns null.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 100
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Two"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "quit",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "One"
+            },
+            "gate": "go",
+            "do": [
+              {
+                "call": "close",
+                "as": "closed"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "One"
+        }
+      }
+    },
+    {
+      "wait_for": "go"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Two"
+        }
+      },
+      "background": true,
+      "as": "two"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "open": "go"
+    },
+    {
+      "await": "two",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "Two"
+            }
+          },
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "status": "failed",
+              "error": {
+                "code": "kit_closed",
+                "retryable": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "One"
+          }
+        },
+        {
+          "content": {
+            "body": "Two"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "One"
+            }
+          },
+          {
+            "content": {
+              "body": "Two"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "closed": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}

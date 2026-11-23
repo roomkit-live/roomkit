@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-close-whose-caller-is-cancelled-leaves-the-one-shutdown-running",
+  "title": "Overlapping closes join one shutdown: a cancelled caller cancels only its own wait, and a close after the shutdown returns its result",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-069",
+    "RK-12.10.4-070"
+  ],
+  "notes": "Python: tests/test_framework.py::TestOneShutdown::test_a_close_during_another_returns_once_the_shutdown_ends and ::TestLifecycleGuards::test_close_is_idempotent. The held send keeps the shutdown in its grace while first and second join it and first is cancelled; third starts after. Once the send is let go, second and third return null: the shutdown ran on and the send ended within its grace. A close after it ended returns null at once. Not observed: the channels' closes and the shared resources' release, a close after a failed shutdown (a channel whose close fails), and that a later close runs none of the shutdown's steps again.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      },
+      "background": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "first"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "second"
+    },
+    {
+      "cancel": "first"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "third"
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "third",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "held"
+            }
+          },
+          "cancellation_reason": "kit_closed",
+          "delivery_results": {
+            "ws": {
+              "status": "sent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "held"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,252 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-waiting-for-its-room-s-lock-as-the-kit-closes-is-cut-at-once",
+  "title": "Calls waiting for their room's lock as the kit closes are cut at once, each refused its own way, nothing of them stored",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-044",
+    "RK-12.10.4-065"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_call_waiting_for_its_room_lock_is_cut_at_once. The locker holds room-1's lock in its BEFORE_BROADCAST hook, at a gate no step opens until the waiters returned; the close's grace (30 s) is longer than a call may take (10 s), so a waiter cut only once the grace ran out fails the scenario. The inbound path and a regeneration return a refusal, direct injection and a record's commit raise kit_closed. The locker commits within the grace; what that commit becomes is the subject of delivery/a-call-in-its-hooks-as-the-kit-closes-is-stored-and-delivered-to-no-one. The background runs and the verification timers 044 also cuts are not observed here.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "holds",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "locker"
+            },
+            "gate": "locked"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "locker"
+        }
+      },
+      "background": true,
+      "as": "locker"
+    },
+    {
+      "wait_for": "locked"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "waiter"
+        }
+      },
+      "background": true,
+      "as": "inbound"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "waiter"
+      },
+      "background": true,
+      "as": "injection"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "waiter"
+        }
+      },
+      "background": true,
+      "as": "record"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "background": true,
+      "as": "regeneration"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 4
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "await": "inbound",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "kit_closed",
+          "event": null
+        }
+      }
+    },
+    {
+      "await": "injection",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "await": "record",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "await": "regeneration",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "kit_closed",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "locked"
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "locker"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "body": "locker"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hi."
+            }
+          ]
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hi."
+            }
+          },
+          {
+            "content": {
+              "body": "Hello."
+            }
+          }
+        ]
+      }
+    }
+  }
+}
