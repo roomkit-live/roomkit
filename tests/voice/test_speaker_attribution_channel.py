@@ -480,6 +480,31 @@ class TestVoiceChannelCarriesLabels:
         ]
 
 
+class TestTheModelReadsEachVoice:
+    async def test_two_voices_of_one_stream_are_two_speakers(self) -> None:
+        """RFC §6.4, §12.2.3: a voice the channel labels is a source of its
+        own, so two voices of one stream read under their names with nobody
+        on the roster and no hook naming them."""
+        stt = _DiarizingSTT([[SpeakerSegment("A", "Une table")], [SpeakerSegment("B", "Non.")]])
+        ai = _HeldAI()
+        room = _Room(stt, ai=ai)
+        await room.start()
+
+        await room.speak()
+        await asyncio.wait_for(ai.asked.wait(), 5)
+        await room.speak()  # heard while the first reply is pending, not as its echo
+        await _eventually(lambda: len(room.transcriptions) == 2)
+        ai.release.set()
+        await _eventually(lambda: len(ai.calls) == 2)
+        await room.kit.close()
+
+        turns = [m.content for m in ai.calls[-1].messages if m.role == "user"]
+        assert [str(turn).split("\n\n")[0] for turn in turns] == [
+            'Speaker A: "Une table"',
+            'Speaker B: "Non."',
+        ]
+
+
 class TestTheReplyDoesNotHoldBackTheNextFinal:
     # A user who adds words while the AI is still answering is heard at once,
     # not after the reply has played (and then dropped as echo of it).

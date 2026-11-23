@@ -145,13 +145,30 @@ def author_name(event: RoomEvent, people: People) -> str | None:
 
 def source_of(event: RoomEvent, people: People) -> list[str]:
     """Who *event* comes from: the room's participant, whichever channel
-    reached them; else its sender on its channel; else its channel."""
+    reached them; else the voice its channel's diarization labels on its
+    sender's stream (RFC §12.2.3), so that two voices of one microphone are
+    two sources; else its sender on its channel; else its channel."""
     person = people.of(event)
     if person is not None:
         return ["participant", person.id]
+    voice = _voice_of(event)
+    if voice is not None:
+        return ["voice", event.source.channel_id, event.source.participant_id or "", *voice]
     if event.source.participant_id:
         return ["sender", event.source.channel_id, event.source.participant_id]
     return ["channel", event.source.channel_id]
+
+
+def _voice_of(event: RoomEvent) -> list[str] | None:
+    """The label and the stream epoch of the voice *event* is from, as its
+    channel's diarization set them (``metadata["speaker_label"]`` and
+    ``metadata["speaker_epoch"]``, RFC §12.2.3); ``None`` for no label."""
+    label = event.metadata.get("speaker_label")
+    if not isinstance(label, str) or not label:
+        return None
+    epoch = event.metadata.get("speaker_epoch")
+    known = isinstance(epoch, int) and not isinstance(epoch, bool)
+    return [label, str(epoch) if known else ""]
 
 
 def digest(salt: str, parts: Iterable[str]) -> str:
