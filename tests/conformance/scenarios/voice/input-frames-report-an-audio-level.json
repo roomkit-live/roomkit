@@ -6,6 +6,9 @@
     "§9.2"
   ],
   "requirements": [
+    "RK-12.5-013",
+    "RK-12.5-029",
+    "RK-12.5-031",
     "RK-9.2-045"
   ],
   "requires_features": [

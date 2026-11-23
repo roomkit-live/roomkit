@@ -8,6 +8,7 @@
     "§12.11"
   ],
   "requirements": [
+    "RK-12.5-022",
     "RK-9.2-054"
   ],
   "requires_features": [

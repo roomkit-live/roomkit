@@ -6,6 +6,9 @@
     "§6.4",
     "§12.3.12"
   ],
+  "requirements": [
+    "RK-12.3.12-020"
+  ],
   "notes": "The text channel reads already stored rows on its next turn. The stored cancellation reason is the public SUPERSEDED marker. Another cancellation reason keeps the response in history.",
   "setup": {
     "channels": [

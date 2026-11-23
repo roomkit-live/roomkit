@@ -8,6 +8,7 @@
   ],
   "requirements": [
     "RK-12.4-020",
+    "RK-12.5-023",
     "RK-9.3-093"
   ],
   "requires_features": [
