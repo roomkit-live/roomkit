@@ -56,8 +56,9 @@ async def test_without_an_stt_speech_reaches_no_room() -> None:
     await settled(channel, timeout=2)
 
     events = await kit.store.list_events(room.id)
-    assert [e for e in events if e.type == EventType.MESSAGE] == []
     await kit.close()
+
+    assert [e for e in events if e.type == EventType.MESSAGE] == []
 
 
 async def test_without_a_tts_a_delivered_message_plays_nothing() -> None:
@@ -70,6 +71,6 @@ async def test_without_a_tts_a_delivered_message_plays_nothing() -> None:
     await kit.join(room.id, "voice")
 
     await kit.post(room.id, "Bonjour")  # returns once the room's transports had it
+    await kit.close()
 
     assert backend.sent_audio == []
-    await kit.close()

@@ -10,6 +10,7 @@ from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import Access
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
@@ -288,6 +289,23 @@ class TestRealtimeVoiceChannelBindingGate:
 
         assert len(provider.sent_audio) == 1
         await kit.close()
+
+    async def test_a_paused_session_forwards_no_audio(self) -> None:
+        """RFC §12.2: the realtime channel stops forwarding the participant's
+        audio to its provider while the integrator holds the session PAUSED."""
+        kit, channel, provider, transport, room_id = await self._setup()
+        session = next(iter(channel._sessions.values()))
+
+        session.state = VoiceSessionState.PAUSED
+        await transport.simulate_client_audio(session, b"audio-on-hold")
+        await _settle(channel)
+        paused = len(provider.sent_audio)
+        session.state = VoiceSessionState.ACTIVE
+        await transport.simulate_client_audio(session, b"audio-after")
+        await _settle(channel)
+        await kit.close()
+
+        assert (paused, len(provider.sent_audio)) == (0, 1)
 
     async def test_dynamic_mute_stops_audio(self) -> None:
         kit, channel, provider, transport, room_id = await self._setup()

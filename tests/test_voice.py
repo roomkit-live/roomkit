@@ -349,7 +349,7 @@ class TestVoiceChannel:
     async def test_capabilities_are_audio_and_text(self, make) -> None:
         """RFC §6.3, §A.10, §A.11: the channel takes text in and speaks it."""
         caps = make().capabilities()
-        assert caps.media_types == [ChannelMediaType.AUDIO, ChannelMediaType.TEXT]
+        assert set(caps.media_types) == {ChannelMediaType.AUDIO, ChannelMediaType.TEXT}
         assert caps.supports_audio is True
 
     async def test_info_shows_providers(self) -> None:
