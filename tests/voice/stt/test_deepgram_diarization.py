@@ -158,6 +158,12 @@ class TestSegments:
         ]
         assert _speaker_segments(words, "Oui.") == [SpeakerSegment("2", "Oui.", 1000, 1200)]
 
+    @pytest.mark.parametrize("spelling", ["unknown", "UU", "PENDING"])
+    def test_a_word_labelled_nobody_is_unattributed(self, spelling: str) -> None:
+        """The spellings of nobody are Deepgram's adapter's to name (RFC §12.2.3)."""
+        words = [_word("Bonjour.", spelling, 0.1, 0.5)]
+        assert _speaker_segments(words, "Bonjour.") == [SpeakerSegment(None, "Bonjour.", 100, 500)]
+
     def test_text_without_words_is_unattributed(self) -> None:
         assert _speaker_segments([], "Bonjour.") == [SpeakerSegment(None, "Bonjour.")]
         assert _speaker_segments(None, "") == []
@@ -198,10 +204,8 @@ class TestStreaming:
         assert results[0].segments == []
         assert [w.speaker for w in results[0].words] == [0, 1, 1, 1, 1, 1]
 
-    @pytest.mark.parametrize("spelling", [None, "unknown", "UU", "PENDING"])
-    async def test_words_without_labels_are_unattributed(self, spelling: str | None) -> None:
-        """The spellings of nobody are Deepgram's adapter's to name (RFC §12.2.3)."""
-        words = [_word("Bonjour.", spelling, 0.1, 0.5)]
+    async def test_words_without_labels_are_unattributed(self) -> None:
+        words = [_word("Bonjour.", None, 0.1, 0.5)]
         provider, _ = _provider([_message(words, "Bonjour.")], diarize_model="latest")
         results = await _stream(provider)
         assert results[0].segments == [SpeakerSegment(None, "Bonjour.", 100, 500)]

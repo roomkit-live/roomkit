@@ -169,13 +169,14 @@ class TestTally:
         tally.add("s", self._frame(None))
         assert tally.take("s") is None
 
-    def test_a_voice_matched_to_nobody_is_an_unknown_speaker(self) -> None:
-        # A stage reports a voice below its match threshold as a null
+    @pytest.mark.parametrize("nobody", [None, ""])
+    def test_a_voice_matched_to_nobody_is_an_unknown_speaker(self, nobody: str | None) -> None:
+        # A stage reports a voice below its match threshold as a null or empty
         # speaker_id: someone spoke, and it was not the stream owner as far as
         # the stage can tell.
         tally = PipelineSpeakerTally()
         tally.add("s", self._frame("speaker_0", 0.1))
-        tally.add("s", self._frame(_NOBODY, 0.3))
+        tally.add("s", self._frame(_NOBODY if nobody is None else nobody, 0.3))
         taken = tally.take("s")
         assert taken is not None
         assert (taken.label, taken.sender_name) == (None, "Unknown speaker")

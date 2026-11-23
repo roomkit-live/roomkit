@@ -200,6 +200,12 @@ class TestFile:
             SpeakerSegment("1", "Hi. Yes.", 0, 400)
         ]
 
+    @pytest.mark.parametrize("spelling", ["unknown", "UU", "PENDING"])
+    def test_a_segment_labelled_nobody_is_nobodys(self, spelling: str) -> None:
+        """The spellings of nobody are Voxtral's adapter's to name (RFC §12.2.3)."""
+        body = {"text": "Hmm.", "segments": [{"text": "Hmm.", "speaker_id": spelling}]}
+        assert rest_result(body, diarized=True).segments == [SpeakerSegment(None, "Hmm.")]
+
     def test_text_without_segments_is_nobodys(self) -> None:
         result = rest_result({"text": "Hello.", "segments": []}, diarized=True)
         assert result.segments == [SpeakerSegment(None, "Hello.")]
