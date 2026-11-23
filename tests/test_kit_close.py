@@ -1083,6 +1083,57 @@ async def test_a_call_whose_commit_landed_as_it_was_cut_reports_it_stored(
     assert transport.sent == []
 
 
+class _SlowReadBack(_AnswerNeverComes):
+    """A store whose commits of ``slow`` land, then never answer, in every
+    room, and whose read of an event takes a few turns of the loop, as a
+    store that reaches a server does."""
+
+    def __init__(self, rooms: int) -> None:
+        super().__init__()
+        self.rooms, self.landed, self.reads = rooms, 0, 0
+        self.all_written = asyncio.Event()
+
+    async def commit_event(self, room_id: str, event: RoomEvent, **kw: Any) -> RoomEvent:
+        if getattr(event.content, "body", None) == "slow":
+            self.landed += 1
+            if self.landed == self.rooms:
+                self.all_written.set()
+        return await super().commit_event(room_id, event, **kw)
+
+    async def get_event(self, event_id: str) -> RoomEvent | None:
+        # Each read takes longer than the one before: one ends while the
+        # others still read.
+        self.reads += 1
+        for _ in range(20 * self.reads):
+            await asyncio.sleep(0)
+        return await super().get_event(event_id)
+
+
+async def test_calls_reading_their_commits_back_are_not_cut_again(
+    close_grace: float, cut_unwind: float
+) -> None:
+    """Calls the close cut once their commits landed read their events
+    back side by side: one ending its read-back wakes the close, which cuts
+    nothing it already cut, so each call reports its event stored, never a
+    cancellation its caller did not ask for (RFC §12.10.4). Before the fix,
+    the close cut a read-back again and the call raised CancelledError."""
+    store = _SlowReadBack(rooms=3)
+    kit = await _kit(_Transport("ws"), rooms=("r1", "r2", "r3"), store=store)
+    calls = [
+        asyncio.ensure_future(kit.process_inbound(_message("slow"), room_id=room_id))
+        for room_id in ("r1", "r2", "r3")
+    ]
+    await store.all_written.wait()
+
+    await kit.close()
+
+    results = await asyncio.gather(*calls, return_exceptions=True)
+    assert [(type(r).__name__, getattr(r, "cancellation_reason", None)) for r in results] == [
+        ("InboundResult", "kit_closed")
+    ] * 3
+    assert all(r.event is not None for r in results if not isinstance(r, BaseException))
+
+
 class _ReadBackFails(_AnswerNeverComes):
     """A store whose commit lands as the grace runs out, and that cannot
     read an event back."""

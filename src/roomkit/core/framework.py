@@ -981,7 +981,11 @@ class RoomKit(
         self._lanes.cut(spared)
         self._cascades.cut(spared)
         running = self._running_work()
-        for task in running:
+        # A call unwinding the cut it took (its commit read back, within its
+        # own unwind) is not cut again: the second cut would cut its
+        # read-back, and the call would raise a cancellation nobody asked
+        # for instead of its result (RFC §12.10.4).
+        for task in running - self._door_runs.unwinding():
             cut_once_started(task)
         return running
 

@@ -304,6 +304,11 @@ class DoorRuns:
         for task in list((self._running | self._waiting) - spared - self._unwinding):
             self._cut_task(task)
 
+    def unwinding(self) -> set[asyncio.Task[Any]]:
+        """The calls the close cut that unwind their cut, a commit read back:
+        cut once, each ends within its own unwind."""
+        return {task for task in self._unwinding if not task.done()}
+
     def running(self) -> set[asyncio.Task[Any]]:
         """The calls still running before their commit, or unwinding."""
         return {

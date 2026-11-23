@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A call the kit's close cut once its commit landed reports its event stored while another cut call reads its own back (RFC §12.10.4, RMK-2083), where the close cut its read-back again and the call raised `CancelledError` to a caller that cancelled nothing; seen on PostgreSQL, whose read opens a connection.
+
 - The kit's close names each piece of work it abandons by the work it runs (RFC §12.10.4, RMK-2010), where a delivery set and a call into a room were logged as `Task-4`: a call by its method and its caller's task (`process_inbound call in task Task-23`), the kit's own tasks by their name (`roomkit-delivery-set-<room>`).
 
 - An ACP turn cancelled while the agent's permission request waits on its decision answers that request `cancelled`, as ACP requires of a client that cancels a prompt (RFC §6.4, RMK-423): the external tool handler's `process_tool_call` is cancelled and its decision abandoned, even one made as `session/cancel` goes out, where the agent got the reject option once the handler withdrew, or the handler's answer whenever it came. A handler that withdrew its pending decision in `on_tool_cancelled` no longer needs to; its `process_tool_call` now sees `asyncio.CancelledError`. The call is reported once, cancelled, and the handler hears of it through `on_tool_cancelled`, a call the agent never announced included, which was reported nowhere (RFC §9.3).
