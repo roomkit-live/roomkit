@@ -76,8 +76,12 @@ class TestChannelType:
 
     def test_capabilities_include_video(self, channel: RealtimeAudioVideoChannel) -> None:
         caps = channel.capabilities()
-        assert ChannelMediaType.VIDEO in caps.media_types
-        assert ChannelMediaType.AUDIO in caps.media_types
+        # RFC §6.3: it takes text in and speaks it, as a voice channel does.
+        assert caps.media_types == [
+            ChannelMediaType.AUDIO,
+            ChannelMediaType.VIDEO,
+            ChannelMediaType.TEXT,
+        ]
         assert caps.supports_video is True
         assert caps.supports_audio is True
 

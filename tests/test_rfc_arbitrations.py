@@ -7,13 +7,18 @@ always receives an agent's event; under ADDRESSED_ONLY it received nothing.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+from roomkit import RoomKit
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.core.event_router import _solicits
 from roomkit.core.exceptions import VoiceSessionEndedError
 from roomkit.models.enums import AgentResponsePolicy, ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
 
 def _session() -> VoiceSession:
@@ -67,6 +72,42 @@ class TestEndedIsTerminal:
 
         assert s.state is VoiceSessionState.CONNECTING
         s.state = VoiceSessionState.ACTIVE  # the rebuilt connection
+
+    async def test_a_handoff_renegotiates_the_session_it_ended(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RFC §12.2: a realtime session is CONNECTING until its provider
+        connects; the base reconfigure ends it, renegotiates it and connects
+        it again, ACTIVE as before."""
+        provider = MockRealtimeProvider()
+        kit = RoomKit()
+        kit.register_channel(
+            RealtimeVoiceChannel("rt", provider=provider, transport=MockRealtimeTransport())
+        )
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt")
+        seen: list[VoiceSessionState] = []
+        connect, disconnect = provider.connect, provider.disconnect
+
+        async def spied_connect(session: VoiceSession, **kwargs: Any) -> Any:
+            seen.append(session.state)
+            return await connect(session, **kwargs)
+
+        async def spied_disconnect(session: VoiceSession) -> None:
+            await disconnect(session)
+            seen.append(session.state)
+
+        monkeypatch.setattr(provider, "connect", spied_connect)
+        monkeypatch.setattr(provider, "disconnect", spied_disconnect)
+
+        session = await kit.join(room.id, "rt", connection=object())
+        assert (seen, session.state) == ([VoiceSessionState.CONNECTING], VoiceSessionState.ACTIVE)
+        await provider.reconfigure(session, system_prompt="the next agent")
+        handoff, after = seen[1:], session.state
+        await kit.close()
+
+        assert handoff == [VoiceSessionState.ENDED, VoiceSessionState.CONNECTING]
+        assert after is VoiceSessionState.ACTIVE
 
 
 def _agent_event() -> RoomEvent:

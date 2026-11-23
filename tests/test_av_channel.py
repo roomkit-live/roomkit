@@ -8,6 +8,7 @@ import pytest
 
 from roomkit import AudioVideoChannel, ChannelType, RoomKit
 from roomkit.models.channel import ChannelBinding
+from roomkit.models.enums import ChannelMediaType
 from roomkit.recorder.base import (
     ChannelRecordingConfig,
     MediaRecordingConfig,
@@ -112,6 +113,12 @@ class TestAudioVideoChannel:
             pipeline=AudioPipelineConfig(),
         )
         caps = av.capabilities()
+        # RFC §6.3: it takes text in and speaks it, as a voice channel does.
+        assert caps.media_types == [
+            ChannelMediaType.AUDIO,
+            ChannelMediaType.VIDEO,
+            ChannelMediaType.TEXT,
+        ]
         assert caps.supports_audio is True
         assert caps.supports_video is True
 
