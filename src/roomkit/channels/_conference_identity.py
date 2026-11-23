@@ -65,7 +65,8 @@ the caller's: reading it would identify every dial-in as the same person, which
 is worse than identifying none of them. And ``from`` is a SIP header name, not
 a provider's key — generic enough that a value found under it says nothing
 about where it came from. An integrator whose provider really does report the
-caller there passes it in ``address_keys``.
+caller there passes it in ``identity_address_keys=``, which replaces the whole
+list, the backend's keys included.
 """
 
 

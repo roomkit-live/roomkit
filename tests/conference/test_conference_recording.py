@@ -1,4 +1,4 @@
-"""Framework-mode conference recording (RFC §12.10.8, §12.11).
+"""Conference recording by the framework (RFC §12.10.8, §12.11).
 
 The rule these tests exist for is attribution: a conference recording answers
 "who said what", so every track is recorded on its own and carries the

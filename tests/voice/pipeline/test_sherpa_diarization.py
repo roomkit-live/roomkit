@@ -6,6 +6,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from roomkit.voice.audio_frame import AudioFrame
 from tests.private_module import load_private_copy
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,14 @@ def _make_provider(mock_mod, **config_kwargs):
             **config_kwargs,
         )
         return diar_mod.SherpaOnnxDiarizationProvider(config), diar_mod
+
+
+def _utterance() -> AudioFrame:
+    """Two seconds of speech closed by the VAD: enough for an identification."""
+    return AudioFrame(
+        data=b"\x00\x01" * 32000,
+        metadata={"vad_is_speech": True, "vad_speech_end": True},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +109,7 @@ class TestSherpaOnnxDiarizationProviderIdentify:
         manager.search.return_value = ""
         provider, _ = _make_provider(mock_mod)
 
-        result = provider._identify(provider._state_for("s"), b"\x00\x01" * 160, 16000)
+        result = provider.process(_utterance(), "s")
 
         assert result is not None
         assert (result.speaker_id, result.confidence, result.is_new_speaker) == (None, 0.0, True)
@@ -112,7 +121,7 @@ class TestSherpaOnnxDiarizationProviderIdentify:
         manager.search.return_value = "alice"
         provider, _ = _make_provider(mock_mod)
 
-        result = provider._identify(provider._state_for("s"), b"\x00\x01" * 160, 16000)
+        result = provider.process(_utterance(), "s")
 
         assert result is not None
         assert (result.speaker_id, result.is_new_speaker) == ("alice", True)

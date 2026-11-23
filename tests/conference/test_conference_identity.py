@@ -245,6 +245,16 @@ class TestWhatTheResolverIsHanded:
 
         assert resolver.seen[0].sender_id == NUMBER
 
+    async def test_configured_keys_replace_the_backend_s_own_too(self) -> None:
+        """``identity_address_keys=`` is the whole list (RFC §12.10.2): a
+        backend's own key is read only if the integrator lists it."""
+        resolver = RecordingResolver()
+        _, _, backend = await _kit_with_channel(resolver, identity_address_keys=("x-caller",))
+
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
+
+        assert resolver.seen == []
+
     async def test_a_backend_with_no_key_of_its_own_reads_only_the_generic_ones(self) -> None:
         """RFC §12.10.2: which key carries a caller's address is the
         provider's to say, and the framework's defaults name no provider's.

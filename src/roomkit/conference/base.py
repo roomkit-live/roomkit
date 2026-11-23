@@ -126,7 +126,7 @@ class ConferenceBackend(ABC):
         (:data:`~roomkit.channels.conference.CONFERENCE_ADDRESS_KEYS`), unless
         the integrator configured the keys itself: what an SFU calls a dial-in's
         caller number is the provider's own knowledge, never the framework's.
-        Never a key carrying the number the caller dialled. None by default.
+        Never a key carrying the number the caller dialled. Empty by default.
         """
         return ()
 

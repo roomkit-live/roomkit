@@ -389,7 +389,7 @@ class ConferenceChannel(
             )
         if recorder is None:
             raise ValueError(
-                "Framework-mode conference recording needs a recorder to write with: the "
+                "Conference recording needs a recorder to write with: the "
                 "tracks would be subscribed and dropped. Pass recorder= a MediaRecorder "
                 "(roomkit.recorder), which receives one recording per track, attributed to "
                 "its participant."

@@ -19,7 +19,6 @@ from roomkit import (
     ConferenceInterruptionConfig,
     ConferenceInterruptionScope,
     ConferenceParticipant,
-    ConferenceRecordingConfig,
     TrackKind,
 )
 from roomkit.voice.interruption import InterruptionStrategy
@@ -146,12 +145,3 @@ class TestInterruptionConfig:
 
     def test_scopes(self) -> None:
         assert [s.value for s in ConferenceInterruptionScope] == ["any", "none", "allowlist"]
-
-
-class TestRecordingConfig:
-    def test_defaults_to_wav(self) -> None:
-        """The framework records the tracks the bot subscribes to: no backend
-        capability, functions against the mock (RFC §12.10.8)."""
-        config = ConferenceRecordingConfig()
-
-        assert config.format == "wav"

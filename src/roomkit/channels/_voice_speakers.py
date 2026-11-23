@@ -28,8 +28,8 @@ logger = logging.getLogger("roomkit.voice")
 _CLAIM_WAIT_S = 1.0
 
 _NOBODY = ""
-"""The tally's key for a voice the stage heard but matched to no speaker
-(sherpa-onnx's ``"unknown"``): it competes like a label and, if heard the
+"""The tally's key for a voice the stage heard but matched to no speaker (a
+null or empty ``speaker_id``): it competes like a label and, if heard the
 longest, the transcript is :data:`UNKNOWN_SPEAKER`'s."""
 
 UNKNOWN_SPEAKER = "Unknown speaker"

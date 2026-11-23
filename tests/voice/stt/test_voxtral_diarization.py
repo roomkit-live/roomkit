@@ -141,9 +141,11 @@ class TestSpeakerTurns:
         turns.feed(_segment("Sheila", " Friday works for me."))
         assert turns.close()[0].speaker == "Sheila"
 
-    def test_unattributed_words_are_nobodys(self) -> None:
+    @pytest.mark.parametrize("spelling", [None, "unknown", "UU", "PENDING"])
+    def test_unattributed_words_are_nobodys(self, spelling: str | None) -> None:
+        """The spellings of nobody are Voxtral's adapter's to name (RFC §12.2.3)."""
         turns = SpeakerTurns(pause_s=1.5)
-        turns.feed(_segment(None, " Hmm."))
+        turns.feed(_segment(spelling, " Hmm."))
         assert turns.close()[0].segments == [SpeakerSegment(None, "Hmm.")]
 
     def test_done_gives_the_turn_under_way(self) -> None:

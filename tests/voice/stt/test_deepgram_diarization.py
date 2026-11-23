@@ -24,7 +24,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider, _speaker_segments
 
 
-def _word(word: str, speaker: int | None, start: float, end: float) -> SimpleNamespace:
+def _word(word: str, speaker: int | str | None, start: float, end: float) -> SimpleNamespace:
     return SimpleNamespace(
         word=word.lower().strip(".,?"), punctuated_word=word, speaker=speaker, start=start, end=end
     )
@@ -198,8 +198,10 @@ class TestStreaming:
         assert results[0].segments == []
         assert [w.speaker for w in results[0].words] == [0, 1, 1, 1, 1, 1]
 
-    async def test_words_without_labels_are_unattributed(self) -> None:
-        words = [_word("Bonjour.", None, 0.1, 0.5)]
+    @pytest.mark.parametrize("spelling", [None, "unknown", "UU", "PENDING"])
+    async def test_words_without_labels_are_unattributed(self, spelling: str | None) -> None:
+        """The spellings of nobody are Deepgram's adapter's to name (RFC §12.2.3)."""
+        words = [_word("Bonjour.", spelling, 0.1, 0.5)]
         provider, _ = _provider([_message(words, "Bonjour.")], diarize_model="latest")
         results = await _stream(provider)
         assert results[0].segments == [SpeakerSegment(None, "Bonjour.", 100, 500)]
