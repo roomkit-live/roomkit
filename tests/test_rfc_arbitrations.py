@@ -51,15 +51,23 @@ class TestEndedIsTerminal:
         assert s.state is VoiceSessionState.ENDED
 
     def test_an_undocumented_transition_warns_rather_than_raises(self, caplog) -> None:
-        """The table does not model every provider's reality — a renegotiating
-        realtime provider goes ACTIVE -> CONNECTING. Turning that into a crash
-        would trade a documentation gap for an outage."""
+        """The table does not model every provider's reality. Turning a move
+        outside it into a crash would trade a documentation gap for an outage."""
+        s = _session()
+        with caplog.at_level("WARNING"):
+            s.state = VoiceSessionState.PAUSED
+        assert s.state is VoiceSessionState.PAUSED
+        assert "undocumented transition" in caplog.text
+
+    def test_a_provider_reconnecting_is_a_documented_transition(self, caplog) -> None:
+        """RFC §12.2: a realtime provider whose connection dropped goes
+        ACTIVE -> CONNECTING while the participant stays."""
         s = _session()
         s.state = VoiceSessionState.ACTIVE
         with caplog.at_level("WARNING"):
             s.state = VoiceSessionState.CONNECTING
         assert s.state is VoiceSessionState.CONNECTING
-        assert "undocumented transition" in caplog.text
+        assert "undocumented transition" not in caplog.text
 
     def test_renegotiate_is_the_one_sanctioned_way_back(self) -> None:
         """A reconfigure tears the upstream connection down and rebuilds it

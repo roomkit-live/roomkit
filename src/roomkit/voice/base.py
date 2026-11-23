@@ -113,12 +113,15 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-# RFC §12.1 — the state transitions a voice session may make. ENDED is absent
-# as a source on purpose: it is terminal, and a participant who reconnects gets
-# a new session.
+# RFC §12.2 — the state transitions a voice session may make, ACTIVE ->
+# CONNECTING for a provider that reconnects while the participant stays. ENDED
+# is absent as a source on purpose: it is terminal but for the framework's own
+# renegotiation, and a participant who reconnects gets a new session.
 _VOICE_STATE_TRANSITIONS: dict[VoiceSessionState, frozenset[VoiceSessionState]] = {
     VoiceSessionState.CONNECTING: frozenset({VoiceSessionState.ACTIVE, VoiceSessionState.ENDED}),
-    VoiceSessionState.ACTIVE: frozenset({VoiceSessionState.PAUSED, VoiceSessionState.ENDED}),
+    VoiceSessionState.ACTIVE: frozenset(
+        {VoiceSessionState.PAUSED, VoiceSessionState.CONNECTING, VoiceSessionState.ENDED}
+    ),
     VoiceSessionState.PAUSED: frozenset({VoiceSessionState.ACTIVE, VoiceSessionState.ENDED}),
     VoiceSessionState.ENDED: frozenset(),
 }
@@ -128,12 +131,11 @@ _VOICE_STATE_TRANSITIONS: dict[VoiceSessionState, frozenset[VoiceSessionState]] 
 class VoiceSession:
     """Active voice connection for a participant.
 
-    ``state`` is guarded (RFC §12.1). Leaving ENDED is refused outright — it is
-    the one transition the RFC forbids, and letting a torn-down session go back
-    to ACTIVE resurrects audio paths the framework has already released. Any
-    other move outside the table is logged and allowed: the table does not
-    model every provider's reality (a realtime provider renegotiating goes
-    ACTIVE → CONNECTING), and turning an unmodelled transition into a crash
+    ``state`` is guarded (RFC §12.2). Leaving ENDED is refused outright, but
+    through :meth:`renegotiate`: letting a torn-down session go back to ACTIVE
+    resurrects audio paths the framework has already released. Any other move
+    outside the table is logged and allowed: the table may not model every
+    provider's reality, and turning an unmodelled transition into a crash
     would trade a documentation gap for an outage.
     """
 
