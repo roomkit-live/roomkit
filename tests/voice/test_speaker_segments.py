@@ -37,6 +37,9 @@ class TestSpeakerLabel:
         [
             ("Speaker 1", "1"),
             ("speaker_0", "0"),
+            ("speaker1", "1"),
+            ("Speakerphone", "Speakerphone"),
+            ("speakers", "speakers"),
             ("A", "A"),
             (0, "0"),
             (" B ", "B"),

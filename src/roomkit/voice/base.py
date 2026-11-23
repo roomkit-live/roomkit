@@ -204,8 +204,9 @@ class VoiceSession:
 
 
 # The word a label may carry before the part that tells voices apart
-# ("Speaker 1", "speaker_0").
-_SPEAKER_PREFIX = re.compile(r"^speaker[\s_:#-]*", re.IGNORECASE)
+# ("Speaker 1", "speaker_0", "speaker1"): a whole word, so "Speakerphone"
+# stays as it is.
+_SPEAKER_PREFIX = re.compile(r"^speaker(?:[\s_:#-]+|(?=\d))", re.IGNORECASE)
 
 
 def speaker_label(value: Any, *, unattributed: Collection[str] = ()) -> str | None:
@@ -215,9 +216,11 @@ def speaker_label(value: Any, *, unattributed: Collection[str] = ()) -> str | No
     one the provider's wire uses for a speaker it could not attribute. Those
     spellings are the provider's own: it passes them in ``unattributed``,
     compared in any case, and RoomKit knows no vendor's. A leading "speaker"
-    word is dropped, so ``"Speaker 1"`` and ``"speaker_1"`` both read ``"1"``
-    and a channel's ``"Speaker 1"`` name is not ``"Speaker Speaker 1"``. The
-    mapping is fixed, so a label stays as stable as the provider's.
+    word is dropped with the separator after it, so ``"Speaker 1"``,
+    ``"speaker_1"`` and ``"speaker1"`` all read ``"1"`` and a channel's
+    ``"Speaker 1"`` name is not ``"Speaker Speaker 1"``; a longer word that
+    starts with it (``"Speakerphone"``) is kept whole. The mapping is fixed,
+    so a label stays as stable as the provider's.
     """
     if value is None:
         return None
