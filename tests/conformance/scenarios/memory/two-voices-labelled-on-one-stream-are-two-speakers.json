@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/two-voices-labelled-on-one-stream-are-two-speakers",
+  "title": "Two voices a channel labels on one sender's stream are two speakers: their turns are labelled, with nobody on the roster",
+  "rules": [
+    "§6.4",
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-12.2.3-037",
+    "RK-6.4-359"
+  ],
+  "notes": "One sender, owner, speaks through ws as a diarizing voice channel routes two voices of one microphone: metadata.speaker_label A then B, in speaker_epoch 0, each with its sender_name. No participant record names owner, so each voice is a source of its own and the second turn reads both labelled. Before RMK-2026 Python and roomkit-rs counted both as owner's, one speaker, and the model read them unlabelled.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "A table for two"
+        },
+        "metadata": {
+          "speaker_label": "A",
+          "speaker_epoch": 0,
+          "sender_name": "Speaker A"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "No, for three"
+        },
+        "metadata": {
+          "speaker_label": "B",
+          "speaker_epoch": 0,
+          "sender_name": "Speaker B"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "A table for two"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Speaker A: \"A table for two\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "Speaker B: \"No, for three\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
