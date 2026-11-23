@@ -75,6 +75,21 @@ class TestVoiceChannelBindingGate:
         assert len(stt.calls) >= 1
         await kit.close()
 
+    async def test_a_paused_session_still_transcribes(self) -> None:
+        """RFC §12.2: a voice channel goes on as in ACTIVE while the integrator
+        holds the session PAUSED; only a realtime channel stops forwarding."""
+        kit, channel, backend, stt, room_id = await self._setup()
+        session = backend.get_session(next(iter(channel._session_bindings)))
+        assert session is not None
+
+        session.state = VoiceSessionState.PAUSED
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame2"))
+        await _settle(channel)
+        await kit.close()
+
+        assert len(stt.calls) >= 1
+
     async def test_read_only_drops_audio(self) -> None:
         kit, channel, backend, stt, room_id = await self._setup(access=Access.READ_ONLY)
         sessions = list(channel._session_bindings.keys())
