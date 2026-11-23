@@ -20,7 +20,6 @@ from roomkit import (
     ConferenceInterruptionScope,
     ConferenceParticipant,
     ConferenceRecordingConfig,
-    ConferenceRecordingMode,
     TrackKind,
 )
 from roomkit.voice.interruption import InterruptionStrategy
@@ -150,12 +149,9 @@ class TestInterruptionConfig:
 
 
 class TestRecordingConfig:
-    def test_defaults_to_framework_recording(self) -> None:
-        """The path that always works: no backend capability, functions against
-        the mock, and the file lands where the implementation writes it.
-        Delegating to the SFU is opt-in and exists only for composed video.
-        """
+    def test_defaults_to_wav(self) -> None:
+        """The framework records the tracks the bot subscribes to: no backend
+        capability, functions against the mock (RFC §12.10.8)."""
         config = ConferenceRecordingConfig()
 
-        assert config.mode is ConferenceRecordingMode.FRAMEWORK
         assert config.format == "wav"

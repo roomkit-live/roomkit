@@ -31,10 +31,14 @@ from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 
+# A voice the stage heard and attributed to nobody (RFC §12.3.9).
+_NOBODY = DiarizationResult(speaker_id=None, confidence=0.0, is_new_speaker=True)
 
-def _heard(speaker: str | None) -> DiarizationResult | None:
-    if speaker is None:
-        return None
+
+def _heard(speaker: str | DiarizationResult | None) -> DiarizationResult | None:
+    """The stage's result for one frame: a label, a ready result, or none."""
+    if speaker is None or isinstance(speaker, DiarizationResult):
+        return speaker
     return DiarizationResult(speaker_id=speaker, confidence=0.9, is_new_speaker=False)
 
 
@@ -55,6 +59,12 @@ class _Room:
         self.rename: dict[str | None, str] = {}
         self.participants: dict[str | None, str] = {}
         self.transcriptions: list[Any] = []
+        self.speaker_changes: list[str] = []
+
+        @self.kit.hook(HookTrigger.ON_SPEAKER_CHANGE)
+        async def on_speaker_change(event: Any, ctx: Any) -> HookResult:
+            self.speaker_changes.append(event.speaker_id)
+            return HookResult.allow()
 
         @self.kit.hook(HookTrigger.ON_TRANSCRIPTION)
         async def on_transcription(event: Any, ctx: Any) -> HookResult:
@@ -96,7 +106,9 @@ class _Room:
             await asyncio.sleep(0.02)
 
 
-def _vad_room(speakers: list[str | None], utterances: int, **channel: Any) -> _Room:
+def _vad_room(
+    speakers: list[str | DiarizationResult | None], utterances: int, **channel: Any
+) -> _Room:
     backend = MockVoiceBackend()
     stt = MockSTTProvider(transcripts=[f"Phrase {i + 1}." for i in range(utterances)])
     pipeline = AudioPipelineConfig(
@@ -108,10 +120,14 @@ def _vad_room(speakers: list[str | None], utterances: int, **channel: Any) -> _R
 
 
 class TestTally:
-    def _frame(self, speaker: str | None, seconds: float = 0.1) -> AudioFrame:
+    def _frame(self, speaker: str | DiarizationResult | None, seconds: float = 0.1) -> AudioFrame:
         frame = AudioFrame(data=b"\x00\x00" * int(16000 * seconds))
-        if speaker is not None:
-            frame.metadata["diarization"] = {"speaker_id": speaker, "confidence": 0.9}
+        result = _heard(speaker)
+        if result is not None:
+            frame.metadata["diarization"] = {
+                "speaker_id": result.speaker_id,
+                "confidence": result.confidence,
+            }
         return frame
 
     def test_the_speaker_heard_longest_wins_then_the_slate_is_clean(self) -> None:
@@ -154,11 +170,12 @@ class TestTally:
         assert tally.take("s") is None
 
     def test_a_voice_matched_to_nobody_is_an_unknown_speaker(self) -> None:
-        # sherpa-onnx says "unknown" below its match threshold: someone spoke,
-        # and it was not the stream owner as far as the stage can tell.
+        # A stage reports a voice below its match threshold as a null
+        # speaker_id: someone spoke, and it was not the stream owner as far as
+        # the stage can tell.
         tally = PipelineSpeakerTally()
         tally.add("s", self._frame("speaker_0", 0.1))
-        tally.add("s", self._frame("unknown", 0.3))
+        tally.add("s", self._frame(_NOBODY, 0.3))
         taken = tally.take("s")
         assert taken is not None
         assert (taken.label, taken.sender_name) == (None, "Unknown speaker")
@@ -274,6 +291,33 @@ class TestVADMode:
         assert message.source.participant_id == "owner"
         assert "sender_name" not in message.metadata
         assert "ON_TRANSCRIPTION attribution unused" in caplog.text
+
+    async def test_a_voice_the_stage_matched_to_nobody_is_an_unknown_speaker(self) -> None:
+        """RFC §12.2.3, §12.3.9: a stage reports a voice it attributes to
+        nobody as a null speaker_id. The transcript is "Unknown speaker", with
+        no label, and the stage fires no ON_SPEAKER_CHANGE for it."""
+        room = _vad_room([_NOBODY] * 3, 1, pipeline_speakers=True)
+        await room.start()
+        await room.frames(3)
+        [message] = await room.messages(1)
+        await room.channel.close()
+        assert message.metadata["sender_name"] == "Unknown speaker"
+        assert "speaker_label" not in message.metadata
+        assert room.speaker_changes == []
+
+    @pytest.mark.parametrize("spelling", ["PENDING", "UU", "unknown"])
+    async def test_a_vendor_spelling_is_a_label_like_any_other(self, spelling: str) -> None:
+        """RoomKit knows no vendor's spelling of an unattributed speaker: the
+        stage turns its own into a null speaker_id (RFC §12.3.9), and a
+        string it hands on is a speaker."""
+        room = _vad_room([spelling] * 3, 1, pipeline_speakers=True)
+        await room.start()
+        await room.frames(3)
+        [message] = await room.messages(1)
+        await room.channel.close()
+        assert message.metadata["speaker_label"] == spelling
+        assert message.metadata["sender_name"] == f"Speaker {spelling}"
+        assert room.speaker_changes == [spelling]
 
     async def test_without_the_option_nothing_changes(self) -> None:
         room = _vad_room(["speaker_0"] * 3, 1)

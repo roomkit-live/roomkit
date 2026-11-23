@@ -113,10 +113,22 @@ class ConferenceBackend(ABC):
         """What this backend supports.
 
         The framework refuses configurations the backend cannot honour rather
-        than discovering it at runtime — egress recording without
-        ``EGRESS_RECORDING``, remote unmute without ``REMOTE_UNMUTE``, bot
-        video without ``VIDEO_PUBLISH``.
+        than discovering it at runtime — remote unmute without
+        ``REMOTE_UNMUTE``, bot video without ``VIDEO_PUBLISH``.
         """
+
+    @property
+    def address_keys(self) -> tuple[str, ...]:
+        """The participant-attribute keys this backend's SFU uses for a
+        caller's address, most specific first (RFC §12.10.2).
+
+        A conference channel reads them before its generic keys
+        (:data:`~roomkit.channels.conference.CONFERENCE_ADDRESS_KEYS`), unless
+        the integrator configured the keys itself: what an SFU calls a dial-in's
+        caller number is the provider's own knowledge, never the framework's.
+        Never a key carrying the number the caller dialled. None by default.
+        """
+        return ()
 
     # -------------------------------------------------------------------------
     # Control plane

@@ -22,11 +22,12 @@ ConferenceChannel(
     speak_text_events=False, # off: only AI-channel text events are spoken
     close_providers=True,
     max_queued_frames=100,   # per-track backpressure bound (lane + recording)
-    identity_address_keys=None, identity_trusts_unasserted_metadata=False,
+    identity_address_keys=None,  # None: the backend's address_keys, then CONFERENCE_ADDRESS_KEYS
+    identity_trusts_unasserted_metadata=False,
 )
 ```
 
-Refused at construction (and identically at plug time): `e2ee=True` with stt/recording/realtime (bot receives ciphertext); `ConferenceRecordingMode.EGRESS` (only `FRAMEWORK` is implemented); `tts` + `realtime` together (one bot track, one voice); `realtime.tools` without `tool_handler`; a `pipeline` without a VAD when stt/realtime is set.
+Refused at construction (and identically at plug time): `e2ee=True` with stt/recording/realtime (bot receives ciphertext); a `recording` without a `recorder`, or a `recorder` without a `recording`; `tts` + `realtime` together (one bot track, one voice); `realtime.tools` without `tool_handler`; a `pipeline` without a VAD when stt/realtime is set.
 
 `mint_access(room_id, participant_id, *, grants=None, attributes=None, organization_id=None)` reads the room with `organization_id` first (RFC §17.2): another organization's room raises `RoomNotFoundError` and nothing is minted; left unset, no room is read for the scope.
 
@@ -71,7 +72,7 @@ SYSTEM lifecycle events; payload in `event.content.data` (always includes `chann
 - Control plane: `ensure_room(room_id, metadata=None, e2ee=False)`, `close_room()`, `mint_access(room_id, participant_id, grants, *, display_name=None) -> ConferenceAccess`, `list_participants()`, `remove_participant()`, `mute_track()`, `unmute_track()` (needs `REMOTE_UNMUTE`).
 - Bot session: `join_as_bot(room_id, identity, grants) -> BotSession`, `leave(bot)`, `update_bot_grants(bot, grants)` (needs `BOT_GRANT_UPDATE`, else `ConferenceCapabilityError`), `subscribe_track(bot, track_id)`, `unsubscribe_track()`, `publish_audio(bot, chunk)` (PCM `AudioChunk`; `is_final` ends the utterance), `stop_playback(bot)` (barge-in: discard queued unplayed audio; utterance still ends on `is_final`; no-op for a gone session), `publish_video()` (needs `VIDEO_PUBLISH`), `close()`.
 - Callbacks (what drives the channel): `on_participant_joined/left`, `on_track_published/unpublished/muted/unmuted`, `on_track_audio`, `on_track_video`, `on_active_speaker_changed`, `on_connection_quality`, `on_bot_session_ended` (SFU dropped the bot without a `leave()`).
-- `ConferenceCapability` flags: `SCREEN_SHARE`, `EGRESS_RECORDING`, `SIP_GATEWAY`, `ACTIVE_SPEAKER`, `CONNECTION_QUALITY`, `VIDEO_PUBLISH`, `REMOTE_UNMUTE`, `BOT_GRANT_UPDATE`, `E2EE`.
+- `ConferenceCapability` flags: `SCREEN_SHARE`, `SIP_GATEWAY`, `ACTIVE_SPEAKER`, `CONNECTION_QUALITY`, `VIDEO_PUBLISH`, `REMOTE_UNMUTE`, `BOT_GRANT_UPDATE`, `E2EE`.
 
 ## Backends
 

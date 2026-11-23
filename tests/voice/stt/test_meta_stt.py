@@ -33,7 +33,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk, SpeakerSegment, TranscriptionResult
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.meta import MetaSTTConfig, MetaSTTError, MetaSTTProvider
-from roomkit.voice.stt.meta_protocol import Turns, speaker_label, to_result
+from roomkit.voice.stt.meta_protocol import Turns, label_of, to_result
 
 _ACK = {"sessionId": "voyager/duplex/TEST"}
 _END_OF_STREAM = {"type": "transcript", "transcript": "", "final": True, "audioProcessedMs": 0}
@@ -206,7 +206,7 @@ class TestEventMapping:
     def test_labels_are_strings_and_unattributed_is_none(
         self, value: Any, label: str | None
     ) -> None:
-        assert speaker_label(value) == label
+        assert label_of(value) == label
 
     def test_diarized_turn_carries_its_speaker_and_offsets(self) -> None:
         turn = Turns()

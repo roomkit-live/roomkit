@@ -89,6 +89,35 @@ class TestSherpaOnnxDiarizationProviderEnroll:
         manager.remove.assert_called_once_with("alice")
 
 
+class TestSherpaOnnxDiarizationProviderIdentify:
+    def test_a_voice_matched_to_nobody_has_no_speaker_id(self):
+        """RFC §12.3.9: below the match threshold someone spoke and matched no
+        enrolled voice; the provider says so with a null speaker_id, since the
+        pipeline reads any string as a speaker."""
+        mock_mod, extractor, manager = _make_mock_sherpa_onnx()
+        extractor.is_ready.return_value = True
+        extractor.compute.return_value = [0.5, 0.5]
+        manager.search.return_value = ""
+        provider, _ = _make_provider(mock_mod)
+
+        result = provider._identify(provider._state_for("s"), b"\x00\x01" * 160, 16000)
+
+        assert result is not None
+        assert (result.speaker_id, result.confidence, result.is_new_speaker) == (None, 0.0, True)
+
+    def test_an_enrolled_voice_is_named(self):
+        mock_mod, extractor, manager = _make_mock_sherpa_onnx()
+        extractor.is_ready.return_value = True
+        extractor.compute.return_value = [0.5, 0.5]
+        manager.search.return_value = "alice"
+        provider, _ = _make_provider(mock_mod)
+
+        result = provider._identify(provider._state_for("s"), b"\x00\x01" * 160, 16000)
+
+        assert result is not None
+        assert (result.speaker_id, result.is_new_speaker) == ("alice", True)
+
+
 class TestSherpaOnnxDiarizationProviderReset:
     def test_reset_clears_only_that_stream(self):
         mock_mod, _, _ = _make_mock_sherpa_onnx()

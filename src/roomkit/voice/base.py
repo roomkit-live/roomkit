@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Flag, StrEnum, auto, unique
@@ -203,27 +203,26 @@ class VoiceSession:
         object.__setattr__(self, name, value)
 
 
-# How vendors spell a speaker they could not attribute (RFC §12.2.3).
-_UNATTRIBUTED_LABELS = frozenset({"", "unknown", "uu", "pending"})
-# The word some labels carry before the part that tells voices apart:
-# "Speaker 1" (Gemini), "speaker_0" (sherpa-onnx).
+# The word a label may carry before the part that tells voices apart
+# ("Speaker 1", "speaker_0").
 _SPEAKER_PREFIX = re.compile(r"^speaker[\s_:#-]*", re.IGNORECASE)
 
 
-def speaker_label(value: Any) -> str | None:
-    """A vendor's speaker label as RoomKit carries it (RFC §12.2.3).
+def speaker_label(value: Any, *, unattributed: Collection[str] = ()) -> str | None:
+    """A provider's speaker label as RoomKit carries it (RFC §12.2.3).
 
-    A string (``0`` becomes ``"0"``); ``None`` for a speaker the vendor could
-    not attribute, whatever it spells it (``UU``, ``PENDING``, ``unknown``);
-    and without a leading "speaker" word, so ``"Speaker 1"`` and
-    ``"speaker_1"`` both read ``"1"`` and a channel's ``"Speaker 1"`` name is
-    not ``"Speaker Speaker 1"``. The mapping is fixed, so a label stays as
-    stable as the vendor's.
+    A string (``0`` becomes ``"0"``); ``None`` for no label, an empty one, or
+    one the provider's wire uses for a speaker it could not attribute. Those
+    spellings are the provider's own: it passes them in ``unattributed``,
+    compared in any case, and RoomKit knows no vendor's. A leading "speaker"
+    word is dropped, so ``"Speaker 1"`` and ``"speaker_1"`` both read ``"1"``
+    and a channel's ``"Speaker 1"`` name is not ``"Speaker Speaker 1"``. The
+    mapping is fixed, so a label stays as stable as the provider's.
     """
     if value is None:
         return None
     label = str(value).strip()
-    if label.lower() in _UNATTRIBUTED_LABELS:
+    if not label or label.casefold() in {spelling.casefold() for spelling in unattributed}:
         return None
     return _SPEAKER_PREFIX.sub("", label) or label
 

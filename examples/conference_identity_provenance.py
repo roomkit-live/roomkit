@@ -7,8 +7,11 @@ attached (RFC §12.10.2). But one attribute map carries two very different
 things: what the SFU established (the number the SIP trunk reported) and what a
 client supplied when it joined. Only the first can found an identity.
 
-This runs four arrivals against MockConferenceBackend and shows what each one
-leaves on the room's roster:
+Which attribute holds the caller number is the provider's knowledge, so its
+backend declares the key (``ConferenceBackend.address_keys``) and the channel
+reads it before its generic keys. This runs four arrivals against a
+MockConferenceBackend that declares ``sip.phoneNumber``, the key a SIP trunk's
+SFU might use, and shows what each one leaves on the room's roster:
 
 1. a dial-in whose number the SFU asserts    → identified;
 2. a participant that writes the same number → left unknown;
@@ -49,10 +52,18 @@ NUMBER = "+15551234"
 ALICE = Identity(id="user-42", display_name="Alice", channel_addresses={"sms": [NUMBER]})
 
 
+class SipTrunkBackend(MockConferenceBackend):
+    """A backend whose SFU reports a dial-in's caller number as ``sip.phoneNumber``."""
+
+    @property
+    def address_keys(self) -> tuple[str, ...]:
+        return ("sip.phoneNumber",)
+
+
 async def conference(
     trusts_unasserted: bool = False,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
-    backend = MockConferenceBackend()
+    backend = SipTrunkBackend()
     channel = ConferenceChannel(
         "conf",
         backend=backend,

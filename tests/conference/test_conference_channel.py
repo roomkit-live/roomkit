@@ -431,7 +431,7 @@ class TestArrivalWithoutABot:
         backend.fail("join_as_bot")
 
         await backend.simulate_participant_joined(
-            ROOM, "sip_15551234", metadata={"sip.phoneNumber": "+15551234"}
+            ROOM, "sip_15551234", metadata={"phone_number": "+15551234"}
         )
 
         participant = (await kit.store.list_participants(ROOM))[0]

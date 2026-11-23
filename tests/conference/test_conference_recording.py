@@ -20,7 +20,6 @@ import pytest
 
 from roomkit import (
     ConferenceRecordingConfig,
-    ConferenceRecordingMode,
     ConferenceRecordingStarted,
     ConferenceRecordingStopped,
     MockConferenceBackend,
@@ -599,20 +598,6 @@ class TestRefusedConfiguration:
                 "conf",
                 backend=MockConferenceBackend(),
                 recorder=MockMediaRecorder(),
-            )
-
-    async def test_egress_mode_is_refused_by_name(self) -> None:
-        """RFC §12.10.8 specifies egress and gives it no result contract, and
-        ConferenceBackend has no egress surface to delegate to. The difference
-        between "recorded by the SFU" and "not recorded" is not one an
-        integrator should have to discover.
-        """
-        with pytest.raises(ValueError, match="egress"):
-            ConferenceChannel(
-                "conf",
-                backend=MockConferenceBackend(),
-                recorder=MockMediaRecorder(),
-                recording=ConferenceRecordingConfig(mode=ConferenceRecordingMode.EGRESS),
             )
 
     async def test_recording_an_encrypted_conference_is_refused(self) -> None:

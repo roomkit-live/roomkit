@@ -5635,11 +5635,12 @@ ConferenceChannel(
     speak_text_events=False, # off: only AI-channel text events are spoken
     close_providers=True,
     max_queued_frames=100,   # per-track backpressure bound (lane + recording)
-    identity_address_keys=None, identity_trusts_unasserted_metadata=False,
+    identity_address_keys=None,  # None: the backend's address_keys, then CONFERENCE_ADDRESS_KEYS
+    identity_trusts_unasserted_metadata=False,
 )
 ```
 
-Refused at construction (and identically at plug time): `e2ee=True` with stt/recording/realtime (bot receives ciphertext); `ConferenceRecordingMode.EGRESS` (only `FRAMEWORK` is implemented); `tts` + `realtime` together (one bot track, one voice); `realtime.tools` without `tool_handler`; a `pipeline` without a VAD when stt/realtime is set.
+Refused at construction (and identically at plug time): `e2ee=True` with stt/recording/realtime (bot receives ciphertext); a `recording` without a `recorder`, or a `recorder` without a `recording`; `tts` + `realtime` together (one bot track, one voice); `realtime.tools` without `tool_handler`; a `pipeline` without a VAD when stt/realtime is set.
 
 `mint_access(room_id, participant_id, *, grants=None, attributes=None, organization_id=None)` reads the room with `organization_id` first (RFC §17.2): another organization's room raises `RoomNotFoundError` and nothing is minted; left unset, no room is read for the scope.
 
@@ -5684,7 +5685,7 @@ SYSTEM lifecycle events; payload in `event.content.data` (always includes `chann
 - Control plane: `ensure_room(room_id, metadata=None, e2ee=False)`, `close_room()`, `mint_access(room_id, participant_id, grants, *, display_name=None) -> ConferenceAccess`, `list_participants()`, `remove_participant()`, `mute_track()`, `unmute_track()` (needs `REMOTE_UNMUTE`).
 - Bot session: `join_as_bot(room_id, identity, grants) -> BotSession`, `leave(bot)`, `update_bot_grants(bot, grants)` (needs `BOT_GRANT_UPDATE`, else `ConferenceCapabilityError`), `subscribe_track(bot, track_id)`, `unsubscribe_track()`, `publish_audio(bot, chunk)` (PCM `AudioChunk`; `is_final` ends the utterance), `stop_playback(bot)` (barge-in: discard queued unplayed audio; utterance still ends on `is_final`; no-op for a gone session), `publish_video()` (needs `VIDEO_PUBLISH`), `close()`.
 - Callbacks (what drives the channel): `on_participant_joined/left`, `on_track_published/unpublished/muted/unmuted`, `on_track_audio`, `on_track_video`, `on_active_speaker_changed`, `on_connection_quality`, `on_bot_session_ended` (SFU dropped the bot without a `leave()`).
-- `ConferenceCapability` flags: `SCREEN_SHARE`, `EGRESS_RECORDING`, `SIP_GATEWAY`, `ACTIVE_SPEAKER`, `CONNECTION_QUALITY`, `VIDEO_PUBLISH`, `REMOTE_UNMUTE`, `BOT_GRANT_UPDATE`, `E2EE`.
+- `ConferenceCapability` flags: `SCREEN_SHARE`, `SIP_GATEWAY`, `ACTIVE_SPEAKER`, `CONNECTION_QUALITY`, `VIDEO_PUBLISH`, `REMOTE_UNMUTE`, `BOT_GRANT_UPDATE`, `E2EE`.
 
 ## Backends
 
@@ -8158,7 +8159,6 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `ConferenceParticipant` | A participant's media presence in a conference |
 | `ConferenceRealtimeConfig` | Composes a speech-to-speech provider with a conference |
 | `ConferenceRecordingConfig` | Configuration for recording a conference |
-| `ConferenceRecordingMode` | Where a conference recording is produced |
 | `ConferenceRecordingStarted` | Event: a track's recording has opened |
 | `ConferenceRecordingStopped` | Event: a track's recording has closed, with its destination |
 | `ConferenceToolHandler` | Callable type for conference tool invocation |
@@ -8172,7 +8172,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `MockFaults` | Per-operation failures and delays for the mock backend |
 | `MockTrackFormat` | Audio format a participant negotiated for one track (mock) |
 | `MockUtterance` | Chunks published for one utterance on one bot's track (mock) |
-| `CONFERENCE_ADDRESS_KEYS` | Participant-attribute keys read as a caller's address, most specific first |
+| `CONFERENCE_ADDRESS_KEYS` | Generic participant-attribute keys read as a caller's address, after the backend's own (`ConferenceBackend.address_keys`) |
 | `CONFERENCE_METADATA_KEY` | `Participant.metadata` key a conference nests provider data under (`"conference"`) |
 | `CONFERENCE_UNASSERTED_METADATA_KEY` | Metadata key nesting client-claimed (unverified) participant attributes |
 

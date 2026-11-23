@@ -13,7 +13,7 @@ import pytest
 
 from roomkit import VoiceChannel
 from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.base import AudioChunk, SpeakerSegment, speaker_label
+from roomkit.voice.base import AudioChunk, SpeakerSegment
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.stt.gemini import (
     GeminiSTTConfig,
@@ -42,29 +42,6 @@ _RECOGNISED = Transcript(
 )
 
 
-class TestSpeakerLabel:
-    @pytest.mark.parametrize(
-        ("value", "label"),
-        [
-            ("Speaker 1", "1"),
-            ("speaker_0", "0"),
-            ("A", "A"),
-            (0, "0"),
-            (" B ", "B"),
-            ("S1", "S1"),
-            ("UU", None),
-            ("PENDING", None),
-            ("unknown", None),
-            ("", None),
-            (None, None),
-        ],
-    )
-    def test_labels_are_short_strings_and_unattributed_is_none(
-        self, value: object, label: str | None
-    ) -> None:
-        assert speaker_label(value) == label
-
-
 class TestTranscriptSpeakerSegments:
     def test_prompted_turns_keep_the_models_seconds(self) -> None:
         assert _PROMPTED.speaker_segments() == [
@@ -78,6 +55,14 @@ class TestTranscriptSpeakerSegments:
             SpeakerSegment("1", "Bonjour Julie.", 300, 1200),
             SpeakerSegment("2", "Oui.", 1600, 1900),
         ]
+
+    @pytest.mark.parametrize("spelling", ["UU", "PENDING", "unknown", ""])
+    def test_a_turn_attributed_to_nobody_has_no_speaker(self, spelling: str) -> None:
+        """The spellings are Gemini's adapter's to name (RFC §12.2.3)."""
+        transcript = Transcript(
+            language="fr", segments=[TranscriptSegment(spelling, "", "", "Suite.")]
+        )
+        assert transcript.speaker_segments() == [SpeakerSegment(None, "Suite.", None, None)]
 
     def test_an_hour_long_offset_and_an_unreadable_one(self) -> None:
         transcript = Transcript(

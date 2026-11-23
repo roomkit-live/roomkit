@@ -16,6 +16,7 @@ from roomkit.voice.base import speaker_label
 from roomkit.voice.stt.voxtral_protocol import (
     REALTIME_PATH,
     STREAMING_DELAYS_MS,
+    UNATTRIBUTED_LABELS,
     language_code,
     valid_streaming_delay,
 )
@@ -211,14 +212,16 @@ class VoxtralSTTConfig:
 def _check_reference(name: str, clip: object) -> None:
     """Refuse a reference whose name the room would not show as given, or no clip.
 
-    A label goes through :func:`~roomkit.voice.base.speaker_label`: a name it
-    rewrites (``"Speaker Bob"``, ``"unknown"``) would not be the one the
-    caller chose, and a number could be the label of a voice the references
-    did not match (``speaker_3``).
+    A label goes through :func:`~roomkit.voice.base.speaker_label`, with the
+    spellings Voxtral may use for nobody: a name it rewrites (``"Speaker
+    Bob"``, ``"unknown"``) would not be the one the caller chose, and a number
+    could be the label of a voice the references did not match
+    (``speaker_3``).
     """
     if not name.strip():
         raise ValueError("speaker_references names must not be blank")
-    if speaker_label(name) != name.strip() or name.strip().isdigit():
+    labelled = speaker_label(name, unattributed=UNATTRIBUTED_LABELS)
+    if labelled != name.strip() or name.strip().isdigit():
         raise ValueError(
             f"speaker_references name {name!r} would not label its voice as given: "
             "use a name, not a number or a word such as 'speaker' or 'unknown'"

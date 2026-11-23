@@ -419,6 +419,12 @@ class TestListedParticipants:
 
         assert (participant.asserted_metadata or {})["sip.phoneNumber"] == "+15145550123"
 
+    def test_the_backend_declares_the_key_of_a_caller_s_number(self) -> None:
+        """LiveKit's key is the backend's to provide (RFC §12.10.2): a channel
+        on it reads ``sip.phoneNumber`` before its generic keys, and never the
+        number the caller dialled."""
+        assert _backend().address_keys == ("sip.phoneNumber",)
+
     async def test_a_participants_tracks_come_with_it(self) -> None:
         backend = _backend()
         _served(backend).participants = [

@@ -101,11 +101,10 @@ class TestCapabilities:
         [
             ConferenceCapability.VIDEO_PUBLISH,
             ConferenceCapability.E2EE,
-            ConferenceCapability.EGRESS_RECORDING,
         ],
     )
     def test_what_is_not_wired_is_not_declared(self, capability: ConferenceCapability) -> None:
-        """LiveKit can do all three. This backend has not branched any of them,
+        """LiveKit can do both. This backend has not branched either of them,
         and a capability is a statement about the backend, not the product.
         """
         assert capability not in capabilities_for(remote_unmute=True, sip_gateway=True)

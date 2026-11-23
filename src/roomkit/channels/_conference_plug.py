@@ -235,8 +235,8 @@ class ConferencePlugMixin:
     ) -> None:
         """Plug recording into the running channel.
 
-        Subject to the constructor's own refusals — E2EE, a mode with no
-        egress surface — via the same resolution path, so a configuration
+        Subject to the constructor's own refusals — E2EE, a recording with no
+        recorder — via the same resolution path, so a configuration
         refused at construction is refused identically here. Consent gating
         is unchanged: each track's recording opens on its first frame, after
         ON_RECORDING_STARTED has been heard (RFC 17.6).

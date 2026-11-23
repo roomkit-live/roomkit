@@ -241,6 +241,8 @@ class VoiceHooksMixin:
         """ON_SPEAKER_CHANGE from the pipeline's diarization stage."""
         from roomkit.voice.events import SpeakerChangeEvent
 
+        if result.speaker_id is None:  # nobody: the pipeline reports no change for it
+            return
         event = SpeakerChangeEvent(
             session=session,
             speaker_id=result.speaker_id,

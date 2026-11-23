@@ -15,6 +15,10 @@ from typing import Any
 from roomkit.providers.ai.base import ProviderError
 from roomkit.voice.base import SpeakerSegment, TranscriptionResult, speaker_label
 
+# How this vendor's wire may spell a speaker it could not attribute: the
+# provider names them, RoomKit's label rule knows no vendor's (RFC §12.2.3).
+UNATTRIBUTED_LABELS = ("unknown", "UU", "PENDING")
+
 REALTIME_PATH = "/v1/audio/transcriptions/realtime"
 
 STREAMING_DELAYS_MS = "80 to 1200, or 2400"
@@ -111,7 +115,7 @@ def _speaker_runs(items: list[Any]) -> list[SpeakerSegment]:
     for item in items:
         if not isinstance(item, dict) or not str(item.get("text") or "").strip():
             continue
-        speaker = speaker_label(item.get("speaker_id"))
+        speaker = speaker_label(item.get("speaker_id"), unattributed=UNATTRIBUTED_LABELS)
         text = str(item["text"]).strip()
         start, end = _ms(item.get("start")), _ms(item.get("end"))
         if runs and runs[-1].speaker == speaker:

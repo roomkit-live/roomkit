@@ -565,7 +565,7 @@ class TestSpeakerChangeCallbacks:
         assert len(received) == 1
         assert received[0].speaker_id == "spk_A"
 
-    def _changes(self, speaker_ids: list[str]) -> tuple[list[str], list[object]]:
+    def _changes(self, speaker_ids: list[str | None]) -> tuple[list[str | None], list[object]]:
         diarizer = MockDiarizationProvider(
             results=[
                 DiarizationResult(speaker_id=s, confidence=0.5, is_new_speaker=False)
@@ -573,7 +573,7 @@ class TestSpeakerChangeCallbacks:
             ]
         )
         pipeline = AudioPipeline(AudioPipelineConfig(diarization=diarizer))
-        received: list[str] = []
+        received: list[str | None] = []
         pipeline.on_speaker_change(lambda _s, r: received.append(r.speaker_id))
         session = _session()
         frames = [_frame() for _ in speaker_ids]
@@ -582,13 +582,20 @@ class TestSpeakerChangeCallbacks:
         return received, [f.metadata.get("diarization") for f in frames]
 
     def test_a_voice_matched_to_nobody_is_no_change(self):
-        """RFC §12.3.9: an unattributed result neither fires nor resets the last speaker."""
-        received, _ = self._changes(["spk_A", "unknown", "spk_A", "UU", "", "spk_B"])
+        """RFC §12.3.9: an unattributed result (a null or empty speaker_id)
+        neither fires nor resets the last speaker."""
+        received, _ = self._changes(["spk_A", None, "spk_A", "", "spk_B"])
         assert received == ["spk_A", "spk_B"]
 
+    def test_a_vendor_spelling_is_a_speaker(self):
+        """The pipeline knows no vendor's spelling of nobody: the stage
+        reports one as a null speaker_id, and any string is a label."""
+        received, _ = self._changes(["spk_A", "UU", "PENDING", "unknown"])
+        assert received == ["spk_A", "UU", "PENDING", "unknown"]
+
     def test_an_unattributed_result_still_reaches_the_frame(self):
-        _, stamped = self._changes(["unknown"])
-        assert stamped == [{"speaker_id": "unknown", "confidence": 0.5}]
+        _, stamped = self._changes([None])
+        assert stamped == [{"speaker_id": None, "confidence": 0.5}]
 
 
 # ---------------------------------------------------------------------------

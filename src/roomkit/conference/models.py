@@ -66,9 +66,6 @@ class ConferenceCapability(Flag):
     SCREEN_SHARE = auto()
     """Separate screen-share tracks."""
 
-    EGRESS_RECORDING = auto()
-    """Server-side (SFU) recording and export."""
-
     SIP_GATEWAY = auto()
     """PSTN/SIP participants can dial into the conference."""
 
@@ -399,43 +396,15 @@ class ConferenceInterruptionConfig:
     """Participant identities allowed to interrupt when scope is ALLOWLIST."""
 
 
-@unique
-class ConferenceRecordingMode(StrEnum):
-    """Where a conference recording is produced."""
-
-    FRAMEWORK = "framework"
-    """Recorded by RoomKit from the tracks the bot subscribes to.
-
-    The path that always works: no backend capability, functions against the
-    mock backend, and the file lands wherever the implementation writes it.
-    Audio tracks are already subscribed for transcription, so recording them
-    adds a file write and no additional media subscription.
-    """
-
-    EGRESS = "egress"
-    """Delegated to the SFU. Requires ``EGRESS_RECORDING``.
-
-    Exists for one reason: a *composed* video recording — grid or
-    active-speaker layout — cannot be produced by the framework without
-    subscribing every video track, decoding all of them, compositing and
-    re-encoding, which is the media-plane work RoomKit does not do. Carries no
-    unified result contract: the SFU announces completion out of band, and the
-    integrator collects the output through the provider's own mechanism.
-    """
-
-
 @dataclass
 class ConferenceRecordingConfig:
     """Configuration for recording a conference."""
-
-    mode: ConferenceRecordingMode = ConferenceRecordingMode.FRAMEWORK
-    """Who produces the recording."""
 
     storage: str = "local"
     """Integrator-defined storage identifier, resolved at runtime."""
 
     format: str = "wav"
-    """Output format. Composed video egress typically uses ``mp4``."""
+    """Output format each track's recording is written in."""
 
     metadata: dict[str, Any] = field(default_factory=dict)
     """Recording metadata (room_id, participant_id, ...)."""

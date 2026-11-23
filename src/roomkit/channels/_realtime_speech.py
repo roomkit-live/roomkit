@@ -258,7 +258,7 @@ class RealtimeSpeechMixin:
             return
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
-        if not room_id:
+        if not room_id or result.speaker_id is None:
             return
         event = SpeakerChangeEvent(
             session=session,

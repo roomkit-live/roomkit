@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from roomkit.providers.ai.base import ProviderError
-from roomkit.voice.base import SpeakerSegment, TranscriptionResult
-from roomkit.voice.base import speaker_label as speaker_label
+from roomkit.voice.base import SpeakerSegment, TranscriptionResult, speaker_label
+
+# How this vendor's wire may spell a speaker it could not attribute: the
+# provider names them, RoomKit's label rule knows no vendor's (RFC §12.2.3).
+_UNATTRIBUTED = ("unknown", "UU", "PENDING")
 
 # 1011 is a server fault ("Max session duration reached" included) and 1013 a
 # rate limit: both are worth a new stream. 1008 is a refused request.
@@ -25,6 +28,11 @@ WAV_MIME_TYPES: frozenset[str] = frozenset(
     {"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"}
 )
 """Media types a ``data:`` URI may declare for a clip: the endpoint takes WAV only."""
+
+
+def label_of(value: Any) -> str | None:
+    """Meta's speaker label as RoomKit carries it (RFC §12.2.3)."""
+    return speaker_label(value, unattributed=_UNATTRIBUTED)
 
 
 class MetaSTTError(ProviderError):
@@ -84,7 +92,7 @@ class Turns:
         elif kind == "speaker":
             open_turn = next((t for t in self._turns.values() if not t.ended), None)
             if open_turn is not None:
-                open_turn.speaker = speaker_label(event.get("label"))
+                open_turn.speaker = label_of(event.get("label"))
         elif kind == "speechEnd":
             marks = self._turns.get(event.get("turnId"))
             if marks is not None:
@@ -148,7 +156,7 @@ def rest_result(body: dict[str, Any], *, diarized: bool) -> TranscriptionResult:
         return TranscriptionResult(text=text)
     segments = [
         SpeakerSegment(
-            speaker_label(turn.get("speaker")),
+            label_of(turn.get("speaker")),
             str(turn.get("transcript") or "").strip(),
             turn.get("startMs"),
             turn.get("endMs"),

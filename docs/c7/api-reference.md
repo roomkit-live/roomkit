@@ -65,7 +65,6 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `ConferenceParticipant` | A participant's media presence in a conference |
 | `ConferenceRealtimeConfig` | Composes a speech-to-speech provider with a conference |
 | `ConferenceRecordingConfig` | Configuration for recording a conference |
-| `ConferenceRecordingMode` | Where a conference recording is produced |
 | `ConferenceRecordingStarted` | Event: a track's recording has opened |
 | `ConferenceRecordingStopped` | Event: a track's recording has closed, with its destination |
 | `ConferenceToolHandler` | Callable type for conference tool invocation |
@@ -79,7 +78,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `MockFaults` | Per-operation failures and delays for the mock backend |
 | `MockTrackFormat` | Audio format a participant negotiated for one track (mock) |
 | `MockUtterance` | Chunks published for one utterance on one bot's track (mock) |
-| `CONFERENCE_ADDRESS_KEYS` | Participant-attribute keys read as a caller's address, most specific first |
+| `CONFERENCE_ADDRESS_KEYS` | Generic participant-attribute keys read as a caller's address, after the backend's own (`ConferenceBackend.address_keys`) |
 | `CONFERENCE_METADATA_KEY` | `Participant.metadata` key a conference nests provider data under (`"conference"`) |
 | `CONFERENCE_UNASSERTED_METADATA_KEY` | Metadata key nesting client-claimed (unverified) participant attributes |
 

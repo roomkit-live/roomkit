@@ -42,6 +42,18 @@ NUMBER = "+15551234"
 
 ALICE = Identity(id="user-42", display_name="Alice", channel_addresses={"sms": [NUMBER]})
 
+# The key a provider's SFU uses for a dial-in's caller number, which its
+# backend declares (RFC §12.10.2): the framework's defaults name none.
+PROVIDER_KEY = "sfu.callerNumber"
+
+
+class ProviderKeyBackend(MockConferenceBackend):
+    """A backend whose SFU reports a caller's number under a key of its own."""
+
+    @property
+    def address_keys(self) -> tuple[str, ...]:
+        return (PROVIDER_KEY,)
+
 
 class RecordingResolver(IdentityResolver):
     """Answers nothing, remembers everything it was asked."""
@@ -86,9 +98,10 @@ async def _kit_with_channel(
     *,
     identity_timeout: float = 10.0,
     identity_channel_types: set[ChannelType] | None = None,
+    backend: MockConferenceBackend | None = None,
     **channel_kwargs: object,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
-    backend = MockConferenceBackend()
+    backend = backend or ProviderKeyBackend()
     channel = ConferenceChannel("conf", backend=backend, **channel_kwargs)  # type: ignore[arg-type]
     kit = RoomKit(
         identity_resolver=resolver,
@@ -155,9 +168,7 @@ class TestWhatTheResolverIsHanded:
         resolver = RecordingResolver()
         kit, _, backend = await _kit_with_channel(resolver)
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert [message.sender_id for message in resolver.seen] == [NUMBER]
 
@@ -169,7 +180,7 @@ class TestWhatTheResolverIsHanded:
         _, _, backend = await _kit_with_channel(resolver)
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER, "sip.callID": "abc"}
+            ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER, "sip.callID": "abc"}
         )
 
         message = resolver.seen[-1]
@@ -206,7 +217,7 @@ class TestWhatTheResolverIsHanded:
         _, _, backend = await _kit_with_channel(resolver)
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"from_number": "+19999999999", "sip.phoneNumber": NUMBER}
+            ROOM, DIAL_IN, metadata={"from_number": "+19999999999", PROVIDER_KEY: NUMBER}
         )
 
         assert resolver.seen[0].sender_id == NUMBER
@@ -229,14 +240,28 @@ class TestWhatTheResolverIsHanded:
         _, _, backend = await _kit_with_channel(resolver, identity_address_keys=("x-caller",))
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"x-caller": NUMBER, "sip.phoneNumber": "+19999999999"}
+            ROOM, DIAL_IN, metadata={"x-caller": NUMBER, PROVIDER_KEY: "+19999999999"}
         )
 
         assert resolver.seen[0].sender_id == NUMBER
 
-    async def test_the_defaults_lead_with_the_provider_key(self) -> None:
-        assert CONFERENCE_ADDRESS_KEYS[0] == "sip.phoneNumber"
-        assert "sip.trunkPhoneNumber" not in CONFERENCE_ADDRESS_KEYS
+    async def test_a_backend_with_no_key_of_its_own_reads_only_the_generic_ones(self) -> None:
+        """RFC §12.10.2: which key carries a caller's address is the
+        provider's to say, and the framework's defaults name no provider's.
+        A key only one SFU uses resolves nothing on a backend that does not
+        declare it."""
+        resolver = RecordingResolver()
+        _, _, backend = await _kit_with_channel(resolver, backend=MockConferenceBackend())
+
+        await backend.simulate_participant_joined(
+            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
+        )
+        await backend.simulate_participant_joined(
+            ROOM, "sip_2", metadata={"phone_number": "+15550002"}
+        )
+
+        assert [message.sender_id for message in resolver.seen] == ["+15550002"]
+        assert not any(key.startswith("sip.") for key in CONFERENCE_ADDRESS_KEYS)
 
     async def test_a_sip_header_name_is_not_a_default_key(self) -> None:
         """``from`` says nothing about where the value under it came from, and
@@ -263,7 +288,7 @@ class TestWhoPutTheAddressThere:
         kit, _, backend = await _kit_with_channel(resolver)
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, client_metadata={"sip.phoneNumber": NUMBER}
+            ROOM, DIAL_IN, client_metadata={PROVIDER_KEY: NUMBER}
         )
 
         assert resolver.seen == []
@@ -279,7 +304,7 @@ class TestWhoPutTheAddressThere:
         kit, _, backend = await _kit_with_channel(resolver)
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}, asserts_provenance=False
+            ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER}, asserts_provenance=False
         )
 
         assert resolver.seen == []
@@ -296,7 +321,7 @@ class TestWhoPutTheAddressThere:
         )
 
         await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}, asserts_provenance=False
+            ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER}, asserts_provenance=False
         )
 
         assert [message.sender_id for message in resolver.seen] == [NUMBER]
@@ -313,7 +338,7 @@ class TestWhoPutTheAddressThere:
             ROOM,
             DIAL_IN,
             metadata={"caller_id": NUMBER},
-            client_metadata={"sip.phoneNumber": "+19999999999"},
+            client_metadata={PROVIDER_KEY: "+19999999999"},
         )
 
         assert resolver.seen[0].sender_id == NUMBER
@@ -328,12 +353,12 @@ class TestWhoPutTheAddressThere:
         await backend.simulate_participant_joined(
             ROOM,
             DIAL_IN,
-            metadata={"sip.phoneNumber": NUMBER},
+            metadata={PROVIDER_KEY: NUMBER},
             client_metadata={"nickname": "bob", "phone_number": "+19999999999"},
         )
 
         message = resolver.seen[0]
-        assert message.metadata["sip.phoneNumber"] == NUMBER
+        assert message.metadata[PROVIDER_KEY] == NUMBER
         assert "phone_number" not in message.metadata
         assert message.metadata[CONFERENCE_UNASSERTED_METADATA_KEY] == {
             "nickname": "bob",
@@ -348,7 +373,7 @@ class TestWhoPutTheAddressThere:
         await backend.simulate_participant_joined(
             ROOM,
             DIAL_IN,
-            metadata={"sip.phoneNumber": NUMBER},
+            metadata={PROVIDER_KEY: NUMBER},
             client_metadata={"nickname": "bob"},
         )
 
@@ -362,9 +387,7 @@ class TestWhatTheRoomEndsUpWith:
         """
         kit, _, backend = await _kit_with_channel(MockIdentityResolver({NUMBER: ALICE}))
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         record = await _participant(kit)
         assert record.identification is IdentificationStatus.IDENTIFIED
@@ -378,9 +401,7 @@ class TestWhatTheRoomEndsUpWith:
         """
         kit, _, backend = await _kit_with_channel(MockIdentityResolver({NUMBER: ALICE}))
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         records = await kit.store.list_participants(ROOM)
         assert [record.id for record in records] == [DIAL_IN]
@@ -420,9 +441,7 @@ class TestWhatTheRoomEndsUpWith:
         kit.register_channel(sms)
         await kit.attach_channel(ROOM, "sms")
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
         await kit.process_inbound(
             InboundMessage(channel_id="sms", sender_id=NUMBER, content=TextContent(body="hello")),
             room_id=ROOM,
@@ -436,9 +455,7 @@ class TestWhatTheRoomEndsUpWith:
     async def test_an_ambiguous_result_records_its_candidates(self) -> None:
         kit, _, backend = await _kit_with_channel(AmbiguousResolver())
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         record = await _participant(kit)
         assert record.identification is IdentificationStatus.PENDING
@@ -450,9 +467,7 @@ class TestWhatTheRoomEndsUpWith:
         """
         kit, _, backend = await _kit_with_channel(RejectingResolver())
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert (await _participant(kit)).identification is IdentificationStatus.UNKNOWN
 
@@ -466,9 +481,7 @@ class TestWhatTheRoomEndsUpWith:
             record = await kit.store.get_participant(ROOM, DIAL_IN)
             seen.append(None if record is None else record.identity_id)
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         await kit.hook_engine.drain_observers()
         assert seen == [ALICE.id]
@@ -489,9 +502,7 @@ class TestWhatTheRoomEndsUpWith:
             )
         )
 
-        await backend.simulate_participant_joined(
-            ROOM, "p-alice", metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, "p-alice", metadata={PROVIDER_KEY: NUMBER})
 
         assert resolver.seen == []
         record = await _participant(kit, "p-alice")
@@ -507,9 +518,7 @@ class TestWhatTheRoomEndsUpWith:
         kit, channel, backend = await _kit_with_channel(
             MockIdentityResolver({NUMBER: ALICE}), stt=MockSTTProvider(transcripts=["bonjour"])
         )
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
         track = await backend.simulate_track_published(ROOM, DIAL_IN, TrackKind.AUDIO)
         await backend.subscribe_track(backend.bots[0], track.id)
 
@@ -537,9 +546,7 @@ class TestWhenResolutionDoesNotAnswer:
         async def observe(event: object) -> None:
             timeouts.append(event)
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert (await _participant(kit)).identification is IdentificationStatus.UNKNOWN
         assert len(timeouts) == 1
@@ -547,22 +554,18 @@ class TestWhenResolutionDoesNotAnswer:
     async def test_a_resolver_that_raises_does_not_keep_someone_out(self) -> None:
         kit, _, backend = await _kit_with_channel(BrokenResolver())
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert (await _participant(kit)).identification is IdentificationStatus.UNKNOWN
 
     async def test_no_resolver_configured_records_the_participant_as_before(self) -> None:
         kit, _, backend = await _kit_with_channel()
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         record = await _participant(kit)
         assert record.identification is IdentificationStatus.UNKNOWN
-        assert _asserted(record) == {"sip.phoneNumber": NUMBER}
+        assert _asserted(record) == {PROVIDER_KEY: NUMBER}
 
 
 class TestWhatTheConfigurationExcludes:
@@ -583,9 +586,7 @@ class TestWhatTheConfigurationExcludes:
             resolver, identity_channel_types={ChannelType.SMS}
         )
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert resolver.seen == []
         assert (await _participant(kit)).identification is IdentificationStatus.UNKNOWN
@@ -599,14 +600,12 @@ class TestWhatTheConfigurationExcludes:
             RecordingResolver(ALICE), identity_channel_types={ChannelType.SMS}
         )
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         record = await _participant(kit)
         assert record.id == DIAL_IN
         assert record.identity_id is None
-        assert _asserted(record) == {"sip.phoneNumber": NUMBER}
+        assert _asserted(record) == {PROVIDER_KEY: NUMBER}
 
     async def test_a_restriction_that_names_conferences_resolves_as_before(self) -> None:
         resolver = RecordingResolver(ALICE)
@@ -614,9 +613,7 @@ class TestWhatTheConfigurationExcludes:
             resolver, identity_channel_types={ChannelType.CONFERENCE}
         )
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert [message.sender_id for message in resolver.seen] == [NUMBER]
         record = await _participant(kit)
@@ -627,9 +624,7 @@ class TestWhatTheConfigurationExcludes:
         resolver = RecordingResolver(ALICE)
         kit, _, backend = await _kit_with_channel(resolver, identity_channel_types=None)
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         assert [message.sender_id for message in resolver.seen] == [NUMBER]
         assert (await _participant(kit)).identity_id == ALICE.id
@@ -644,9 +639,7 @@ class TestWhatTheConfigurationExcludes:
         identity = ConferenceIdentity("conf")
         identity.set_framework(kit)
 
-        arrival = ConferenceParticipant(
-            participant_id=DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        arrival = ConferenceParticipant(participant_id=DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
 
         result = await identity.resolve(ROOM, arrival)
 
@@ -676,9 +669,7 @@ class TestWhatAnUtteranceDoesNotAskAgain:
         )
         refusals = _refusing_unknown_senders(kit)
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
         track = await backend.simulate_track_published(ROOM, DIAL_IN, TrackKind.AUDIO)
         await _utter(backend, channel, track, times=3)
 
@@ -694,9 +685,7 @@ class TestWhatAnUtteranceDoesNotAskAgain:
             resolver, stt=MockSTTProvider(transcripts=["bonjour"])
         )
 
-        await backend.simulate_participant_joined(
-            ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
-        )
+        await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={PROVIDER_KEY: NUMBER})
         track = await backend.simulate_track_published(ROOM, DIAL_IN, TrackKind.AUDIO)
         await _utter(backend, channel, track, times=3)
 

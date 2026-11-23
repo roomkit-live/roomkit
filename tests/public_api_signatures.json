@@ -496,6 +496,7 @@
   "roomkit.ConferenceAlreadyAttachedError": {},
   "roomkit.ConferenceBackend": {
     "__init__": ["def"],
+    "address_keys": ["property"],
     "capabilities": ["property"],
     "close": ["async def"],
     "close_room": ["async def", "room_id"],
@@ -530,16 +531,15 @@
     "__init__": ["def", "room_id", "track_id", "participant_id", "interrupted_text", "audio_position_ms"]
   },
   "roomkit.ConferenceCapability": {
-    "ACTIVE_SPEAKER": ["member", "8"],
-    "BOT_GRANT_UPDATE": ["member", "128"],
-    "CONNECTION_QUALITY": ["member", "16"],
-    "E2EE": ["member", "256"],
-    "EGRESS_RECORDING": ["member", "2"],
+    "ACTIVE_SPEAKER": ["member", "4"],
+    "BOT_GRANT_UPDATE": ["member", "64"],
+    "CONNECTION_QUALITY": ["member", "8"],
+    "E2EE": ["member", "128"],
     "NONE": ["member", "0"],
-    "REMOTE_UNMUTE": ["member", "64"],
+    "REMOTE_UNMUTE": ["member", "32"],
     "SCREEN_SHARE": ["member", "1"],
-    "SIP_GATEWAY": ["member", "4"],
-    "VIDEO_PUBLISH": ["member", "32"]
+    "SIP_GATEWAY": ["member", "2"],
+    "VIDEO_PUBLISH": ["member", "16"]
   },
   "roomkit.ConferenceCapabilityError": {},
   "roomkit.ConferenceChannel": {
@@ -624,11 +624,7 @@
     "tool_bound": ["def", "name", "*", "waits=False"]
   },
   "roomkit.ConferenceRecordingConfig": {
-    "__init__": ["def", "mode=<ConferenceRecordingMode.FRAMEWORK: 'framework'>", "storage='local'", "format='wav'", "metadata=<factory>", "encryption=None", "storage_encrypted_at_rest=False"]
-  },
-  "roomkit.ConferenceRecordingMode": {
-    "EGRESS": ["member", "'egress'"],
-    "FRAMEWORK": ["member", "'framework'"]
+    "__init__": ["def", "storage='local'", "format='wav'", "metadata=<factory>", "encryption=None", "storage_encrypted_at_rest=False"]
   },
   "roomkit.ConferenceRecordingStarted": {
     "__init__": ["def", "room_id", "track_id", "participant_id", "id", "kind", "sample_rate", "channels=None", "codec=''"]
@@ -1381,6 +1377,7 @@
   },
   "roomkit.LiveKitConferenceBackend": {
     "__init__": ["def", "config=None"],
+    "address_keys": ["property"],
     "capabilities": ["property"],
     "close": ["async def"],
     "close_room": ["async def", "room_id"],
@@ -1469,6 +1466,7 @@
   },
   "roomkit.MockConferenceBackend": {
     "__init__": ["def", "*", "capabilities=<ConferenceCapability.NONE: 0>"],
+    "address_keys": ["property"],
     "capabilities": ["property"],
     "close": ["async def"],
     "close_room": ["async def", "room_id"],
@@ -7953,7 +7951,7 @@
     "__call__": ["def", "transcript", "*", "first", "instruction=\"Act on the user's most recent request in the conversation above.\""]
   },
   "roomkit.voice.speaker_label": {
-    "__call__": ["def", "value"]
+    "__call__": ["def", "value", "*", "unattributed=()"]
   },
   "roomkit.voice.stt.AzureMAISTTConfig": {
     "__init__": ["def", "endpoint", "api_key", "deployment='MAI-Transcribe-2-Streaming'", "language=None", "handshake_timeout_s=10.0", "final_timeout_s=10.0"]

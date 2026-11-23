@@ -20,12 +20,12 @@ from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransp
 _FRAME = b"\x10\x00" * 320  # 20 ms at 16 kHz
 
 
-async def test_pipeline_speaker_changes_fire_the_hook_unknown_excepted() -> None:
+async def test_pipeline_speaker_changes_fire_the_hook_nobody_excepted() -> None:
     diarization = MockDiarizationProvider(
         results=[
             DiarizationResult(speaker_id="alice", confidence=0.9, is_new_speaker=True),
             DiarizationResult(speaker_id="alice", confidence=0.9, is_new_speaker=False),
-            DiarizationResult(speaker_id="unknown", confidence=None, is_new_speaker=False),
+            DiarizationResult(speaker_id=None, confidence=0.0, is_new_speaker=False),
             DiarizationResult(speaker_id="bob", confidence=0.8, is_new_speaker=True),
         ]
     )

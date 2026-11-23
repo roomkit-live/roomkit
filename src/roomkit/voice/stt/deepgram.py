@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# How this vendor's wire may spell a speaker it could not attribute: the
+# provider names them, RoomKit's label rule knows no vendor's (RFC §12.2.3).
+_UNATTRIBUTED = ("unknown", "UU", "PENDING")
+
 
 def _import_deepgram() -> Any:
     """Import the Deepgram SDK, raising a clear error if missing."""
@@ -84,7 +88,7 @@ def _speaker_segments(words: Any, text: str) -> list[SpeakerSegment]:
     """
     runs: list[tuple[str | None, list[str], int | None, int | None]] = []
     for word in words or []:
-        label = speaker_label(_word_field(word, "speaker"))
+        label = speaker_label(_word_field(word, "speaker"), unattributed=_UNATTRIBUTED)
         token = _word_field(word, "punctuated_word") or _word_field(word, "word") or ""
         start, end = _word_field(word, "start"), _word_field(word, "end")
         start_ms = None if start is None else round(start * 1000)

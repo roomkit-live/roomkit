@@ -42,7 +42,7 @@ class _StreamState:
 
     speech_buffer: bytearray = field(default_factory=bytearray)
     in_speech: bool = False
-    last_speaker_id: str = ""
+    last_speaker_id: str | None = None
 
 
 class SherpaOnnxDiarizationProvider(DiarizationProvider):
@@ -145,9 +145,11 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
 
         name = self._manager.search(embedding, threshold=self._config.search_threshold)
 
+        speaker_id: str | None
         if not name:
+            # Below the match threshold: someone spoke, matched to nobody.
             is_new = True
-            speaker_id = "unknown"
+            speaker_id = None
             confidence = 0.0
         else:
             is_new = name != st.last_speaker_id

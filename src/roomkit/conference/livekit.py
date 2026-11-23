@@ -248,6 +248,13 @@ class LiveKitConferenceBackend(ConferenceBackend):
         return "livekit"
 
     @property
+    def address_keys(self) -> tuple[str, ...]:
+        """``sip.phoneNumber``, the attribute LiveKit's SIP service sets to a
+        dial-in's caller number (``sip.trunkPhoneNumber``, the number dialled,
+        is not one)."""
+        return ("sip.phoneNumber",)
+
+    @property
     def capabilities(self) -> ConferenceCapability:
         """What this backend has wired, which is not everything LiveKit sells.
 
@@ -257,13 +264,12 @@ class LiveKitConferenceBackend(ConferenceBackend):
         ``REMOTE_UNMUTE`` and ``SIP_GATEWAY``, because both depend on server
         configuration this backend cannot see.
 
-        Absent, and each for its own reason. ``EGRESS_RECORDING``: LiveKit can
-        do it, nothing here asks it to, and framework-side recording already
-        works through the lanes. ``VIDEO_PUBLISH``: the bot has nothing to show
-        until an avatar gives it something, so the source is not built and the
-        capability is not claimed. ``E2EE``: admitting the bot to a conference's
-        key exchange is a contract ConferenceBackend does not have, so declaring
-        it would promise a bot that can hear an encrypted room when it cannot.
+        Absent, and each for its own reason. ``VIDEO_PUBLISH``: the bot has
+        nothing to show until an avatar gives it something, so the source is not
+        built and the capability is not claimed. ``E2EE``: admitting the bot to
+        a conference's key exchange is a contract ConferenceBackend does not
+        have, so declaring it would promise a bot that can hear an encrypted
+        room when it cannot.
         """
         return capabilities_for(
             remote_unmute=self._config.remote_unmute,

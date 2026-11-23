@@ -14,8 +14,12 @@ if TYPE_CHECKING:
 class DiarizationResult:
     """Result from a diarization provider."""
 
-    speaker_id: str
-    """Identified speaker label (e.g. 'speaker_0')."""
+    speaker_id: str | None
+    """Identified speaker label (e.g. 'speaker_0'), or ``None`` for a voice the
+    provider heard and could attribute to nobody (RFC §12.3.9).
+
+    The provider turns its own spelling of nobody into ``None``: the pipeline
+    reads any string as a speaker, and knows no vendor's spelling."""
 
     confidence: float
     """Confidence score (0.0 to 1.0)."""

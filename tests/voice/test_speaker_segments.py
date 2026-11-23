@@ -8,6 +8,7 @@ import pytest
 
 from roomkit import MockConferenceBackend, VoiceChannel
 from roomkit.channels.conference import ConferenceChannel
+from roomkit.voice import speaker_label
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import SpeakerSegment, TranscriptionResult
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
@@ -28,6 +29,39 @@ class _LegacySTT:
 
     async def transcribe(self, audio: object) -> TranscriptionResult:
         return TranscriptionResult(text="")
+
+
+class TestSpeakerLabel:
+    @pytest.mark.parametrize(
+        ("value", "label"),
+        [
+            ("Speaker 1", "1"),
+            ("speaker_0", "0"),
+            ("A", "A"),
+            (0, "0"),
+            (" B ", "B"),
+            ("S1", "S1"),
+            ("", None),
+            ("  ", None),
+            (None, None),
+        ],
+    )
+    def test_labels_are_short_strings_and_none_is_none(
+        self, value: object, label: str | None
+    ) -> None:
+        assert speaker_label(value) == label
+
+    @pytest.mark.parametrize("spelling", ["UU", "PENDING", "unknown"])
+    def test_the_rule_knows_no_vendor_spelling(self, spelling: str) -> None:
+        """RFC §12.2.3: a speaker the provider could not attribute is null
+        whatever its vendor spells it, and the spelling is the provider's to
+        name: RoomKit's rule reads none of them."""
+        assert speaker_label(spelling) == spelling
+
+    @pytest.mark.parametrize("value", ["UU", "uu", " Pending "])
+    def test_a_provider_names_its_own_unattributed_spellings(self, value: str) -> None:
+        assert speaker_label(value, unattributed=("UU", "PENDING")) is None
+        assert speaker_label("A", unattributed=("UU", "PENDING")) == "A"
 
 
 class TestTranscriptionResultSpeaker:

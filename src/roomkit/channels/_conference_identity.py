@@ -46,18 +46,18 @@ logger = logging.getLogger("roomkit.channels.conference")
 
 
 CONFERENCE_ADDRESS_KEYS: tuple[str, ...] = (
-    "sip.phoneNumber",
     "phone_number",
     "phoneNumber",
     "caller_id",
     "callerId",
     "from_number",
 )
-"""Participant-attribute keys read as a caller's address, most specific first.
+"""Generic participant-attribute keys read as a caller's address, in order.
 
-Providers name the same fact differently — ``sip.phoneNumber`` is LiveKit's —
-and the list is ordered so that a provider's own key wins over a generic one it
-also happens to carry.
+Providers name the same fact differently, and a provider's own key is its
+backend's to declare (:attr:`ConferenceBackend.address_keys
+<roomkit.conference.ConferenceBackend.address_keys>`): it is read before these,
+so a provider's key wins over a generic one it also happens to carry.
 
 What is *not* here matters as much as what is. The number a caller dialled
 (``sip.trunkPhoneNumber`` and its equivalents) is the conference's number, not
@@ -67,6 +67,12 @@ a provider's key — generic enough that a value found under it says nothing
 about where it came from. An integrator whose provider really does report the
 caller there passes it in ``address_keys``.
 """
+
+
+def default_address_keys(provider_keys: Sequence[str]) -> tuple[str, ...]:
+    """The keys a channel reads unconfigured: its backend's own, then the generic ones."""
+    return (*provider_keys, *(key for key in CONFERENCE_ADDRESS_KEYS if key not in provider_keys))
+
 
 CONFERENCE_UNASSERTED_METADATA_KEY = "conference_unasserted"
 """Where an arrival's unvouched attributes travel on the message to a resolver.
@@ -93,11 +99,14 @@ class ConferenceIdentity:
         channel_id: str,
         address_keys: Sequence[str] | None = None,
         *,
+        provider_keys: Sequence[str] = (),
         trust_unasserted: bool = False,
     ) -> None:
         self._channel_id = channel_id
         self._address_keys = (
-            tuple(address_keys) if address_keys is not None else CONFERENCE_ADDRESS_KEYS
+            tuple(address_keys)
+            if address_keys is not None
+            else default_address_keys(provider_keys)
         )
         self._trust_unasserted = trust_unasserted
         self._framework: RoomKit | None = None

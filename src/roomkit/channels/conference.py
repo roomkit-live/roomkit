@@ -79,7 +79,6 @@ from roomkit.conference.models import (
     ConferenceParticipant,
     ConferenceRealtimeConfig,
     ConferenceRecordingConfig,
-    ConferenceRecordingMode,
     TrackKind,
 )
 from roomkit.core._changes import opens_no_turn
@@ -287,6 +286,7 @@ class ConferenceChannel(
         self._identity = ConferenceIdentity(
             channel_id,
             identity_address_keys,
+            provider_keys=backend.address_keys,
             trust_unasserted=identity_trusts_unasserted_metadata,
         )
         self._max_queued_frames = max_queued_frames
@@ -365,12 +365,9 @@ class ConferenceChannel(
         record, and what to record with — and each of them alone is a
         configuration that reads as if it worked and does nothing.
 
-        Egress is specified (RFC 12.10.8) and unimplemented: there is no egress
-        surface on ConferenceBackend to delegate to, and the RFC gives the mode
-        no unified result contract, so a channel accepting it would subscribe
-        nothing, produce nothing, and report nothing. Refused by name rather
-        than ignored, since the difference between "recorded by the SFU" and
-        "not recorded" is not one an integrator should have to discover.
+        The framework records the tracks it subscribes (RFC 12.10.8); a
+        composed recording (a grid, the active speaker) is the SFU's own
+        feature, driven through its API outside RoomKit.
         """
         if recorder is not None and recording is None:
             raise ValueError(
@@ -389,14 +386,6 @@ class ConferenceChannel(
                 "ciphertext it has no key for, so the recording would hold noise while "
                 "reading as evidence. Pass e2ee=False to record, or drop recording= to "
                 "keep the conference encrypted."
-            )
-        if recording.mode is not ConferenceRecordingMode.FRAMEWORK:
-            raise ValueError(
-                f"Conference recording mode {recording.mode.value!r} is not implemented: "
-                "ConferenceBackend has no egress surface to delegate to, and egress carries "
-                "no result contract the framework could report on. Use "
-                f"mode={ConferenceRecordingMode.FRAMEWORK.value!r}, or drive the SFU's own "
-                "egress API outside RoomKit."
             )
         if recorder is None:
             raise ValueError(

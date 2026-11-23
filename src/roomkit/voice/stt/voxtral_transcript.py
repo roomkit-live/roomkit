@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit.voice.base import SpeakerSegment, TranscriptionResult, speaker_label
-from roomkit.voice.stt.voxtral_protocol import event_error
+from roomkit.voice.stt.voxtral_protocol import UNATTRIBUTED_LABELS, event_error
 
 _DELTA = "transcription.text.delta"
 _SEGMENT = "transcription.segment"
@@ -185,7 +185,7 @@ class SpeakerTurns:
         text = str(event.get("text") or "")
         if not text.strip():
             return []
-        speaker = speaker_label(event.get("speaker_id"))
+        speaker = speaker_label(event.get("speaker_id"), unattributed=UNATTRIBUTED_LABELS)
         results = self.close() if self._text and speaker != self._speaker else []
         if not self._text:
             self._speaker = speaker

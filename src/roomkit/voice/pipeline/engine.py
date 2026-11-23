@@ -347,11 +347,12 @@ class AudioPipeline:
         cancellation, RFC §12.3.15), when the taps capture that stage."""
         self._debug_tap(session_id, stage, frame)
 
-    def _is_speaker_change(self, stream: str, speaker_id: str) -> bool:
+    def _is_speaker_change(self, stream: str, speaker_id: str | None) -> bool:
         """Whether a diarization result names a speaker other than the stream's last.
 
-        A result attributing the audio to nobody (``unknown``, RFC §12.3.9) is
-        no speaker: it neither fires ON_SPEAKER_CHANGE nor resets the last one.
+        A result attributing the audio to nobody (a null or empty
+        ``speaker_id``, RFC §12.3.9) is no speaker: it neither fires
+        ON_SPEAKER_CHANGE nor resets the last one.
         """
         if speaker_label(speaker_id) is None:
             return False

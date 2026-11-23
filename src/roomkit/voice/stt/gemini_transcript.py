@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 
 from roomkit.voice.base import SpeakerSegment, speaker_label
 
+# How this vendor's wire may spell a speaker it could not attribute: the
+# provider names them, RoomKit's label rule knows no vendor's (RFC §12.2.3).
+_UNATTRIBUTED = ("unknown", "UU", "PENDING")
+
 
 @dataclass(frozen=True)
 class TranscriptSegment:
@@ -78,7 +82,12 @@ class Transcript:
         if self.words:
             return _segments_from_words(self.words)
         return [
-            SpeakerSegment(speaker_label(s.speaker), s.text, _ms(s.start), _ms(s.end))
+            SpeakerSegment(
+                speaker_label(s.speaker, unattributed=_UNATTRIBUTED),
+                s.text,
+                _ms(s.start),
+                _ms(s.end),
+            )
             for s in self.segments
             if s.text
         ]
@@ -93,7 +102,7 @@ def _segments_from_words(words: list[TranscriptWord]) -> list[SpeakerSegment]:
             runs.append([word])
     return [
         SpeakerSegment(
-            speaker_label(run[0].speaker),
+            speaker_label(run[0].speaker, unattributed=_UNATTRIBUTED),
             " ".join(w.text for w in run),
             round(run[0].start * 1000),
             round(run[-1].end * 1000),
