@@ -5,6 +5,9 @@
   "rules": [
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-12.10.4-038"
+  ],
   "notes": "Python: RoomKit public methods are wrapped by _work_refused_once_closed before ChannelStateMixin.release_channel; the public close error precedes registration and backend control.",
   "setup": {
     "channels": [

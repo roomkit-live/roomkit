@@ -7,7 +7,13 @@
     "§12.10.4"
   ],
   "requirements": [
-    "RK-10.6.8-025"
+    "RK-10.6.8-025",
+    "RK-12.10.4-045",
+    "RK-12.10.4-052",
+    "RK-12.10.4-053",
+    "RK-12.10.4-057",
+    "RK-12.10.4-060",
+    "RK-12.10.4-061"
   ],
   "notes": "The kit's close gives its running work 200 ms (close_grace_ms), and the kit's turns wait 20 s for a cut turn's end (cancel_ms), past the runner's bound of a step. The agent's turn holds at turn-runs, its call awaited in the background; the close cuts the turn at once (a cancel, kit_closed), and the turn's end is held at end-held, which no step opens before the close returns. Once the grace and its unwind are over, the turn is still open when the kit's turn backend closes: it is given up. The close returns without that end, the call then reads its cut, kit_closed, never a turn link failure, both long before the cancel's bound (an owner that waited for the end would hold them past the step's bound), and the end that comes once the gate opens is not read (turn_ends read: false). Not observed: the reason the turn's reader fails with (backend_closed), which no reader a scenario drives receives through the kit (Python: tests/test_turns_cleanup.py::test_a_turn_given_up_as_its_owner_closes_fails_backend_closed).",
   "setup": {

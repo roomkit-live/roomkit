@@ -8,7 +8,8 @@
     "§12.10.4"
   ],
   "requirements": [
-    "RK-10.6.8-027"
+    "RK-10.6.8-027",
+    "RK-12.10.4-045"
   ],
   "notes": "The kit's turns are cancelled within 100 ms (cancel_ms). The close cuts the agent's turn at once (a cancel, kit_closed) while its end is held at end-held: the cancel's bound passes first, the delivery's cleanup reporting itself incomplete, so the turn is over, its end owed, before the kit's turn backend closes and gives up the turns still open. That close leaves it as it was: the deferred handle's wait reports the cleanup incomplete, and still does once the end comes, unread (turn_ends read: false). Not observed: a cleanup still waiting as the backend closes (turn work slow to honour its cut), whose turn, already over, the close must leave owed too; Python: tests/test_turns_cleanup.py::test_a_turn_whose_end_is_owed_stays_owed_when_its_owner_closes reaches it.",
   "setup": {

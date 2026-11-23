@@ -10,7 +10,12 @@
   "requirements": [
     "RK-10.6.8-026",
     "RK-10.1-121",
-    "RK-12.10.4-005"
+    "RK-12.10.4-045",
+    "RK-12.10.4-049",
+    "RK-12.10.4-052",
+    "RK-12.10.4-053",
+    "RK-12.10.4-061",
+    "RK-12.10.4-064"
   ],
   "notes": "The kit's close gives its running work 200 ms (close_grace_ms), and the kit's turns wait 3 s for a cut turn's end (cancel_ms). The agent's turn, read by the deferred delivery's cascade, holds at turn-runs; the close cuts it at once (a cancel, kit_closed) and its end is held at end-held until after every handle step. The grace and its 1 s unwind are over before the cancel's bound, so the turn is still open when the kit's turn backend closes: it is given up and released. The handle's wait then returns kit_closed, its cleanup counted done (never cleanup_incomplete), and a cancel with a 500 ms bound returns at once: neither joins the turn, though its executor runs in the owner's process. With the default 5 s grace the cancel's bound would pass first, the turn over with its end owed, and the cleanup incomplete (RK-10.6.8-027). Not observed: the executor's own cut of the released turn (as one whose owner was lost), which the close's cancel already made; the turns the close runs under, which keep running; for RK-10.1-121, a turn another process runs; for RK-12.10.4-005, all but the grace's bound, the kit's close_grace, past which the close stops waiting for its running work (the delivery's cleanup). Python: tests/test_turns_cleanup.py::test_a_cascade_whose_turn_its_owner_gave_up_reports_its_cleanup_done.",
   "setup": {

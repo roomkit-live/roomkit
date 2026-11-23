@@ -11,7 +11,11 @@
     "RK-14.3-021",
     "RK-14.3-022",
     "RK-5.13-005",
-    "RK-5.13-007"
+    "RK-5.13-007",
+    "RK-12.10.4-061",
+    "RK-12.10.4-062",
+    "RK-12.10.4-063",
+    "RK-12.10.4-045"
   ],
   "notes": "The bot's turn is held at a gate no step opens; the close starts while it is held and cuts it. ws refuses its delivery. The caller and the stored event read ws's failure and nothing for bot. What the close's grace cuts is not this scenario's.",
   "setup": {

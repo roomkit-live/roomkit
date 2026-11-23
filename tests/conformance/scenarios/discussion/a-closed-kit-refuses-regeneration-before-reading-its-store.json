@@ -3,6 +3,9 @@
   "rules": [
     "§12.10.4"
   ],
+  "requirements": [
+    "RK-12.10.4-038"
+  ],
   "setup": {
     "channels": [
       {

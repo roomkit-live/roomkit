@@ -10,7 +10,9 @@
   "requirements": [
     "RK-10.1-092",
     "RK-10.1-097",
-    "RK-26.1-016"
+    "RK-26.1-016",
+    "RK-12.10.4-040",
+    "RK-12.10.4-061"
   ],
   "notes": "Python: src/roomkit/core/lanes.py (RoomDeliveryLane.seal, _drop_entry, DeliveryCascade.keep_write), src/roomkit/core/mixins/lane_execution.py (_store_dropped_side_effects); RMK-1499, decided in HITL ee915769: a task a hook decided is not lost with a delivery the room's lane drops. The second message's set waits in the lane behind the first's, held at its transport; the close drops it, its deferred call reads kit_closed, and its hook's task is stored, read while the close is still in its grace (a store the close closes is read no more), as after a set that ran.",
   "setup": {

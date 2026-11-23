@@ -5,6 +5,12 @@
   "rules": [
     "§12.10.4"
   ],
+  "requirements": [
+    "RK-12.10.4-038",
+    "RK-12.10.4-040",
+    "RK-12.10.4-061",
+    "RK-12.10.4-049"
+  ],
   "notes": "Python: tests/test_kit_close.py::test_a_call_an_observer_makes_as_the_kit_closes_is_refused. The observer is already running, the other room has an immediately due inactivity timer, and the queued delivery proves shutdown admission closed before the observer resumes. No audit record or ON_ROOM_PAUSED hook is allowed.",
   "setup": {
     "channels": [

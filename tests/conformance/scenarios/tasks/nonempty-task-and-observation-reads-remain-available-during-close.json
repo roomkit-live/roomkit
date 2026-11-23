@@ -5,6 +5,11 @@
   "rules": [
     "§12.10.4"
   ],
+  "requirements": [
+    "RK-12.10.4-034",
+    "RK-12.10.4-040",
+    "RK-12.10.4-061"
+  ],
   "notes": "Python: tests/test_kit_close.py::test_a_read_answers_during_the_close_and_after_it_while_its_store_is_open. Nonempty rows strengthen its read equality. The queued delivery is cut before the during-close reads, while the first send keeps close pending. Native memory-store tests separately assert reads after close; an owned SQL store then refuses them.",
   "setup": {
     "channels": [

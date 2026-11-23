@@ -7,7 +7,8 @@
   ],
   "requirements": [
     "RK-19.8-015",
-    "RK-19.8-016"
+    "RK-19.8-016",
+    "RK-12.10.4-055"
   ],
   "notes": "Python: tests/test_kit_close.py::test_work_a_read_starts_is_no_read_once_the_kit_closed. The positive control proves subscription and hook registration before closing. The late publication uses the already obtained bus. Native tests separately check that it reads no context from the released store; this scenario claims no SourceProvider implementation.",
   "setup": {

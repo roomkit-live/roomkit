@@ -7,7 +7,9 @@
     "§9.5.1 Reentrance"
   ],
   "requirements": [
-    "RK-9.5.1-032"
+    "RK-9.5.1-032",
+    "RK-12.10.4-061",
+    "RK-12.10.4-063"
   ],
   "notes": "Python: the event's caller returns once its own work is over, the close's cancellation_reason on its result (RMK-1512). Written by the light review of RMK-1512's fix pass: roomkit-rs's early answer, sent before the run's end, dropped kit_closed.",
   "setup": {

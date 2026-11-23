@@ -11,7 +11,9 @@
   "requirements": [
     "RK-10.1-088",
     "RK-10.1-092",
-    "RK-13.5-040"
+    "RK-13.5-040",
+    "RK-12.10.4-040",
+    "RK-12.10.4-061"
   ],
   "notes": "One process. `held` is held at `held` in its delivery to `ws`. `call me` is committed behind it, its deferred set waiting in the lane, and the `triage` hook gave it the task `Call back`. The room is deleted and created again under the same id. The kit's close drops the waiting set, whose call reads `kit_closed`: a dropped set stores what its event's hooks gave (§10.1 step 15), but this one's room is gone, so the task is not written, and the new room holds none, read while the close is still in its grace.",
   "setup": {
