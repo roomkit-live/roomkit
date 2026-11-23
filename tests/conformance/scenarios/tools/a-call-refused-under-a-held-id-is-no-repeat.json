@@ -6,6 +6,9 @@
     "§6.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-12.4-039"
+  ],
   "notes": "Python: channels/_ai_tools.py _refuse_id_in_flight never reads _repeated_call_guard; _reject_call does, for what a gate stops.",
   "setup": {
     "channels": [

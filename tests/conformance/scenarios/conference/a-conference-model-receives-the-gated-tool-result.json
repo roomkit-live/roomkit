@@ -7,6 +7,7 @@
     "§12.10.12"
   ],
   "requirements": [
+    "RK-12.4-020",
     "RK-9.3-093"
   ],
   "requires_features": [

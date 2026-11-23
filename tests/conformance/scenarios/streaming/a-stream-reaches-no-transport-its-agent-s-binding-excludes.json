@@ -7,6 +7,7 @@
     "§7.3 An event's visibility"
   ],
   "requirements": [
+    "RK-12.2-026",
     "RK-7.3-024",
     "RK-7.3-025",
     "RK-7.5-020"

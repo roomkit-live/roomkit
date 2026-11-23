@@ -8,6 +8,9 @@
     "§6.1"
   ],
   "requirements": [
+    "RK-12.2-026",
+    "RK-12.2-032",
+    "RK-12.2-035",
     "RK-5.12-002"
   ],
   "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityDefault::test_default_streams_to_first_target and TestResponseVisibilityStoredEvent::test_stored_event_default_visibility. One streaming target per response.",

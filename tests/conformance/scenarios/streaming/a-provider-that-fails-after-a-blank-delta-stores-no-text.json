@@ -7,6 +7,7 @@
     "§12.2 step 13s"
   ],
   "requirements": [
+    "RK-12.2-034",
     "RK-6.4-128"
   ],
   "notes": "Python: core/mixins/_streaming_segments.py end_failed, flush_text (RMK-1300).",

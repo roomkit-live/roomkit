@@ -6,6 +6,9 @@
     "§6.1",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-12.2-026"
+  ],
   "notes": "The framework asks every transport the answer reaches, at each stream, whether it takes a streamed response in the room (supports_streaming_delivery_for), whatever it declared at registration: a WebSocket channel with no streaming client when it registered streams once one connects.",
   "setup": {
     "channels": [

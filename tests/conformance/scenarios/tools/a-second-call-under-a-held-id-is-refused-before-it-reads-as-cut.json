@@ -6,6 +6,9 @@
     "§6.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-12.4-039"
+  ],
   "notes": "Python: channels/_ai_tools.py _serve_entry refuses a duplicate before _run_call and _gate_call, which reads a partial call.",
   "setup": {
     "channels": [

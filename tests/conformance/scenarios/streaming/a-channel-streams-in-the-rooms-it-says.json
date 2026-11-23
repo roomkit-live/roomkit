@@ -6,6 +6,9 @@
     "§6.1",
     "§12.2 step 13s"
   ],
+  "requirements": [
+    "RK-12.2-026"
+  ],
   "notes": "The framework asks the channel, per room, whether it takes a streamed response there (supports_streaming_delivery_for): a WebSocket channel can hold streaming clients for one room and none for another, and only the room delivered counts.",
   "setup": {
     "channels": [
