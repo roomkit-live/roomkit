@@ -156,6 +156,7 @@ KIT = {
     "shared_realtime",
     "turn_backend_faults",
     "executor_catalogue",
+    "turn_backend_contract_only",
 }
 LOCK_MANAGER = {"kind", "release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}

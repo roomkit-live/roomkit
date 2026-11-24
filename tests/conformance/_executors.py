@@ -33,6 +33,7 @@ from tests.conformance._own_process import Apart, apart_problems
 from tests.conformance._owner_kill import OwnerKill
 from tests.conformance._owner_nodes import (
     FaultingPresence,
+    OnTheContractAlone,
     OwnerFaults,
     OwnerRealtime,
     WithoutCatalogue,
@@ -219,6 +220,8 @@ class Executors:
                 backend = _backend(self._bounds, self._prefix)
             if self._settings.get("turn_backend_faults"):
                 backend = FaultingPresence(backend, self.faults)
+            elif self._settings.get("turn_backend_contract_only"):
+                backend = OnTheContractAlone(backend)
             if self._settings.get("executor_catalogue") is False:
                 backend = WithoutCatalogue(backend)
             self._nodes[name] = backend

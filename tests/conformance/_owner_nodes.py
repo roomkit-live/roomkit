@@ -78,12 +78,10 @@ class WithoutCatalogue(TurnBackend):
         await self.inner.close()
 
 
-class FaultingPresence(WithoutCatalogue):
-    """Forward the real catalogue and interrupt a claim only while its fault is armed."""
-
-    def __init__(self, backend: TurnBackend, faults: OwnerFaults) -> None:
-        super().__init__(backend)
-        self.faults = faults
+class OnTheContractAlone(WithoutCatalogue):
+    """A transport written outside RoomKit: each operation of the public
+    contract handed to the mode's backend, and nothing else (README,
+    ``kit.turn_backend_contract_only``)."""
 
     async def executors(self) -> list[ExecutorInfo]:
         return await self.inner.executors()
@@ -93,6 +91,14 @@ class FaultingPresence(WithoutCatalogue):
 
     def watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
         self.inner.watch_executors(listener)
+
+
+class FaultingPresence(OnTheContractAlone):
+    """Forward the real catalogue and interrupt a claim only while its fault is armed."""
+
+    def __init__(self, backend: TurnBackend, faults: OwnerFaults) -> None:
+        super().__init__(backend)
+        self.faults = faults
 
     async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
         if online is not None:

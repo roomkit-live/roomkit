@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-agent-s-presence-is-published-at-once-on-a-transport-written-on-the-contract-alone",
+  "title": "On a transport written on the public contract alone, an agent's presence is published at once when an executor of the owner's process closes or is served, not at the owner's next look at the executors",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-030",
+    "RK-10.6.7-031"
+  ],
+  "notes": "The heartbeat interval outlasts the run, so the owner's next look at the executors cannot be what publishes. Python: tests/test_agent_presence.py test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_changes, its on-the-contract-alone case.",
+  "setup": {
+    "kit": {
+      "turn_backend_contract_only": true,
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 5000,
+        "heartbeat_timeout_ms": 20000
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ],
+        "kit": "main"
+      },
+      {
+        "id": "late",
+        "hosts": [
+          "coder"
+        ],
+        "kit": "main",
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "executor.close",
+      "executor": "host"
+    },
+    {
+      "call": "executor.start",
+      "executor": "late"
+    }
+  ],
+  "expect": {
+    "presence_events": {
+      "r1": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}
