@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -178,14 +179,26 @@ class TestPyAVVideoRecorder:
             assert os.path.getsize(h1.path) > 0
             assert os.path.getsize(h2.path) > 0
 
-    def test_path_traversal_rejected(self) -> None:
-        """Storage path with '..' components is rejected."""
+    @pytest.mark.parametrize(
+        ("storage", "refusal"),
+        [
+            # A path where normpath still contains '..' (relative traversal)
+            ("recordings/../../etc", "must not contain"),
+            # A URL is no directory: it was read as ./s3:/recordings (RMK-2030)
+            ("s3://recordings", "not a URL"),
+        ],
+    )
+    def test_a_storage_that_is_no_directory_is_rejected(
+        self, storage: str, refusal: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A storage with '..' components, or a URL, is rejected and creates nothing."""
+        monkeypatch.chdir(tmp_path)
         recorder = PyAVVideoRecorder()
         session = _make_session()
-        # A path where normpath still contains '..' (relative traversal)
-        config = VideoRecordingConfig(storage="recordings/../../etc")
-        with pytest.raises(ValueError, match="must not contain"):
+        config = VideoRecordingConfig(storage=storage)
+        with pytest.raises(ValueError, match=refusal):
             recorder.start(session, config)
+        assert list(tmp_path.iterdir()) == []
 
     def test_mp4v_format_normalized(self) -> None:
         """Legacy 'mp4v' format is normalized to 'mp4'."""

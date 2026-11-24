@@ -44,12 +44,22 @@ def safe_filename(value: str) -> str:
     return re.sub(r"[^\w\-]", "_", value)
 
 
+_URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
+"""A URL's scheme and authority marker (``s3://``, ``gcs://``, ``file://``)."""
+
+
 def validate_storage_path(storage: str) -> str:
     """Validate and resolve a storage directory path.
 
-    Rejects paths containing '..' components to prevent traversal.
-    Creates the directory if it doesn't exist. Returns the resolved path.
+    Rejects a URL (``s3://bucket``): the recorders write to a local directory,
+    and a URL would be read as a relative path, the recording landing in the
+    clear on local disk under ``./s3:/bucket`` while the caller meant an object
+    store (RFC §12.3.7, §12.11). Rejects paths containing '..' components to
+    prevent traversal. Creates the directory if it doesn't exist. Returns the
+    resolved path.
     """
+    if _URL_SCHEME.match(storage):
+        raise ValueError(f"Storage must be a directory, not a URL: {storage}")
     if ".." in pathlib.PurePath(storage).parts:
         raise ValueError(f"Storage path must not contain '..': {storage}")
     resolved = str(pathlib.Path(storage).resolve())
@@ -100,6 +110,12 @@ class MediaRecordingConfig:
     """Configuration for a room-level media recording session."""
 
     storage: str = ""
+    """Directory the recorder writes to, created if it does not exist.
+
+    Empty selects the recorder's default (``PyAVMediaRecorder``:
+    ``./recordings``). A URL (``s3://bucket``) or a path with a ``..``
+    component is refused when the recording starts (RFC §12.11)."""
+
     video_codec: str = "libx264"
     video_fps: int = 30
     audio_codec: str = "aac"

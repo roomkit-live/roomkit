@@ -125,20 +125,31 @@ class TestWavFileRecorderBasic:
         assert handle.path
         recorder.stop(handle)
 
-    @pytest.mark.parametrize("storage", ["{tmp}/volume/app/../recordings", "../recordings"])
-    def test_storage_with_dotdot_is_refused_and_nothing_is_written(
+    @pytest.mark.parametrize(
+        ("storage", "refusal"),
+        [
+            ("{tmp}/volume/app/../recordings", "Storage path must not contain '..'"),
+            ("../recordings", "Storage path must not contain '..'"),
+            ("s3://recordings/calls", "Storage must be a directory, not a URL"),
+            ("gcs://recordings", "Storage must be a directory, not a URL"),
+        ],
+    )
+    def test_a_storage_that_is_no_directory_is_refused_and_nothing_is_written(
         self,
         storage: str,
+        refusal: str,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A ``storage`` with '..' is a configuration error (RFC §12.3.7, RMK-569).
+        """A ``storage`` with '..', or a URL, is a configuration error (RFC §12.3.7).
 
-        It used to be swapped for the temp directory: the recording landed in
-        the clear outside the storage declared encrypted, and the result still
-        reported ``"encryption": "storage"``. The voice pipeline logs the
-        refusal and the call goes on unrecorded, as for any refused start.
+        A '..' used to be swapped for the temp directory (RMK-569), and a URL
+        was read as a relative path (RMK-2030): ``s3://recordings`` wrote into
+        ``./s3:/recordings``. Either way the recording landed in the clear on
+        local disk, outside the storage declared encrypted. The voice pipeline
+        logs the refusal and the call goes on unrecorded, as for any refused
+        start.
         """
         temp_dir = tmp_path / "tmp"
         temp_dir.mkdir()
@@ -160,7 +171,7 @@ class TestWavFileRecorderBasic:
 
         assert list(tmp_path.rglob("*.wav")) == []
         assert started == []
-        assert "Storage path must not contain '..'" in caplog.text
+        assert refusal in caplog.text
 
 
 class TestMixedMode:

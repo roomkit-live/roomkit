@@ -142,7 +142,11 @@ class RecordingConfig:
     """Output file format."""
 
     storage: str = ""
-    """Integrator-defined storage identifier, resolved at runtime."""
+    """Directory the recorder writes to, created if it does not exist.
+
+    Empty selects the recorder's default (``WavFileRecorder``: the system's
+    temporary directory). A URL (``s3://bucket``) or a path with a ``..``
+    component is refused when the recording starts (RFC §12.3.7)."""
 
     retention_days: int | None = None
     """Optional retention period in days (None = indefinite)."""

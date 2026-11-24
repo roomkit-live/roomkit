@@ -90,17 +90,42 @@ class TestEncryptionAtRest:
 
         assert not (tmp_path / "rec").exists(), "a refused recording must create nothing"
 
+    @pytest.mark.parametrize(
+        ("storage", "declared", "refusal"),
+        [
+            ("{tmp}/rec", False, r"requires MediaRecordingConfig\.encryption"),
+            ("s3://recordings/calls", True, "Storage must be a directory, not a URL"),
+        ],
+    )
     async def test_create_room_refused_by_the_recorder_writes_no_room(
-        self, tmp_path: Path
+        self,
+        storage: str,
+        declared: bool,
+        refusal: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """RFC §12.11: the recorder starts before the room is written, and refuses first."""
-        kit = RoomKit()
-        binding = RoomRecorderBinding(recorder=_get_recorder(), config=self._wav_config(tmp_path))
+        """RFC §12.11: the recorder starts before the room is written, and refuses first.
 
-        with pytest.raises(ValueError, match=r"requires MediaRecordingConfig\.encryption"):
+        A storage declared nowhere encrypted is refused, and so is a URL, which
+        is no directory: it was read as ``./s3:/recordings/calls`` and the
+        recording written there in the clear (RMK-2030).
+        """
+        monkeypatch.chdir(tmp_path)
+        kit = RoomKit()
+        config = MediaRecordingConfig(
+            storage=storage.format(tmp=tmp_path),
+            format="wav",
+            audio_codec="pcm_s16le",
+            storage_encrypted_at_rest=declared,
+        )
+        binding = RoomRecorderBinding(recorder=_get_recorder(), config=config)
+
+        with pytest.raises(ValueError, match=refusal):
             await kit.create_room(room_id="r1", recorders=[binding])
 
         assert await kit.store.get_room("r1") is None
+        assert list(tmp_path.iterdir()) == [], "a refused recording must create nothing"
         await kit.close()
 
     def test_encrypted_storage_can_be_declared_explicitly(self, tmp_path: Path) -> None:
