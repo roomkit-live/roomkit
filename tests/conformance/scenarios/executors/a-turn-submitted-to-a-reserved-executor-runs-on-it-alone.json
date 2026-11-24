@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-runs-on-it-alone",
+  "title": "A turn submitted to the executor a host reserved runs on it alone, though another holds the room, and the room's next turns stay on it",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-036",
+    "RK-10.6.7-038"
+  ],
+  "notes": "Python: tests/test_turns_submit_to.py test_a_turn_submitted_to_an_executor_runs_on_it_alone_and_the_room_follows. holder ran the room's first turn, so a placed turn would stay on it (RK-10.6.7-025): the second, submitted to reserved, runs there once and nowhere else, and the third, placed as usual, follows it. A backend that placed the reserved turn by the room's holder would give holder three turns; one that left the holder as it was would give it the third.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            },
+            {
+              "text": "Three."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "holder",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "reserved",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "reserved"
+    },
+    {
+      "call": "executor.reserve",
+      "executor": "reserved"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "executor.reserve",
+      "executor": null
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Third."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "holder": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "reserved": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    },
+    "reserved_turns": {
+      "reserved": [
+        {
+          "room_id": "r1",
+          "error": null,
+          "handed": true
+        }
+      ]
+    }
+  }
+}

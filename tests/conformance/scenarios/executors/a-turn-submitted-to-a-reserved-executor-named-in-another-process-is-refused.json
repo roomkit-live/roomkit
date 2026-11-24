@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-named-in-another-process-is-refused",
+  "title": "A turn submitted to a reserved executor named in a process that does not serve it fails no_executor before it is handed; named in the process that serves it, it runs there",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-037"
+  ],
+  "notes": "Python: tests/test_turns_submit_to.py test_an_executor_that_does_not_take_the_turn_refuses_it_before_it_is_handed[another node]. worker is served by peer. Named in main, the run's own process, no executor answers to that name: the same id in another process is another executor (RK-10.6.8-012), and the turn does not fall back on it. Named in peer, it takes the turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "worker",
+        "hosts": [
+          "coder"
+        ],
+        "kit": "peer"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "peer"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "executor.reserve",
+      "executor": "worker",
+      "process": "main"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "worker"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.reserve",
+      "executor": "worker",
+      "process": "peer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "worker": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    },
+    "reserved_turns": {
+      "worker": [
+        {
+          "room_id": "r1",
+          "error": "no_executor",
+          "handed": false
+        },
+        {
+          "room_id": "r1",
+          "error": null,
+          "handed": true
+        }
+      ]
+    }
+  }
+}

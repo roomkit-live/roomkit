@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-lacking-the-room-s-hook-is-refused",
+  "title": "A turn submitted to a reserved executor that does not define the room's hook fails no_executor before it is handed, as one placed would not go to it",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-037"
+  ],
+  "notes": "Python: tests/test_turns_submit_to.py test_an_executor_that_does_not_take_the_turn_refuses_it_before_it_is_handed[without the room's hook]. The room's enabled hook is defined by holder alone, so reserved takes none of the room's turns (RK-10.6.7-004): a reservation does not lift what a placed turn keeps. reserved builds nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            },
+            {
+              "text": "Three."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "holder",
+        "hosts": [
+          "coder"
+        ],
+        "room_hooks": [
+          {
+            "name": "audit",
+            "trigger": "on_ai_response",
+            "execution": "async"
+          }
+        ]
+      },
+      {
+        "id": "reserved",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "enable_room_hook",
+      "room_id": "r1",
+      "name": "audit"
+    },
+    {
+      "call": "executor.reserve",
+      "executor": "reserved"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "reserved"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.reserve",
+      "executor": null
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "holder": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "reserved": []
+    },
+    "reserved_turns": {
+      "reserved": [
+        {
+          "room_id": "r1",
+          "error": "no_executor",
+          "handed": false
+        }
+      ]
+    }
+  }
+}

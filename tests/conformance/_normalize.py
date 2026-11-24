@@ -85,6 +85,7 @@ class Observed:
     executors: dict[str, list[Any]] = field(default_factory=dict)
     turn_ends: dict[str, list[Any]] = field(default_factory=dict)
     killed_owner_frames: list[str] = field(default_factory=list)
+    reserved_turns: dict[str, list[Any]] = field(default_factory=dict)
     participants: dict[str, list[Any]] = field(default_factory=dict)
     resolver: list[dict[str, Any]] = field(default_factory=list)
     router_calls: list[dict[str, Any]] = field(default_factory=list)

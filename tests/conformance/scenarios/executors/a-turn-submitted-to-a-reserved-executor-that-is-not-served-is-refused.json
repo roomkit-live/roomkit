@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-that-is-not-served-is-refused",
+  "title": "A turn submitted to a reserved executor that is not served fails no_executor before it is handed: no other executor takes it, and the room stays on its holder",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-037"
+  ],
+  "notes": "Python: tests/test_turns_submit_to.py test_an_executor_that_does_not_take_the_turn_refuses_it_before_it_is_handed[closed]. reserved is never started. The submission fails with no_executor and the request unhanded; holder, which takes the channel's turns, is given none for it, and the third turn, placed as usual, runs on holder with no detach before it: the refused turn was never the room's previous one, and the room never left its holder. A backend that placed a refused reservation again would run the second turn on holder.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            },
+            {
+              "text": "Three."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "holder",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "reserved",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      }
+    },
+    {
+      "call": "executor.reserve",
+      "executor": "reserved"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "reserved"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.reserve",
+      "executor": null
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Third."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "holder": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "reserved": []
+    },
+    "reserved_turns": {
+      "reserved": [
+        {
+          "room_id": "r1",
+          "error": "no_executor",
+          "handed": false
+        }
+      ]
+    }
+  }
+}

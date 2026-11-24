@@ -17,13 +17,14 @@ from uuid import uuid4
 
 from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import TurnLinkError
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.scoring import MockScorer, ScoringHook
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.mock import MockTelemetryProvider
-from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts
+from roomkit.turns import ExecutorInfo, InMemoryTurnBackend, TurnExecutor, TurnTimeouts
 from roomkit.turns.base import ExecutorLink, TurnBackend
 from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
@@ -137,6 +138,12 @@ class Executors:
             step.get("call") == "owner.kill" for step in harness.scenario.get("steps", [])
         )
         self._apart: dict[str, Apart] = {}
+        self.reserved: ExecutorInfo | None = None
+        """The executor the kit's turns are submitted to, while a step
+        reserved one (README, ``executor.reserve``)."""
+        self.reserved_turns: dict[str, list[dict[str, Any]]] = {}
+        """Per executor reserved, each turn submitted to it (README,
+        ``reserved_turns``)."""
 
     def site_options(self, site: str, spec: Mapping[str, Any]) -> dict[str, Any]:
         options: dict[str, Any] = {}
@@ -157,6 +164,7 @@ class Executors:
         if not (self._specs or self._bounds is not None or self.held_ends or self._kills_owner):
             return {}
         self._backend = self._node("main")
+        self._reserve(self._backend)
         if self.held_ends:
             self.held_ends.wrap(self._backend)
         if self._kills_owner:
@@ -165,6 +173,39 @@ class Executors:
                 raise UnreadableError("owner.kill takes no presence fixture of the kit")
             self.owner_kill.wrap(self._backend)
         return self.process_options("main")
+
+    def _reserve(self, backend: TurnBackend) -> None:
+        """Has *backend* submit each of the kit's turns to the executor a
+        step reserved, while one is (README, ``executor.reserve``): what a
+        host that places its turns by its own rules does."""
+        submit = backend.submit
+
+        async def submitting(request: Any) -> Any:
+            reserved = self.reserved
+            if reserved is None:
+                return await submit(request)
+            entry: dict[str, Any] = {"room_id": request.room_id, "error": None}
+            self.reserved_turns.setdefault(reserved.executor_id, []).append(entry)
+            try:
+                return await backend.submit_to(request, reserved)
+            except TurnLinkError as error:
+                entry["error"] = error.reason
+                raise
+            finally:
+                entry["handed"] = request.handed
+
+        target: Any = backend
+        target.submit = submitting
+
+    def node_id(self, process: str | None) -> str | None:
+        """The node a step's ``process`` names on the run's distributed turn
+        backend; none for a step that names no process."""
+        if process is None:
+            return None
+        if not self._distributed or (process != "main" and process not in self._process_ids):
+            raise UnreadableError(f"no process {process!r} on a distributed turn backend")
+        node: str = self._node(process).node_id  # type: ignore[attr-defined]
+        return node
 
     def _node(self, name: str | None) -> TurnBackend:
         if name not in self._nodes:
@@ -460,6 +501,20 @@ async def _kill_owner(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     harness.executors.owner_kill.kill()
 
 
+async def _reserve(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """Reserves an executor of the setup for the kit's turns, or none again."""
+    executors = harness.executors
+    executor_id = spec["executor"]
+    if executor_id is None:
+        executors.reserved = None
+        return
+    if executor_id not in executors._specs:
+        raise UnreadableError(f"no executor {executor_id!r} in setup.executors")
+    executors.reserved = ExecutorInfo(
+        executor_id=executor_id, node=executors.node_id(spec.get("process"))
+    )
+
+
 async def _pause(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     harness.executors.running(spec["executor"]).paused = True
 
@@ -586,6 +641,7 @@ EXECUTOR_CALLS: dict[str, Call] = {
     "owner.kill": _kill_owner,
     "executor.pause": _pause,
     "executor.resume": _resume,
+    "executor.reserve": _reserve,
     "executor.calls": _calls_so_far,
     "channel.publish": _publish,
     "channel_call": _channel_call,
@@ -605,6 +661,7 @@ EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "owner.kill": set(),
     "executor.pause": {"executor"},
     "executor.resume": {"executor"},
+    "executor.reserve": {"executor", "process"},
     "executor.calls": {"executor"},
     "channel.publish": {"executor", "channel_id", "room_id", "kind", "data", "gate"},
     "channel_call": {"channel_id", "room_id", "verb", "arguments", "capture_error"},

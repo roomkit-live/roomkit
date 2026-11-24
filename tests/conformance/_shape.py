@@ -525,6 +525,7 @@ EXPECT = {
     "executors",
     "turn_ends",
     "killed_owner_frames",
+    "reserved_turns",
     "script_executors",
     "sandbox_executors",
     "continuations",

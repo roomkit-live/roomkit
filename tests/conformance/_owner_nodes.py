@@ -59,6 +59,9 @@ class WithoutCatalogue(TurnBackend):
     async def submit(self, request: TurnRequest) -> TurnLink:
         return await self.inner.submit(request)
 
+    async def submit_to(self, request: TurnRequest, executor: ExecutorInfo) -> TurnLink:
+        return await self.inner.submit_to(request, executor)
+
     async def serve(self, executor: TurnExecutor) -> None:
         await self.inner.serve(executor)
 

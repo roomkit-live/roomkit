@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-that-never-answers-goes-to-no-other",
+  "title": "A turn submitted to a reserved executor that took it and never answered fails executor_lost and goes to no other executor: handed, it stays the room's previous turn",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-039"
+  ],
+  "notes": "Observes the uncertain end beside the refusal of a-turn-submitted-to-a-reserved-executor-that-is-not-served-is-refused: reserved takes the request (the submission returns its link, handed) and never accepts it, so the turn fails executor_lost at its accept bound. holder is given nothing meanwhile, and the next turn, on holder, names the lost turn: holder drops the state it held since the first turn (an on_room_detached before its on_event, RK-10.6.2-036), which it would not after a refusal. Not observed: a process that never answers the handing itself, which each implementation's own tests hold (Python: tests/test_turns_submit_to.py test_an_executor_whose_answer_to_the_hand_over_is_lost_leaves_the_turn_with_no_other).",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 1000,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "holder",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "reserved",
+        "hosts": [
+          "coder"
+        ],
+        "answers": false,
+        "gate": "taken",
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "reserved"
+    },
+    {
+      "call": "executor.reserve",
+      "executor": "reserved"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "taken"
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.close",
+      "executor": "reserved"
+    },
+    {
+      "call": "executor.reserve",
+      "executor": null
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "C."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "holder": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_room_detached",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "reserved": []
+    },
+    "reserved_turns": {
+      "reserved": [
+        {
+          "room_id": "r1",
+          "error": null,
+          "handed": true
+        }
+      ]
+    }
+  }
+}

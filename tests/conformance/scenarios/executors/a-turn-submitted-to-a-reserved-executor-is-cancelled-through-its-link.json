@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-submitted-to-a-reserved-executor-is-cancelled-through-its-link",
+  "title": "A turn submitted to a reserved executor is steered as any other: a Cancel reaches it on the executor that took it, and no other executor runs it",
+  "rules": [
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-10.6.7-036"
+  ],
+  "notes": "Python: tests/test_turns_submit_to.py test_a_turn_submitted_to_an_executor_is_cancelled_through_its_link. The turn's link is the one a placed turn gets: the Cancel counts one loop reached, on reserved, while its model is held. other declares the channel too and runs nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "gate": "model",
+              "text": "Late."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "other",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "reserved",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "executor.reserve",
+      "executor": "reserved"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "model"
+    },
+    {
+      "call": "steer",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "directive": {
+        "type": "cancel"
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "model"
+    },
+    {
+      "await": "turn"
+    }
+  ],
+  "expect": {
+    "executors": {
+      "other": [],
+      "reserved": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    },
+    "reserved_turns": {
+      "reserved": [
+        {
+          "room_id": "r1",
+          "error": null,
+          "handed": true
+        }
+      ]
+    }
+  }
+}
