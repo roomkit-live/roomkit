@@ -1219,20 +1219,25 @@ class Harness:
         self._collect_acp_permissions()
         self._collect_acp_mcp()
         self._collect_acp_context()
-        self.observed.executors = {
-            executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
-        }
-        self.observed.turn_ends = {
-            channel_id: list(ends) for channel_id, ends in self.executors.held_ends.ends.items()
-        }
-        self.observed.killed_owner_frames = sorted(self.executors.owner_kill.frames)
-        self.observed.reserved_turns = {
-            executor_id: list(turns)
-            for executor_id, turns in self.executors.reserved_turns.items()
-        }
+        self._collect_executors()
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)
+
+    def _collect_executors(self) -> None:
+        """What the run's executors did, and what its turn backend's fixtures
+        recorded of the kit's turns."""
+        executors = self.executors
+        self.observed.executors = {
+            executor_id: list(calls) for executor_id, calls in executors.calls.items()
+        }
+        self.observed.turn_ends = {
+            channel_id: list(ends) for channel_id, ends in executors.held_ends.ends.items()
+        }
+        self.observed.killed_owner_frames = sorted(executors.owner_kill.frames)
+        self.observed.reserved_turns = {
+            executor_id: list(turns) for executor_id, turns in executors.reserved_turns.items()
+        }
 
     def _collect_external_handlers(self) -> None:
         self.observed.external_handlers = {

@@ -72,7 +72,7 @@ class SlotLink(TurnLink):
     def __init__(self, link: TurnLink, give_back: Callable[[], None]) -> None:
         self.request = link.request
         self._link = link
-        self._give_back = give_back
+        self._give_back: Callable[[], None] | None = give_back
 
     @property
     def taken(self) -> bool:
@@ -86,7 +86,9 @@ class SlotLink(TurnLink):
 
     def release(self) -> None:
         self._link.release()
-        self._give_back()
+        give_back, self._give_back = self._give_back, None
+        if give_back is not None:
+            give_back()
 
     def beat_heard(self) -> bool:
         return self._link.beat_heard()
@@ -106,10 +108,10 @@ class SlotBackend(TurnBackend):
             worker = self._reserve()
             try:
                 link = await self._inner.submit_to(request, ExecutorInfo(executor_id=worker))
-            except TurnLinkError as error:
-                self._free[worker] += 1
-                if error.reason != "no_executor" or request.handed:
-                    # Handed: the worker may have begun it. Never elsewhere.
+            except BaseException as error:
+                if not _refused(error, request):
+                    # Handed, or cut: the worker may have begun it. Never elsewhere.
+                    self._give_back(worker)
                     raise
                 print(f"    {worker} refused it before it was handed: reserving another")
                 del self._free[worker]
@@ -151,6 +153,12 @@ class SlotBackend(TurnBackend):
 
     async def close(self) -> None:
         await self._inner.close()
+
+
+def _refused(error: BaseException, request: TurnRequest) -> bool:
+    """Whether *error* says the worker did not take *request*, nothing handed."""
+    refusal = isinstance(error, TurnLinkError) and error.reason == "no_executor"
+    return refusal and not request.handed
 
 
 def worker(executor_id: str) -> TurnExecutor:

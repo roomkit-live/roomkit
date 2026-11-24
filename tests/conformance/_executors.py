@@ -17,7 +17,6 @@ from uuid import uuid4
 
 from roomkit import AIChannel, RoomKit, current_turn_id
 from roomkit.channels.base import Channel
-from roomkit.core.exceptions import TurnLinkError
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.scoring import MockScorer, ScoringHook
@@ -164,7 +163,7 @@ class Executors:
         if not (self._specs or self._bounds is not None or self.held_ends or self._kills_owner):
             return {}
         self._backend = self._node("main")
-        self._reserve(self._backend)
+        self._submit_reserved(self._backend)
         if self.held_ends:
             self.held_ends.wrap(self._backend)
         if self._kills_owner:
@@ -174,7 +173,7 @@ class Executors:
             self.owner_kill.wrap(self._backend)
         return self.process_options("main")
 
-    def _reserve(self, backend: TurnBackend) -> None:
+    def _submit_reserved(self, backend: TurnBackend) -> None:
         """Has *backend* submit each of the kit's turns to the executor a
         step reserved, while one is (README, ``executor.reserve``): what a
         host that places its turns by its own rules does."""
@@ -188,8 +187,9 @@ class Executors:
             self.reserved_turns.setdefault(reserved.executor_id, []).append(entry)
             try:
                 return await backend.submit_to(request, reserved)
-            except TurnLinkError as error:
-                entry["error"] = error.reason
+            except Exception as error:
+                # Its reason, as a refusal names it; any other failure's text.
+                entry["error"] = getattr(error, "reason", None) or str(error)
                 raise
             finally:
                 entry["handed"] = request.handed

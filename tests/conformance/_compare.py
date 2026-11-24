@@ -152,21 +152,7 @@ class _Comparison:
         self.continuations()
         self.speaking()
         self.external_handlers()
-        for executor_id, expected in self.expect.get("executors", {}).items():
-            actual = self.observed.executors.get(executor_id, [])
-            self._check(expected, actual, f"executors.{executor_id}")
-        for channel_id, expected in self.expect.get("turn_ends", {}).items():
-            actual = self.observed.turn_ends.get(channel_id, [])
-            self._check(expected, actual, f"turn_ends.{channel_id}")
-        for executor_id, expected in self.expect.get("reserved_turns", {}).items():
-            actual = self.observed.reserved_turns.get(executor_id, [])
-            self._check(expected, actual, f"reserved_turns.{executor_id}")
-        if "killed_owner_frames" in self.expect:
-            self._check(
-                self.expect["killed_owner_frames"],
-                self.observed.killed_owner_frames,
-                "killed_owner_frames",
-            )
+        self.executors()
         for channel_id, expected in self.expect.get("script_executors", {}).items():
             actual = self.observed.script_executors.get(channel_id, MISSING)
             self._check(expected, actual, f"script_executors.{channel_id}")
@@ -174,6 +160,20 @@ class _Comparison:
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
+
+    def executors(self) -> None:
+        """What the run's executors did, and what its turn backend's fixtures
+        recorded of the kit's turns."""
+        for kind in ("executors", "turn_ends", "reserved_turns"):
+            observed = getattr(self.observed, kind)
+            for name, expected in self.expect.get(kind, {}).items():
+                self._check(expected, observed.get(name, []), f"{kind}.{name}")
+        if "killed_owner_frames" in self.expect:
+            self._check(
+                self.expect["killed_owner_frames"],
+                self.observed.killed_owner_frames,
+                "killed_owner_frames",
+            )
 
     def external_handlers(self) -> None:
         for channel_id, expected in self.expect.get("external_handlers", {}).items():

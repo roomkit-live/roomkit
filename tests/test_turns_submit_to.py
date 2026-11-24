@@ -46,7 +46,7 @@ from tests.test_framework import SimpleChannel
 REDIS = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
 BACKENDS = ["memory", pytest.param("redis", marks=REDIS)]
 # The accept bound is what a lost answer waits for: kept short.
-TIMEOUTS = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=2.0, accept=0.5, cancel=1.0)
+TIMEOUTS = TurnTimeouts(heartbeat_interval=0.02, heartbeat_timeout=2.0, accept=0.5, cancel=1.0)
 
 
 class _Reserving(TurnBackend):
@@ -120,19 +120,22 @@ class _Pool:
         executor_id: str | None = None,
         room_hook: str | None = None,
         provider: MockAIProvider | None = None,
+        here: bool = False,
+        hosts: str = "worker",
     ) -> None:
         """Serve a worker answering ``From <name>.``, defining *room_hook*
-        first so its first beat declares it."""
+        first so its first beat declares it; on the owner's own backend when
+        *here*, else on one of its own."""
         model = provider or MockAIProvider(responses=[f"From {name}."] * 20, streaming=True)
         executor = TurnExecutor(
             lambda channel_id: Agent(channel_id, provider=model),
-            hosts={"worker"},
+            hosts={hosts},
             executor_id=executor_id or name,
             timeouts=TIMEOUTS,
         )
         if room_hook is not None:
             executor.room_hook(room_hook, HookTrigger.ON_AI_RESPONSE)(_nothing)
-        host = self._node()
+        host = self.backend.inner if here else self._node()
         await host.serve(executor)
         self.hosts[name], self.executors[name] = host, executor
 
@@ -164,7 +167,7 @@ class _Pool:
 
     async def stop(self, name: str) -> None:
         host, executor = self.hosts.pop(name), self.executors.pop(name)
-        if host is not self._memory:
+        if host is not self._memory and host is not self.backend.inner:
             await host.close()
         await executor.close()
 
@@ -245,6 +248,27 @@ async def test_a_turn_of_a_channel_the_kit_holds_live_is_submitted_to_no_other_e
     assert handed == {"worker": True, "live": False}
 
 
+async def test_the_kit_s_own_executor_named_for_a_turn_it_does_not_take_refuses_by_its_name(
+    pool: _Pool,
+) -> None:
+    """The kit's own executor is named as any other: for a turn of a channel
+    it holds live in a room whose hook it does not define, the refusal names
+    it, as the refusal of any executor that does not take the turn."""
+    pool.kit.register_channel(Agent("live", provider=MockAIProvider(responses=["Hi."])))
+    await pool.kit.detach_channel("r", "worker")
+    await pool.kit.attach_channel("r", "live", category=ChannelCategory.INTELLIGENCE)
+    await pool.kit.enable_room_hook("r", "audit")
+    own = ExecutorInfo(executor_id=pool.kit.turn_executor.executor_id)
+    result = await pool.say("First.", own)
+
+    assert isinstance(result.error, TurnLinkError)
+    assert result.error.reason == "no_executor"
+    assert str(result.error) == (
+        f"Executor {own.executor_id} does not take channel 'live' with room hooks ['audit']"
+    )
+    assert not pool.backend.requests[0].handed
+
+
 async def test_a_turn_submitted_to_an_executor_is_cancelled_through_its_link(pool: _Pool) -> None:
     """The turn an executor was submitted streams and is cut as any other:
     a steering cancel reaches it on the executor that took it."""
@@ -291,6 +315,31 @@ async def test_a_backend_that_names_no_executor_refuses_the_turn_unhanded() -> N
 
 
 @REDIS
+async def test_an_executor_of_the_owner_s_own_process_is_named_as_any_other() -> None:
+    """A worker served on the owner's own backend, whose turns stay in the
+    process: named as the backend lists it or by its id alone it takes the
+    turn, the room follows it, and closed it refuses before the hand-over."""
+    pool = _Pool("redis")
+    await pool.open()
+    try:
+        await pool.serve("a")
+        await pool.say("First.")
+        await pool.serve("here", here=True)
+        listed = await pool.say("Second.", pool.info("here"))
+        by_id = await pool.say("Third.", pool.info("here", node=False))
+        await pool.say("Fourth.")
+        await pool.executors["here"].close()
+        refused = await pool.say("Fifth.", pool.info("here"))
+
+        assert listed.error is None and by_id.error is None
+        assert getattr(refused.error, "reason", None) == "no_executor"
+        assert not pool.backend.requests[4].handed
+        assert await pool.answers() == ["From a."] + ["From here."] * 3
+    finally:
+        await pool.close()
+
+
+@REDIS
 async def test_an_executor_id_several_processes_serve_needs_its_node() -> None:
     """Two processes serve the id, one replacing the other: named without a
     node it is refused, named with its node it takes the turn, and alone
@@ -314,6 +363,23 @@ async def test_an_executor_id_several_processes_serve_needs_its_node() -> None:
 
 
 @REDIS
+async def test_an_executor_id_names_the_one_process_that_would_take_the_turn() -> None:
+    """Two processes serve the id and one of them alone declares the channel:
+    named by its id, that one takes the turn, as it alone would placed."""
+    pool = _Pool("redis")
+    await pool.open()
+    try:
+        await pool.serve("coder", executor_id="worker-1")
+        await pool.serve("other", executor_id="worker-1", hosts="another-channel")
+        result = await pool.say("First.", pool.info("coder", node=False))
+
+        assert result.error is None
+        assert await pool.answers() == ["From coder."]
+    finally:
+        await pool.close()
+
+
+@REDIS
 async def test_an_executor_whose_process_refuses_the_hand_over_leaves_the_turn_with_no_other(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -329,10 +395,12 @@ async def test_an_executor_whose_process_refuses_the_hand_over_leaves_the_turn_w
         host = pool.hosts["b"]
         assert isinstance(host, RedisTurnBackend)
         refuse = host._routes._answer_back
-        monkeypatch.setitem(
-            host._routes._routes, "request", lambda envelope: refuse(envelope, REFUSED)
-        )
-        result = await pool.say("Second.", pool.info("b"))
+        with monkeypatch.context() as refusing:
+            refusing.setitem(
+                host._routes._routes, "request", lambda envelope: refuse(envelope, REFUSED)
+            )
+            result = await pool.say("Second.", pool.info("b"))
+        # b takes requests again: the room is still a's, which it never left.
         await pool.say("Third.")
 
         assert isinstance(result.error, TurnLinkError)

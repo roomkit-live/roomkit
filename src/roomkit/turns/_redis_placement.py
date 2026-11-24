@@ -136,7 +136,9 @@ class Placement:
         them it names and no other."""
         own = self._owning(channel_id)
         if own is not None:
-            if only is not None and not self._names(only, own.executor_id, self._node):
+            if only is not None and not (
+                self._names(only, own.executor_id, self._node) and own._meets(channel_id, needs)
+            ):
                 raise not_taken(only, channel_id, needs)
             return self._own_taken(own, channel_id, needs, excluded)
         here = {
@@ -176,8 +178,8 @@ class Placement:
         needs: RoomNeeds,
     ) -> TurnExecutor | Elsewhere:
         """The one executor *only* names among those that take the turn,
-        *here* and *elsewhere*; ``no_executor`` when none does, or several
-        processes serve its id and it names no node."""
+        *here* and *elsewhere*; ``no_executor`` when it names none of them, or
+        several of them, in several processes, and no node."""
         named: list[TurnExecutor | Elsewhere] = [
             e for e in here.values() if self._names(only, e.executor_id, self._node)
         ]
