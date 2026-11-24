@@ -1493,7 +1493,10 @@ class VoiceSTTMixin:
             if stream_state.task is not None:
                 await _await_stream_end(stream_state.task, session.id)
             words = stream_state.final_text or stream_state.partial_text or ""
-            if not await self._held_words_are_a_turn(session, room_id, words, speech_duration_ms):
+            final = bool(stream_state.final_text)
+            if not await self._held_words_are_a_turn(
+                session, room_id, words, speech_duration_ms, final=final
+            ):
                 logger.debug("Held speech of %s ended without a turn in it: discarded", session.id)
                 self._release_unheard_turn(session.id)
                 return
@@ -1518,9 +1521,18 @@ class VoiceSTTMixin:
             transcript.settle()
 
     async def _held_words_are_a_turn(
-        self, session: VoiceSession, room_id: str, words: str, speech_duration_ms: int
+        self,
+        session: VoiceSession,
+        room_id: str,
+        words: str,
+        speech_duration_ms: int,
+        *,
+        final: bool,
     ) -> bool:
-        """Whether a held segment's final *words* are the user's turn, a backchannel reported."""
+        """Whether a held segment's last *words* are the user's turn, a backchannel reported.
+
+        *final* says they are the STT's final, compared in whole words; a
+        partial's last word may be cut (RFC §12.3.13)."""
         if not words:
             return False
         with self._state_lock:
@@ -1529,7 +1541,11 @@ class VoiceSTTMixin:
             # The bot finished meanwhile: plain speech is a turn, its echo not.
             return not self._took_for_echo(session.id, words)
         decision = self._judge_barge_in(
-            session.id, playback, speech_duration_ms=speech_duration_ms, speech_text=words
+            session.id,
+            playback,
+            speech_duration_ms=speech_duration_ms,
+            speech_text=words,
+            speech_final=final,
         )
         if decision.is_backchannel:
             await self._fire_backchannel_hook(session, words, room_id)

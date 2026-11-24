@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A voice channel compares a final transcript with the response being played in whole words (RFC §12.3.13, RMK-2113), where its interruption policy read every transcript as a partial: while the echo guard was open, a final whose last word only starts a word of the response, `Your ta` over `Your table is ready.`, was taken for that response's echo and the user's turn was discarded.
+
 - A realtime voice channel clears `VoiceSession.last_usage` at the end of each turn whether or not a telemetry provider is set (RFC §12.4.2, RMK-2055), where it cleared it only when a span traced the turn: without telemetry, the default, a host polling the snapshot read the previous turn's usage again after a turn that reported none, and turning telemetry on changed what it read. Bill from `on_usage`, which sees every report.
 
 - A vision result the provider returns with an empty description stops the room's AI turns from reading what that video session showed before (RFC §12.8.7, RMK-2063), where they kept reading the previous description as the camera's current view, until a described result replaced it: `OpenAIVisionProvider` returns an empty description when the model gives no content. The empty result is still not published (no `ON_VISION_RESULT`, no `video_vision_result`, RFC §12.8.4), and the filter context still takes it.

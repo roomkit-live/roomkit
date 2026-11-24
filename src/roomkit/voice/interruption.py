@@ -175,7 +175,7 @@ class InterruptionHandler:
         if (
             played < self._config.echo_guard_ms
             and speech_text
-            and echoes(speech_text, response_text)
+            and echoes(speech_text, response_text, cut_short=not speech_final)
         ):
             return InterruptionDecision(
                 should_interrupt=False,

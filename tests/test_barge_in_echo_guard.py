@@ -78,6 +78,22 @@ def test_a_final_is_read_in_whole_words() -> None:
     assert echoes("Salut ! Ça va", RESPONSE, cut_short=False)
 
 
+@pytest.mark.parametrize(("speech_final", "echo"), [(True, False), (False, True)])
+def test_the_policy_reads_a_final_in_whole_words(speech_final: bool, echo: bool) -> None:
+    """A final ending on the start of the response's word is the person; a
+    partial ending so is still the echo (RFC §12.3.13)."""
+    handler = InterruptionHandler(InterruptionConfig(strategy=InterruptionStrategy.IMMEDIATE))
+
+    decision = handler.evaluate(
+        playback_position_ms=900,
+        speech_text="Salut ! Ça v",
+        response_text=RESPONSE,
+        speech_final=speech_final,
+    )
+
+    assert decision.is_echo is echo
+
+
 @pytest.mark.parametrize(
     "strategy", [InterruptionStrategy.IMMEDIATE, InterruptionStrategy.DISABLED]
 )
