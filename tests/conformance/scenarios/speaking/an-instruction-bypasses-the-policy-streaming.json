@@ -123,11 +123,15 @@
           "type": "instruction_read",
           "content": {
             "body": "Nova, a question."
-          }
+          },
+          "index": 0
         },
         {
           "content": {
             "body": "Hi."
+          },
+          "metadata": {
+            "follows_index": 0
           }
         }
       ]

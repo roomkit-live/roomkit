@@ -94,6 +94,9 @@
           "content": {
             "type": "text",
             "body": "just text"
+          },
+          "metadata": {
+            "follows_index": 0
           }
         }
       ]
