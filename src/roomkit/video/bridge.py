@@ -37,8 +37,9 @@ class VideoBridgeConfig:
         keyframe_interval_s: Send PLI to each source every N seconds.
             Ensures decoder recovery after packet loss on the outbound
             bridge-to-receiver path. Set to ``0`` to disable.
-        keyframe_wait_s: How long a target holds delta frames from a source
-            that has not delivered a keyframe yet (RFC §12.8).  A decoder fed
+        keyframe_wait_s: How long a target drops the delta frames of a source
+            that has not delivered it a keyframe yet, timed from the first
+            delta dropped (RFC §12.8.9).  A decoder fed
             deltas from a mid-stream point renders garbage until the next
             keyframe, so the bridge waits for one — but only this long: a
             source that never answers PLI (a B2BUA that does not relay RTCP
