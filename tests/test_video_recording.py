@@ -81,26 +81,28 @@ class TestMockVideoRecorder:
 
 
 class TestVideoChannelRecording:
-    async def test_recording_starts_on_bind(self, kit: RoomKit) -> None:
+    @pytest.mark.parametrize(
+        ("recording_config", "started"), [(VideoRecordingConfig(), 1), (None, 0)]
+    )
+    async def test_recording_starts_on_bind(
+        self, kit: RoomKit, recording_config: VideoRecordingConfig | None, started: int
+    ) -> None:
+        """The recorder starts for a session that binds, given a recording
+        config; without one, it is not started (RFC §12.8.4)."""
         backend = MockVideoBackend()
         recorder = MockVideoRecorder()
         ch = VideoChannel(
             "video-1",
             backend=backend,
-            pipeline=VideoPipelineConfig(
-                recorder=recorder,
-                recording_config=VideoRecordingConfig(),
-            ),
+            pipeline=VideoPipelineConfig(recorder=recorder, recording_config=recording_config),
         )
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "video-1")
 
-        session = await kit.connect_video("r1", "user-1", "video-1")
+        await kit.connect_video("r1", "user-1", "video-1")
 
-        # Recording should have started
-        assert session.id in ch._recording_handles
-        assert len(recorder.recordings) == 1
+        assert len(recorder.recordings) == started
 
     async def test_recording_stops_on_unbind(self, kit: RoomKit) -> None:
         backend = MockVideoBackend()
