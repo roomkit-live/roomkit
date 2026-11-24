@@ -29,8 +29,8 @@ from roomkit.channels.conference import ConferenceChannel
 from roomkit.conference.models import ConferenceInterruptionConfig
 from roomkit.core.exceptions import (
     ConferenceCloseError,
+    KitClosedError,
     ParticipantNotAdmittedError,
-    RoomKitError,
     RoomNotAttachedError,
 )
 from roomkit.core.locks import InMemoryLockManager
@@ -2609,7 +2609,10 @@ class TestACallbackResumingAfterTheShutdown:
         """
         kit = RoomKit()
         await kit.close()
-        with pytest.raises(RoomKitError), kit._resource_lease():
+        with (
+            pytest.raises(KitClosedError, match=r"RoomKit\.close\(\) has sealed"),
+            kit._resource_lease(),
+        ):
             pass  # pragma: no cover — the lease refuses before the body runs
 
 
