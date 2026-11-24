@@ -1,0 +1,241 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-turn-with-a-call-streams-whatever-its-provider-streams",
+  "title": "A turn whose provider does not stream, and which runs a tool call, streams to its first streaming target",
+  "rules": [
+    "§12.2 step 11s",
+    "§12.2 step 14s",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.2-026",
+    "RK-12.2-032",
+    "RK-12.2-035"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "A scripted tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "st1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st2",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "st1"
+          },
+          {
+            "channel_id": "st2"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "st1": [
+          {
+            "text": "Looking."
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "Looking."
+              }
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_end"
+            }
+          },
+          {
+            "text": "answer"
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ],
+        "st2": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "src": [
+          {
+            "type": "message",
+            "content": {
+              "body": "Looking."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "st1": [
+          {
+            "content": {
+              "body": "Hi"
+            }
+          }
+        ],
+        "st2": [
+          {
+            "content": {
+              "body": "Hi"
+            }
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "Looking."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "Looking."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          }
+        }
+      ]
+    }
+  }
+}
