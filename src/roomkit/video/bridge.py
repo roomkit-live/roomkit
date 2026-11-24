@@ -106,8 +106,10 @@ class VideoBridge:
         """Set a synchronous filter called before forwarding each frame.
 
         The filter receives ``(source_session, frame)`` and returns the
-        frame (possibly modified) or ``None`` to drop it.  Runs in the
-        video callback thread — must complete quickly.
+        frame (possibly modified) or ``None`` to drop it.  Runs where
+        :meth:`forward` is called — the video callback thread, or a task on
+        the event loop once a ``BEFORE_BRIDGE_VIDEO`` hook is registered —
+        and must complete quickly.
         """
         self._frame_filter = fn
 

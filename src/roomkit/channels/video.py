@@ -429,9 +429,11 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
     def set_bridge_filter(self, fn: BridgeVideoFrameFilter | None) -> None:
         """Set a synchronous filter for bridged video frames.
 
-        The filter runs in the video callback thread before each frame
-        is forwarded.  It receives ``(source_session, frame)`` and
-        returns the frame (possibly modified) or ``None`` to drop it.
+        The filter runs as each frame is forwarded: in the video callback
+        thread, or, once a ``BEFORE_BRIDGE_VIDEO`` hook is registered, after
+        that hook in a task of its own (RFC §12.8.9).  It receives
+        ``(source_session, frame)`` and returns the frame (possibly modified)
+        or ``None`` to drop it.
 
         This is the synchronous equivalent of ``BEFORE_BRIDGE_VIDEO``
         — use it for fast operations like per-session muting.
