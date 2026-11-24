@@ -240,7 +240,7 @@ class TestSessionLifecycle:
         with pytest.raises(NotImplementedError, match="does not implement accept"):
             await channel.start_session("room-1", "user-1", "fake-ws")
 
-        assert channel._sessions == {}
+        assert channel.get_room_sessions("room-1") == []
         await channel.close()
 
 

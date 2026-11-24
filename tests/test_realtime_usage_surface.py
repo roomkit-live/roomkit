@@ -14,6 +14,7 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
@@ -165,7 +166,8 @@ async def test_the_channel_clears_the_snapshot_at_each_turn_s_end(traced: bool) 
     not a telemetry provider traces the turn (RFC §12.4.2, RMK-2055): it was
     cleared only where the turn had a span, so turning telemetry on changed
     what a host polling the snapshot read."""
-    kit = RoomKit(telemetry=MockTelemetryProvider()) if traced else RoomKit()
+    telemetry = MockTelemetryProvider()
+    kit = RoomKit(telemetry=telemetry) if traced else RoomKit()
     provider = MockRealtimeProvider()
     channel = RealtimeVoiceChannel("rt", provider=provider, transport=MockRealtimeTransport())
     kit.register_channel(channel)
@@ -183,3 +185,8 @@ async def test_the_channel_clears_the_snapshot_at_each_turn_s_end(traced: bool) 
         await kit.close()
 
     assert during == {"input_tokens": 10, "output_tokens": 5}
+    # The turn's span still reads the snapshot before it is cleared.
+    turns = telemetry.get_spans(SpanKind.REALTIME_TURN)
+    assert [span.attributes.get(Attr.LLM_INPUT_TOKENS) for span in turns] == (
+        [10] if traced else []
+    )
