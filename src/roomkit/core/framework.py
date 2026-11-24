@@ -1130,7 +1130,9 @@ class RoomKit(
         shutdown's own work (a hook it fires) returns at once. The model turn
         such a call runs in is the exception: it is cut as every turn is, the
         call awaiting ``close()`` itself left to run, its open tool call's
-        end row stored before the store is released.
+        end row stored before the store is released; a call awaiting a close
+        it started on a task of its own is cut with its turn, the close
+        running on.
         """
         with calling_close():
             await self._close_kit()
