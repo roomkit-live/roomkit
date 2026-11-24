@@ -29,6 +29,7 @@ HERE = Path(__file__).parent
 SCENARIOS = HERE / "scenarios"
 
 PROVIDED_FEATURES = {
+    "source_provider",
     "executor_media",
     "conference",
     "message_session",

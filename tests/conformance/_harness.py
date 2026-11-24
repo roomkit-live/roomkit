@@ -114,6 +114,7 @@ from tests.conformance._script import (
     event_handler,
 )
 from tests.conformance._skill_registry import SKILL_REGISTRY_CALLS
+from tests.conformance._sources import SOURCE_CALLS, attach_sources
 from tests.conformance._speaking import decision_record
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._store_faults import FaultingStore, StoreFaults
@@ -740,6 +741,7 @@ class Harness:
             register_identity_hook(self.kit, self, hook)
         for handler in setup.get("event_handlers", []):
             self.kit.on(handler["event"])(event_handler(handler, self))
+        await attach_sources(self.kit, self, setup.get("sources", []))
         for process in setup.get("processes", []):
             self.processes[process["id"]] = await self._process(process["id"])
         await start_backend(self.kit)
@@ -865,6 +867,11 @@ class Harness:
             task.cancel()
         await asyncio.gather(closing, return_exceptions=True)
 
+    def record_source(self, channel_id: str, call: str) -> None:
+        """A scripted source's call (README, ``sources``)."""
+        if self._recording:
+            self.observed.sources.setdefault(channel_id, []).append(call)
+
     def record_channel_close(self, channel_id: str) -> None:
         """A scripted channel's close ran (README, ``channel_closes``)."""
         if self._recording:
@@ -959,7 +966,7 @@ class Harness:
         calls |= MCP_HOST_CALLS
         calls |= SKILL_REGISTRY_CALLS
         calls |= HOST_CALLS
-        calls |= SUBSCRIPTION_CALLS
+        calls |= SUBSCRIPTION_CALLS | SOURCE_CALLS
         calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:

@@ -57,6 +57,7 @@ from tests.conformance._routing import (
     TRANSITION,
 )
 from tests.conformance._skill_registry_shape import SKILL_REGISTRY_ARGUMENTS, registry_problems
+from tests.conformance._sources import SCRIPTED_SOURCE, SOURCE_ARGUMENTS
 from tests.conformance._speaking import channel_problems as speaking_problems
 from tests.conformance._speaking import hook_problems as speaking_hook_problems
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
@@ -102,6 +103,7 @@ SETUP = {
     "processes",
     "executors",
     "event_handlers",
+    "sources",
 }
 PROCESS = {"id"}
 EVENT_HANDLER = {"event", "reactions"}
@@ -487,6 +489,7 @@ EXPECT = {
     "hooks",
     "hook_order",
     "channel_closes",
+    "sources",
     "deliveries",
     "contexts",
     "turns",
@@ -657,6 +660,7 @@ CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
+CALLS |= SOURCE_ARGUMENTS
 STEPS = {
     "await": {"await", "expect"},
     "concurrent": {"concurrent"},
@@ -696,6 +700,7 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         _members(process, PROCESS, f"setup.processes[{position}]", found)
     _executors(setup, found)
     _event_handlers(setup, found)
+    _sources(setup, found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -753,6 +758,16 @@ def _event_handlers(setup: Mapping[str, Any], found: list[str]) -> None:
             _members(reaction.get("when", {}), {"room_id"}, f"{at}.when", found)
             for number, action in enumerate(reaction.get("do", [])):
                 _call(action, {"as", "expect"}, f"{at}.do[{number}]", found)
+
+
+def _sources(setup: Mapping[str, Any], found: list[str]) -> None:
+    """The members of the setup's scripted sources, and of their reactions."""
+    for position, source in enumerate(setup.get("sources", [])):
+        path = f"setup.sources[{position}]"
+        _members(source, SCRIPTED_SOURCE, path, found)
+        for kind in ("start", "stop", "healthcheck"):
+            for index, reaction in enumerate(source.get(kind, [])):
+                _reaction(reaction, f"{path}.{kind}[{index}]", found)
 
 
 def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:

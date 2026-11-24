@@ -114,6 +114,9 @@ class _Comparison:
             named = set(self.expect["hook_order"])
             order = [name for name in self.observed.hook_order if name in named]
             self._check(self.expect["hook_order"], order, "hook_order")
+        for channel_id, expected in self.expect.get("sources", {}).items():
+            calls = self.observed.sources.get(channel_id, [])
+            self._check(expected, calls, f"sources.{channel_id}")
         if "channel_closes" in self.expect:
             closes = self.observed.channel_closes
             self._check(self.expect["channel_closes"], closes, "channel_closes")
