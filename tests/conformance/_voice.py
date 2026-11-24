@@ -11,25 +11,39 @@ from roomkit import VoiceChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
-from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceCapability, VoiceSession
+from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSession
 from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.backchannel.base import BackchannelDecision
 from roomkit.voice.pipeline.backchannel.mock import MockBackchannelDetector
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
-from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
-from roomkit.voice.pipeline.dtmf.mock import MockDTMFDetector
 from roomkit.voice.pipeline.turn.base import TurnDecision
-from roomkit.voice.pipeline.turn.mock import MockTurnDetector
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
-from roomkit.voice.pipeline.vad.mock import MockVADProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.context import TTSContext
 from roomkit.voice.tts.mock import MockTTSProvider
 from tests.channel_tasks import settled
+from tests.conformance._voice_pipeline import (
+    READ_ARGUMENTS,
+    STAGE_ARGUMENTS,
+    Trace,
+    TracedDiarization,
+    TracedDTMF,
+    TracedTurnDetector,
+    TracedVAD,
+    add_pipeline_stages,
+    read_stages,
+)
+from tests.conformance._voice_transport import (
+    FEED_ARGUMENTS,
+    TRANSPORT_ARGUMENTS,
+    TRANSPORT_CALLS,
+    TRANSPORT_OPEN_ARGUMENTS,
+    PipelineTransport,
+    chunk_record,
+    feed_frame,
+)
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -37,18 +51,18 @@ if TYPE_CHECKING:
     from tests.conformance._script import Gates
 
 
-class _Transport(MockVoiceBackend):
+class _Transport(PipelineTransport):
     """An optional gate holds a real playback open while the caller talks."""
 
-    def __init__(self, gates: Gates, gate: str | None) -> None:
-        super().__init__(capabilities=VoiceCapability.INTERRUPTION | VoiceCapability.BARGE_IN)
+    def __init__(self, gates: Gates, gate: str | None, spec: Mapping[str, Any]) -> None:
+        super().__init__(spec)
         self.gates = gates
         self.gate = gate
 
     async def send_audio(
         self, session: VoiceSession, audio: bytes | AsyncIterator[AudioChunk]
     ) -> None:
-        await super().send_audio(session, audio)
+        await super().send_audio(session, self.played(session, audio))
         if self.gate:
             self.start_playing(session)
             try:
@@ -103,6 +117,9 @@ class VoiceFixture:
     backend: _Transport
     tts: MockTTSProvider
     sessions: dict[str, VoiceSession]
+    room_id: str
+    trace: Trace
+    joined: dict[str, list[VoiceSession]]
 
 
 def _vad(spec: Mapping[str, Any]) -> VADEvent:
@@ -116,19 +133,21 @@ def _vad(spec: Mapping[str, Any]) -> VADEvent:
 
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    trace: Trace = []
     pipeline = AudioPipelineConfig(
-        vad=MockVADProvider([_vad(s) if s is not None else None for s in spec.get("vad", [])])
+        vad=TracedVAD(trace, [_vad(s) if s is not None else None for s in spec.get("vad", [])])
     )
     if "speakers" in spec:
-        pipeline.diarization = MockDiarizationProvider(
-            [DiarizationResult(**s) for s in spec["speakers"]]
+        pipeline.diarization = TracedDiarization(
+            trace, [DiarizationResult(**s) for s in spec["speakers"]]
         )
     if "tones" in spec:
-        pipeline.dtmf = MockDTMFDetector([DTMFEvent(**t) for t in spec["tones"]])
+        pipeline.dtmf = TracedDTMF(trace, [DTMFEvent(**t) for t in spec["tones"]])
     if "turns" in spec:
-        pipeline.turn_detector = MockTurnDetector(
-            [TurnDecision(is_complete=v) for v in spec["turns"]]
+        pipeline.turn_detector = TracedTurnDetector(
+            trace, [TurnDecision(is_complete=v) for v in spec["turns"]]
         )
+    add_pipeline_stages(pipeline, spec, trace)
     interruption = InterruptionConfig(
         strategy=InterruptionStrategy.IMMEDIATE, allow_during_first_ms=0
     )
@@ -140,7 +159,7 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
                 [BackchannelDecision(is_backchannel=v) for v in spec["backchannels"]]
             ),
         )
-    backend = _Transport(harness.gates, spec.get("playback_gate"))
+    backend = _Transport(harness.gates, spec.get("playback_gate"), spec)
     tts = _StreamingTTS()
     stt = None
     if "transcripts" in spec:
@@ -159,21 +178,20 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
     )
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
-    sessions = {}
+    fixture = VoiceFixture(channel, backend, tts, {}, spec["room_id"], trace, {})
+    harness.voice_fixtures[channel.channel_id] = fixture
     for participant in spec["participants"]:
         session = await kit.join(spec["room_id"], channel.channel_id, participant_id=participant)
         assert isinstance(session, VoiceSession)
-        sessions[participant] = session
-    harness.voice_fixtures[channel.channel_id] = VoiceFixture(channel, backend, tts, sessions)
+        fixture.sessions[participant] = session
+        fixture.joined[participant] = [session]
 
 
 async def _feed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     fixture = harness.voice_fixtures[spec["channel_id"]]
     session = fixture.sessions[spec["participant_id"]]
     for encoded in spec["frames"]:
-        await fixture.backend.simulate_audio_received(
-            session, AudioFrame(data=base64.b64decode(encoded, validate=True))
-        )
+        await fixture.backend.simulate_audio_received(session, feed_frame(spec, encoded))
 
 
 async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
@@ -224,6 +242,17 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
             ]
             for name, session in fixture.sessions.items()
         },
+        "chunks": {
+            name: [
+                chunk_record(chunk) for sid, chunk in fixture.backend.chunks if sid == session.id
+            ]
+            for name, session in fixture.sessions.items()
+        },
+        "sessions": {
+            name: [{"session_id": s.id, "state": s.state.value} for s in joined]
+            for name, joined in fixture.joined.items()
+        },
+        "stages": read_stages(fixture.trace, spec),
     }
 
 
@@ -249,6 +278,7 @@ VOICE_CALLS = {
     "voice.barge_in": _barge_in,
     "voice.settle": _settle,
     "voice.read": _read,
+    **TRANSPORT_CALLS,
 }
 VOICE_ARGUMENTS = {
     "voice.open": {
@@ -264,11 +294,14 @@ VOICE_ARGUMENTS = {
         "bridge",
         "backchannels",
         "playback_gate",
+        *STAGE_ARGUMENTS,
+        *TRANSPORT_OPEN_ARGUMENTS,
     },
-    "voice.feed": {"channel_id", "participant_id", "frames"},
+    "voice.feed": {"channel_id", "participant_id", "frames", *FEED_ARGUMENTS},
     "voice.say": {"channel_id", "participant_id", "text"},
     "voice.stream": {"channel_id", "chunks"},
     "voice.barge_in": {"channel_id", "participant_id"},
     "voice.settle": {"channel_id"},
-    "voice.read": {"channel_id"},
+    "voice.read": {"channel_id", *READ_ARGUMENTS},
+    **TRANSPORT_ARGUMENTS,
 }
