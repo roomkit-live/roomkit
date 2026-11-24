@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-channel-s-write-still-in-the-store-past-the-close-s-unwind-fails-under-it",
+  "title": "A write a channel started of its own accord, still in the store once the close's last unwind ran out, does not hold the close: the store is released under it, and the write fails",
+  "rules": [
+    "§12.10.4",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-12.10.4-032",
+    "RK-12.10.4-059"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out[store-read], an operation stuck under the framework's hold on the store; the conference's roster writes: tests/conference/test_conference_races.py::TestARosterWriteOutlivingTheChannel. A participant's arrival makes the conference channel record them, a roster write the channel starts of its own accord, under the framework's hold on the store (RFC §12.10.4: participant callbacks, roster bookkeeping). The write holds at a gate in the store operation's place, which no step opens before the close returns. The close is bounded all the same: it returns, the store the kit owns released under the write, and once the write runs it is refused, so the store holds no participant. In Python the close takes the channel's own budget for its callbacks (5 s), then its last unwind (1 s), within the 10 s a call may take. The write, left running once the unwind ran out, is abandoned work: a store the framework closed refuses it (RK-12.10.4-059; kit-close/a-channel-s-write-past-the-close-s-unwind-lands-in-a-store-the-integrator-owns shows a store that stays open taking it). That the write is named in the log is not observed: no step reads the log; nor is a send such work still makes, its channel's own act.",
+  "setup": {
+    "kit": {
+      "store_owner": "kit"
+    },
+    "rooms": [
+      {
+        "id": "r"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r"
+    },
+    {
+      "store_fault": "add_participant",
+      "gate": "roster",
+      "in_place": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "p-alice",
+      "background": true,
+      "as": "arrival"
+    },
+    {
+      "wait_for": "roster"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "open": "roster"
+    },
+    {
+      "await": "arrival"
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r": []
+    }
+  }
+}

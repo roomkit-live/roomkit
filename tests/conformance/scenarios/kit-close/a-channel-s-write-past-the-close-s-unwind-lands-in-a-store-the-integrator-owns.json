@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-channel-s-write-past-the-close-s-unwind-lands-in-a-store-the-integrator-owns",
+  "title": "A write a channel started of its own accord, still in the store once the close's last unwind ran out, lands once it runs when the store is one the integrator owns, which the close leaves open",
+  "rules": [
+    "§12.10.4",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-12.10.4-059"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Python: as kit-close/a-channel-s-write-still-in-the-store-past-the-close-s-unwind-fails-under-it, its twin, whose store the kit owns and refuses the write. A participant's arrival makes the conference channel record them, a roster write the channel starts of its own accord, under the framework's hold on the store. The write holds at a gate in the store operation's place, which no step opens before the close returns: the close abandons it once its last unwind ran out. The store is one the integrator owns (setup.kit.store_owner integrator), which the close leaves open: once the write runs, the store takes it, and holds the participant. In Python the close takes the channel's own budget for its callbacks (5 s), then its last unwind (1 s), within the 10 s a call may take. A send such work still makes, its channel's own act, is not observed.",
+  "setup": {
+    "kit": {
+      "store_owner": "integrator"
+    },
+    "rooms": [
+      {
+        "id": "r"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r"
+    },
+    {
+      "store_fault": "add_participant",
+      "gate": "roster",
+      "in_place": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "p-alice",
+      "background": true,
+      "as": "arrival"
+    },
+    {
+      "wait_for": "roster"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "open": "roster"
+    },
+    {
+      "await": "arrival"
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r": [
+        {
+          "id": "p-alice",
+          "room_id": "r",
+          "channel_id": "conf",
+          "status": "active"
+        }
+      ]
+    }
+  }
+}
