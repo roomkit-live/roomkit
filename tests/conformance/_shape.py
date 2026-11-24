@@ -150,6 +150,7 @@ KIT = {
     "persistence_policy",
     "turn_timeouts",
     "store_faults",
+    "store_owner",
     "shared_realtime",
     "turn_backend_faults",
     "executor_catalogue",
@@ -185,6 +186,7 @@ CHANNEL = {
     "deliver_stream",
     "on_room_attached",
     "on_room_detached",
+    "close",
     "update_binding",
     "model",
     "acp",
@@ -455,6 +457,7 @@ REACTION = {
     "parsed",
     "refuse",
     "after_turn",
+    "on_cut",
     "spawn",
 }
 # A task the call starts and does not wait for (README, Reactions).
@@ -483,6 +486,7 @@ EXPECT = {
     "ai_events",
     "hooks",
     "hook_order",
+    "channel_closes",
     "deliveries",
     "contexts",
     "turns",
@@ -637,6 +641,7 @@ CALLS: dict[str, set[str]] = {
     "agent.extra_tools": {"channel_id"},
     "agent.replace_extra_tool": {"channel_id", "index", "definition"},
     "close": set(),
+    "enter": set(),
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS
@@ -659,6 +664,7 @@ STEPS = {
 }
 STEPS["cancel"] = {"cancel"}
 STEPS["close_while_pending"] = {"close_while_pending", "as"}
+STEPS["close_cut_at"] = {"close_cut_at"}
 STEPS["restart_process"] = {"restart_process"}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -908,6 +914,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         "deliver_stream",
         "on_room_attached",
         "on_room_detached",
+        "close",
     ):
         for index, reaction in enumerate(channel.get(kind, [])):
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
@@ -1228,9 +1235,9 @@ def _reaction(
         _members(reaction["result"], RESULT, f"{path}.result", found)
         for index, item in enumerate(reaction["result"].get("injected_events", [])):
             _members(item, INJECTED, f"{path}.result.injected_events[{index}]", found)
-    for member in ("do", "after_turn"):
+    for member in ("do", "after_turn", "on_cut"):
         for index, action in enumerate(reaction.get(member, [])):
-            _call(action, {"as", "expect"}, f"{path}.{member}[{index}]", found)
+            _call(action, {"as", "expect", "own_task"}, f"{path}.{member}[{index}]", found)
 
 
 def _provider_result(output: Mapping[str, Any], path: str, found: list[str]) -> None:

@@ -118,7 +118,8 @@ def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
 # its state, queue and lease in its room (§19.7.5 rule 16). A BEFORE_BROADCAST
 # observer's start runs on SQLite too: the in-memory store never suspends a commit,
 # so only a store that does shows an observer started before its event is stored
-# (§10.1 step 13).
+# (§10.1 step 13). The kit's close, which releases the store last and answers
+# its reads and writes as the store's owner leaves it (§12.10.4).
 _STORES = ("memory", "sqlite")
 
 _ON_EACH_STORE = (
@@ -128,6 +129,7 @@ _ON_EACH_STORE = (
     "routing/",
     "tenancy/",
     "delivery/",
+    "kit-close/",
     "broadcast/",
     "tool-composition/",
     "channel-call/",
@@ -142,7 +144,8 @@ _ON_EACH_STORE = (
 # Of those, the ones that run on PostgreSQL too (tests/conformance/test_postgres.py),
 # each case on a schema of its own: the idempotency key read under the lock (§13.4),
 # the room a message routes to (§10.4 step 1), the delivery a closing kit abandons or
-# runs whatever the store (§12.10.4), a channel's state kept with its room (§10.6.2),
+# runs whatever the store, and the store the kit's close releases (§12.10.4), a
+# channel's state kept with its room (§10.6.2),
 # the lock releases and the delivery cursor (§13.5), identity verification (§11.7),
 # the identities, their addresses and a room's participant records (§5.5, §5.6),
 # the depth a turn's framework-event handlers send at, which raced the store's
@@ -160,6 +163,7 @@ _ON_POSTGRES = (
     "idempotency/",
     "routing/",
     "delivery/",
+    "kit-close/",
     "channel-call/",
     "locks/",
     "verification/",

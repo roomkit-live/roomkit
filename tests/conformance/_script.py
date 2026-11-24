@@ -141,7 +141,19 @@ def message_subject(message: InboundMessage, room_id: str) -> dict[str, Any]:
 
 async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[str, str]) -> None:
     """Start the reaction's task, hold at its gate, wait its delay, run its actions, leave
-    those for after the turn to work it began, then raise its failure."""
+    those for after the turn to work it began, then raise its failure. Cut, it
+    makes its ``on_cut`` actions as its cleanup, then ends cut."""
+    try:
+        await _perform(harness, reaction, scope)
+    except asyncio.CancelledError:
+        for action in reaction.get("on_cut", []):
+            await harness.run_action(action, scope)
+        raise
+
+
+async def _perform(
+    harness: Harness, reaction: Mapping[str, Any], scope: Mapping[str, str]
+) -> None:
     if (spawn := reaction.get("spawn")) is not None:
         harness.spawn(perform(harness, spawn, scope))
     if (gate := reaction.get("gate")) is not None:
@@ -271,6 +283,7 @@ class ScriptedChannel(Channel):
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
         self._on_room_attached = Reactions(spec.get("on_room_attached"))
         self._on_room_detached = Reactions(spec.get("on_room_detached"))
+        self._close = Reactions(spec.get("close"))
         self._binding_update = spec.get("update_binding")
         self._addresses = spec.get("addresses")
         self._transport = transport
@@ -495,6 +508,13 @@ class ScriptedChannel(Channel):
         self._kept.pop(room_id, None)
         self._harness.record_room_callback(room_id, self.channel_id, "on_room_detached", None)
         await self._room_callback(self._on_room_detached, room_id)
+
+    async def close(self) -> None:
+        """Its close, recorded, then its reaction (README, ``close``)."""
+        self._harness.record_channel_close(self.channel_id)
+        reaction = self._close.pick({})
+        if reaction is not None:
+            await perform(self._harness, reaction, {})
 
     async def channel_call(self, room_id: str, verb: str, arguments: dict[str, Any]) -> Any:
         """What the scenario's ``verbs`` says *verb* does (README, ``verbs``);

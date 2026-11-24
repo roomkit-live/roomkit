@@ -328,7 +328,8 @@ class Harness:
             kwargs["persistence_policy"] = PersistencePolicy(**kit_setup["persistence_policy"])
         if store is not None:
             kwargs["store"] = store
-        if kit_setup.get("store_faults"):
+        if kit_setup.get("store_faults") or "store_owner" in kit_setup:
+            self.store_faults.owner = kit_setup.get("store_owner")
             kwargs["store"] = FaultingStore(
                 kwargs.get("store") or InMemoryStore(), self.store_faults
             )
@@ -373,6 +374,10 @@ class Harness:
         """The store a call on *kit* reaches: its own, or once a ``close`` call
         closed the kit, the run's reader of the same database, since the
         kit's close released a store it opened (RFC §12.10.4)."""
+        if self.store_faults.owner is not None:
+            # The store as its owner closes it (README, ``kit.store_owner``):
+            # a call reaches it after the kit's close too.
+            return kit.store
         if self._observation_store is not None and any(kit is c for c in self._closed):
             return self._observation_store
         return kit.store
@@ -672,6 +677,8 @@ class Harness:
             # A fault no call took tested nothing (README, "Steps").
             self._problems.extend(self.store_faults.untaken())
             self._problems.extend(self.executors.faults.untaken())
+            # The runner's own reads read what a store the kit closed holds.
+            self.store_faults.closed = False
             await self._thinking_read()
             await self._observe()
             # A subscriber records the scenario's events. Closing the fixture can
@@ -682,6 +689,9 @@ class Harness:
         finally:
             for kit in self._open_kits():
                 await kit.close()
+            if isinstance(self.kit.store, FaultingStore) and self.kit.store.owned_by_integrator:
+                # Its owner closes a store the kit left open.
+                await self.kit.store.inner.close()
             await self.executors.close_all()
             for handler in self.human_inputs.values():
                 await handler.close()
@@ -776,6 +786,9 @@ class Harness:
                 return
             await self._start_background(step["as"], {"call": "close"})
             return
+        if "close_cut_at" in step:
+            await self._close_cut_at(step["close_cut_at"], path)
+            return
         if "call" in step:
             if step.get("background"):
                 await self._start_background(step["as"], step)
@@ -838,6 +851,25 @@ class Harness:
         elif "idle" in step:
             await self.idle()
 
+    async def _close_cut_at(self, gate: str, path: str) -> None:
+        """Start the kit's close, wait until it reaches *gate*, then cut its
+        shutdown as a process's end does, every task but the runner's own
+        cancelled (README, "Steps", ``close_cut_at``)."""
+        self.closed(self.kit)
+        closing = asyncio.create_task(self.kit.close())
+        try:
+            await self.gates.wait_for(gate)
+        except TimeoutError:
+            self._problems.append(f"{path}: the close never reached the gate {gate}")
+        for task in asyncio.all_tasks() - {asyncio.current_task()}:
+            task.cancel()
+        await asyncio.gather(closing, return_exceptions=True)
+
+    def record_channel_close(self, channel_id: str) -> None:
+        """A scripted channel's close ran (README, ``channel_closes``)."""
+        if self._recording:
+            self.observed.channel_closes.append(channel_id)
+
     async def _arm_store_fault(self, step: Mapping[str, Any], path: str) -> None:
         """Arms a fault on the kit's store for the next call it matches
         (README, "Steps", ``store_fault``)."""
@@ -861,8 +893,15 @@ class Harness:
                 self._checks.append((f"{path}.do[{position}]", call.get("expect"), outcome))
 
     async def run_action(self, action: Mapping[str, Any], scope: Mapping[str, str]) -> None:
-        """A call a hook or a channel makes while it runs; its outcome is kept."""
-        outcome = await self.invoke(action, scope)
+        """A call a hook or a channel makes while it runs; its outcome is kept.
+        With ``own_task``, made on a task of its own, started in the caller's
+        context, which it awaits: a cut of the caller cuts that wait alone."""
+        if action.get("own_task"):
+            own = asyncio.create_task(self.invoke(action, scope))
+            self._spawned.append(own)
+            outcome = await asyncio.shield(own)
+        else:
+            outcome = await self.invoke(action, scope)
         label = action.get("as")
         if label is not None:
             self.observed.actions.setdefault(label, []).append(outcome)

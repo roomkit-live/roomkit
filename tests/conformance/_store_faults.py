@@ -8,6 +8,11 @@ of one of the fault's operations made after the step, on its ``room_id`` when
 it names one, takes the fault. With ``fail`` that call raises
 :class:`StoreFaultError` in place of the operation; with ``gate`` it holds at
 the gate once the operation answered, or in its place before it fails.
+
+With ``kit.store_owner`` the wrapper is the run's store as its owner closes it:
+``kit``, its close closes it and every operation made after fails with
+:class:`StoreClosedError`, as a closed store refuses them; ``integrator``, its
+close leaves it open, as a pool the integrator handed in.
 """
 
 from __future__ import annotations
@@ -27,6 +32,12 @@ class StoreFaultError(Exception):
     """What an operation a store fault fails raises: the store's own failure."""
 
 
+class StoreClosedError(StoreFaultError, RuntimeError):
+    """What an operation of a store the kit closed raises (``store_owner``
+    ``kit``): a closed store's own failure, a ``RuntimeError`` as roomkit's
+    stores raise once closed."""
+
+
 @dataclass
 class _Fault:
     operations: frozenset[str]
@@ -42,6 +53,10 @@ class StoreFaults:
     def __init__(self, hold: Hold) -> None:
         self._hold = hold
         self._armed: list[_Fault] = []
+        # Who owns the store (README, ``kit.store_owner``), and whether the
+        # kit's close closed it.
+        self.owner: str | None = None
+        self.closed = False
 
     def arm(self, step: Mapping[str, Any], path: str, room_id: str | None) -> None:
         """Arms the fault *step* names, for the next call it matches."""
@@ -104,6 +119,8 @@ def _faulting(name: str) -> Callable[..., Awaitable[Any]]:
     signature = _SIGNATURES[name]
 
     async def operation(self: FaultingStore, *args: Any, **kwargs: Any) -> Any:
+        if self._faults.closed:
+            raise StoreClosedError(f"the store is closed: {name} refused")
         own = getattr(self._inner, name)
         fault = self._faults.take(name, _room_of(signature, self, *args, **kwargs))
         if fault is None:
@@ -153,7 +170,25 @@ class FaultingStore(ConversationStore):
             yield
 
     async def close(self) -> None:
-        await self._inner.close()
+        await self._close_as_owned(self._inner.close)
+
+    async def _close_bounded(self) -> None:
+        """The kit's close of the store (``close_bounded``): the wrapped
+        store's bounded close when it has one, as its owner allows."""
+        await self._close_as_owned(getattr(self._inner, "_close_bounded", self._inner.close))
+
+    async def _close_as_owned(self, close: Callable[[], Awaitable[None]]) -> None:
+        if self._faults.owner == "integrator":
+            # A pool the integrator handed in: the kit's close leaves it open.
+            return
+        await close()
+        if self._faults.owner == "kit":
+            self._faults.closed = True
+
+    @property
+    def owned_by_integrator(self) -> bool:
+        """Whether its owner, not the kit, closes the store it wraps."""
+        return self._faults.owner == "integrator"
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)

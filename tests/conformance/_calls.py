@@ -32,6 +32,7 @@ from roomkit.core.exceptions import (
     ReentryLoopCapError,
     RoomClosedError,
     RoomNotFoundError,
+    ShutdownCancelledError,
     TaskNotFoundError,
     TransitionRefusedError,
     TurnLinkError,
@@ -88,6 +89,11 @@ class CleanupIncompleteError(Exception):
     """A handle's cancel or wait that finds its cleanup not known to be done."""
 
 
+class ChannelCloseFailedError(Exception):
+    """The kit's close raised the ``ExceptionGroup`` of the channels that
+    failed to close (RFC §12.10.4)."""
+
+
 # The Python class of each error the suite names (README, "Errors").
 _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (KitClosedError, "kit_closed"),
@@ -113,6 +119,8 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (HandleWaitsForItselfError, "waits_for_itself"),
     (CleanupIncompleteError, "cleanup_incomplete"),
     (StoreFaultError, "store_failed"),
+    (ChannelCloseFailedError, "channel_close_failed"),
+    (ShutdownCancelledError, "shutdown_cancelled"),
 )
 
 
@@ -680,7 +688,16 @@ async def _steer(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any
 async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     """Closes the kit the call names: a process that stops (README, ``close``)."""
     harness.closed(kit)
-    await kit.close()
+    try:
+        await kit.close()
+    except ExceptionGroup as failures:
+        raise ChannelCloseFailedError(str(failures)) from failures
+
+
+async def _enter(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """Enters the kit's context, as an integrator's ``async with`` opens it
+    (README, ``enter``)."""
+    await kit.__aenter__()
 
 
 CALLS: dict[str, Call] = {
@@ -696,6 +713,7 @@ CALLS: dict[str, Call] = {
         room_query,
     ),
     "close": _close,
+    "enter": _enter,
     "process_inbound": _process_inbound,
     "parse_voice_session": _parse_voice_session,
     "emit_protocol_trace": _emit_protocol_trace,

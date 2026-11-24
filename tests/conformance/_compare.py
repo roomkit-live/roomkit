@@ -114,6 +114,9 @@ class _Comparison:
             named = set(self.expect["hook_order"])
             order = [name for name in self.observed.hook_order if name in named]
             self._check(self.expect["hook_order"], order, "hook_order")
+        if "channel_closes" in self.expect:
+            closes = self.observed.channel_closes
+            self._check(self.expect["channel_closes"], closes, "channel_closes")
 
     def channel_calls(self) -> None:
         kinds = ("deliveries", "contexts", "streamed", "turns", "ingested", "compacted")
