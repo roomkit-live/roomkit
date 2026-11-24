@@ -181,6 +181,10 @@ def error_of(error: Exception) -> dict[str, Any]:
         # A human-input request given up before an answer, as its waiter
         # reads it: withdrawn with its turn, or released (RFC §10.6.5).
         return {"name": "input_released"}
+    if isinstance(error, RuntimeError) and "(supports_language_override is false)" in str(error):
+        # A session's STT language chosen for a provider that cannot honour
+        # it, refused so that no language reaches it (RFC §12.2).
+        return {"name": "language_override_unsupported"}
     if isinstance(error, TypeError) and "not a strategy stored with the room" in str(error):
         return {"name": "kind_not_stored"}
     if isinstance(error, ChannelNotBoundError):
