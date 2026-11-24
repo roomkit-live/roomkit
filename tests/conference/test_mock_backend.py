@@ -360,6 +360,56 @@ class TestPublishing:
         assert track.kind is TrackKind.AUDIO
 
 
+_MEDIA_CALLS = {
+    "publish_audio": lambda backend, bot: backend.publish_audio(bot, AudioChunk(data=b"\x00\x00")),
+    "publish_video": lambda backend, bot: backend.publish_video(
+        bot, VideoFrame(data=b"\x00\x00\x00", codec="raw_rgb24", width=1, height=1)
+    ),
+    "subscribe_track": lambda backend, bot: backend.subscribe_track(bot, "TR_1"),
+    "unsubscribe_track": lambda backend, bot: backend.unsubscribe_track(bot, "TR_1"),
+    "update_bot_grants": lambda backend, bot: backend.update_bot_grants(bot, ConferenceGrants()),
+}
+
+
+class TestASessionNoLongerHeld:
+    """A session the SFU ended, or the bot left, takes no further media call
+    (RFC §12.10.3): the mock refuses it as a real backend does, so a test
+    against the mock fails where production would. A stop and a leave for it
+    stay quiet: the silence a stop asks for is already true of it.
+    """
+
+    @staticmethod
+    async def _gone_bot(backend: MockConferenceBackend, how: str):
+        bot = await _joined_bot(backend)
+        if how == "reported end":
+            await backend.simulate_bot_disconnected(bot, "evicted")
+        else:
+            await backend.leave(bot)
+        return bot
+
+    @pytest.mark.parametrize("how", ["reported end", "leave"])
+    @pytest.mark.parametrize("call", sorted(_MEDIA_CALLS))
+    async def test_a_media_call_for_it_is_refused(self, how: str, call: str) -> None:
+        backend = MockConferenceBackend(
+            capabilities=ConferenceCapability.VIDEO_PUBLISH | ConferenceCapability.BOT_GRANT_UPDATE
+        )
+        bot = await self._gone_bot(backend, how)
+
+        with pytest.raises(ValueError, match="not connected"):
+            await _MEDIA_CALLS[call](backend, bot)
+
+        assert backend.published_audio == [] and backend.published_video == []
+        assert backend.subscriptions == set()
+
+    @pytest.mark.parametrize("how", ["reported end", "leave"])
+    async def test_a_stop_and_a_leave_for_it_stay_quiet(self, how: str) -> None:
+        backend = MockConferenceBackend()
+        bot = await self._gone_bot(backend, how)
+
+        await backend.stop_playback(bot)
+        await backend.leave(bot)
+
+
 class TestEphemeralSignals:
     async def test_active_speaker_and_quality_reach_subscribers(self) -> None:
         backend = MockConferenceBackend()

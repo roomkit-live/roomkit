@@ -191,6 +191,17 @@ class MockConferenceBackend(ConferenceBackend):
                 f"{self.name!r} does not declare"
             )
 
+    def _require_held(self, bot: BotSession) -> None:
+        """Refuse a call for a session this backend no longer holds (RFC 12.10.3).
+
+        Left, or ended by the SFU: a real backend has no connection left to
+        carry the call, and refuses it, so a test against the mock fails where
+        production would. ``stop_playback`` and ``leave`` do not ask: what they
+        want is already true of a session that is gone.
+        """
+        if bot not in self.bots:
+            raise ValueError(f"bot session {bot.id!r} is not connected to backend {self.name!r}")
+
     # -------------------------------------------------------------------------
     # Control plane
     # -------------------------------------------------------------------------
@@ -296,6 +307,7 @@ class MockConferenceBackend(ConferenceBackend):
         believes the bot may do — after the join and after every update.
         """
         await self._enter("update_bot_grants", bot=bot.id, grants=grants)
+        self._require_held(bot)
         self._require(ConferenceCapability.BOT_GRANT_UPDATE, "Bot grant update")
         self.bot_grants[bot.id] = grants
 
@@ -310,14 +322,17 @@ class MockConferenceBackend(ConferenceBackend):
 
     async def subscribe_track(self, bot: BotSession, track_id: str) -> None:
         await self._enter("subscribe_track", bot=bot.id, track_id=track_id)
+        self._require_held(bot)
         self.subscriptions.add(track_id)
 
     async def unsubscribe_track(self, bot: BotSession, track_id: str) -> None:
         await self._enter("unsubscribe_track", bot=bot.id, track_id=track_id)
+        self._require_held(bot)
         self.subscriptions.discard(track_id)
 
     async def publish_audio(self, bot: BotSession, chunk: AudioChunk) -> None:
         await self._enter("publish_audio", bot=bot.id, is_final=chunk.is_final)
+        self._require_held(bot)
         require_pcm16(chunk, "publish_audio")
         self.published_audio.append(chunk)
         self._append_to_utterance(bot, chunk)
@@ -337,6 +352,7 @@ class MockConferenceBackend(ConferenceBackend):
 
     async def publish_video(self, bot: BotSession, frame: VideoFrame) -> None:
         await self._enter("publish_video", bot=bot.id)
+        self._require_held(bot)
         self._require(ConferenceCapability.VIDEO_PUBLISH, "Bot video publishing")
         if frame.is_encoded:
             raise ValueError(

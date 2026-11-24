@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The supervisor's default first-pass instruction gives a neutral example, `'analyse electric cars' → 'Electric cars'`, where it named a vendor (RFC §19.7.3, RMK-1982).
 
+- `MockConferenceBackend` refuses `publish_audio`, `publish_video`, `subscribe_track`, `unsubscribe_track` and `update_bot_grants` for a bot session it no longer holds, after `leave()` or a reported end (`simulate_bot_disconnected`), with `ValueError` (`not connected`), as a real backend does (RFC §12.10.3, RMK-2074): it accepted and recorded them, so a test against the mock passed where production fails. `stop_playback` and `leave` for such a session stay quiet.
+
 ### Fixed
 
 - A realtime voice channel clears `VoiceSession.last_usage` at the end of each turn whether or not a telemetry provider is set (RFC §12.4.2, RMK-2055), where it cleared it only when a span traced the turn: without telemetry, the default, a host polling the snapshot read the previous turn's usage again after a turn that reported none, and turning telemetry on changed what it read. Bill from `on_usage`, which sees every report.
