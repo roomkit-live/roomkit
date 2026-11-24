@@ -248,12 +248,14 @@ class RealtimeResponseMixin:
                 )
             if turn_span_id:
                 turn_attrs: dict[str, Any] = {"audio_chunks_forwarded": forwarded}
-                last_usage = getattr(session, "_last_usage", None)
+                last_usage = session._last_usage
                 if last_usage:
                     turn_attrs[Attr.LLM_INPUT_TOKENS] = last_usage.get("input_tokens", 0)
                     turn_attrs[Attr.LLM_OUTPUT_TOKENS] = last_usage.get("output_tokens", 0)
-                    session._last_usage = {}
                 telemetry.end_span(turn_span_id, attributes=turn_attrs)
+            # The snapshot is the turn's: cleared at its end, whether a span
+            # traced the turn or not (RFC §12.4.2).
+            session._last_usage = {}
         elif is_speaking:
             with self._state_lock:
                 parent = self._session_spans.get(session.id)

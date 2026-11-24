@@ -12,8 +12,12 @@ from typing import Any
 
 import pytest
 
+from roomkit import RoomKit
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.voice.base import VoiceSession
-from roomkit.voice.realtime.mock import MockRealtimeProvider
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from tests.conference.test_conference_realtime import until
 
 
 def _session(sid: str = "s1") -> VoiceSession:
@@ -153,3 +157,29 @@ class TestLastUsage:
         assert session.last_usage["cached_content_token_count"] == 12000
         with pytest.raises(KeyError):  # absent means unreported, never zero
             session.last_usage["thoughts_token_count"]
+
+
+@pytest.mark.parametrize("traced", [False, True], ids=["no telemetry", "telemetry"])
+async def test_the_channel_clears_the_snapshot_at_each_turn_s_end(traced: bool) -> None:
+    """The realtime channel clears ``last_usage`` when a turn ends, whether or
+    not a telemetry provider traces the turn (RFC §12.4.2, RMK-2055): it was
+    cleared only where the turn had a span, so turning telemetry on changed
+    what a host polling the snapshot read."""
+    kit = RoomKit(telemetry=MockTelemetryProvider()) if traced else RoomKit()
+    provider = MockRealtimeProvider()
+    channel = RealtimeVoiceChannel("rt", provider=provider, transport=MockRealtimeTransport())
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "rt")
+    session = await channel.start_session("r1", "p1", "ws")
+
+    await provider.simulate_response_start(session)
+    await provider.simulate_usage(session, 10, 5)
+    during = session.last_usage
+    await provider.simulate_response_end(session)
+    try:
+        await until(lambda: session.last_usage == {}, timeout=1.0)
+    finally:
+        await kit.close()
+
+    assert during == {"input_tokens": 10, "output_tokens": 5}
