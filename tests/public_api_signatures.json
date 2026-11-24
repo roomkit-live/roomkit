@@ -1343,8 +1343,11 @@
     "close": ["async def"],
     "control": ["async def", "message"],
     "executors": ["async def"],
+    "executors_changed": ["async def"],
+    "executors_now": ["async def"],
     "serve": ["async def", "executor"],
-    "submit": ["async def", "request"]
+    "submit": ["async def", "request"],
+    "watch_executors": ["def", "listener"]
   },
   "roomkit.InboundMessage": {
     "__init__": ["def", "*", "channel_id", "sender_id", "content", "event_type=<EventType.MESSAGE: 'message'>", "external_id=None", "thread_id=None", "parent_event_id=None", "idempotency_key=None", "raw_payload=<factory>", "provider_message_id=None", "metadata=<factory>", "session=None", "visibility=<Visibility.ALL: 'all'>", "addressed_to=None", "response_visibility=None", "chain_depth=0", "standalone=False", "delivery_key=None"]
@@ -1803,8 +1806,11 @@
     "close": ["async def"],
     "control": ["async def", "message"],
     "executors": ["async def"],
+    "executors_changed": ["async def"],
+    "executors_now": ["async def"],
     "serve": ["async def", "executor"],
-    "submit": ["async def", "request"]
+    "submit": ["async def", "request"],
+    "watch_executors": ["def", "listener"]
   },
   "roomkit.ReentrantCallError": {},
   "roomkit.ReentryLoopCapError": {},
@@ -2468,8 +2474,11 @@
     "close": ["async def"],
     "control": ["async def", "message"],
     "executors": ["async def"],
+    "executors_changed": ["async def"],
+    "executors_now": ["async def"],
     "serve": ["async def", "executor"],
-    "submit": ["async def", "request"]
+    "submit": ["async def", "request"],
+    "watch_executors": ["def", "listener"]
   },
   "roomkit.TurnClient": {
     "__init__": ["def", "backend", "*", "executor=None", "timeouts=None", "tools=None", "host=None", "events=None", "error_classes=()", "telemetry=None"],

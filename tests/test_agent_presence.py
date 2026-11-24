@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
+
+import pytest
 
 from roomkit import AIChannel, ChannelDeclaration, InboundMessage, RoomKit, TextContent
 from roomkit.models.enums import ChannelCategory, HookTrigger
@@ -15,10 +18,15 @@ from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.store.memory import InMemoryStore
 from roomkit.turns import (
     AgentPresence,
+    ChannelControl,
+    ChannelResult,
     ExecutorInfo,
     InMemoryTurnBackend,
+    RoomOwner,
     TurnBackend,
     TurnExecutor,
+    TurnLink,
+    TurnRequest,
     TurnTimeouts,
 )
 from tests.test_framework import SimpleChannel
@@ -148,11 +156,57 @@ async def _heard_all(kit: RoomKit) -> None:
         await asyncio.sleep(0)
 
 
-async def test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_changes() -> None:
+class _OnTheContractAlone(TurnBackend):
+    """A backend written outside the core: it carries its turns through
+    *inner* by the public contract alone. Its heartbeat interval outlasts a
+    test, so the kit learns of an executor from its listener, never from its
+    next look."""
+
+    timeouts = TurnTimeouts(heartbeat_interval=60.0)
+
+    def __init__(self, inner: TurnBackend) -> None:
+        self._inner = inner
+
+    async def submit(self, request: TurnRequest) -> TurnLink:
+        return await self._inner.submit(request)
+
+    async def serve(self, executor: TurnExecutor) -> None:
+        await self._inner.serve(executor)
+
+    async def control(self, message: ChannelControl) -> ChannelResult | None:
+        return await self._inner.control(message)
+
+    async def attend(self, owner: RoomOwner) -> None:
+        await self._inner.attend(owner)
+
+    async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
+        return await self._inner.claim_presence(channel_id, room_id, online)
+
+    def watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
+        self._inner.watch_executors(listener)
+
+    async def executors(self) -> list[ExecutorInfo]:
+        return await self._inner.executors()
+
+    async def executors_now(self) -> list[ExecutorInfo]:
+        return await self._inner.executors_now()
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
+@pytest.mark.parametrize(
+    "carried",
+    [lambda backend: backend, _OnTheContractAlone],
+    ids=["in-memory", "on-the-contract-alone"],
+)
+async def test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_changes(
+    carried: Callable[[TurnBackend], TurnBackend],
+) -> None:
     backend = InMemoryTurnBackend()
     host, late = _executor("host", "coder"), _executor("late", "coder")
     await backend.serve(host)
-    kit = RoomKit(turn_backend=backend)
+    kit = RoomKit(turn_backend=carried(backend))
     for agent in ("coder", "stranger"):
         kit.register_channel(ChannelDeclaration(channel_id=agent))
     kit.register_channel(AIChannel("helper", provider=MockAIProvider(responses=["hi"])))

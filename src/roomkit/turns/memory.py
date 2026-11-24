@@ -216,10 +216,10 @@ class InMemoryTurnBackend(TurnBackend):
         if executor not in self._executors:
             self._executors.append(executor)
             if executor is not own:
-                executor._listen_closed(self._executors_changed)
+                executor._listen_closed(self.executors_changed)
         executor.reach_owner(self._port)
         if executor is not own:
-            await self._executors_changed()
+            await self.executors_changed()
 
     async def attend(self, owner: RoomOwner) -> None:
         if self._owner is not None and self._owner is not owner:

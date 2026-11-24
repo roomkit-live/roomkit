@@ -335,14 +335,20 @@ class TurnBackend(ABC):
         self._presence_claims[key] = online
         return True
 
-    def _watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
+    def watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
         """Have *listener* run when this process serves an executor or one it
-        serves closes; changes elsewhere are read at the next look."""
+        serves closes; changes elsewhere are read at the next look. The kit
+        gives its own, to publish its agents' presence at once (RFC §10.6.7).
+        Default: kept for :meth:`executors_changed` to run. A backend that
+        wraps another hands it the listener."""
         if self._executor_watchers is None:
             self._executor_watchers = []
         self._executor_watchers.append(listener)
 
-    async def _executors_changed(self) -> None:
+    async def executors_changed(self) -> None:
+        """Run the listeners of :meth:`watch_executors`: a backend calls it
+        once it serves an executor, and when one it serves closes. A listener
+        that fails is logged, and the others run."""
         for listener in list(self._executor_watchers or ()):
             try:
                 await listener()
@@ -357,7 +363,7 @@ class TurnBackend(ABC):
         declaration alone as offline."""
         return []
 
-    async def _executors_now(self) -> list[ExecutorInfo]:
+    async def executors_now(self) -> list[ExecutorInfo]:
         """:meth:`executors` as they stand now, for a decision that drops a
         turn (RFC §19.7.5 rule 7): a backend whose list may lag behind (a
         view read within the last heartbeat interval) reads it again."""

@@ -85,11 +85,11 @@ class FaultingPresence(WithoutCatalogue):
     async def executors(self) -> list[ExecutorInfo]:
         return await self.inner.executors()
 
-    async def _executors_now(self) -> list[ExecutorInfo]:
-        return await self.inner._executors_now()
+    async def executors_now(self) -> list[ExecutorInfo]:
+        return await self.inner.executors_now()
 
-    def _watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
-        self.inner._watch_executors(listener)
+    def watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
+        self.inner.watch_executors(listener)
 
     async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
         if online is not None:

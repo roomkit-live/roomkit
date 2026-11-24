@@ -165,7 +165,7 @@ class ChannelStateMixin:
         needs = RoomNeeds(tuple(self._turns.room_hook_names(room_id)), organization_id)
         offline = set(declared)
         try:
-            for read in (backend.executors, backend._executors_now):
+            for read in (backend.executors, backend.executors_now):
                 infos = await read()
                 offline = {c for c in offline if not self._presence_of(c, needs, infos).online}
                 if not offline:

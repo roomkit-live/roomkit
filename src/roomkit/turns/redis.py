@@ -215,8 +215,8 @@ class RedisTurnBackend(TurnBackend):
         executor.reach_owner(self._routes.port)
         # The owner's own executor covers nothing kit.executors() lists.
         if executor is not self._placement.own:
-            executor._listen_closed(self._executors_changed)
-            await self._executors_changed()
+            executor._listen_closed(self.executors_changed)
+            await self.executors_changed()
 
     async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
         """Kept in Redis, so of the room owner processes that see the same
@@ -250,7 +250,7 @@ class RedisTurnBackend(TurnBackend):
         ]
         return here + elsewhere
 
-    async def _executors_now(self) -> list[ExecutorInfo]:
+    async def executors_now(self) -> list[ExecutorInfo]:
         """:meth:`executors` from the registry read now: the view read within
         the last interval misses an executor started since."""
         self._start()

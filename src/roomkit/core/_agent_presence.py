@@ -78,7 +78,7 @@ class AgentPresenceWatch:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._kit._turns.backend._watch_executors(self.check)
+        self._kit._turns.backend.watch_executors(self.check)
         self._task = loop.create_task(self._watch(), name="roomkit-agent-presence")
 
     async def close(self) -> None:
