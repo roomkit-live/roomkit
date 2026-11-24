@@ -156,6 +156,8 @@ class _Room:
         self._speaker_changed = asyncio.Condition()
         self.rename: dict[str, str] = {}
         self.participants: dict[str, str] = {}
+        # Participants the room reaches through the voice channel (RFC §5.5)
+        self.members: list[str] = []
         self.hold: dict[str, Callable[[], Awaitable[None]]] = {}
 
         @self.kit.hook(HookTrigger.ON_TRANSCRIPTION)
@@ -189,6 +191,8 @@ class _Room:
         if self._ai:
             await self.kit.attach_channel(room.id, "ai-1")
         self.session = await self.kit.join(room.id, "voice-1", participant_id="owner")
+        for member in self.members:
+            await self.kit.add_member(room.id, "voice-1", member)
         assert self.channel._continuous_stt
 
     async def speak(self) -> None:
@@ -329,13 +333,22 @@ class TestVoiceChannelCarriesLabels:
         assert messages[0].metadata["speaker_label"] == "A"
         assert messages[0].source.participant_id == "owner"
 
-    async def test_a_hook_names_the_participant_who_spoke(self) -> None:
+    @pytest.mark.parametrize(
+        ("members", "first_sender"),
+        [(["p-alice"], "p-alice"), ([], "owner")],
+        ids=["reached-on-the-voice-channel", "not-reached-on-it"],
+    )
+    async def test_a_hook_names_the_participant_who_spoke(
+        self, members: list[str], first_sender: str
+    ) -> None:
         """A label matched to a known person (RFC §12.2.3): each segment's
-        message is its person's, not the stream owner's."""
+        message is its person's, not the stream owner's, when the room reaches
+        that person through the voice channel (§5.5); else the stream owner's."""
         stt = _DiarizingSTT([[SpeakerSegment("A", "Bonjour."), SpeakerSegment("B", "Salut.")]])
         room = _Room(stt)
         room.rename = {"A": "Alice", "B": "Bob"}
         room.participants = {"A": "p-alice"}
+        room.members = members
         await room.start()
 
         await room.speak()
@@ -343,7 +356,7 @@ class TestVoiceChannelCarriesLabels:
         await room.channel.close()
 
         assert _said(messages) == [("Alice", "Bonjour."), ("Bob", "Salut.")]
-        assert [m.source.participant_id for m in messages] == ["p-alice", "owner"]
+        assert [m.source.participant_id for m in messages] == [first_sender, "owner"]
 
     async def test_a_new_stream_starts_a_new_epoch(self) -> None:
         # The provider ends its stream after each final: the second "A" is
@@ -466,6 +479,7 @@ class TestVoiceChannelCarriesLabels:
         )
         room = _Room(stt, pipeline)
         room.participants = {"Je voudrais": "p-alice", "le remboursement.": "p-bob"}
+        room.members = ["p-alice", "p-bob"]
         await room.start()
 
         await room.speak()

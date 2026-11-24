@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import threading
 import time
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._voice_speakers import routed_sender
 from roomkit.channels._voice_unheard import UnheardTurns
+from roomkit.core._authors import People
 from roomkit.models.delivery import SUPERSEDED, DeliveryHandle, InboundResult
 from roomkit.models.enums import EventType, HookTrigger
 
@@ -432,6 +434,7 @@ class VoiceTurnMixin:
         from roomkit.models.event import TextContent
         from roomkit.telemetry.context import reset_span, set_current_span
 
+        speaker = await self._speaker_reached(room_id, speaker)
         metadata: dict[str, Any] = {"voice_session_id": session.id, "source": "voice"}
         if speaker is not None:
             metadata.update(speaker.metadata())
@@ -469,6 +472,28 @@ class VoiceTurnMixin:
         )
         task.add_done_callback(self._task_done)
         self._scheduled_tasks.add(task)
+
+    async def _speaker_reached(
+        self, room_id: str, speaker: SpeakerAttribution | None
+    ) -> SpeakerAttribution | None:
+        """*speaker*, with the participant an ``ON_TRANSCRIPTION`` hook named
+        only when the room reaches them through this channel (RFC §12.2.3,
+        §5.5): an id names its participant on a channel they are reached
+        through, so any other leaves the words the stream owner's, and the
+        log says why."""
+        if speaker is None or not speaker.participant_id or self._framework is None:
+            return speaker
+        people = People(await self._framework.store.list_participants(room_id))
+        if people.named_on(speaker.participant_id, self.channel_id) is not None:
+            return speaker
+        logger.warning(
+            "ON_TRANSCRIPTION named participant %r, whom room %s does not reach through "
+            "voice channel %s: the words stay the session participant's (RFC §12.2.3)",
+            speaker.participant_id,
+            room_id,
+            self.channel_id,
+        )
+        return dataclasses.replace(speaker, participant_id=None)
 
     async def _await_delivery(self, session: VoiceSession, handle: Any) -> None:
         """Wait for a committed turn's delivery; giving up on it cancels it."""

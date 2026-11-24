@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A voice transcript stays the session participant's when an `ON_TRANSCRIPTION` hook names a participant the room does not reach through that voice channel (RFC §12.2.3, §5.5, RMK-2116), where the message became that participant's whatever channel they were on: a log line names the participant left out
+
 - A voice channel compares a final transcript with the response being played in whole words (RFC §12.3.13, RMK-2113), where its interruption policy read every transcript as a partial: while the echo guard was open, a final whose last word only starts a word of the response, `Your ta` over `Your table is ready.`, was taken for that response's echo and the user's turn was discarded.
 
 - A realtime voice channel clears `VoiceSession.last_usage` at the end of each turn whether or not a telemetry provider is set (RFC §12.4.2, RMK-2055), where it cleared it only when a span traced the turn: without telemetry, the default, a host polling the snapshot read the previous turn's usage again after a turn that reported none, and turning telemetry on changed what it read. Bill from `on_usage`, which sees every report.

@@ -58,6 +58,8 @@ class _Room:
         # Keyed by the speaker label the hook is given, None when there is none.
         self.rename: dict[str | None, str] = {}
         self.participants: dict[str | None, str] = {}
+        # Participants the room reaches through the voice channel (RFC §5.5)
+        self.members: list[str] = []
         self.transcriptions: list[Any] = []
         self.speaker_changes: list[str] = []
 
@@ -84,6 +86,8 @@ class _Room:
         self.room_id = room.id
         await self.kit.attach_channel(room.id, "voice-1")
         self.session = await self.kit.join(room.id, "voice-1", participant_id="owner")
+        for member in self.members:
+            await self.kit.add_member(room.id, "voice-1", member)
 
     async def frames(self, count: int) -> None:
         for _ in range(count):
@@ -260,6 +264,7 @@ class TestVADMode:
         room = _vad_room(["speaker_0"] * 6, 2, pipeline_speakers=True)
         room.rename = {"0": "Dana"}
         room.participants = {"0": "p-dana"}
+        room.members = ["p-dana"]
         await room.start()
         await room.frames(6)
         messages = await room.messages(2)
