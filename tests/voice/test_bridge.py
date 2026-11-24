@@ -7,11 +7,14 @@ import struct
 
 import pytest
 
+from roomkit import RoomKit, VoiceChannel
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
+from roomkit.voice.pipeline.config import AudioFormat, AudioPipelineConfig, AudioPipelineContract
 from roomkit.voice.pipeline.mixer.python import PythonMixerProvider
+from tests.conference.test_conference_realtime import until
 
 
 class TestAudioBridge:
@@ -948,8 +951,10 @@ class TestCrossRateResampling:
         # Same rate — data passes through unchanged
         assert backend.sent_audio[0][1] == frame.data
 
-    async def test_resample_skipped_with_processor(self) -> None:
-        """When a frame processor is set, bridge skips its own resampling."""
+    async def test_the_processor_receives_the_frame_at_the_target_s_rate(self) -> None:
+        """RFC §12.7.4: the bridge converts each frame to the target session's
+        output rate before the target's frame processor (its outbound
+        pipeline) sees it (RMK-2052)."""
         backend = MockVoiceBackend()
         bridge = AudioBridge()
 
@@ -961,18 +966,56 @@ class TestCrossRateResampling:
         bridge.add_session(s1, "room-1", backend)
         bridge.add_session(s2, "room-1", backend)
 
-        custom_data = b"\xcc" * 100
+        seen: list[tuple[int, int]] = []
 
         def processor(target_session, frame):
-            return AudioChunk(data=custom_data, sample_rate=8000, channels=1)
+            seen.append((frame.sample_rate, len(frame.data)))
+            return AudioChunk(data=frame.data, sample_rate=frame.sample_rate, channels=1)
 
         bridge.set_frame_processor(processor)
 
-        frame = _make_frame([1000] * 160, sample_rate=16000)
-        bridge.forward(s1, frame)
+        bridge.forward(s1, _make_frame([1000] * 160, sample_rate=16000))
 
-        assert len(backend.sent_audio) == 1
-        assert backend.sent_audio[0][1] == custom_data
+        assert seen == [(8000, 160)]
+
+    @pytest.mark.parametrize(
+        ("declared", "received"),
+        [(None, 160 * 2), (16000, 320 * 2)],
+        ids=["no transport format", "a 16 kHz transport format"],
+    )
+    async def test_a_bridged_channel_s_pipeline_converts_to_its_transport_format(
+        self, declared: int | None, received: int
+    ) -> None:
+        """RFC §12.7.4 (RMK-2052): a 20 ms frame from a 16 kHz session reaches
+        an 8 kHz session at 8 kHz, unless the channel's pipeline declares a
+        transport format, to which its resampler then converts it."""
+        backend = MockVoiceBackend()
+        pipeline = None
+        if declared is not None:
+            rate = AudioFormat(sample_rate=declared)
+            contract = AudioPipelineContract(
+                transport_inbound_format=rate, transport_outbound_format=rate
+            )
+            pipeline = AudioPipelineConfig(contract=contract)
+        channel = VoiceChannel("voice", backend=backend, bridge=True, pipeline=pipeline)
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "voice")
+        alice = await kit.connect_voice(
+            "room-1", "alice", "voice", metadata={"input_sample_rate": 16000}
+        )
+        bob = await kit.connect_voice(
+            "room-1", "bob", "voice", metadata={"input_sample_rate": 8000}
+        )
+
+        await backend.simulate_audio_received(alice, _make_frame([500] * 320))
+        try:
+            await until(lambda: any(sid == bob.id for sid, _ in backend.sent_audio))
+        finally:
+            await kit.close()
+
+        assert [len(data) for sid, data in backend.sent_audio if sid == bob.id] == [received]
 
     async def test_resample_8k_to_48k(self) -> None:
         """Bridge resamples 8kHz SIP audio to 48kHz WebRTC."""
