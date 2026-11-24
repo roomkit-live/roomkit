@@ -72,8 +72,13 @@ class VideoRecordingConfig:
     """Configuration for video recording.
 
     Attributes:
-        storage: Directory path for recording files.
-        format: Output container format (``mp4``, ``avi``, ``mkv``).
+        storage: Directory the recorder writes to, created if it does not
+            exist. Empty selects ``./recordings`` (the working directory's).
+            A URL (``s3://bucket``) or a path with a ``..`` component is
+            refused when the recording starts (RFC §12.8.10, §12.3.7).
+        format: Output container format (``mp4``, ``avi``, ``mkv``), the
+            file's extension: one that is no plain extension is refused when
+            the recording starts (RFC §12.11).
         codec: Video codec. For PyAV: ``auto`` (NVENC if available,
             else libx264), ``libx264``, ``h264_nvenc``, ``libx265``.
             For OpenCV: ``mp4v``, ``XVID``.

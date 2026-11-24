@@ -138,6 +138,9 @@ class MediaRecordingConfig:
     audio_codec: str = "aac"
     audio_sample_rate: int = 16000
     format: str = "mp4"
+    """Container format, the file's extension: one that is no plain extension
+    (letters and digits) is refused when the recording starts (RFC §12.11)."""
+
     metadata: dict[str, Any] = field(default_factory=dict)
     """Caller-supplied metadata, carried to the recorder verbatim.
 
