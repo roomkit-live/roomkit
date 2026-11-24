@@ -228,7 +228,13 @@ class VideoHooksMixin:
         if pipeline is not None:
             pipeline.update_filter_context(session.id, result)
 
-        if not self._framework or not result.description:
+        if not result.description:
+            # Not published (RFC §12.8.4); and the model gave no view of the
+            # scene now, so what this session showed before is no longer what
+            # the room's turns read (RFC §12.8.7).
+            self._forget_session_vision(session.id)
+            return
+        if not self._framework:
             return
 
         # Fire ON_VISION_RESULT sync hook — can block or modify the result
