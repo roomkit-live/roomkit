@@ -27,7 +27,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import set_turn_owner_tools
-from roomkit.core._turn_scope import enter_turn
+from roomkit.core._turn_scope import enter_turn, mark_turn_call
 from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
 from roomkit.core.task_utils import acting_tasks, close_callers, wait_for_unspared
 from roomkit.tools.context import ToolCallContext, owner_served_call
@@ -93,6 +93,9 @@ class OwnerCalls:
         task = asyncio.get_running_loop().create_task(
             self._answer(work, failed), context=context, name=f"roomkit-owner-call-{call.call_id}"
         )
+        # A call of this turn, whatever turn's call its reader runs: a close
+        # it awaits itself lets the turn run on (RFC §12.10.4 step 3).
+        mark_turn_call(task)
         self._running[call.call_id] = task
         self._held.add(task)
         task.add_done_callback(lambda _task: self._forget(call.call_id, task))

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from typing import Any
 
 import pytest
 
 from roomkit.channels._tool_registry import orchestration_tool
+from roomkit.core._turn_scope import enter_turn, mark_turn_call, turns_a_close_spares
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
@@ -175,6 +177,42 @@ async def test_the_owner_refuses_a_call_naming_another_room_or_channel(
     [answer] = answers
     assert answer.outcome == "unserved"
     assert served == []
+
+
+async def test_a_served_call_under_another_turns_call_is_a_call_of_its_own_turn() -> None:
+    """The owner serves a turn's call in a copy of its reader's context; when
+    that reader is another turn's call (a tool of turn t0), the served call is
+    still a call of its own turn t1: a close it awaits itself spares both
+    turns (RFC §12.10.4 step 3)."""
+    spared: list[tuple[str, ...]] = []
+    answers: list[Any] = []
+
+    async def serve(arguments: dict[str, Any]) -> str:
+        spared.append(turns_a_close_spares())
+        return "ran"
+
+    async def send(message: Any) -> None:
+        answers.append(message)
+
+    store = OwnerToolStore({}.get)
+    store.of("agent").register(orchestration_tool(PROBE, serve), room_id="r1", owner="s")
+    calls = OwnerCalls(_request(), RegistryOwnerTools(store), None, send, set())
+
+    async def outer_tool_call() -> None:
+        enter_turn("t0")
+        context = CallContext(tool_call_id="c1", room_id="r1", channel_id="agent")
+        call = ToolCall(call_id="x", name="probe", arguments={}, context=context)
+        calls.start(call, contextvars.copy_context())
+        while not answers:
+            await asyncio.sleep(0)
+
+    outer = asyncio.get_running_loop().create_task(
+        outer_tool_call(), context=contextvars.copy_context()
+    )
+    mark_turn_call(outer)
+    await outer
+
+    assert spared == [("t0", "t1")]
 
 
 @pytest.mark.parametrize("kind", ["tool", "verb"])
