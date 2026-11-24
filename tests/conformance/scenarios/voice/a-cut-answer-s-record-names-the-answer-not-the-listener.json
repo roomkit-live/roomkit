@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-cut-answer-s-record-names-the-answer-not-the-listener",
+  "title": "The record of an agent's answer cut by a barge-in carries no participant and names that answer",
+  "rules": [
+    "§12.3.13",
+    "§8.5"
+  ],
+  "requirements": [
+    "RK-12.3.13-052"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Your table by the window is ready now."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Book a table"
+            },
+            "source": {
+              "channel_id": "phone",
+              "participant_id": "alice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Your table by the window is ready now."
+            },
+            "source": {
+              "channel_id": "agent"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "phone",
+              "participant_id": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "interrupted": true,
+              "answer_channel_id": "agent",
+              "answer_responds_to": "r1#0"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

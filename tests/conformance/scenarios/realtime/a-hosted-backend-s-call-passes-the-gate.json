@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-hosted-backend-s-call-passes-the-gate",
+  "title": "A call the hosted backend emits passes the gate, is reported and returns its result",
+  "rules": [
+    "§12.4.1",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-12.4.1-042"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "hosted"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "name": "lookup"
+          }
+        }
+      ],
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "result": "found",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}

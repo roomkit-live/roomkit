@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-undeclared-tool-is-refused-and-still-reported",
+  "title": "A call to a tool the session does not declare, an infrastructure one too, is refused and reported",
+  "rules": [
+    "§12.4",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-12.4-075",
+    "RK-12.4-078",
+    "RK-12.4-080"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "forecast"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "run_skill_script",
+      "arguments": {
+        "skill_name": "s",
+        "script": "x.py"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$present": true
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": {
+                "$present": true
+              }
+            }
+          ],
+          "handlers": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [],
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "name": "forecast",
+            "is_error": true,
+            "refused": true
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c2",
+            "name": "run_skill_script",
+            "is_error": true,
+            "refused": true
+          }
+        }
+      ]
+    }
+  }
+}

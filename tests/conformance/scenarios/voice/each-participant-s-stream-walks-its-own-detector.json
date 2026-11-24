@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/each-participant-s-stream-walks-its-own-detector",
+  "title": "Two participants' interleaved frames each walk the speech detector from their own start",
+  "rules": [
+    "§12.3.1"
+  ],
+  "requirements": [
+    "RK-12.3.1-016"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "start",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "end",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "start": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      },
+      "end": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

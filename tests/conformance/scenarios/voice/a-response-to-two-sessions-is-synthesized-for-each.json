@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-response-to-two-sessions-is-synthesized-for-each",
+  "title": "A text delivered to a voice channel with two sessions is synthesized once for each",
+  "rules": [
+    "§12.2.2"
+  ],
+  "requirements": [
+    "RK-12.2.2-016"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "content": {
+        "type": "text",
+        "body": "Your table is ready."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready.",
+            "Your table is ready."
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -11,6 +11,8 @@
     "RK-12.3.13-023",
     "RK-12.5-019",
     "RK-12.6-011",
+    "RK-12.6-012",
+    "RK-12.6-018",
     "RK-9.2-051"
   ],
   "requires_features": [
@@ -36,6 +38,11 @@
       {
         "name": "cut",
         "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
         "execution": "async"
       }
     ]
@@ -121,7 +128,11 @@
           }
         }
       ],
-      "cut": []
+      "cut": [],
+      "stopped": []
+    },
+    "timeline": {
+      "r1": []
     }
   }
 }

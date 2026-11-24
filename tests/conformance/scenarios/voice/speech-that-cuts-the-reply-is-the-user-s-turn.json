@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-that-cuts-the-reply-is-the-user-s-turn",
+  "title": "Speech over the playing reply is detected, cuts it, and its transcript is the user's turn",
+  "rules": [
+    "§12.3.13",
+    "§12.6"
+  ],
+  "requirements": [
+    "RK-12.3.13-054",
+    "RK-12.6-010",
+    "RK-12.6-015",
+    "RK-12.6-017"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "start",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "end",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      },
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "Wait"
+      ],
+      "transcripts": [
+        "Wait, stop"
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "start": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "end": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "cut": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "stopped": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "source": {
+              "channel_id": "phone",
+              "participant_id": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "interrupted": true,
+              "played_ms": {
+                "$present": true
+              }
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Wait, stop"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

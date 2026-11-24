@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-call-id-names-one-call-until-its-result-goes-out",
+  "title": "A second call under an id in flight is refused; one under it after the result is a new call",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-031"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "gate": "inside",
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "refusal-reported"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "wait_for": "inside"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "wait_for": "refusal-reported"
+    },
+    {
+      "open": "refusal-reported"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [],
+          "handlers": []
+        }
+      }
+    },
+    {
+      "open": "inside"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            },
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            },
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c1"
+          }
+        }
+      ],
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "is_error": true,
+            "refused": true
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "result": "found",
+            "is_error": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "result": "found",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}

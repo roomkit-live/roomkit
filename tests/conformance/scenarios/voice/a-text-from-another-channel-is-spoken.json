@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-text-from-another-channel-is-spoken",
+  "title": "A text another channel sends into the room is checked by BEFORE_TTS and synthesized for the session",
+  "rules": [
+    "§12.2",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.2-023"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "checked",
+        "trigger": "before_tts",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "content": {
+        "type": "text",
+        "body": "Your table is ready."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "checked": [
+        {
+          "voice": {
+            "text": "Your table is ready."
+          }
+        }
+      ]
+    }
+  }
+}

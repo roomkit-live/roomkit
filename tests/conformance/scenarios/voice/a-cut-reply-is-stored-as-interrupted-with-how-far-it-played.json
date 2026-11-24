@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-cut-reply-is-stored-as-interrupted-with-how-far-it-played",
+  "title": "A reply cut by a barge-in is stored marked interrupted, with how far it played",
+  "rules": [
+    "§12.3.13",
+    "§12.6"
+  ],
+  "requirements": [
+    "RK-12.3.13-047",
+    "RK-12.3.13-048",
+    "RK-12.6-007"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "phone",
+            "participant_id": {
+              "$absent": true
+            }
+          },
+          "metadata": {
+            "interrupted": true,
+            "played_ms": {
+              "$present": true
+            },
+            "played_percentage": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

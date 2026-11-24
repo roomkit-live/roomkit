@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/two-voice-channels-of-a-room-keep-their-own-pipelines",
+  "title": "Two voice channels in one room each process their audio through their own pipeline",
+  "rules": [
+    "§12.3.1"
+  ],
+  "requirements": [
+    "RK-12.3.1-012"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "start",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "tone",
+        "trigger": "on_dtmf",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        }
+      ]
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "line",
+      "room_id": "r1",
+      "participants": [
+        "bob"
+      ],
+      "tones": [
+        {
+          "digit": "5",
+          "duration_ms": 80
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "line",
+      "participant_id": "bob",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "line"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "start": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "tone": [
+        {
+          "voice": {
+            "participant_id": "bob",
+            "digit": "5"
+          }
+        }
+      ]
+    }
+  }
+}

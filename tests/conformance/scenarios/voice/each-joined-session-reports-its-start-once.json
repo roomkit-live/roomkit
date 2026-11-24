@@ -1,0 +1,65 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/each-joined-session-reports-its-start-once",
+  "title": "Each participant's voice session fires ON_SESSION_STARTED once, when bound and ready",
+  "rules": [
+    "§12.3.14",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.3.14-006"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

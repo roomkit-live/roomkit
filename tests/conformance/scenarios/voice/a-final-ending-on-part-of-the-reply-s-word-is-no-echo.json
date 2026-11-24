@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-final-ending-on-part-of-the-reply-s-word-is-no-echo",
+  "title": "A final transcript is compared in whole words: one ending on part of the reply's word is a turn",
+  "rules": [
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.3.13-029"
+  ],
+  "notes": "backchannels selects SEMANTIC, whose verdict waits for the words; under IMMEDIATE a VAD's speech start cuts before any word can tell the echo (RK-12.3.13-009).",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "partial",
+        "trigger": "on_partial_transcription",
+        "execution": "async"
+      },
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "Your"
+      ],
+      "transcripts": [
+        "Your ta"
+      ],
+      "backchannels": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your ta"
+          }
+        }
+      ]
+    }
+  }
+}

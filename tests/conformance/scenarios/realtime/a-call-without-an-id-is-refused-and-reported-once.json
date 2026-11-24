@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-call-without-an-id-is-refused-and-reported-once",
+  "title": "A call that came without an id is refused, reported once and sends nothing",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-037"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [],
+          "handlers": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [],
+      "reports": [
+        {
+          "tool_call": {
+            "is_error": true,
+            "refused": true
+          }
+        }
+      ]
+    }
+  }
+}

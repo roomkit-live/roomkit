@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-instruction-enters-the-session-as-system",
+  "title": "An instruction delivered into the room enters the realtime session with the system role",
+  "rules": [
+    "§12.4",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-12.4-105"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Greet the caller by name",
+      "instruction": true
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "Greet the caller by name"
+              },
+              "role": "system"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

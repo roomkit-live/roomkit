@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/after-tts-reports-the-sentences-before-tts-let-through",
+  "title": "AFTER_TTS reports the streamed reply's sentences as BEFORE_TTS left them, the dropped one apart",
+  "rules": [
+    "§12.2 step 15s",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.2-036"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_tts",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "result": {
+              "action": "block"
+            }
+          },
+          {
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      },
+      {
+        "name": "spoken",
+        "trigger": "after_tts",
+        "execution": "async"
+      },
+      {
+        "name": "spoken-again",
+        "trigger": "after_tts",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.stream",
+      "channel_id": "phone",
+      "chunks": [
+        "Your table by the window is ready now. ",
+        "Please follow the host to your seats. ",
+        "Your coats can stay at the front desk."
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now.",
+            "Your coats can stay at the front desk."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "spoken": [
+        {
+          "voice": {
+            "text": {
+              "$contains": [
+                "Your table by the window is ready now.",
+                "Your coats can stay at the front desk."
+              ]
+            }
+          }
+        }
+      ],
+      "spoken-again": [
+        {
+          "voice": {
+            "text": {
+              "$lacks": "Please follow the host to your seats."
+            }
+          }
+        }
+      ]
+    }
+  }
+}
