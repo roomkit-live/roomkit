@@ -186,16 +186,9 @@ class InboundStreamingMixin(HelpersMixin):
         # The rows take the trigger's thread parent, rooted once for the run
         # (RFC §10.1 step 8): a root deleted since is not named.
         scope = TurnScope.answering(await self._with_thread_root(room_id, sr.trigger_event))
-        chain_depth = scope.chain_depth
-        visibility = scope.visibility
-        parent_event_id = scope.parent_event_id
-
-        # Each row reads the room's context at its commit (LaneSink), so what
-        # changed during the stream holds from the next row (RFC §7.5 rule 1,
-        # §10.1 step 12, §10.2).
-        writer = SegmentWriter(
-            self,
+        writer = self._segment_writer(
             sr,
+            room_id,
             LaneSink(
                 self,
                 room_id=room_id,
@@ -203,15 +196,10 @@ class InboundStreamingMixin(HelpersMixin):
                 cascade=cascade,
                 room_created_at=sr.room_created_at,
             ),
-            room_id=room_id,
-            chain_depth=chain_depth,
-            visibility=visibility,
-            response_visibility=scope.response_visibility,
+            scope,
             correlation_id=correlation_id,
-            parent_event_id=parent_event_id,
             streamed_to=streamed_to,
             response_events=response_events,
-            silent=self._discussion_silence(room_id, sr.source_channel_id),
         )
 
         reader = ResponseReader(sr.stream)
@@ -262,6 +250,38 @@ class InboundStreamingMixin(HelpersMixin):
             return None
 
         return _StreamingResult(events=writer.persisted, error=stream_error)
+
+    def _segment_writer(
+        self,
+        sr: StreamingResponse,
+        room_id: str,
+        sink: LaneSink,
+        scope: TurnScope,
+        *,
+        correlation_id: str,
+        streamed_to: set[str],
+        response_events: list[RoomEvent] | None,
+    ) -> SegmentWriter:
+        """The writer of the rows of *sr*, a response in *room_id* within *scope*.
+
+        Each row reads the room's context at its commit (*sink*, a LaneSink),
+        so what changed during the stream holds from the next row (RFC §7.5
+        rule 1, §10.1 step 12, §10.2).
+        """
+        return SegmentWriter(
+            self,
+            sr,
+            sink,
+            room_id=room_id,
+            chain_depth=scope.chain_depth,
+            visibility=scope.visibility,
+            response_visibility=scope.response_visibility,
+            correlation_id=correlation_id,
+            parent_event_id=scope.parent_event_id,
+            streamed_to=streamed_to,
+            response_events=response_events,
+            silent=self._discussion_silence(room_id, sr.source_channel_id),
+        )
 
     @staticmethod
     def _stream_placeholder(
