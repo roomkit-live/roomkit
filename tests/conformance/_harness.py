@@ -311,6 +311,9 @@ class Harness:
         # The other processes of `setup.processes`, by id, and the kits closed.
         self.processes: dict[str, RoomKit] = {}
         self._closed: list[RoomKit] = []
+        # Set once the steps are observed: the kits the runner closes itself
+        # record no channel close or source call (README, ``channel_closes``).
+        self._torn_down = False
 
     def _kit_arguments(
         self, kit_setup: Mapping[str, Any], store: ConversationStore | None
@@ -688,6 +691,7 @@ class Harness:
                 name: list(events) for name, events in self.observed.subscribers.items()
             }
         finally:
+            self._torn_down = True
             for kit in self._open_kits():
                 await kit.close()
             if isinstance(self.kit.store, FaultingStore) and self.kit.store.owned_by_integrator:
@@ -869,12 +873,12 @@ class Harness:
 
     def record_source(self, channel_id: str, call: str) -> None:
         """A scripted source's call (README, ``sources``)."""
-        if self._recording:
+        if self._recording and not self._torn_down:
             self.observed.sources.setdefault(channel_id, []).append(call)
 
     def record_channel_close(self, channel_id: str) -> None:
         """A scripted channel's close ran (README, ``channel_closes``)."""
-        if self._recording:
+        if self._recording and not self._torn_down:
             self.observed.channel_closes.append(channel_id)
 
     async def _arm_store_fault(self, step: Mapping[str, Any], path: str) -> None:
