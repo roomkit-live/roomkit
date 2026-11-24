@@ -37,7 +37,7 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import partial
 
 from roomkit import (
@@ -150,6 +150,12 @@ class SlotBackend(TurnBackend):
 
     async def executors(self) -> list[ExecutorInfo]:
         return await self._inner.executors()
+
+    async def executors_now(self) -> list[ExecutorInfo]:
+        return await self._inner.executors_now()
+
+    def watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
+        self._inner.watch_executors(listener)
 
     async def close(self) -> None:
         await self._inner.close()

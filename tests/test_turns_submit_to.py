@@ -175,10 +175,21 @@ class _Pool:
         await self.kit.close()
         for name in list(self.hosts):
             await self.stop(name)
+        if self._memory is None:
+            await _forget(self._prefix)
 
 
 async def _nothing(event: Any, context: Any) -> None:
     return None
+
+
+async def _forget(prefix: str) -> None:
+    """Delete the keys a pool wrote under *prefix*."""
+    client = pytest.importorskip("redis.asyncio").from_url(os.environ["REDIS_URL"])
+    keys = [key async for key in client.scan_iter(f"{prefix}:*")]
+    if keys:
+        await client.delete(*keys)
+    await client.aclose()
 
 
 @pytest.fixture(params=BACKENDS)
