@@ -2406,6 +2406,18 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   published for the agents the kit holds by declaration, and
   `agent_presence` reads them offline. `DiscussionConsole` marks an agent no
   executor serves `offline` (`examples/agent_presence.py`).
+- A host that places its turns by rules of its own (a slot it reserved on
+  one worker) wraps the turn backend its kit is given and submits each turn
+  with `await backend.submit_to(request, executor)`, `executor` an
+  `ExecutorInfo` as `kit.executors()` lists it: its `executor_id`, and its
+  `node` when several processes serve that id. That executor takes the turn
+  as it would take one placed (it declares the channel, serves the room's
+  organization, defines its room hooks, is alive), then holds the room, and
+  no other is tried. One that does not take it raises `TurnLinkError`
+  `no_executor` before anything is handed (`request.handed` stays false):
+  the host may reserve another. Any other reason comes after the hand-over
+  (`executor_lost` when it never answered): the turn may have begun, and is
+  never submitted elsewhere (`examples/turns_submit_to_executor.py`).
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to
@@ -8287,7 +8299,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `DeliveryItem` | Serializable delivery request — the unit of work in the queue |
 | `DeliveryItemStatus` | Lifecycle status of a delivery item |
 | `InMemoryDeliveryBackend` | Asyncio-queue delivery backend (single process, no persistence) |
-| `TurnBackend` | ABC for what carries an intelligence channel's turns between the room owner and an executor (RFC §10.6). A backend of your own that lists its executors calls `executors_changed()` once it serves one and when one it serves closes, so the kit publishes its agents' presence at once (`watch_executors(listener)` holds the kit's listener), and overrides `executors_now()` when its list may lag |
+| `TurnBackend` | ABC for what carries an intelligence channel's turns between the room owner and an executor (RFC §10.6): `submit(request)` places a turn, `submit_to(request, executor)` hands it to the one executor a host chose (an `ExecutorInfo`: its `executor_id`, and `node` when several processes serve the id), which raises `no_executor` before anything is handed when that executor does not take it. A backend of your own that lists its executors calls `executors_changed()` once it serves one and when one it serves closes, so the kit publishes its agents' presence at once (`watch_executors(listener)` holds the kit's listener), and overrides `executors_now()` when its list may lag |
 | `InMemoryTurnBackend` | Default turn backend: in this process, every message serialized but a request's events, which reach the executor as they are |
 | `RedisTurnBackend` | Turn backend across processes (`pip install roomkit[redis]`): one per process on a shared Redis; an executor declared with `hosts={...}` (ids, or prefixes as `{"acme-*"}`) takes turns from every process, beating from a thread; a killed executor fails its turn with `executor_lost` |
 | `TurnExecutor` | Builds a channel and runs its turns; the kit owns one reading its registered channels. One a host builds (`TurnExecutor(build_channel, hosts={...}, organizations={...}, media_resolver=, attached_media=, telemetry=, error_classes=, max_channels=)`, `hosts` the set of channel ids it runs, prefixes ending in `*` among them (`"acme-*"`, `"*"` for every id), or a predicate for its own process only; `organizations` the organization ids whose rooms it serves, `{"*"}` for every one, the rooms without an organization alone when omitted, a room's work going only to an executor serving its organization; a channel its factory builds nothing for fails its turn and channel calls with `no_executor`; it builds a channel at its first turn, channel call or committed event, never for a room's attach, and `max_channels` keeps that many built at most, letting go of the one used least recently; with an `OpenTelemetryProvider` as `telemetry=`, a turn from another process continues the owner's trace) builds each channel when first needed, wires it as the kit wires the ones it registers (its hooks fire, what the channel publishes during a turn crosses as `ephemeral` / `framework_event` frames), and closes what it built; `executor.room_hook(name, trigger)(fn)` defines a room hook by name |

@@ -89,6 +89,19 @@ def builds_nothing(channel_id: str, executor_id: str) -> TurnLinkError:
     return TurnLinkError("no_executor", f"Executor {executor_id} builds no channel {channel_id!r}")
 
 
+def not_taken(executor: ExecutorInfo, channel_id: str, needs: RoomNeeds) -> TurnLinkError:
+    """The refusal of a turn of *channel_id* submitted to *executor* alone,
+    which does not take it (it is not alive, closed, or does not meet what
+    the room *needs*): nothing was handed to it, nor to any other (RFC
+    §10.6.7)."""
+    where = f" at {executor.node}" if executor.node is not None else ""
+    return TurnLinkError(
+        "no_executor",
+        f"Executor {executor.executor_id}{where} does not take channel "
+        f"{channel_id!r}{needs.describe()}",
+    )
+
+
 async def heartbeat_tick(interval: float) -> None:
     """Wait one heartbeat interval on the loop's own timer, so code that
     patches ``asyncio.sleep`` (a test, a host's clock) cannot make the
@@ -282,6 +295,24 @@ class TurnBackend(ABC):
         """Start a turn: an executor that declares its channel takes it. The
         backend marks *request* handed (``request.hand_over()``) as it gives
         it to an executor, before any wait on the executor's answer."""
+
+    async def submit_to(self, request: TurnRequest, executor: ExecutorInfo) -> TurnLink:
+        """Start a turn on *executor* alone, one :meth:`executors` lists: named
+        by its ``executor_id``, and by its ``node`` when given (``None``: the
+        one process serving that id). It takes the turn as it takes one
+        :meth:`submit` places, and from then holds the room's state for the
+        channel; no other executor is tried (RFC §10.6.7).
+        Default: this backend submits to no executor a caller names.
+
+        Raises:
+            TurnLinkError: ``no_executor`` when *executor* does not take the
+                turn (not alive, closed, served by several processes and no
+                ``node`` named, or not meeting what the room needs): nothing
+                was handed, and *request* is not marked so. Any other reason
+                comes after the hand-over, the turn's outcome unknown: it is
+                never handed to another executor.
+        """
+        raise not_taken(executor, request.channel_id, RoomNeeds.of_turn(request))
 
     @abstractmethod
     async def serve(self, executor: TurnExecutor) -> None:

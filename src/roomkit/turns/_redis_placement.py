@@ -7,7 +7,9 @@ it, one of the owner's own process first (carried in the process), else one
 alive elsewhere, the rooms no executor holds yet spread over them. The holder is a
 key every owner process reads, so a room's turns follow its session state
 whichever owner submits them. An executor elsewhere is one process's: its id
-restarted in another process is another executor.
+restarted in another process is another executor. A turn its caller submits
+to one executor goes to that one when it would take it placed, and to no
+other; it holds the room once it took the turn.
 """
 
 from __future__ import annotations
@@ -18,11 +20,12 @@ from urllib.parse import quote
 
 from roomkit.turns._organizations import RoomNeeds, concerns
 from roomkit.turns._redis_presence import Declaration, member_of
-from roomkit.turns.base import no_executor
+from roomkit.turns.base import no_executor, not_taken
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_beat import LiveExecutors
     from roomkit.turns.executor import TurnExecutor
+    from roomkit.turns.presence import ExecutorInfo
     from roomkit.turns.wire import ChannelReleased, RoomAttached, RoomDetached
 
 # How long a room's holder is kept once no turn renews it.
@@ -79,9 +82,28 @@ class Placement:
         to, but the members *excluded* (refused it), recorded as the one
         holding the room's state from now."""
         placed = await self._chosen(channel_id, room_id, needs, excluded, spread=True)
+        await self.held_by(channel_id, room_id, placed)
+        return placed
+
+    async def named(
+        self, channel_id: str, room_id: str, needs: RoomNeeds, executor: ExecutorInfo
+    ) -> TurnExecutor | Elsewhere:
+        """The executor *executor* names, when it takes the room's turn of
+        *channel_id* as one placed would; the holder is left as it was, until
+        that executor took the turn (:meth:`held_by`).
+
+        Raises:
+            TurnLinkError: ``no_executor`` when it does not take the turn.
+        """
+        return await self._chosen(channel_id, room_id, needs, (), spread=False, only=executor)
+
+    async def held_by(
+        self, channel_id: str, room_id: str, placed: TurnExecutor | Elsewhere
+    ) -> None:
+        """Record *placed* as the executor holding the room's state of
+        *channel_id* from now."""
         holder = placed.member if isinstance(placed, Elsewhere) else self._here_member(placed)
         await self._client.set(self._holder_key(channel_id, room_id), holder, ex=_HOLDER_TTL_S)
-        return placed
 
     async def hold(
         self,
@@ -104,14 +126,18 @@ class Placement:
         excluded: Collection[str],
         *,
         spread: bool,
+        only: ExecutorInfo | None = None,
     ) -> TurnExecutor | Elsewhere:
         """The owner's own executor alone for a channel it hosts, else the
         holder while it lives and takes the turn, else one that takes it, one
         of this process first, else one elsewhere: a room no executor holds
         yet goes to the next of them, the spread moving on only when *spread*
-        (a turn or call placed, not an event held)."""
+        (a turn or call placed, not an event held). With *only*, the one of
+        them it names and no other."""
         own = self._owning(channel_id)
         if own is not None:
+            if only is not None and not self._names(only, own.executor_id, self._node):
+                raise not_taken(only, channel_id, needs)
             return self._own_taken(own, channel_id, needs, excluded)
         here = {
             self._here_member(e): e
@@ -119,6 +145,8 @@ class Placement:
             if e._meets(channel_id, needs) and self._here_member(e) not in excluded
         }
         elsewhere = await self._takers_elsewhere(channel_id, needs, set(here) | set(excluded))
+        if only is not None:
+            return self._the_one(only, here, elsewhere, channel_id, needs)
         stored = await self._client.get(self._holder_key(channel_id, room_id))
         holder = _text(stored) if stored is not None else None
         if self._loop_back and here:
@@ -138,6 +166,33 @@ class Placement:
         if spread:
             self._next = following
         return elsewhere[members[following]]
+
+    def _the_one(
+        self,
+        only: ExecutorInfo,
+        here: dict[str, TurnExecutor],
+        elsewhere: dict[str, Elsewhere],
+        channel_id: str,
+        needs: RoomNeeds,
+    ) -> TurnExecutor | Elsewhere:
+        """The one executor *only* names among those that take the turn,
+        *here* and *elsewhere*; ``no_executor`` when none does, or several
+        processes serve its id and it names no node."""
+        named: list[TurnExecutor | Elsewhere] = [
+            e for e in here.values() if self._names(only, e.executor_id, self._node)
+        ]
+        named += [e for e in elsewhere.values() if self._names(only, e.executor_id, e.node)]
+        if len(named) != 1:
+            raise not_taken(only, channel_id, needs)
+        chosen = named[0]
+        if self._loop_back and not isinstance(chosen, Elsewhere):
+            return Elsewhere(chosen.executor_id, self._node)
+        return chosen
+
+    @staticmethod
+    def _names(only: ExecutorInfo, executor_id: str, node: str) -> bool:
+        """Whether *only* names the executor *executor_id* of *node*."""
+        return only.executor_id == executor_id and only.node in (None, node)
 
     async def forget(self, channel_id: str, room_id: str) -> None:
         """The room detached the channel: nothing holds its state any more."""

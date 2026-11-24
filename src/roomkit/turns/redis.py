@@ -3,7 +3,8 @@
 The room owner's process submits each turn to one executor, chosen from what
 the executors alive declare (RFC §10.6.7): its own executor alone for the
 agents it holds live, else the one holding the room's state for the channel
-while it lives, else one that takes it. A turn on an executor
+while it lives, else one that takes it; or to the one executor its caller
+names (``submit_to``), and to no other. A turn on an executor
 of the owner's own process stays in the process, carried as the in-memory
 backend carries it; one on an executor elsewhere crosses Redis, each message
 the protocol's envelope written to the other process's inbox, in order, and
@@ -38,7 +39,7 @@ from roomkit.turns._redis_outbox import Failed, Outbox, Written
 from roomkit.turns._redis_placement import Elsewhere, Placement
 from roomkit.turns._redis_presence import Keys, Registry
 from roomkit.turns._redis_routes import REFUSED, Routes
-from roomkit.turns.base import TurnBackend, TurnTimeouts
+from roomkit.turns.base import TurnBackend, TurnTimeouts, not_taken
 from roomkit.turns.memory import InMemoryTurnBackend
 from roomkit.turns.presence import ExecutorInfo, local_info
 from roomkit.turns.wire import (
@@ -161,7 +162,7 @@ class RedisTurnBackend(TurnBackend):
                 request.channel_id, request.room_id, RoomNeeds.of_turn(request), excluded=refused
             )
             if not isinstance(placed, Elsewhere):
-                return self._here._submit_to(placed, request)
+                return self._here._start_on(placed, request)
             answer, link = await self._hand(request, placed)
             if answer != REFUSED:
                 return link
@@ -169,6 +170,27 @@ class RedisTurnBackend(TurnBackend):
             request.refused()
             self._routes.forget_owner_link(link)
             refused.add(placed.member)
+
+    async def submit_to(self, request: TurnRequest, executor: ExecutorInfo) -> TurnLink:
+        self._start()
+        channel_id, room_id = request.channel_id, request.room_id
+        needs = RoomNeeds.of_turn(request)
+        placed = await self._placement.named(channel_id, room_id, needs, executor)
+        if not isinstance(placed, Elsewhere):
+            await self._placement.held_by(channel_id, room_id, placed)
+            return self._here._start_on(placed, request)
+        answer, link = await self._hand(request, placed)
+        if answer == REFUSED:
+            # Its executor closed: the turn goes to no other.
+            request.refused()
+            self._routes.forget_owner_link(link)
+            raise not_taken(executor, channel_id, needs)
+        try:
+            await self._placement.held_by(channel_id, room_id, placed)
+        except BaseException:
+            link.release()
+            raise
+        return link
 
     async def _hand(self, request: TurnRequest, placed: Elsewhere) -> tuple[str, RedisTurnLink]:
         """Hand *request* to *placed*'s process: its answer (taken or

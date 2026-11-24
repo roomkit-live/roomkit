@@ -285,6 +285,18 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   published for the agents the kit holds by declaration, and
   `agent_presence` reads them offline. `DiscussionConsole` marks an agent no
   executor serves `offline` (`examples/agent_presence.py`).
+- A host that places its turns by rules of its own (a slot it reserved on
+  one worker) wraps the turn backend its kit is given and submits each turn
+  with `await backend.submit_to(request, executor)`, `executor` an
+  `ExecutorInfo` as `kit.executors()` lists it: its `executor_id`, and its
+  `node` when several processes serve that id. That executor takes the turn
+  as it would take one placed (it declares the channel, serves the room's
+  organization, defines its room hooks, is alive), then holds the room, and
+  no other is tried. One that does not take it raises `TurnLinkError`
+  `no_executor` before anything is handed (`request.handed` stays false):
+  the host may reserve another. Any other reason comes after the hand-over
+  (`executor_lost` when it never answered): the turn may have begun, and is
+  never submitted elsewhere (`examples/turns_submit_to_executor.py`).
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to

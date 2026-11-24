@@ -31,6 +31,7 @@ from roomkit.turns.base import (
     TurnBackend,
     TurnLink,
     no_executor,
+    not_taken,
 )
 from roomkit.turns.presence import ExecutorInfo, local_info
 from roomkit.turns.wire import (
@@ -179,6 +180,8 @@ class InMemoryTurnBackend(TurnBackend):
     the first that declares it; only to one serving the room's organization
     (RFC §10.6.7). Every executor is in this
     process, so a turn none declares fails at once with ``no_executor``.
+    A turn submitted to one executor (``submit_to``) goes to it alone, when
+    it would take the turn placed.
     """
 
     def __init__(self) -> None:
@@ -196,12 +199,22 @@ class InMemoryTurnBackend(TurnBackend):
         if self._closed:
             raise TurnLinkError("backend_closed")
         executor = self._place(request.channel_id, request.room_id, RoomNeeds.of_turn(request))
-        return self._submit_to(executor, request)
+        return self._start_on(executor, request)
 
-    def _submit_to(self, executor: TurnExecutor, request: TurnRequest) -> TurnLink:
-        """Start a turn on *executor*, an executor of this process another
-        backend placed it on; carried here, as :class:`CarriedRequest` carries
-        a request, in the owner's execution context."""
+    async def submit_to(self, request: TurnRequest, executor: ExecutorInfo) -> TurnLink:
+        if self._closed:
+            raise TurnLinkError("backend_closed")
+        needs = RoomNeeds.of_turn(request)
+        named = self._named(request.channel_id, needs, executor)
+        if named is None:
+            raise not_taken(executor, request.channel_id, needs)
+        self._holders.put(request.channel_id, request.room_id, named)
+        return self._start_on(named, request)
+
+    def _start_on(self, executor: TurnExecutor, request: TurnRequest) -> TurnLink:
+        """Start a turn on *executor*, an executor of this process a backend
+        placed it on; carried here, as :class:`CarriedRequest` carries a
+        request, in the owner's execution context."""
         if self._closed:
             raise TurnLinkError("backend_closed")
         turn = _MemoryTurn(request)
@@ -294,6 +307,28 @@ class InMemoryTurnBackend(TurnBackend):
         if holder is not None and holder._meets(channel_id, needs):
             return holder
         return next((e for e in self._executors if e._meets(channel_id, needs)), None)
+
+    def _named(
+        self, channel_id: str, needs: RoomNeeds, executor: ExecutorInfo
+    ) -> TurnExecutor | None:
+        """The executor *executor* names, when it takes a turn of *channel_id*
+        that meets what the room *needs*: the owner's own alone for a channel
+        it hosts (RFC §10.6.7); ``None`` when it does not. Every executor is
+        of this process, which names no node."""
+        if executor.node is not None:
+            return None
+        own = self._owning(channel_id)
+        candidates = self._executors if own is None else [own]
+        return next(
+            (
+                e
+                for e in candidates
+                if e in self._executors
+                and e.executor_id == executor.executor_id
+                and e._meets(channel_id, needs)
+            ),
+            None,
+        )
 
     def _told(self, message: RoomAttached | RoomDetached | ChannelReleased) -> list[TurnExecutor]:
         """The executors a room's attach or detach, or a channel's release,
