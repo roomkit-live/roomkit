@@ -77,8 +77,9 @@ class AudioBridge:
     (``mixing_strategy="mix"``), audio from each session is mixed so that
     each participant hears all others but not themselves.
 
-    All public methods are thread-safe — ``forward()`` is called from audio
-    callback threads.
+    All public methods are thread-safe — ``forward()`` is called from the
+    pipeline's frame callback, or from a task on the event loop once a
+    ``BEFORE_BRIDGE_AUDIO`` hook is registered (RFC §12.7.2).
     """
 
     def __init__(self, config: AudioBridgeConfig | None = None) -> None:
@@ -101,8 +102,9 @@ class AudioBridge:
         """Set a synchronous filter called before forwarding each frame.
 
         The filter receives ``(source_session, frame)`` and returns the
-        frame (possibly modified) or ``None`` to drop it.  Runs in the
-        audio callback thread — must complete in < 1ms.
+        frame (possibly modified) or ``None`` to drop it.  Runs inside
+        :meth:`forward`, in whichever context calls it — must complete in
+        < 1ms.
         """
         self._frame_filter = fn
 

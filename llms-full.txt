@@ -504,7 +504,7 @@ Outbound:  TTS -> [PostProcessors] -> [Recorder] -> AEC.feed_reference -> [Resam
 Speech-to-speech AI (Gemini Live, OpenAI Realtime) bypasses STT/TTS entirely:
 
 - **RealtimeVoiceProvider** — Handles the AI model connection (WebSocket to Gemini/OpenAI).
-- **RealtimeAudioTransport** — Handles browser/client audio (WebSocket or WebRTC).
+- **Transport** — a `VoiceBackend` that accepts client connections (WebSocket or WebRTC), the ABC a voice channel uses too.
 - **RealtimeVoiceChannel** — Bridges transport <-> provider with tool calling support.
 ---
 

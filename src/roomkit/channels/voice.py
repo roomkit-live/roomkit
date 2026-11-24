@@ -970,9 +970,10 @@ class VoiceChannel(
                 # A hook that returned a modified event forwards *its* frame
                 # (RFC §12.7): returning one and having it dropped is worse
                 # than not offering the outcome at all. ``set_bridge_filter``
-                # stays the cheaper path for per-frame work — it runs in the
-                # audio thread and builds no context — but choosing it is the
-                # integrator's call, not something silence should decide.
+                # stays the cheaper path for per-frame work — it builds no
+                # context, and runs in the frame callback where no hook is
+                # registered — but choosing it is the integrator's call, not
+                # something silence should decide.
                 if isinstance(result.event, BridgeAudioEvent):
                     frame = result.event.frame
         except Exception:
@@ -1105,12 +1106,14 @@ class VoiceChannel(
     def set_bridge_filter(self, fn: BridgeFrameFilter | None) -> None:
         """Set a synchronous filter for bridged audio frames.
 
-        The filter runs in the audio callback thread before each frame
-        is forwarded.  It receives ``(source_session, frame)`` and
-        returns the frame (possibly modified) or ``None`` to drop it.
+        The filter runs as each frame is forwarded: in the audio callback
+        thread, or, once a ``BEFORE_BRIDGE_AUDIO`` hook is registered,
+        after that hook on the event loop (RFC §12.7.6).  It receives
+        ``(source_session, frame)`` and returns the frame (possibly
+        modified) or ``None`` to drop it.
 
-        This is the synchronous equivalent of ``BEFORE_BRIDGE_AUDIO``
-        — use it for fast operations like per-session muting or gain.
+        It fires no hook and builds no room context — use it for fast
+        operations like per-session muting or gain.
 
         Args:
             fn: Filter function, or ``None`` to remove.
