@@ -431,6 +431,12 @@ class Channel(ABC):
         ended, before the response's failure when it fails (RFC §6.4), which
         an AI channel's response carries and a text-only one does not.
 
+        *event* is the empty event the response is rendered under. Its
+        ``metadata["follows_index"]`` names the last row the room held as the
+        response's read began, so a channel places the text under way before
+        its first word; each text row of the stream names the row it follows
+        the same way (RFC §6.4).
+
         Default: accumulate text, deliver as complete event. A response that
         fails is not delivered again to the channel that streamed it (RFC
         §12.2 step 13s), so what was accumulated is delivered before the

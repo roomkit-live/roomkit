@@ -528,7 +528,12 @@ class HelpersMixin:
         try:
             room = await self._store.get_room(room_id)
         except Exception:
-            logger.debug("Room %s could not be read for its latest index", room_id, exc_info=True)
+            logger.warning(
+                "Room %s could not be read for its latest index: its response's "
+                "first text names no row it follows",
+                room_id,
+                exc_info=True,
+            )
             return None
         return None if room is None else room.latest_index
 

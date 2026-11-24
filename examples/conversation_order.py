@@ -4,9 +4,10 @@ An agent asks another session a question and starts writing "I wait for its
 answer." The answer arrives before the agent's first word: the application
 stores it in the room and hands it to the running turn, which then gives the
 value. The room's timeline keeps the order the rows were stored in, the answer
-before the wait. Each streamed text also names the row the room held when its
-writing began (``metadata["follows_index"]``), and the event a streaming
-channel is handed with the stream names it before the first word. A screen
+before the wait. Each streamed text also names the row it follows
+(``metadata["follows_index"]``): the row its turn stored before it, else the
+room's last row as the turn's read began, which the event a streaming channel
+is handed with the stream names before the first word. A screen
 that places each text after the row it follows shows the wait, the answer,
 the value, while the turn runs and when the conversation is opened again.
 

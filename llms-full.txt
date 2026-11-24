@@ -3367,11 +3367,12 @@ Rows are stored in the order they are written, and a text is written when
 something ends it. A record the room receives while a generation is under way,
 before its first word, is therefore stored before that text. Each text of a
 streamed response names the row it follows, `metadata["follows_index"]`: the
-index of the last row the room held when its writing began. That is the room's
-latest row as the kit begins to read the response, then each row the turn
-stores (a text, a tool call's start or end, its copy of an instruction). The
-event `deliver_stream` is handed carries the key too, so a screen places the
-first text before its first word. The timeline stays in index order; order by
+index of the row the turn stored before it (a text, a tool call's start or
+end, its copy of an instruction), or, for a text no row of the turn comes
+before, of the room's latest row as the kit begins to read the response. The
+event `deliver_stream` is handed carries the key too, with the room's latest
+row as the read begins, so a screen places the text under way before its
+first word, then after each row its stream hands it. The timeline stays in index order; order by
 the pair to read the conversation as it was written, live and from the store:
 
 ```python

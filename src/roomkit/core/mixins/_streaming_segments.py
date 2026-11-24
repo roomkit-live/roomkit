@@ -72,7 +72,8 @@ discussion's silence token (RFC §19.7.5 rule 13): the token is short."""
 
 
 # The key of a streamed text's metadata that names the row it follows: the
-# index of the last row the room held when its writing began (RFC §6.4).
+# row the turn stored before it, else the room's last row as the read began
+# (RFC §6.4).
 FOLLOWS_INDEX = "follows_index"
 
 
@@ -319,9 +320,9 @@ class SegmentWriter:
         self.handed_end = False
         self.failure: Exception | None = None
 
-    # The last row the room held when the text being read began: the room's
-    # latest when the read began (:meth:`following`), then each row the turn
-    # stores. None while the room holds none.
+    # The row the text being read follows: the room's latest when the read
+    # began (:meth:`following`), then each row the turn stores. None while
+    # the room holds none.
     _follows_index: int | None = None
 
     def following(self, latest: int | None) -> SegmentWriter:

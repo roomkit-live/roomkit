@@ -24,7 +24,12 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent
-from roomkit.models.streaming import LoopEndMarker, SegmentBreakMarker
+from roomkit.models.streaming import (
+    LoopEndMarker,
+    SegmentBreakMarker,
+    ToolCallEndMarker,
+    ToolCallStartMarker,
+)
 from tests.test_framework import SimpleChannel
 
 ASK = "Ask the other session."
@@ -35,21 +40,17 @@ VALUE = "The value is MAC-ERABLE."
 
 def _place(event: RoomEvent) -> tuple[int, float, str]:
     """Where a stored row reads: after the row it follows, else at its index."""
-    return (event.metadata.get("follows_index", event.index), event.index, event.content.body)
+    text = getattr(event.content, "body", "")
+    return (event.metadata.get("follows_index", event.index), event.index, text)
 
 
-class _Waiting(Channel):
-    """An agent whose turn says it waits, then, asked again within the turn,
-    gives the value. Its first generation tells it started, then writes
-    nothing until it is released: a model call under way before its first text."""
+class _Agent(Channel):
+    """An agent that answers a person's first message with the stream its
+    subclass writes."""
 
     channel_type = ChannelType.AI
     category = ChannelCategory.INTELLIGENCE
-
-    def __init__(self, channel_id: str) -> None:
-        super().__init__(channel_id)
-        self.started = asyncio.Event()
-        self.release = asyncio.Event()
+    asked = False
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         raise NotImplementedError
@@ -57,9 +58,29 @@ class _Waiting(Channel):
     async def on_event(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
-        if event.type is not EventType.MESSAGE or self.started.is_set():
+        if event.type is not EventType.MESSAGE or self.asked:
             return ChannelOutput.empty()
+        self.asked = True
         return ChannelOutput(responded=True, response_stream=self._turn())
+
+    def _turn(self) -> Any:
+        raise NotImplementedError
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+
+class _Waiting(_Agent):
+    """Its turn says it waits, then, asked again within the turn, gives the
+    value. Its first generation tells it started, then writes nothing until
+    it is released: a model call under way before its first text."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
 
     async def _turn(self) -> Any:
         self.started.set()
@@ -69,10 +90,15 @@ class _Waiting(Channel):
         yield VALUE
         yield LoopEndMarker(reason="completed")
 
-    async def deliver(
-        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
-    ) -> ChannelOutput:
-        return ChannelOutput.empty()
+
+class _Calling(_Agent):
+    """Its turn opens on a tool call, then gives the value."""
+
+    async def _turn(self) -> Any:
+        yield ToolCallStartMarker(tool_name="lookup", tool_id="c1")
+        yield ToolCallEndMarker(tool_name="lookup", tool_id="c1", result="found")
+        yield VALUE
+        yield LoopEndMarker(reason="completed")
 
 
 class _Terminal(SimpleChannel):
@@ -97,7 +123,7 @@ class _Terminal(SimpleChannel):
 
     def read(self) -> list[str]:
         under_way = [self.writing] if self.writing is not None else []
-        return [text for _, _, text in sorted(self.shown + under_way)]
+        return [text for _, _, text in sorted(self.shown + under_way) if text]
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -120,23 +146,32 @@ class _Terminal(SimpleChannel):
         return ChannelOutput.empty()
 
 
-async def test_a_streaming_channel_reads_each_text_after_the_row_it_follows() -> None:
-    """Another session's answer arrives between the start of a generation and
-    its first text. The placeholder names the message the turn answers, so
-    the channel shows the wait above the answer from its first word; live and
-    read back from the store, the conversation is the ask, the wait, the
-    answer, the value, each once."""
-    kit = RoomKit()
-    agent, terminal = _Waiting("agent"), _Terminal("terminal")
+async def _room(agent: _Agent) -> tuple[RoomKit, _Terminal]:
+    """A room with a person's SMS, a terminal that streams, and *agent*."""
+    kit, terminal = RoomKit(), _Terminal("terminal")
     await kit.create_room(room_id="r1")
     for channel in (SimpleChannel("sms"), terminal):
         kit.register_channel(channel)
         await kit.attach_channel("r1", channel.channel_id)
     kit.register_channel(agent)
     await kit.attach_channel("r1", "agent", category=ChannelCategory.INTELLIGENCE)
+    return kit, terminal
+
+
+def _ask() -> InboundMessage:
+    return InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body=ASK))
+
+
+async def test_a_streaming_channel_reads_each_text_after_the_row_it_follows() -> None:
+    """Another session's answer arrives between the start of a generation and
+    its first text. The placeholder names the message the turn answers, so
+    the channel shows the wait above the answer from its first word; live and
+    read back from the store, the conversation is the ask, the wait, the
+    answer, the value, each once."""
+    agent = _Waiting("agent")
+    kit, terminal = await _room(agent)
     try:
-        message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body=ASK))
-        asked = asyncio.create_task(kit.process_inbound(message))
+        asked = asyncio.create_task(kit.process_inbound(_ask()))
         await asyncio.wait_for(agent.started.wait(), 5)
         answer = RoomEvent(
             room_id="r1",
@@ -156,5 +191,27 @@ async def test_a_streaming_channel_reads_each_text_after_the_row_it_follows() ->
         assert terminal.at_each_delta[0] == [ASK, WAIT, REPLY]
         read_back = [text for _, _, text in sorted(_place(e) for e in conversation)]
         assert terminal.read() == read_back == [ASK, WAIT, REPLY, VALUE]
+    finally:
+        await asyncio.wait_for(kit.close(), 5)
+
+
+async def test_the_stream_s_event_names_the_room_s_last_row_and_a_text_the_turn_s() -> None:
+    """A turn that opens on a call: the event its stream is rendered under
+    names the message the turn answers, the last row the room held as the
+    read began, and the text names the call's end, the row the turn stored
+    before it, which the stream handed the channel."""
+    kit, terminal = await _room(_Calling("agent"))
+    try:
+        await asyncio.wait_for(kit.process_inbound(_ask()), 5)
+        stored = await kit.store.list_events("r1", limit=100)
+        [ask] = [e for e in stored if e.source.channel_id == "sms"]
+        [end] = [e for e in stored if e.type is EventType.TOOL_CALL_END]
+        [value] = [e for e in stored if e.type is EventType.MESSAGE and e is not ask]
+        assert terminal.placeholder is not None
+        followed = (
+            terminal.placeholder.metadata["follows_index"],
+            value.metadata["follows_index"],
+        )
+        assert followed == (ask.index, end.index)
     finally:
         await asyncio.wait_for(kit.close(), 5)

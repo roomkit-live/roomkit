@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A streamed text names the row it follows, `metadata["follows_index"]` (RFC §6.4, RMK-2096): the index of the last row the room held when its writing began, the room's latest as the kit begins to read the response, then each row the turn stores. The event `deliver_stream` is handed carries it too, before the first word. A record the room receives while a generation is under way is stored before that generation's text, and the timeline stays in index order; a reader that orders by `follows_index`, else `index`, then `index`, shows the text above the record, live and from the store (`examples/conversation_order.py`).
+- A streamed text names the row it follows, `metadata["follows_index"]` (RFC §6.4, RMK-2096): the index of the row the turn stored before it, else of the room's latest row as the kit begins to read the response. The event `deliver_stream` is handed carries that latest row too, before the first word. A record the room receives while a generation is under way is stored before that generation's text, and the timeline stays in index order; a reader that orders by `follows_index`, else `index`, then `index`, shows the text above the record, live and from the store (`examples/conversation_order.py`).
 
 - `RoomKit(close_grace=5.0)`: the seconds of the one grace the kit's `close()` gives its running work (a hook, a store write, a transport send) before it cuts it (RFC §12.10.4, RMK-1866), where it was a fixed 5 s.
 
