@@ -203,7 +203,7 @@ class AudioBridge:
         if not self._config.enabled:
             return
 
-        # Pre-forward filter (BEFORE_BRIDGE_AUDIO)
+        # Pre-forward frame filter (set_frame_filter); it fires no hook
         if self._frame_filter is not None:
             filtered = self._frame_filter(session, frame)
             if filtered is None:

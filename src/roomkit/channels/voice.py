@@ -1106,9 +1106,9 @@ class VoiceChannel(
     def set_bridge_filter(self, fn: BridgeFrameFilter | None) -> None:
         """Set a synchronous filter for bridged audio frames.
 
-        The filter runs as each frame is forwarded: in the audio callback
-        thread, or, once a ``BEFORE_BRIDGE_AUDIO`` hook is registered,
-        after that hook on the event loop (RFC §12.7.6).  It receives
+        The filter runs as each frame is forwarded: inside the pipeline's
+        frame callback, or, once a ``BEFORE_BRIDGE_AUDIO`` hook is
+        registered, after that hook in a task of its own (RFC §12.7.6).  It receives
         ``(source_session, frame)`` and returns the frame (possibly
         modified) or ``None`` to drop it.
 

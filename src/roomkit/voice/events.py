@@ -392,8 +392,9 @@ class BridgeAudioEvent:
     a different frame.
 
     Prefer :meth:`~roomkit.channels.voice.VoiceChannel.set_bridge_filter` for
-    per-frame work: it runs in the audio thread and builds no room context,
-    where this hook pays for one on every frame. Modifying here is for the
+    per-frame work: it builds no room context, where this hook pays for one
+    on every frame (and once this hook is registered, the filter runs after
+    it). Modifying here is for the
     occasional frame a policy has to reshape, not for a transform applied to
     all of them.
     """
