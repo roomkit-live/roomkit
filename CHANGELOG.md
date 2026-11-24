@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The kit's close names each piece of work it abandons by the work it runs (RFC §12.10.4, RMK-2010), where a delivery set and a call into a room were logged as `Task-4`: a call by its method and its caller's task (`process_inbound call in task Task-23`), the kit's own tasks by their name (`roomkit-delivery-set-<room>`).
 
-- The kit's close names each operation the store or the lock manager still runs once its last unwind ran out, by what it covers (`conference roster write for room r`, `room context read for room r`), as it releases them under it (RFC §12.10.4, RMK-2101), where it logged only their number.
+- The kit's close names each operation the store or the lock manager still runs once its last unwind ran out, by what it covers (`conference roster write for room r`, `room context read for room r`), as it releases the resources under them (RFC §12.10.4, RMK-2101), where it logged only their number.
 
 - A realtime session whose provider reconnects, ACTIVE to CONNECTING, no longer logs `made an undocumented transition` (RFC §12.2, RMK-2018): the transition is the RFC's.
 

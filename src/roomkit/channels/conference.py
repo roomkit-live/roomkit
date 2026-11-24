@@ -967,8 +967,8 @@ class ConferenceChannel(
             _conference_activity.DRAIN_TIMEOUT_S,
             "Closing conference channel %r with %d participant callback(s) still running "
             "after %.1fs. The barrier stands, so a callback that has not reached the store "
-            "writes nothing; a write the store already has finishes under the framework's "
-            "resource lease before the store is released",
+            "writes nothing; a write the store already has runs on under the framework's "
+            "resource lease, which the kit's close waits for within its last unwind",
         )
 
     async def _settle(
@@ -1026,9 +1026,11 @@ class ConferenceChannel(
         moment the lock is let go, and each store read on its own (the roster
         takes those itself). ``RoomKit.close()`` waits for every lease — after
         all the channels have closed and their media is released — before it
-        releases the store and the lock manager, which is what lets this
-        channel's own ``close()`` stay bounded without anything being released
-        under work it is still running (RFC 12.10.4). Nothing integrator-owned
+        releases the store and the lock manager, within its last unwind, which
+        is what lets this channel's own ``close()`` stay bounded without the
+        store being released under work it is still running; what outlives
+        that unwind is named in the close's log and released under (RFC
+        12.10.4). Nothing integrator-owned
         ever runs under one: a resolver or a hook can suspend forever, and a
         lease is a promise the framework waits on for as long as its close's
         last unwind allows. Without a framework there is no store and no lock
@@ -1498,7 +1500,9 @@ class ConferenceChannel(
         # without a deadline here holds every channel behind this one in its
         # conference. What the budget cannot cover — a write the store already
         # has — sits under the framework's resource lease, and `RoomKit.close()`
-        # waits for it before releasing the store and the lock manager.
+        # waits for it, within its last unwind, before releasing the store and
+        # the lock manager; what outlives that unwind is named and released
+        # under.
         await self._settle_the_roster()
         if self._close_providers:
             await self._shutdown.close_resource(
