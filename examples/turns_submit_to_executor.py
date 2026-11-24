@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from functools import partial
+from typing import Any
 
 from roomkit import (
     Agent,
@@ -63,7 +64,6 @@ from roomkit.turns import (
     TurnLink,
     TurnRequest,
 )
-from roomkit.turns.wire import Control, Frame
 
 
 class SlotLink(TurnLink):
@@ -78,10 +78,10 @@ class SlotLink(TurnLink):
     def taken(self) -> bool:
         return self._link.taken
 
-    async def receive(self) -> tuple[int, Frame]:
+    async def receive(self) -> tuple[int, Any]:
         return await self._link.receive()
 
-    async def send(self, message: Control) -> None:
+    async def send(self, message: Any) -> None:
         await self._link.send(message)
 
     def release(self) -> None:
