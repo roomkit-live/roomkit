@@ -6,9 +6,11 @@ for it, and a channel reads it to know the turn its loop serves.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
+from typing import Any
 
-from roomkit.core.task_utils import callers_read
+from roomkit.core.task_utils import callers_read, callers_run, joined_as
 
 _TURNS_RUN_UNDER: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
     "roomkit_turns_run_under", default=()
@@ -22,6 +24,39 @@ def turns_run_under() -> tuple[str, ...]:
     kit's shutdown, those every ``close()`` it answers was called under
     (RMK-1019)."""
     return tuple(dict.fromkeys(t for turns in callers_read(_TURNS_RUN_UNDER) for t in turns))
+
+
+_TURN_CALL: contextvars.ContextVar[asyncio.Task[Any] | None] = contextvars.ContextVar(
+    "roomkit_turn_call", default=None
+)
+"""The task that runs the call of the innermost turn the current code is in:
+the turn's work, or a call its loop runs on a task of its own (a tool's). A
+task that call's code starts carries it unchanged: it is no call of the turn."""
+
+
+def mark_turn_call(task: asyncio.Task[Any]) -> None:
+    """*task* runs a call of the turn its code runs under: the turn's work,
+    or a tool call its loop starts (RFC §12.10.4 step 3). Set in the task's
+    own context, before its first step."""
+    task.get_context().run(_TURN_CALL.set, task)
+
+
+def turns_a_close_spares() -> tuple[str, ...]:
+    """The turns a ``close()`` called from the current code lets run on and,
+    inside the kit's shutdown, those of every ``close()`` it answers: the
+    turns it runs under as their call, the call that awaits ``close()``
+    itself. A task a turn's code started on its own carries the turn's marks,
+    but a close it awaits is cut with that turn (RFC §12.10.4 step 3)."""
+    spared = callers_run(_turns_spared_here)
+    return tuple(dict.fromkeys(turn for turns in spared for turn in turns))
+
+
+def _turns_spared_here() -> tuple[str, ...]:
+    turns = _TURNS_RUN_UNDER.get()
+    call = _TURN_CALL.get()
+    if call is None or call is joined_as():
+        return turns
+    return turns[:-1]
 
 
 def enter_turn(turn_id: str) -> None:

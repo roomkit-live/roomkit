@@ -47,6 +47,7 @@ from roomkit.channels._tool_search import (
 from roomkit.channels._tool_search_constants import (
     TOOL_SEARCH_INFRA_TOOL_NAMES,
 )
+from roomkit.core._turn_scope import mark_turn_call
 from roomkit.core.exceptions import (
     ChannelRefusalError,
     ToolFailedError,
@@ -444,6 +445,10 @@ class AIToolsMixin(_AIChannelContract):
             )
             for tc in tool_calls
         ]
+        for task in tasks:
+            # Each runs a call of the turn: a close it awaits itself lets the
+            # turn's work run on (RFC §12.10.4 step 3).
+            mark_turn_call(task)
         try:
             results = await asyncio.gather(*tasks)
         except BaseException:

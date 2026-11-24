@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retire_mark
 from roomkit.channels._strategy_turn import strategy_turn
 from roomkit.channels._tool_registry import set_turn_owner_tools
-from roomkit.core._turn_scope import enter_turn, set_turn_stream_cut
+from roomkit.core._turn_scope import enter_turn, mark_turn_call, set_turn_stream_cut
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.hooks import set_turn_room_hooks
 from roomkit.models.streaming import UsageMarker
@@ -363,6 +363,7 @@ class ExecutorTurn:
         self._work = asyncio.get_running_loop().create_task(
             work, context=context, name=f"roomkit-turn-{self._request.turn_id}-work"
         )
+        mark_turn_call(self._work)
         try:
             return await self._work
         finally:

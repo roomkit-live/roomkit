@@ -506,13 +506,65 @@ async def test_a_tool_closing_the_kit_gets_its_end_row_before_the_close_returns(
         for _ in range(20):  # what the tool's turn does once it resumed
             await asyncio.sleep(0)
 
-    # The tool's own close returns; a tool whose task the close cut (one
-    # awaiting a close it started) sees its cut.
-    assert steps == ["closed"] or (how == "from-a-task" and steps == ["CancelledError"])
+    # The tool's own close returns; a tool awaiting a close it started on a
+    # task of its own is cut with its turn (RFC §12.10.4 step 3).
+    assert steps == (["CancelledError"] if how == "from-a-task" else ["closed"])
     assert (result.cancellation_reason, result.error) == ("kit_closed", None)
     ends = [row for row in recording.commits if row[0] == EventType.TOOL_CALL_END]
     assert ends == [(EventType.TOOL_CALL_END, False, "kit_closed")]
     assert [kind for kind, after, _ in recording.commits if after] == []
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+class _TurnClosingTheKit(AILikeChannel):
+    """An intelligence channel whose turn closes the kit, awaiting the close
+    itself or a task of its own it starts for it, then answers."""
+
+    def __init__(self, kit: RoomKit, how: str) -> None:
+        super().__init__("ai")
+        self.kit, self.how = kit, how
+        self.steps: list[str] = []
+
+    async def on_event(
+        self, event: RoomEvent, binding: Any, context: RoomContext
+    ) -> ChannelOutput:
+        closing = self.kit.close()
+        try:
+            await (closing if self.how == "itself" else asyncio.create_task(closing))
+            self.steps.append("closed")
+        except BaseException as error:
+            self.steps.append(type(error).__name__)
+            raise
+        return await super().on_event(event, binding, context)
+
+
+@pytest.mark.in_process(
+    "the kit closes from a turn of its own executor: an executor elsewhere holds no kit"
+)
+@pytest.mark.parametrize("store", ["memory", "sqlite"])
+@pytest.mark.parametrize("how", ["itself", "from-a-task"])
+async def test_a_turn_awaiting_a_close_on_a_task_of_its_own_is_cut_with_it(
+    how: str, store: str, tmp_path: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A turn's call that awaits close() itself runs on; one that awaits a
+    close it started on a task of its own is cut with its turn, and the
+    close runs on to its end: nothing written once the store is released
+    (RFC §12.10.4 step 3)."""
+    kit = RoomKit(store=_STORES[store](tmp_path))
+    turn = _TurnClosingTheKit(kit, how)
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(turn)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
+    message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Go."))
+
+    with caplog.at_level(logging.WARNING, logger="roomkit"):
+        result = await asyncio.wait_for(kit.process_inbound(message, room_id="r"), 5)
+        await asyncio.wait_for(kit.close(), 5)
+
+    assert turn.steps == (["CancelledError"] if how == "from-a-task" else ["closed"])
+    assert result.cancellation_reason == "kit_closed"
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 

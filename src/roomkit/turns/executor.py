@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from roomkit.channels._tool_registry import ChannelRegistry
-from roomkit.core._turn_scope import turns_run_under
+from roomkit.core._turn_scope import turns_a_close_spares
 from roomkit.core.exceptions import ToolNameCollisionError, TurnLinkError
 from roomkit.core.hooks import HookEngine, HookRegistration, hook_decorator
 from roomkit.core.task_utils import acting_tasks, cancel_and_wait
@@ -361,7 +361,7 @@ class TurnExecutor:
         """Let the turns the current close runs under run on whatever cuts
         them: a kit's close cuts every model turn at once, the one its call
         runs in included, but not the call that runs it (RFC §12.10.4)."""
-        spared = set(turns_run_under())
+        spared = set(turns_a_close_spares())
         for turn in self._turns.values():
             if turn.turn_id in spared:
                 turn.spare()
@@ -377,7 +377,7 @@ class TurnExecutor:
         ignoring their cut, which it leaves."""
         self._closed = True
         self._spare_turns_run_under()
-        spared = set(turns_run_under())
+        spared = set(turns_a_close_spares())
         acting = acting_tasks()
         running = [
             task

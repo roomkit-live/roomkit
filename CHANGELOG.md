@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A turn's call that awaits a `close()` it started on a task of its own is cut with its turn, and the close runs on to its end (RFC §12.10.4 step 3, RMK-2085), where the close let the whole turn run on as if the call awaited `close()` itself, and a turn of a plain intelligence channel could then write to the store the close had released.
+
 - A call the kit's close cut once its commit landed reports its event stored while another cut call reads its own back (RFC §12.10.4, RMK-2083), where the close cut its read-back again and the call raised `CancelledError` to a caller that cancelled nothing; seen on PostgreSQL, whose read opens a connection.
 
 - The kit's close names each piece of work it abandons by the work it runs (RFC §12.10.4, RMK-2010), where a delivery set and a call into a room were logged as `Task-4`: a call by its method and its caller's task (`process_inbound call in task Task-23`), the kit's own tasks by their name (`roomkit-delivery-set-<room>`).

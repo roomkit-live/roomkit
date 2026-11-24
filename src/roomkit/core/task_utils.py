@@ -414,13 +414,16 @@ class Callers:
         """Count the current code among the callers: the tasks it runs as,
         the kit-held runs it runs under, and its context, whose markers (the
         turns it runs under, the realtime call it serves, the conference
-        activity it runs inside) spare its work too (RMK-1019)."""
+        activity it runs inside) spare its work too (RMK-1019), read as the
+        task that joined (:func:`joined_as`)."""
         acting, under = acting_tasks(), set(held_runs())
         if acting <= self.acting and under <= self.under:
             return
         self.acting |= acting
         self.under |= under
-        self.contexts.append(contextvars.copy_context())
+        context = contextvars.copy_context()
+        context.run(_JOINED_AS.set, asyncio.current_task())
+        self.contexts.append(context)
         if self._joined is not None:
             self._joined.set_result(None)
             self._joined = None
@@ -436,6 +439,31 @@ _ACTS_FOR: contextvars.ContextVar[Callers | None] = contextvars.ContextVar(
     "roomkit_acts_for", default=None
 )
 """The callers the current code's task acts for (:meth:`Callers.start`)."""
+
+
+_JOINED_AS: contextvars.ContextVar[asyncio.Task[Any] | None] = contextvars.ContextVar(
+    "roomkit_joined_as", default=None
+)
+"""In a caller's context its callers keep (:meth:`Callers.join`), the task
+it joined as."""
+
+
+def joined_as() -> asyncio.Task[Any] | None:
+    """The task the current code runs as: the current one, or in a caller's
+    context its callers keep (:func:`callers_run`), the task that joined."""
+    return _JOINED_AS.get() or asyncio.current_task()
+
+
+def callers_run[T](read: Callable[[], T]) -> list[T]:
+    """*read* run as the current code and, inside work its callers wait for
+    (:class:`Callers`), in each caller's context as it joined: a rule that
+    reads several markers of the code a ``close()`` is called from, and the
+    task it runs as (:func:`joined_as`), as :func:`callers_read` reads one."""
+    values = [read()]
+    callers = _ACTS_FOR.get()
+    if callers is not None:
+        values.extend(context.run(read) for context in callers.contexts)
+    return values
 
 
 def callers_read[T](marker: contextvars.ContextVar[T]) -> list[T]:
