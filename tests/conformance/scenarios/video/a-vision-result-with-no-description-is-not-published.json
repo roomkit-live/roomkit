@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-vision-result-with-no-description-is-not-published",
+  "title": "A vision result with no description reaches neither the hook nor the published results",
+  "rules": [
+    "§9.2",
+    "§12.8"
+  ],
+  "requirements": [
+    "RK-12.8.11-006",
+    "RK-12.8.4-012",
+    "RK-12.8.4-015"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_vision_result",
+        "execution": "sync",
+        "reactions": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "",
+        "a person waves"
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "vision": [
+            {
+              "description": "a person waves"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "video": {
+            "participant_id": "alice",
+            "description": "a person waves"
+          }
+        }
+      ]
+    }
+  }
+}
