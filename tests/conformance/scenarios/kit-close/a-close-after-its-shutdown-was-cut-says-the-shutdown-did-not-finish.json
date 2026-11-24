@@ -1,0 +1,52 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-close-after-its-shutdown-was-cut-says-the-shutdown-did-not-finish",
+  "title": "A close after the kit's shutdown was cut itself, as a process's end cuts every task, fails with shutdown_cancelled",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-071"
+  ],
+  "notes": "Python: tests/test_framework.py::TestOneShutdown::test_a_close_after_its_shutdown_was_cut_says_so; roomkit-rs: crates/roomkit/tests/close/shutdown.rs::a_close_after_its_shutdown_was_cut_says_so. The channel's close holds the shutdown at a gate no step opens until the step cuts it. The later caller was cancelled by nobody: it is told the shutdown did not finish, not handed a cancellation of its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "held",
+        "type": "websocket",
+        "category": "transport",
+        "close": [
+          {
+            "gate": "closing"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "close_cut_at": "closing"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "shutdown_cancelled"
+      }
+    }
+  ],
+  "expect": {
+    "channel_closes": [
+      "held"
+    ]
+  }
+}

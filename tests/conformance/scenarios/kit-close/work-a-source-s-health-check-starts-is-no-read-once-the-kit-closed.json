@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/work-a-source-s-health-check-starts-is-no-read-once-the-kit-closed",
+  "title": "Work a source's health check started, a read, is no read: once the kit closed, the status it posts fires no hook",
+  "rules": [
+    "§12.10.4 step 1",
+    "§6.5",
+    "§19.8"
+  ],
+  "requirements": [
+    "RK-12.10.4-036"
+  ],
+  "requires_features": [
+    "source_provider"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_work_a_read_starts_is_no_read_once_the_kit_closed. The health check, a read, answers before the close; the heartbeat it starts holds at a gate until the close returned, then posts a status naming the room. The kit answers it as no read: no room's context is built for it and no ON_STATUS_POSTED hook fires. What the post itself returns is the status bus's and is not asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ],
+    "sources": [
+      {
+        "channel_id": "sms",
+        "healthcheck": [
+          {
+            "spawn": {
+              "gate": "beat",
+              "do": [
+                {
+                  "call": "status.post",
+                  "agent_id": "src",
+                  "action": "heartbeat",
+                  "status": "ok",
+                  "metadata": {
+                    "room_id": "r"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "source_health",
+      "channel_id": "sms",
+      "expect": {
+        "result": "$any"
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "open": "beat"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    },
+    "sources": {
+      "sms": [
+        "healthcheck",
+        "stop",
+        "cut"
+      ]
+    }
+  }
+}

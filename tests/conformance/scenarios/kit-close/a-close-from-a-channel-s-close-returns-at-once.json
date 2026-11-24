@@ -1,0 +1,62 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-close-from-a-channel-s-close-returns-at-once",
+  "title": "A close a channel's close calls, the shutdown's own work, returns at once, and the shutdown runs to its end",
+  "rules": [
+    "§12.10.4",
+    "§6.1"
+  ],
+  "requirements": [
+    "RK-12.10.4-080"
+  ],
+  "notes": "Python: tests/test_framework.py::TestOneShutdown::test_a_close_from_the_shutdown_s_own_work_returns_at_once. The channel's close waits for the close it calls: a close that waited for the shutdown would wait for the channel's close, which waits for it, and the kit's close would never return.",
+  "setup": {
+    "channels": [
+      {
+        "id": "closer",
+        "type": "websocket",
+        "category": "transport",
+        "close": [
+          {
+            "do": [
+              {
+                "call": "close",
+                "as": "inner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "closer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "inner": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "channel_closes": [
+      "closer"
+    ]
+  }
+}

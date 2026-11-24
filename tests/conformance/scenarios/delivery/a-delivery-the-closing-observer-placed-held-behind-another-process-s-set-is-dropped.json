@@ -1,0 +1,224 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-the-closing-observer-placed-held-behind-another-process-s-set-is-dropped",
+  "title": "A delivery an AFTER_BROADCAST observer placed in its room's idle lane, which still holds it while another process sends the set ahead of it, is dropped as the observer's close starts",
+  "rules": [
+    "§12.10.4",
+    "§13.5",
+    "§10.2"
+  ],
+  "requirements": [
+    "RK-12.10.4-078"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_close_from_the_lane_s_own_work_drops_what_it_kept_and_the_lane_ends. Process p2 commits Two and sends its set, held at the transport's gate: the room's cursor stays below Two, so the run's lane, idle, holds a delivery placed after Two until p2's set ends (§13.5), on one thread or several. One's ASYNC AFTER_BROADCAST observer then sends Bye., placed in that lane, which still holds it, and closes the kit: Bye. is dropped as the close starts, never sent. The run's close reaches its channels' closes, held at ws's close, only once no work of its own runs: a delivery the close kept would be running work, given the close's grace (30 s, longer than a step waits), and once p2's set is let go it would be sent (RK-12.10.4-041). p2, not closed, delivers Two. That a spared lane drops it alike is not observed: the observer is not the lane's work. The run's kit closes its own two channels; p2's are closed by the runner once the steps ran, which records nothing.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Two"
+            },
+            "gate": "two-sending"
+          }
+        ],
+        "close": [
+          {
+            "gate": "closing"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bye",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "One"
+            },
+            "gate": "after",
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Bye."
+                },
+                "as": "sent"
+              },
+              {
+                "call": "close",
+                "as": "closed"
+              }
+            ],
+            "after_do_gate": "closed"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "One"
+        }
+      }
+    },
+    {
+      "wait_for": "after"
+    },
+    {
+      "call": "process_inbound",
+      "kit": "p2",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Two"
+        }
+      },
+      "background": true,
+      "as": "two"
+    },
+    {
+      "wait_for": "two-sending"
+    },
+    {
+      "open": "after"
+    },
+    {
+      "wait_for": "closing"
+    },
+    {
+      "open": "two-sending"
+    },
+    {
+      "await": "two",
+      "expect": {
+        "result": {
+          "event": {
+            "content": {
+              "body": "Two"
+            }
+          },
+          "delivery_results": {
+            "ws": {
+              "status": "sent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "closing"
+    },
+    {
+      "wait_for": "closed"
+    },
+    {
+      "open": "closed"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "One"
+          }
+        },
+        {
+          "content": {
+            "body": "Two"
+          }
+        },
+        {
+          "content": {
+            "body": "Bye."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "One"
+            }
+          },
+          {
+            "content": {
+              "body": "Two"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "sent": [
+        {
+          "result": {
+            "content": {
+              "body": "Bye."
+            }
+          }
+        }
+      ],
+      "closed": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "channel_closes": {
+      "$unordered": [
+        "sms",
+        "ws"
+      ]
+    }
+  }
+}

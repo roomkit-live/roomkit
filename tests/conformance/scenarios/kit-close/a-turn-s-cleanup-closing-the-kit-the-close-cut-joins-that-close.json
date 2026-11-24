@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-turn-s-cleanup-closing-the-kit-the-close-cut-joins-that-close",
+  "title": "A turn the kit's close cut, closing the kit in its cleanup, joins that close: its cleanup is neither cut again nor waited for, and both closes return",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-076"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_close_from_a_cut_tool_joins_the_close_that_cut_it; roomkit-rs: crates/roomkit/tests/close/tool_cleanup.rs. The turn holds at a gate no step opens until the close returned; the close cuts it, and its cleanup (on_cut) closes the kit. A close that cut that cleanup again would leave its action no outcome; one that waited for it would wait for a close that waits for the shutdown. That the close does not wait for the cleanup is not observed apart: the cleanup's close returns only once the shutdown ended.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "gate": "turn",
+            "on_cut": [
+              {
+                "call": "close",
+                "as": "cleanup"
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Never."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "message"
+    },
+    {
+      "wait_for": "turn"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "message",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "open": "turn"
+    }
+  ],
+  "expect": {
+    "actions": {
+      "cleanup": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        }
+      ]
+    }
+  }
+}

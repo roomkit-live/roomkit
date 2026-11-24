@@ -1,0 +1,51 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/entering-a-closed-kit-s-context-again-is-refused",
+  "title": "Entering a kit's context once its close started is refused with kit_closed",
+  "rules": [
+    "§12.10.4 step 1"
+  ],
+  "requirements": [
+    "RK-12.10.4-039"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_async_with_a_closed_kit_is_refused. Entering is the integrator's opening of the kit: roomkit's async with, roomkit-rs's start (README, enter). A channel's own doors (a realtime session's start, a conference arrival) are not observed here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "enter",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "enter",
+      "expect": {
+        "error": "kit_closed"
+      }
+    }
+  ]
+}

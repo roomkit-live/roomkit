@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/the-kit-s-own-stop-steps-run-side-by-side-within-the-grace",
+  "title": "The kit's own steps stop side by side within its grace: a source's stop still running holds no other source's stop back",
+  "rules": [
+    "§12.10.4 step 4",
+    "§6.5"
+  ],
+  "requirements": [
+    "RK-12.10.4-050"
+  ],
+  "requires_features": [
+    "source_provider"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_stuck_source_stop_keeps_no_other_source_running. Each source's stop holds at a gate; the second stop is reached while the first still holds, as steps that run one after the other would not before the close's grace (30 s) ran out. Then both are let go, and the close cuts each source's task.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "sources": [
+      {
+        "channel_id": "sms",
+        "stop": [
+          {
+            "gate": "sms-stop"
+          }
+        ]
+      },
+      {
+        "channel_id": "ws",
+        "stop": [
+          {
+            "gate": "ws-stop"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "wait_for": "sms-stop"
+    },
+    {
+      "wait_for": "ws-stop"
+    },
+    {
+      "open": "sms-stop"
+    },
+    {
+      "open": "ws-stop"
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "sources": {
+      "sms": [
+        "stop",
+        "cut"
+      ],
+      "ws": [
+        "stop",
+        "cut"
+      ]
+    }
+  }
+}

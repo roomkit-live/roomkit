@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/every-source-s-task-is-cut-whatever-its-stop-does",
+  "title": "The kit's close cuts every source's task, a source whose stop never ends included, once its grace is over, and restarts none",
+  "rules": [
+    "§12.10.4 step 4",
+    "§6.5"
+  ],
+  "requirements": [
+    "RK-12.10.4-050"
+  ],
+  "requires_features": [
+    "source_provider"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_stuck_source_stop_keeps_no_other_source_running. The stuck source's stop holds at a gate no step opens before the close returns: the close waits for it within its grace (300 ms), then cuts it and the source's task. Both sources restart on failure: a source restarted once the close started would record a second start. That a source whose start fails as the close runs is not restarted is not observed apart: a cut is no failure.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "sources": [
+      {
+        "channel_id": "sms",
+        "auto_restart": true,
+        "restart_delay_ms": 1,
+        "stop": [
+          {
+            "gate": "stuck"
+          }
+        ]
+      },
+      {
+        "channel_id": "ws",
+        "auto_restart": true,
+        "restart_delay_ms": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "open": "stuck"
+    }
+  ],
+  "expect": {
+    "sources": {
+      "sms": [
+        "stop",
+        "cut"
+      ],
+      "ws": [
+        "stop",
+        "cut"
+      ]
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/what-a-channel-s-close-starts-is-cut-at-once",
+  "title": "What a channel's close starts, an observer of the trace it emits as it closes, is cut at once, not given the close's grace",
+  "rules": [
+    "§12.10.4",
+    "§5.14",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.10.4-054"
+  ],
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_a_hook_task_started_as_a_channel_closes_ends_with_the_close. The channel's close emits its last trace, which starts the room's ASYNC trace observer; the observer holds at a gate no step opens before the close returns. The close's grace (30 s) is longer than a call may take (10 s): the close returns only because what the channel's close started is cut at once, within the unwind. That the observer is cut, rather than ended some other way, is not observed apart: the scenario shows that the close does not give it the grace. Whether the observer reaches its gate before its cut is the store's (the in-memory store builds its context without suspending): it is not asserted. The store's and the lock manager's operations waited for within that unwind are not observed here.",
+  "setup": {
+    "kit": {
+      "close_grace_ms": 30000
+    },
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket",
+        "category": "transport",
+        "close": [
+          {
+            "do": [
+              {
+                "call": "emit_protocol_trace",
+                "trace": {
+                  "channel_id": "wire",
+                  "room_id": "r",
+                  "direction": "outbound",
+                  "protocol": "ws",
+                  "summary": "Closing frame"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_protocol_trace",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "audit"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "open": "audit"
+    }
+  ],
+  "expect": {
+    "channel_closes": [
+      "wire"
+    ]
+  }
+}

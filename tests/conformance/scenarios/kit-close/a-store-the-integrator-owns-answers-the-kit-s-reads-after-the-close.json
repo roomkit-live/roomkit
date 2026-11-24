@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-store-the-integrator-owns-answers-the-kit-s-reads-after-the-close",
+  "title": "A store the integrator owns stays open after the kit's close, and the kit answers a read from it",
+  "rules": [
+    "§12.10.4",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-12.10.4-035"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_read_answers_during_the_close_and_after_it_while_its_store_is_open. The store is one the integrator owns (setup.kit.store_owner integrator), a pool it handed in: the kit's close leaves it open, and the kit's reads answer from it.",
+  "setup": {
+    "kit": {
+      "store_owner": "integrator"
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "r",
+      "expect": {
+        "result": {
+          "id": "r",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "r",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r": []
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-turn-awaiting-a-close-it-started-on-a-task-of-its-own-is-cut-with-its-turn",
+  "title": "A turn's call awaiting a close it started on a task of its own is cut with its turn, and the close runs on to its end",
+  "rules": [
+    "§12.10.4 step 3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-048"
+  ],
+  "notes": "Python: core/framework.py close (the turn a close's call runs in is cut, the call itself spared); executor-close/a-turn-closing-the-kit-sees-its-close-return is the call that awaits close() itself, which runs on and reads its result. Here the close runs on a task the turn's call started (own_task), which the turn's call awaits: that wait is cut with the turn, so the action records no outcome, and the close it started ends all the same. The message's call was under way as the close started: it reads kit_closed, and the turn's response is never stored.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "close",
+                "own_task": true,
+                "as": "closed"
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Never."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "error": "kit_closed"
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "closed": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        }
+      ]
+    }
+  }
+}

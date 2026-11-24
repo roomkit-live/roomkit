@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-closed-kit-s-channel-doors-refuse-a-realtime-session-and-a-conference-arrival",
+  "title": "Once the kit closed, a channel's own doors refuse: a realtime session does not start, and a conference arrival is admitted nowhere and tells no one",
+  "rules": [
+    "§12.10.4 step 1"
+  ],
+  "requirements": [
+    "RK-12.10.4-039"
+  ],
+  "requires_features": [
+    "realtime",
+    "conference"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_session_or_a_participant_arriving_once_the_close_started_is_refused, there during the close, here once it returned. The realtime session's start is refused with kit_closed. The conference arrival is no failure of its caller: the backend's notification returns, no member is written and no hook told. That it is no failure in the log is not observed. The store is one the integrator owns, so that the read of the room's members answers after the close on every store.",
+  "setup": {
+    "kit": {
+      "store_owner": "integrator"
+    },
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_participant_joined",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r",
+      "participant_id": "alice",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "r",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "joined": []
+    }
+  }
+}

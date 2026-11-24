@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-close/a-channel-whose-close-fails-holds-no-other-back-and-fails-the-close-last",
+  "title": "A channel whose close fails holds no other channel's close back, and the kit's close fails once its shutdown ran, as every later close does",
+  "rules": [
+    "§12.10.4",
+    "§6.1"
+  ],
+  "requirements": [
+    "RK-12.10.4-030",
+    "RK-12.10.4-070"
+  ],
+  "notes": "Python: tests/test_framework.py::TestOneShutdown::test_a_close_after_a_failed_one_raises_the_same_failure. The order in which the kit closes its channels is open: channel_closes is unordered. The failing channel sits between two others, so that, unless the kit closes it last, a channel closes after it (roomkit closes them in registration order, roomkit-rs in id order: here both close b-fails second). The kit's store is one it closes: the read refused with kit_closed after the failed close shows the store was released before the failure was raised, the shutdown run to its end. A later close answers the same failure and closes no channel again.",
+  "setup": {
+    "kit": {
+      "store_owner": "kit"
+    },
+    "channels": [
+      {
+        "id": "a-sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "b-fails",
+        "type": "websocket",
+        "category": "transport",
+        "close": [
+          {
+            "fail": "the transport refused"
+          }
+        ]
+      },
+      {
+        "id": "c-ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "a-sms"
+          },
+          {
+            "channel_id": "b-fails"
+          },
+          {
+            "channel_id": "c-ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "r",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ],
+  "expect": {
+    "channel_closes": {
+      "$unordered": [
+        "a-sms",
+        "b-fails",
+        "c-ws"
+      ]
+    }
+  }
+}
