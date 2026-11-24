@@ -120,20 +120,23 @@ class TestSpeexAECProviderProcess:
         assert result is frame
         mock_lib.speex_echo_capture.assert_not_called()
 
-    def test_mismatched_pcm_format_passes_through(self):
+    def test_mismatched_pcm_format_passes_through(self, caplog):
+        """A frame in another format is never read as the stage's own: it
+        passes on unchanged, with one warning per format (RFC §12.3.1)."""
         mock_lib = _make_mock_speexdsp()
         provider, _ = _make_provider(mock_lib)
-        frame = AudioFrame(
-            data=b"\x01\x00" * 320,
-            sample_rate=8000,
-            channels=1,
-            sample_width=2,
-        )
+        frames = [
+            AudioFrame(data=b"\x01\x00" * 320, sample_rate=8000, channels=1, sample_width=2)
+            for _ in range(2)
+        ]
 
-        result = provider.process(frame, "s1")
+        with caplog.at_level(logging.WARNING):
+            results = [provider.process(frame, "s1") for frame in frames]
 
-        assert result is frame
+        assert results[0] is frames[0] and results[1] is frames[1]
         mock_lib.speex_echo_capture.assert_not_called()
+        warnings = [r for r in caplog.records if "format mismatch" in r.getMessage()]
+        assert len(warnings) == 1
 
 
 class TestSpeexAECProviderFeedReference:

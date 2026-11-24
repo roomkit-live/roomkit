@@ -224,6 +224,17 @@ class TestTurnDetection:
         inbound_call = mock_fw.process_inbound.call_args
         assert "Hello world" in str(inbound_call)
 
+        # The detector reads the latest utterance as transcript, and the turn
+        # under evaluation as its history (RFC §12.3.12)
+        handed = [
+            (c.transcript, [(e.role, e.text) for e in c.conversation_history])
+            for c in detector.evaluations
+        ]
+        assert handed == [
+            ("Hello", [("user", "Hello")]),
+            ("world", [("user", "Hello"), ("user", "world")]),
+        ]
+
     async def test_no_turn_detector_routes_immediately(self):
         """Without a turn detector, text is routed immediately (existing behaviour)."""
         from unittest.mock import AsyncMock, MagicMock

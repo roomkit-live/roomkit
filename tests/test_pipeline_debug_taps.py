@@ -282,17 +282,23 @@ class TestDebugTapsEngineIntegration:
         assert session.id not in pipeline._debug_tap_sessions
 
     def test_inbound_creates_raw_file(self, tmp_path: Path) -> None:
-        pipeline = self._make_pipeline(tmp_path, stages=["raw"])
+        """The directory comes with the first file, and the file keeps the
+        frames' format at its capture point (RFC §12.3.15): with no contract,
+        the transport's 8 kHz."""
+        output_dir = tmp_path / "taps"
+        pipeline = self._make_pipeline(output_dir, stages=["raw"])
         session = self._mock_session()
 
         pipeline.on_session_active(session)
-        pipeline.process_inbound(session, _make_frame(n_samples=160))
+        assert not output_dir.exists()
+        pipeline.process_inbound(session, _make_frame(n_samples=160, sample_rate=8000))
         pipeline.on_session_ended(session)
 
-        wav_path = tmp_path / "test-session_01_raw.wav"
+        wav_path = output_dir / "test-session_01_raw.wav"
         assert wav_path.exists()
         with wave.open(str(wav_path), "rb") as f:
             assert f.getnframes() == 160
+            assert f.getframerate() == 8000
 
     def test_taps_set_to_a_parent_path_afterwards_write_nothing_and_the_session_goes_on(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -322,10 +328,17 @@ class TestDebugTapsEngineIntegration:
         assert (tmp_path / "test-session_06_outbound_raw.wav").exists()
         assert (tmp_path / "test-session_07_outbound_final.wav").exists()
 
-    def test_no_debug_taps_no_overhead(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "taps", [None, PipelineDebugTaps(stages=["raw"])], ids=["no-taps", "empty-output-dir"]
+    )
+    def test_no_debug_taps_no_overhead(
+        self, taps: PipelineDebugTaps | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No taps, or taps with no output_dir, which enable none (RFC §12.3.15)."""
         from roomkit.voice.pipeline.config import AudioPipelineConfig
 
-        pipeline = AudioPipeline(AudioPipelineConfig())
+        monkeypatch.chdir(tmp_path)
+        pipeline = AudioPipeline(AudioPipelineConfig(debug_taps=taps))
         session = self._mock_session()
 
         pipeline.on_session_active(session)
@@ -335,6 +348,7 @@ class TestDebugTapsEngineIntegration:
         pipeline.process_inbound(session, _make_frame())
         pipeline.process_outbound(session, _make_frame())
         pipeline.on_session_ended(session)
+        assert list(tmp_path.iterdir()) == []
 
     def test_reset_closes_debug_taps(self, tmp_path: Path) -> None:
         pipeline = self._make_pipeline(tmp_path)

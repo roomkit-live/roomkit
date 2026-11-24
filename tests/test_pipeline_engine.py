@@ -775,7 +775,10 @@ class TestResamplerStage:
             transport_inbound_format=AudioFormat(sample_rate=48000, channels=2),
             internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
         )
-        config = AudioPipelineConfig(resampler=LinearResamplerProvider(), contract=contract)
+        vad = MockVADProvider()
+        config = AudioPipelineConfig(
+            resampler=LinearResamplerProvider(), contract=contract, vad=vad
+        )
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -784,6 +787,8 @@ class TestResamplerStage:
         # (The frame passed in gets metadata annotated before resampling)
         assert frame.metadata.get("original_sample_rate") == 48000
         assert frame.metadata.get("original_channels") == 2
+        # Every stage gets the contract's internal format (RFC §12.3.1)
+        assert [(f.sample_rate, f.channels) for f in vad.frames] == [(16000, 1)]
 
     def test_inbound_noop_when_formats_match(self):
         """No resampling when frame already matches internal format."""
