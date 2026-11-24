@@ -363,6 +363,37 @@ class TestVideoBridge:
         assert len(backend.sent_video) == 2
         assert s3.id not in [target for target, _ in backend.sent_video]
 
+    async def test_a_joiner_is_served_by_a_keyframe_request_to_every_peer(self) -> None:
+        """RFC §12.8.9: when a session joins, the bridge asks each session already
+        in the room for a keyframe, and replays none it saw before. With
+        ``keyframe_interval_s=0`` no periodic request follows."""
+
+        class _Requests(MockVideoBackend):
+            def __init__(self) -> None:
+                super().__init__()
+                self.keyframe_requests: list[str] = []
+
+            def request_keyframe(self, session: VideoSession) -> None:
+                self.keyframe_requests.append(session.participant_id)
+
+        backend = _Requests()
+        bridge = VideoBridge(VideoBridgeConfig(keyframe_interval_s=0))
+        s1, _ = await self._pair(bridge, backend)
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=True))
+        backend.keyframe_requests.clear()
+        backend.sent_video.clear()
+
+        s3 = await backend.connect("room-1", "user-3", "video")
+        bridge.add_session(s3, "room-1", backend)
+        assert sorted(backend.keyframe_requests) == ["user-1", "user-2"]
+        assert backend.sent_video == [], "an earlier keyframe was replayed to the joiner"
+
+        bridge.forward(s1, _frame(b"\x02" * 50, keyframe=False))
+        bridge.forward(s1, _frame(b"\x03" * 50, keyframe=True))
+        await asyncio.sleep(0)
+        assert sorted(backend.keyframe_requests) == ["user-1", "user-2"]
+        assert [data for target, data in backend.sent_video if target == s3.id] == [b"\x03" * 50]
+
     async def test_readd_session_after_remove(self) -> None:
         """A session can be removed and re-added."""
         backend = MockVideoBackend()
