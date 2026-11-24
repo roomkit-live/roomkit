@@ -10,7 +10,7 @@
     "RK-10.6.7-004",
     "RK-10.6.7-005"
   ],
-  "notes": "Python: tests/test_turns_redis.py test_an_executor_elsewhere_declaring_a_rule_takes_the_agents_it_covers, tests/test_turns_redis_unit.py test_a_declaration_takes_its_channels_with_every_room_hook_it_defines.",
+  "notes": "Python: the distributed turn backend's tests of an executor elsewhere that declares a rule, and of a declaration that takes its channels with every room hook it defines.",
   "setup": {
     "channels": [
       {

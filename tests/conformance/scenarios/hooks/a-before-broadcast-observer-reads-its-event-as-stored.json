@@ -12,7 +12,7 @@
     "RK-26.1-014",
     "RK-9.2-008"
   ],
-  "notes": "The ASYNC hook reads the room's newest event, BLOCKED records included, as it starts. The first message, which a SYNC hook rewrites, is committed; the second is blocked by that hook, so it starts no observer; the third, from a muted binding, is allowed by the chain and stored BLOCKED at step 11. Each observer reads its own event already stored, as its SYNC hook left it. The steps wait for the kit to go idle between the messages, so an observer's read cannot see a later message. roomkit runs it on SQLite too: its in-memory store never suspends a commit, so only there would an observer started early read the room before it.",
+  "notes": "The ASYNC hook reads the room's newest event, BLOCKED records included, as it starts. The first message, which a SYNC hook rewrites, is committed; the second is blocked by that hook, so it starts no observer; the third, from a muted binding, is allowed by the chain and stored BLOCKED at step 11. Each observer reads its own event already stored, as its SYNC hook left it. The steps wait for the kit to go idle between the messages, so an observer's read cannot see a later message. roomkit runs it on a store whose commit suspends too: its in-memory store never suspends a commit, so only on such a store would an observer started early read the room before it.",
   "setup": {
     "channels": [
       {

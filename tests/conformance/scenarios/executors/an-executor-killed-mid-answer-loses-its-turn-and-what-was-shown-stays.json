@@ -10,7 +10,7 @@
     "RK-10.6.8-014",
     "RK-10.6.8-016"
   ],
-  "notes": "Python: tests/test_turns_redis.py kills a real process; examples/turns_redis.py. Killed while a tool holds the turn, after the first round's text was read.",
+  "notes": "Python: the distributed turn backend's tests kill a real process. Killed while a tool holds the turn, after the first round's text was read.",
   "setup": {
     "kit": {
       "turn_timeouts": {

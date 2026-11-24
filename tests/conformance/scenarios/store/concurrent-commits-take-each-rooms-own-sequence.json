@@ -18,7 +18,7 @@
     "RK-8.1-006",
     "RK-8.1-007"
   ],
-  "notes": "Python: tests/test_store_sqlite.py::TestPersistence::test_two_connections_allocate_one_monotonic_sequence (shared scenario supplements the two-connection test). RMK-1609.",
+  "notes": "Python: a persistent store's own test of two connections allocating one monotonic sequence, which this shared scenario supplements. RMK-1609.",
   "steps": [
     {
       "call": "store.create_room",

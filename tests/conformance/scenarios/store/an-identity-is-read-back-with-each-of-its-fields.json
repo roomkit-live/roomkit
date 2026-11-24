@@ -13,7 +13,7 @@
     "RK-14.1-049",
     "RK-5.6-002"
   ],
-  "notes": "Python: the Identity model of src/roomkit/models/identity.py, which the stores write and read whole (tests/test_store_memory.py, tests/test_store_sqlite.py). An identity with only an id reads its nullable fields as null.",
+  "notes": "Python: the Identity model of src/roomkit/models/identity.py, which the stores write and read whole (tests/test_store_memory.py, and each persistent store's tests). An identity with only an id reads its nullable fields as null.",
   "setup": {
     "identities": [
       {

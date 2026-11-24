@@ -10,7 +10,7 @@
     "RK-11.7.2-002",
     "RK-14.1-053"
   ],
-  "notes": "Python: the verification requests of src/roomkit/store/memory.py and sqlite.py, which tests/test_identity_verification.py::test_a_wrong_secret_counts_and_the_last_attempt_fails_the_request and test_the_secret_is_returned_once_and_never_stored read back from the store (RMK-1122). A request's id is normalized as any id of no timeline ($e1, $e2... by first appearance). What a store does with a second creation under an id it holds, or an update of a request it lacks, differs between Python's stores, and is not asserted.",
+  "notes": "Python: the verification requests of src/roomkit/store/memory.py and of each persistent store, which tests/test_identity_verification.py::test_a_wrong_secret_counts_and_the_last_attempt_fails_the_request and test_the_secret_is_returned_once_and_never_stored read back from the store (RMK-1122). A request's id is normalized as any id of no timeline ($e1, $e2... by first appearance). What a store does with a second creation under an id it holds, or an update of a request it lacks, differs between Python's stores, and is not asserted.",
   "steps": [
     {
       "call": "store.create_verification_request",

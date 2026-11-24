@@ -8,7 +8,7 @@
   "requirements": [
     "RK-10.6.8-010"
   ],
-  "notes": "Python: turns/_redis_beat.py BeatThread, tests/test_turns_redis.py; roomkit-rs: turns/redis/process.rs. The executor runs on a thread and a loop of its own, over a node of its own of the backend. The turn first asks the owner for the room's context, whose answer shows the owner read the executor's accepted, then holds that thread for 1.5 seconds, three times heartbeat_timeout, its loop running nothing else. The owner, whose own loop runs on, counts the executor's beat from its thread meanwhile (RK-10.6.8-011) and does not fail the turn executor_lost: the turn's answer is stored and the caller reads no error. In memory, where the executor's CPU is the owner's stall, the case is RK-10.6.8-009's, which this scenario does not test.",
+  "notes": "Python and roomkit-rs: the distributed turn backend's beat, which runs on a thread of its own, and its tests. The executor runs on a thread and a loop of its own, over a node of its own of the backend. The turn first asks the owner for the room's context, whose answer shows the owner read the executor's accepted, then holds that thread for 1.5 seconds, three times heartbeat_timeout, its loop running nothing else. The owner, whose own loop runs on, counts the executor's beat from its thread meanwhile (RK-10.6.8-011) and does not fail the turn executor_lost: the turn's answer is stored and the caller reads no error. In memory, where the executor's CPU is the owner's stall, the case is RK-10.6.8-009's, which this scenario does not test.",
   "setup": {
     "kit": {
       "turn_timeouts": {

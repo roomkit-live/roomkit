@@ -8,7 +8,7 @@
   "requirements": [
     "RK-10.6.8-012"
   ],
-  "notes": "Python: tests/test_turns_redis.py::test_an_executor_restarted_under_its_id_does_not_hold_the_dead_one_s_turn kills a real process and starts another under the same id. Here first is killed while a tool holds its turn and served again under the same id before the turn is lost: what the new one beats keeps nothing of the killed one alive. roomkit-rs's Redis runner serves the new one on a node of its own and, since a later step starts it again, returns from the kill at once, as a supervisor's restart would: its beats must keep nothing of the killed one's turn alive. roomkit's harness serves it again in the owner's process, where it is another executor object under the same id.",
+  "notes": "Python: the distributed turn backend's tests kill a real process and start another under the same id. Here first is killed while a tool holds its turn and served again under the same id before the turn is lost: what the new one beats keeps nothing of the killed one alive. roomkit-rs's distributed-turn runner serves the new one on a node of its own and, since a later step starts it again, returns from the kill at once, as a supervisor's restart would: its beats must keep nothing of the killed one's turn alive. roomkit's harness serves it again in the owner's process, where it is another executor object under the same id.",
   "setup": {
     "kit": {
       "turn_timeouts": {

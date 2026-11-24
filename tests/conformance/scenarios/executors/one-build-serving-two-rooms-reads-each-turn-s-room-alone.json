@@ -12,7 +12,7 @@
     "RK-10.6.2-030",
     "RK-10.6.2-031"
   ],
-  "notes": "Python: green as it stands on main 4ca4bc061, in tests/conformance and, across a real Redis, in the Redis-mode suite (ROOMKIT_TEST_TURN_BACKEND=redis). An executor builds an agent once and runs it in every room it is attached to (RMK-1632): what a turn reads comes with its request, the room's own (§10.6.5), never from what the build kept of another room. A host verb naming another room or organization is refused owner-side: host/a-turn-s-host-acts-for-its-room-alone and host/work-a-turn-began-acts-for-its-room-and-organization-after-it, which run on the same path. The two turns started at once overlap in Python, in memory and across Redis; an implementation that runs them one after the other passes too.",
+  "notes": "Python: green as it stands on main 4ca4bc061, in tests/conformance and, across a distributed turn backend, in that backend's own pass. An executor builds an agent once and runs it in every room it is attached to (RMK-1632): what a turn reads comes with its request, the room's own (§10.6.5), never from what the build kept of another room. A host verb naming another room or organization is refused owner-side: host/a-turn-s-host-acts-for-its-room-alone and host/work-a-turn-began-acts-for-its-room-and-organization-after-it, which run on the same path. The two turns started at once overlap in Python, in memory and across a distributed backend; an implementation that runs them one after the other passes too.",
   "setup": {
     "channels": [
       {

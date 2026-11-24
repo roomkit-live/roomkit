@@ -10,7 +10,7 @@
   "requirements": [
     "RK-10.6.9-009"
   ],
-  "notes": "Python: turns/owner.py and turns/memory.py await the executor's answer to room_attached and room_detached; tests/test_turns_channel_control.py. first holds helper's build since r0's turn. Its on_room_attached and on_room_detached each wait at a gate, then post a status. The owner's ON_CHANNEL_ATTACHED and ON_CHANNEL_DETACHED hooks, which fire once the change is made, read the status bus: an owner that went on before the executor applied the control would fire them while the callback waits at its gate, and read nothing. roomkit-rs's Redis runner serves first on a node of its own, so the control crosses Redis; roomkit's harness serves it in the owner's process.",
+  "notes": "Python: turns/owner.py and turns/memory.py await the executor's answer to room_attached and room_detached; tests/test_turns_channel_control.py. first holds helper's build since r0's turn. Its on_room_attached and on_room_detached each wait at a gate, then post a status. The owner's ON_CHANNEL_ATTACHED and ON_CHANNEL_DETACHED hooks, which fire once the change is made, read the status bus: an owner that went on before the executor applied the control would fire them while the callback waits at its gate, and read nothing. roomkit-rs's distributed-turn runner serves first on a node of its own, so the control crosses the backend's transport; roomkit's harness serves it in the owner's process.",
   "setup": {
     "channels": [
       {
