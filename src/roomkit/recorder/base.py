@@ -47,6 +47,23 @@ def safe_filename(value: str) -> str:
 _URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 """A URL's scheme and authority marker (``s3://``, ``gcs://``, ``file://``)."""
 
+_PLAIN_FORMAT = re.compile(r"[A-Za-z0-9]+")
+"""A container format a recording's file can be named with: a plain extension."""
+
+
+def validate_recording_format(fmt: str) -> str:
+    """Validate the format a recording's file is named with, and return it.
+
+    The format becomes the file's extension, so one that is no plain extension
+    (``mp4/../../x``) names a file outside the storage directory, which RFC
+    §12.11 forbids: POSIX refuses to open it, Windows resolves it there. It is
+    refused rather than sanitized, as a storage containing '..' is, and before
+    the storage directory is created.
+    """
+    if not _PLAIN_FORMAT.fullmatch(fmt):
+        raise ValueError(f"Recording format must be a plain file extension: {fmt!r}")
+    return fmt
+
 
 def validate_storage_path(storage: str) -> str:
     """Validate and resolve a storage directory path.

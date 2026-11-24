@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A realtime voice channel clears `VoiceSession.last_usage` at the end of each turn whether or not a telemetry provider is set (RFC §12.4.2, RMK-2055), where it cleared it only when a span traced the turn: without telemetry, the default, a host polling the snapshot read the previous turn's usage again after a turn that reported none, and turning telemetry on changed what it read. Bill from `on_usage`, which sees every report.
 
+- A recorder refuses a `format` that is no plain file extension (`mp4/../../x`) when the recording starts, with `ValueError` (RFC §12.11, RMK-2067), where `PyAVMediaRecorder` and the video recorders joined it into the file's name unchecked: the name pointed outside the `storage` directory, which POSIX refused to open and Windows resolved there.
+
 - A recorder refuses a `storage` that is a URL (`s3://…`, `gcs://…`) when the recording starts, with `ValueError` (RFC §12.3.7, §12.11, RMK-2030), where it read it as a relative path and wrote the recording in the clear under `./s3:/…` on local disk: `storage` is the directory the recorder writes to. `WavFileRecorder`, `PyAVMediaRecorder` and the video recorders refuse it, as they refuse a path with `..`.
 
 - A turn's call that awaits a `close()` it started on a task of its own is cut with its turn, and the close runs on to its end (RFC §12.10.4 step 3, RMK-2085), where the close let the whole turn run on as if the call awaited `close()` itself, and a turn of a plain intelligence channel could then write to the store the close had released.

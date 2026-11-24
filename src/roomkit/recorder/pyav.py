@@ -28,6 +28,7 @@ from roomkit.recorder.base import (
     MediaRecordingHandle,
     MediaRecordingResult,
     RecordingTrack,
+    validate_recording_format,
     validate_storage_path,
 )
 from roomkit.voice.pipeline.recorder.base import encrypt_finished_recording
@@ -105,11 +106,12 @@ class PyAVMediaRecorder(MediaRecorder):
                 "PyAVMediaRecorder requires MediaRecordingConfig.encryption or "
                 "storage_encrypted_at_rest=True"
             )
+        fmt = validate_recording_format(config.format)
         handle_id = uuid4().hex[:12]
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         storage = config.storage or os.path.join(os.getcwd(), "recordings")
         resolved = validate_storage_path(storage)
-        path = os.path.join(resolved, f"room_{handle_id}_{ts}.{config.format}")
+        path = os.path.join(resolved, f"room_{handle_id}_{ts}.{fmt}")
 
         state = _RecordingState(config=config, path=path)
         self._recordings[handle_id] = state

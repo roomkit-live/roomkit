@@ -91,16 +91,18 @@ class TestEncryptionAtRest:
         assert not (tmp_path / "rec").exists(), "a refused recording must create nothing"
 
     @pytest.mark.parametrize(
-        ("storage", "declared", "refusal"),
+        ("storage", "declared", "fmt", "refusal"),
         [
-            ("{tmp}/rec", False, r"requires MediaRecordingConfig\.encryption"),
-            ("s3://recordings/calls", True, "Storage must be a directory, not a URL"),
+            ("{tmp}/rec", False, "wav", r"requires MediaRecordingConfig\.encryption"),
+            ("s3://recordings/calls", True, "wav", "Storage must be a directory, not a URL"),
+            ("{tmp}/rec", True, "wav/../../escaped", "plain file extension"),
         ],
     )
     async def test_create_room_refused_by_the_recorder_writes_no_room(
         self,
         storage: str,
         declared: bool,
+        fmt: str,
         refusal: str,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -109,13 +111,15 @@ class TestEncryptionAtRest:
 
         A storage declared nowhere encrypted is refused, and so is a URL, which
         is no directory: it was read as ``./s3:/recordings/calls`` and the
-        recording written there in the clear (RMK-2030).
+        recording written there in the clear (RMK-2030). So is a format that
+        would name the file outside the storage, joined into its name
+        unchecked before (RMK-2067).
         """
         monkeypatch.chdir(tmp_path)
         kit = RoomKit()
         config = MediaRecordingConfig(
             storage=storage.format(tmp=tmp_path),
-            format="wav",
+            format=fmt,
             audio_codec="pcm_s16le",
             storage_encrypted_at_rest=declared,
         )

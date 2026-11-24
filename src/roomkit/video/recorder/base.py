@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from roomkit.recorder.base import safe_filename, validate_storage_path
+from roomkit.recorder.base import (
+    safe_filename,
+    validate_recording_format,
+    validate_storage_path,
+)
 from roomkit.voice.pipeline.recorder.base import encrypt_finished_recording
 
 if TYPE_CHECKING:
@@ -29,7 +33,7 @@ def build_recording_path(
     """
     safe_id = safe_filename(session.id[:16])
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-    fmt = format_override or config.format
+    fmt = validate_recording_format(format_override or config.format)
     storage = config.storage or os.path.join(os.getcwd(), "recordings")
     resolved = validate_storage_path(storage)
     return os.path.join(resolved, f"{safe_id}_{ts}.{fmt}")

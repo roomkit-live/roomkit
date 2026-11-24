@@ -498,21 +498,29 @@ class TestVideoChannelRecordingFailures:
         assert "disk full" in caplog.text
         assert [p.suffix for p in tmp_path.iterdir()] == [".enc"]
 
+    @pytest.mark.parametrize(
+        ("storage", "fmt", "refusal"),
+        [
+            ("a/../b", "mp4", "must not contain '..'"),
+            ("rec", "mp4/../../escaped", "plain file extension"),
+        ],
+    )
     async def test_a_refused_recording_refuses_the_session_before_binding_it(
-        self, file_recorder: _FileRecorder, tmp_path: Path
+        self, file_recorder: _FileRecorder, tmp_path: Path, storage: str, fmt: str, refusal: str
     ) -> None:
-        """A recording the recorder refuses to start (here a ``storage`` with
-        '..') fails ``kit.join()`` before the session is bound to the room: it
-        receives no frames."""
+        """A recording the recorder refuses to start fails ``kit.join()`` before
+        the session is bound to the room: it receives no frames, and nothing is
+        written. Refused: a ``storage`` with '..', and a ``format`` that would
+        name a file outside the storage (RFC §12.11, RMK-2067)."""
         config = VideoRecordingConfig(
-            storage=str(tmp_path / "a" / ".." / "b"), codec=file_recorder.codec
+            storage=str(tmp_path / storage), format=fmt, codec=file_recorder.codec
         )
         kit, backend, channel = await self._kit_recording(file_recorder.recorder, config)
         tapped: list[VideoFrame] = []
         channel.add_media_tap(lambda _session, frame: tapped.append(frame))
         session = await backend.connect("r1", "u1", "video-1")
 
-        with pytest.raises(ValueError, match="must not contain '..'"):
+        with pytest.raises(ValueError, match=refusal):
             await kit.join("r1", "video-1", session=session)
         await backend.simulate_video_received(session, _raw_frame(7))
         await kit.close()
