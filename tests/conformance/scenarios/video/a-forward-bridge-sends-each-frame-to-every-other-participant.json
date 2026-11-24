@@ -1,0 +1,59 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-forward-bridge-sends-each-frame-to-every-other-participant",
+  "title": "With three bridged participants, a frame reaches each other participant unchanged, one send per target",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-006"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob",
+        "carol"
+      ],
+      "bridge": true
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID"
+            ],
+            "carol": [
+              "AQID"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

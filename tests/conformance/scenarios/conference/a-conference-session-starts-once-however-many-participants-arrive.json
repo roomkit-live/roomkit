@@ -1,0 +1,57 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-session-starts-once-however-many-participants-arrive",
+  "title": "A conference's bot session announces its start once for its room, however many participants arrive",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-083"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [
+        {
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-forward-bridge-sends-each-frame-unmixed-to-every-other-participant",
+  "title": "With three bridged participants, each frame reaches every other participant as it was fed, one send per source",
+  "rules": [
+    "§12.7.2"
+  ],
+  "requirements": [
+    "RK-12.7.2-008"
+  ],
+  "notes": "The forward strategy only: the mix strategy needs a bridge configuration step.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob",
+        "carol"
+      ],
+      "bridge": true
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [
+              "AwQ="
+            ],
+            "bob": [
+              "AQI="
+            ],
+            "carol": {
+              "$unordered": [
+                "AQI=",
+                "AwQ="
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

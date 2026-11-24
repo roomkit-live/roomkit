@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/re-attaching-the-same-conference-is-an-ordinary-attach",
+  "title": "Attaching the conference channel again to its own room returns its binding, and the conference goes on",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-126"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_conference_participant_joined",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "room_id": "r1",
+          "channel_id": "conf"
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "joined": [
+        {
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "data": {
+                "channel_id": "conf",
+                "participant_id": "alice"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

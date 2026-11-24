@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/one-recording-s-media-arrives-in-the-order-it-was-fed",
+  "title": "The chunks fed through one track reach the recording in the order the framework received them",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-051"
+  ],
+  "notes": "That the calls of one recording never overlap is not shown: the runner's room recorder takes each chunk as it is fed.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec"
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic"
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AwQ="
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "BQY="
+    },
+    {
+      "call": "recording.read",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          "AQI=",
+          "AwQ=",
+          "BQY="
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

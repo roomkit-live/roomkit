@@ -1,0 +1,48 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-gone-room-s-running-recordings-stop-on-an-explicit-stop",
+  "title": "An explicit stop on a room whose record is gone stops the recordings it still runs and returns their results",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-031"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "url": "mock://rec"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

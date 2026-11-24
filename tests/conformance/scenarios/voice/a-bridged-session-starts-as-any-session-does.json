@@ -1,0 +1,63 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridged-session-starts-as-any-session-does",
+  "title": "Each participant joining a bridged voice channel starts its session as without a bridge",
+  "rules": [
+    "§12.7.6"
+  ],
+  "requirements": [
+    "RK-12.7.6-011"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

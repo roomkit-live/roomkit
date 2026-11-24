@@ -1,0 +1,45 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/stopping-a-gone-room-that-records-nothing-is-not-found",
+  "title": "Stopping the recordings of a room never created, or gone while recording nothing, finds no room",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-033"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.stop",
+      "room_id": "never",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ],
+  "expect": {}
+}

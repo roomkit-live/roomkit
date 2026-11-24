@@ -1,0 +1,65 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-arrival-with-no-address-stays-unknown",
+  "title": "A participant arriving with no resolvable address stays unknown under its backend identity, and the identity resolver is not asked",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-037"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "anyone",
+                "display_name": "Anyone"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [],
+    "participants": {
+      "r1": [
+        {
+          "id": "alice",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "alice"
+        }
+      ]
+    }
+  }
+}

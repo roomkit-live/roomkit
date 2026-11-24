@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-held-hook-on-one-path-leaves-the-other-path-running",
+  "title": "A bridge hook held on a frame leaves the transcription firing, and a transcription hook held leaves later frames bridged",
+  "rules": [
+    "§12.7.1",
+    "§12.7.3",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.7.1-004",
+    "RK-12.7.3-008"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bridged",
+        "trigger": "before_bridge_audio",
+        "execution": "sync",
+        "reactions": [
+          {
+            "gate": "first-frame-held"
+          },
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "gate": "late-frame-held"
+          }
+        ]
+      },
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "gate": "transcription-held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true,
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        null
+      ],
+      "transcripts": [
+        "hello there"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "wait_for": "first-frame-held"
+    },
+    {
+      "wait_for": "transcription-held"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "BQY="
+      ]
+    },
+    {
+      "wait_for": "late-frame-held"
+    },
+    {
+      "open": "first-frame-held"
+    },
+    {
+      "open": "late-frame-held"
+    },
+    {
+      "open": "transcription-held"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [],
+            "bob": {
+              "$unordered": [
+                "AQI=",
+                "AwQ=",
+                "BQY="
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "bridged": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          }
+        ]
+      },
+      "transcribed": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "hello there"
+          }
+        }
+      ]
+    }
+  }
+}

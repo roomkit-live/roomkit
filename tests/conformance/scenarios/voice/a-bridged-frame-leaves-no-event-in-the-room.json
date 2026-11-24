@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridged-frame-leaves-no-event-in-the-room",
+  "title": "A frame the bridge forwards is stored and broadcast as no room event",
+  "rules": [
+    "§12.7.1"
+  ],
+  "requirements": [
+    "RK-12.7.1-005"
+  ],
+  "notes": "That the frame goes from the inbound pipeline's output to the outbound pipeline's input is not shown: no step makes a pipeline stage visible.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [],
+            "bob": [
+              "AQI=",
+              "AwQ="
+            ]
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": []
+    },
+    "deliveries": {
+      "r1": {
+        "ws": []
+      }
+    }
+  }
+}

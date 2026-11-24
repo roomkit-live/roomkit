@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-turn-reads-the-latest-view-whichever-video-channel-produced-it",
+  "title": "Of two video channels attached to the room, the turn reads only the vision result produced last",
+  "rules": [
+    "§12.8.7"
+  ],
+  "requirements": [
+    "RK-12.8.7-013"
+  ],
+  "notes": "RK-12.8.7-013 in part: the block's content and fence are shown by video/a-view-that-tries-to-close-its-block-stays-inside-it.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "I see a whiteboard."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "front",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "a person waves"
+      ]
+    },
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "back",
+      "participants": [
+        "bob"
+      ],
+      "vision": [
+        "a whiteboard"
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "front",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "back",
+      "participant_id": "bob",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "What do you see?"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "<vision>",
+                  "a whiteboard",
+                  "</vision>"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "generation": [
+        {
+          "generation": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$lacks": "a person waves"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

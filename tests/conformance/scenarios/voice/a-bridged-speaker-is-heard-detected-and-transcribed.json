@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridged-speaker-is-heard-detected-and-transcribed",
+  "title": "A bridged speaker's frames reach the other participant while VAD and STT still run on them",
+  "rules": [
+    "§12.7.1",
+    "§12.7.3",
+    "§12.7.6",
+    "§12.7.8"
+  ],
+  "requirements": [
+    "RK-12.7.1-002",
+    "RK-12.7.1-003",
+    "RK-12.7.3-013",
+    "RK-12.7.6-008",
+    "RK-12.7.6-009",
+    "RK-12.7.8-010"
+  ],
+  "notes": "RK-12.7.1-002 in part: the TTS path beside the bridge is shown by voice/a-bridged-listener-hears-the-speaker-and-the-synthesized-reply.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "began",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "ended",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      },
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true,
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "hello there"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [],
+            "bob": [
+              "AQI=",
+              "AwQ="
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "began": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "ended": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "transcribed": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "hello there"
+          }
+        }
+      ]
+    }
+  }
+}

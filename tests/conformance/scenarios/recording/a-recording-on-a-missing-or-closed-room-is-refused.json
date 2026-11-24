@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-recording-on-a-missing-or-closed-room-is-refused",
+  "title": "Starting a recording on a missing room or on a closed one is refused, and no recording starts",
+  "rules": [
+    "§12.11",
+    "§5.1"
+  ],
+  "requirements": [
+    "RK-12.11-019"
+  ],
+  "notes": "Another organization's room is not shown: the recording calls take no organization_id. That the refusal comes before any recorder starts is shown only by ON_RECORDING_STARTED not firing: no step reads a recorder's starts.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "missing",
+      "recorder": "ghost",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "late",
+      "expect": {
+        "error": "room_closed"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": []
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/only-a-voice-session-that-joined-while-the-room-records-is-recorded",
+  "title": "A voice session joining a room that records declares its tracks and is recorded; one that joined before the recording declares none",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-024",
+    "RK-12.11-025"
+  ],
+  "notes": "The join's read of the room with the caller's scope is not shown, nor a session recorded once it joins again, which needs a step that leaves the voice channel.",
+  "requires_features": [
+    "voice",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "early",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec"
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "late",
+      "room_id": "r1",
+      "participants": [
+        "bob"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "early",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "early"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "late",
+      "participant_id": "bob",
+      "frames": [
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "late"
+    },
+    {
+      "call": "recording.read",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          "AwQ="
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}
