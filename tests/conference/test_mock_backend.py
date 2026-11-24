@@ -157,6 +157,19 @@ class TestCapabilityGating:
         with pytest.raises(ConferenceCapabilityError, match="VIDEO_PUBLISH"):
             await backend.publish_video(bot, VideoFrame(data=b"", codec="raw_rgb24"))
 
+    async def test_bot_grant_update_without_capability_is_refused(self) -> None:
+        """Without BOT_GRANT_UPDATE the call fails loudly, and the session keeps
+        the grants it joined with rather than appearing to take the new ones.
+        """
+        backend = MockConferenceBackend()
+        bot = await _joined_bot(backend)
+        joined_with = backend.bot_grants[bot.id]
+
+        with pytest.raises(ConferenceCapabilityError, match="BOT_GRANT_UPDATE"):
+            await backend.update_bot_grants(bot, ConferenceGrants(hidden=True))
+
+        assert backend.bot_grants[bot.id] == joined_with
+
     async def test_e2ee_without_capability_is_refused(self) -> None:
         """With E2EE active the bot cannot decode, so a configuration asking
         for it against a backend that does not support it must fail loudly.

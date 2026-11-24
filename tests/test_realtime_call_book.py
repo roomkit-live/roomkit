@@ -5,7 +5,8 @@ out on none of them; a call issued again under an abandoned id is a new call,
 answered; the abandonment is reported once. Each provider issues the call
 from its own wire (its inbound event); the abandonment is the provider's own
 path where it has one on the wire (Gemini's cancellation), else the step its
-connection's end runs.
+connection's end runs. A scripted provider built on the base class's book runs
+the same cases with no vendor's wire.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.providers.openai.live_config import HostedReasoning
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.realtime import MockRealtimeProvider
 from tests.conference.test_conference_realtime import until
 from tests.test_openai_live import _FakeWS as LiveWS
 from tests.test_openai_live import _function_call, _provider, _started
@@ -239,7 +241,60 @@ class _ElevenLabs:
             self.patches.undo()
 
 
+class _BookedProvider(MockRealtimeProvider):
+    """A scripted provider whose calls go through the base class's book, as
+    every provider's do: it books what it issues, sends a result only for a
+    call still booked, abandons on its own cancellation and on a second
+    connection under the session's id. It names no vendor's wire."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent_ids: list[str] = []
+
+    async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+        await self._abandon_previous_connection(session)
+        await super().connect(session, **kwargs)
+
+    async def issue(self, session: VoiceSession, call_id: str) -> None:
+        if self._book_tool_call(session, call_id):
+            await self.simulate_tool_call(session, call_id, "lookup", {})
+
+    async def cancel(self, session: VoiceSession, call_ids: list[str]) -> None:
+        await self._abandon_open_tool_calls(session, call_ids)
+
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
+        answerable, _ = self._answerable_tool_call(session, call_id)
+        if answerable:
+            self.sent_ids.append(call_id)
+
+
+class _Scripted:
+    async def start(self) -> Any:
+        self.provider = _BookedProvider()
+        self.session = _session()
+        await self.provider.connect(self.session, tools=[TOOL])
+        return self.provider
+
+    async def issue(self, call_id: str) -> None:
+        await self.provider.issue(self.session, call_id)
+
+    async def abandon(self, call_id: str) -> None:
+        await self.provider.cancel(self.session, [call_id])
+
+    async def sent(self, call_id: str) -> bool:
+        before = len(self.provider.sent_ids)
+        await self.provider.submit_tool_result(self.session, call_id, '{"ok": true}')
+        return len(self.provider.sent_ids) > before
+
+    async def reconnect(self) -> None:
+        await self.provider.connect(self.session, tools=[TOOL])
+
+    async def stop(self) -> None:
+        await self.provider.disconnect(self.session)
+
+
 PROVIDERS = {
+    "scripted": _Scripted,
     "gemini": _Gemini,
     "openai-realtime": _OpenAIRealtime,
     "gpt-live": _GPTLive,

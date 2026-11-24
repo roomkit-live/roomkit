@@ -22,7 +22,7 @@ from roomkit.voice.tts.gemini_library import (
     GeminiVoiceLibrary,
     GeminiVoiceLibraryConfig,
 )
-from roomkit.voice.tts.library import VoiceConsentError, VoiceLibrary
+from roomkit.voice.tts.library import VoiceConsentError
 
 WAV_24K = wrap_wav(b"\x01\x00" * 24000, 24000, 1)
 EXPIRES = datetime(2027, 9, 28, tzinfo=UTC)
@@ -103,19 +103,6 @@ class TestCapabilities:
     def test_it_designs_and_replicates(self) -> None:
         library, _ = _library()
         assert (library.supports_design, library.supports_replication) == (True, True)
-
-    async def test_the_base_refuses_what_it_does_not_announce(self) -> None:
-        class Nothing(VoiceLibrary):
-            async def get_voice(self, voice_id: str) -> None:
-                return None
-
-            async def delete_voice(self, voice_id: str) -> None:
-                return None
-
-        with pytest.raises(NotImplementedError, match="does not design"):
-            await Nothing().design_voice("a voice")
-        with pytest.raises(NotImplementedError, match="does not replicate"):
-            await Nothing().replicate_voice(WAV_24K, WAV_24K)
 
 
 class TestDesign:

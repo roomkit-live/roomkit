@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
 
-from roomkit import RoomKit
+from roomkit import InMemoryStore, RoomKit
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager, _has_room_lock, _held_rooms
 from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
 
@@ -177,6 +178,26 @@ async def test_a_lock_of_another_kind_is_no_room_lock() -> None:
         async with asyncio.timeout(1):
             async with rooms.locked("r1"):
                 assert _has_room_lock("r1")
+
+
+class _SharedStore(InMemoryStore):
+    """A store other processes may share, as a persistent one is."""
+
+    is_process_local = False
+
+
+async def test_a_shared_store_paired_with_an_in_process_lock_is_told(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The kit reads only whether its store is process-local, whatever store
+    it is: one that is not, with the default in-process lock, is told at the
+    kit's construction (RFC §13.5)."""
+    with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+        kit = RoomKit(store=_SharedStore())
+    await kit.close()
+
+    told = "_SharedStore is paired with InMemoryLockManager"
+    assert [r for r in caplog.records if r.getMessage().startswith(told)] != []
 
 
 class SharedLockManager(RoomLockManager):

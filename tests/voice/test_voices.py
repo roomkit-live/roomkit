@@ -1,9 +1,11 @@
-"""VoiceInfo, the catalog filters and the dialogue checks shared by every provider (RFC §12.2)."""
+"""VoiceInfo, the catalog filters, the dialogue checks and the voice library defaults
+shared by every provider (RFC §12.2, §12.2.4)."""
 
 from __future__ import annotations
 
 import pytest
 
+from roomkit.voice import VoiceLibrary
 from roomkit.voice.realtime.provider import VoiceInfo as RealtimeVoiceInfo
 from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.voices import (
@@ -119,3 +121,18 @@ class TestTTSProviderDefaults:
             await _PlainTTS().synthesize_dialogue(
                 [DialogueTurn(speaker="Joe", text="Salut.")], {"Joe": "Puck"}
             )
+
+
+class TestVoiceLibraryDefaults:
+    async def test_the_base_refuses_what_it_does_not_announce(self) -> None:
+        class Nothing(VoiceLibrary):
+            async def get_voice(self, voice_id: str) -> None:
+                return None
+
+            async def delete_voice(self, voice_id: str) -> None:
+                return None
+
+        with pytest.raises(NotImplementedError, match="does not design"):
+            await Nothing().design_voice("a voice")
+        with pytest.raises(NotImplementedError, match="does not replicate"):
+            await Nothing().replicate_voice(b"sample", b"consent")
