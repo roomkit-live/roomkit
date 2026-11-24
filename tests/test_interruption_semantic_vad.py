@@ -85,10 +85,12 @@ class _PartialsSTT(STTProvider):
 
 class _FinalOnlySTT(STTProvider):
     """Streaming STT that releases its words only once the audio ends, as a
-    transducer often does for a short word ("okay", "stop")."""
+    transducer often does for a short word ("okay", "stop"); with *is_final*
+    false, as a partial and no final after it."""
 
-    def __init__(self, final: str) -> None:
+    def __init__(self, final: str, *, is_final: bool = True) -> None:
         self._final = final
+        self._is_final = is_final
 
     @property
     def supports_streaming(self) -> bool:
@@ -102,7 +104,7 @@ class _FinalOnlySTT(STTProvider):
     ) -> AsyncIterator[TranscriptionResult]:
         async for _ in audio_stream:
             pass
-        yield TranscriptionResult(text=self._final, is_final=True)
+        yield TranscriptionResult(text=self._final, is_final=self._is_final)
 
 
 class _BatchSTT(STTProvider):
@@ -401,9 +403,13 @@ class TestHeldSpeechEndingBeforeItsWords:
     """A held segment that ends before its first word is judged on its final
     transcript, not discarded unheard (RFC §12.3.13)."""
 
-    async def _speak_and_stop(self, final: str, *, bot_still_talking: bool = True) -> tuple:
+    async def _speak_and_stop(
+        self, final: str, *, bot_still_talking: bool = True, is_final: bool = True
+    ) -> tuple:
         kit, channel, session, _, seen = await _room(
-            _FinalOnlySTT(final), detector=PhraseBackchannelDetector(), transcript_wait_ms=2000
+            _FinalOnlySTT(final, is_final=is_final),
+            detector=PhraseBackchannelDetector(),
+            transcript_wait_ms=2000,
         )
         channel._on_pipeline_vad_event(session, _ONSET)  # noqa: SLF001
         await _until(lambda: session.id in channel._stt_streams)  # noqa: SLF001 — held, transcribed
@@ -430,6 +436,16 @@ class TestHeldSpeechEndingBeforeItsWords:
         assert len(seen["barge_in"]) == 1
         assert [e.text for e in seen["transcription"]] == ["Stop"]
         assert session.id not in channel._playing_sessions  # noqa: SLF001
+        await kit.close()
+
+    async def test_a_last_partial_cut_short_on_the_response_stays_its_echo(self) -> None:
+        """Closed on a partial and no final, the segment is read as a partial:
+        its last word may be the start of the response's (RFC §12.3.13)."""
+        kit, channel, session, seen = await self._speak_and_stop("Your appoint", is_final=False)
+
+        assert seen["barge_in"] == []
+        assert seen["transcription"] == []
+        assert session.id in channel._playing_sessions  # noqa: SLF001
         await kit.close()
 
     async def test_no_words_is_discarded(self) -> None:
