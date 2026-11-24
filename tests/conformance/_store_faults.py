@@ -7,7 +7,9 @@ store's own, unless a ``store_fault`` step armed a fault on it: the first call
 of one of the fault's operations made after the step, on its ``room_id`` when
 it names one, takes the fault. With ``fail`` that call raises
 :class:`StoreFaultError` in place of the operation; with ``gate`` it holds at
-the gate once the operation answered, or in its place before it fails.
+the gate once the operation answered, or in its place before it fails, or,
+with ``in_place``, in its place before it runs on the store as it then
+stands, a store the kit closed meanwhile refusing it.
 
 With ``kit.store_owner`` the wrapper is the run's store as its owner closes it:
 ``kit``, its close closes it and every operation made after fails with
@@ -44,6 +46,7 @@ class _Fault:
     room_id: str | None
     fail: str | None
     gate: str | None
+    in_place: bool
     path: str
 
 
@@ -64,7 +67,16 @@ class StoreFaults:
         operations = frozenset([named] if isinstance(named, str) else named)
         if unknown := sorted(operations - _OPERATIONS):
             raise ValueError(f"{path}: no store operation {', '.join(unknown)}")
-        self._armed.append(_Fault(operations, room_id, step.get("fail"), step.get("gate"), path))
+        self._armed.append(
+            _Fault(
+                operations,
+                room_id,
+                step.get("fail"),
+                step.get("gate"),
+                step.get("in_place", False),
+                path,
+            )
+        )
 
     def take(self, operation: str, room_id: str | None) -> _Fault | None:
         """The first armed fault this call takes, disarmed; ``None`` for none."""
@@ -74,18 +86,31 @@ class StoreFaults:
                 return fault
         return None
 
+    def refuse_once_closed(self, name: str) -> None:
+        """Refuse operation *name* once the kit closed the store it owns, as a
+        closed store refuses it."""
+        if self.closed:
+            raise StoreClosedError(f"the store is closed: {name} refused")
+
     def untaken(self) -> list[str]:
         """What is left armed, each a problem of its step; disarms it."""
         left = [f"{fault.path}: no store call took the fault" for fault in self._armed]
         self._armed.clear()
         return left
 
-    async def run(self, fault: _Fault, operation: Callable[[], Awaitable[Any]]) -> Any:
-        """*operation* as *fault* makes it: held at its gate, then answered or failed."""
+    async def run(self, name: str, fault: _Fault, operation: Callable[[], Awaitable[Any]]) -> Any:
+        """*operation*, named *name*, as *fault* makes it: held at its gate,
+        then answered or failed."""
         if fault.fail is not None:
             if fault.gate is not None:
                 await self._hold(fault.gate)
             raise StoreFaultError(fault.fail)
+        if fault.in_place and fault.gate is not None:
+            # Held in the operation's place: it runs on the store as the gate
+            # finds it, refused once the kit closed it meanwhile.
+            await self._hold(fault.gate)
+            self.refuse_once_closed(name)
+            return await operation()
         result = await operation()
         if fault.gate is not None:
             await self._hold(fault.gate)
@@ -119,13 +144,12 @@ def _faulting(name: str) -> Callable[..., Awaitable[Any]]:
     signature = _SIGNATURES[name]
 
     async def operation(self: FaultingStore, *args: Any, **kwargs: Any) -> Any:
-        if self._faults.closed:
-            raise StoreClosedError(f"the store is closed: {name} refused")
+        self._faults.refuse_once_closed(name)
         own = getattr(self._inner, name)
         fault = self._faults.take(name, _room_of(signature, self, *args, **kwargs))
         if fault is None:
             return await own(*args, **kwargs)
-        return await self._faults.run(fault, lambda: own(*args, **kwargs))
+        return await self._faults.run(name, fault, lambda: own(*args, **kwargs))
 
     operation.__name__ = name
     return operation

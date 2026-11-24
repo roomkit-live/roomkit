@@ -674,7 +674,7 @@ STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock",
 STEPS |= {"lock_releases": {"lock_releases"}}
 STEPS |= {"acp_disconnect": {"acp_disconnect"}}
 STEPS |= {"under_lock": {"under_lock", "do"}}
-STEPS |= {"store_fault": {"store_fault", "fail", "gate", "room_id"}}
+STEPS |= {"store_fault": {"store_fault", "fail", "gate", "in_place", "room_id"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
