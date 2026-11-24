@@ -5,7 +5,8 @@
   "rules": [
     "§23.3 step 5",
     "§8.5",
-    "§22.1"
+    "§22.1",
+    "§6.4"
   ],
   "requirements": [
     "RK-13.4-003",
@@ -15,6 +16,7 @@
     "RK-23.3-016",
     "RK-5.2-015",
     "RK-5.2-018",
+    "RK-6.4-542",
     "RK-8.5-007",
     "RK-8.5-014"
   ],
@@ -131,7 +133,12 @@
             "type": "text",
             "body": "Looking."
           },
-          "idempotency_key": null
+          "idempotency_key": null,
+          "metadata": {
+            "follows_index": {
+              "$absent": true
+            }
+          }
         },
         {
           "index": 2,
@@ -162,7 +169,12 @@
             "type": "text",
             "body": "Found it."
           },
-          "idempotency_key": null
+          "idempotency_key": null,
+          "metadata": {
+            "follows_index": {
+              "$absent": true
+            }
+          }
         }
       ]
     }

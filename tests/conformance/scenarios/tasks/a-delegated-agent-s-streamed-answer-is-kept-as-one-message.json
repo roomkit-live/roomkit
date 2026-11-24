@@ -4,12 +4,14 @@
   "title": "A delegated agent's answer streamed in pieces is kept in the child room's trace as one message, its pieces joined, answering the task it was handed, and is the task's output",
   "rules": [
     "§23.3 step 5",
+    "§6.4",
     "§8.5"
   ],
   "requirements": [
     "RK-23.2-004",
     "RK-23.3-015",
     "RK-23.3-025",
+    "RK-6.4-541",
     "RK-8.5-007"
   ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::TestPersistChildStream::test_text_only_stream_persists_single_message; core/mixins/_child_execution.py _persist_child_stream (the turn's text segment, one row, responds_to the task's message; its text the answer). No transport is shared: the trace's path.",

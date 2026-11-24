@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-21.3-009",
-    "RK-5.2-001"
+    "RK-5.2-001",
+    "RK-6.4-541",
+    "RK-6.4-542"
   ],
   "notes": "Python: tests/test_conversation_order.py. The first round is held at its gate once its generation started, before it writes anything. Another session's answer is committed meanwhile, a record no member receives, and steered into the turn. The round then writes that it waits, the same turn asks the model again, and the second round gives the value. The timeline holds the rows in the order they were stored, the record before the text whose writing began before it; the text's metadata.follows_index names the message it answers, the last row the room held when the kit began to read the response, and the second text's names the first, the response's row stored before it. A reader that orders by (follows_index, else index; then index) reads the wait, the record, the value. A row's created_at is its own: the two texts and the message they answer carry three instants.",
   "setup": {

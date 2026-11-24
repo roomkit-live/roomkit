@@ -7,7 +7,9 @@
     "§9.2"
   ],
   "requirements": [
-    "RK-6.4-410"
+    "RK-6.4-410",
+    "RK-6.4-541",
+    "RK-6.4-542"
   ],
   "notes": "Python's _PrefixDeduplicator.finish: a generation ending inside the prefix gets its withheld text back.",
   "setup": {
@@ -110,15 +112,28 @@
           "content": {
             "type": "text",
             "body": "Let me look."
+          },
+          "metadata": {
+            "follows_index": 0
           }
         },
         {
           "index": 2,
-          "type": "tool_call_start"
+          "type": "tool_call_start",
+          "metadata": {
+            "follows_index": {
+              "$absent": true
+            }
+          }
         },
         {
           "index": 3,
-          "type": "tool_call_end"
+          "type": "tool_call_end",
+          "metadata": {
+            "follows_index": {
+              "$absent": true
+            }
+          }
         },
         {
           "index": 4,
@@ -126,6 +141,9 @@
           "content": {
             "type": "text",
             "body": "Let me look."
+          },
+          "metadata": {
+            "follows_index": 3
           }
         }
       ]
