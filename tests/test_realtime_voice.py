@@ -33,6 +33,7 @@ from roomkit.tools import (
     current_tool_room_id,
 )
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.interruption import InterruptionConfig
 from roomkit.voice.pipeline.config import AudioPipelineConfig
@@ -200,6 +201,47 @@ class TestSessionLifecycle:
         assert channel._session_spans == {}
         assert [call.method for call in provider.calls].count("disconnect") == 1
         assert [call.method for call in transport.calls].count("disconnect") == 1
+
+    async def test_a_voice_backend_that_accepts_connections_is_a_transport(self) -> None:
+        """RFC §12.4 (RMK-2044): the transport is a VoiceBackend that
+        implements ``accept()``; ``send_message`` is the transport's option,
+        and one without it is sent no client message."""
+
+        class AcceptingBackend(MockVoiceBackend):
+            accepted: Any = None
+
+            async def accept(self, session: VoiceSession, connection: Any) -> None:
+                self.accepted = connection
+
+        provider = MockRealtimeProvider()
+        backend = AcceptingBackend()
+        channel = RealtimeVoiceChannel("rt-plain", provider=provider, transport=backend)
+
+        session = await channel.start_session("room-1", "user-1", "fake-ws")
+        await provider.simulate_response_start(session)
+        await provider.simulate_response_end(session)
+        await settled(channel)
+
+        assert not hasattr(backend, "send_message")
+        assert backend.accepted == "fake-ws"
+        assert session.state == VoiceSessionState.ACTIVE
+        await channel.close()
+
+    async def test_a_voice_backend_that_does_not_accept_connections_starts_no_session(
+        self,
+    ) -> None:
+        """RFC §12.4 (RMK-2044): a backend that does not implement
+        ``accept()`` cannot start a realtime session."""
+        provider = MockRealtimeProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-no-accept", provider=provider, transport=MockVoiceBackend()
+        )
+
+        with pytest.raises(NotImplementedError, match="does not implement accept"):
+            await channel.start_session("room-1", "user-1", "fake-ws")
+
+        assert channel._sessions == {}
+        await channel.close()
 
 
 class TestAudioForwarding:
