@@ -38,6 +38,11 @@ out, by definition — is not the room taking it back.
 """
 
 
+def _no_lease(operation: str) -> AbstractContextManager[None]:
+    """No hold on the store: a roster with no framework has none to take."""
+    return contextlib.nullcontext()
+
+
 class ConferenceRoster:
     """Keeps a room's participants in step with the conference.
 
@@ -49,13 +54,13 @@ class ConferenceRoster:
         self._channel_id = channel_id
         self._store: ConversationStore | None = None
         self._locks: RoomLockManager | None = None
-        self._lease: Callable[[], AbstractContextManager[None]] = contextlib.nullcontext
+        self._lease: Callable[[str], AbstractContextManager[None]] = _no_lease
 
     def set_store(
         self,
         store: ConversationStore,
         locks: RoomLockManager | None = None,
-        lease: Callable[[], AbstractContextManager[None]] | None = None,
+        lease: Callable[[str], AbstractContextManager[None]] | None = None,
     ) -> None:
         """Wire the store this writes to, and the lock its writers hold.
 
@@ -65,7 +70,9 @@ class ConferenceRoster:
         and read-modify-write from one of them while the other commits is how a
         ban gets overwritten by what was read before it.
 
-        ``lease`` is the framework's hold on both resources. Every operation
+        ``lease`` is the framework's hold on both resources, given the
+        operation it covers, which the close names in its log should the
+        operation outlive its last unwind. Every operation
         this class starts on them runs under it — the reads included, and the
         lock from the moment its acquisition begins — because the framework's
         ``close()`` promise is about operations in flight, not only about
@@ -76,7 +83,7 @@ class ConferenceRoster:
         """
         self._store = store
         self._locks = locks
-        self._lease = lease if lease is not None else contextlib.nullcontext
+        self._lease = lease if lease is not None else _no_lease
 
     def _homes(self, participant: Participant) -> bool:
         """Whether this conference is the participant's primary channel.
@@ -107,7 +114,7 @@ class ConferenceRoster:
         """
         if self._store is None:
             return False
-        with self._lease():
+        with self._lease(f"participant record read for room {room_id}"):
             return await self._store.get_participant(room_id, participant_id) is not None
 
     async def display_name(self, room_id: str, participant_id: str) -> str | None:
@@ -119,7 +126,7 @@ class ConferenceRoster:
         """
         if self._store is None:
             return None
-        with self._lease():
+        with self._lease(f"participant record read for room {room_id}"):
             participant = await self._store.get_participant(room_id, participant_id)
         return participant.display_name if participant is not None else None
 
@@ -137,7 +144,7 @@ class ConferenceRoster:
         """
         if self._store is None:
             return None
-        with self._lease():
+        with self._lease(f"participant record read for room {room_id}"):
             participant = await self._store.get_participant(room_id, participant_id)
         return None if participant is None else participant.status
 
@@ -186,7 +193,7 @@ class ConferenceRoster:
         """
         if self._store is None:
             return
-        with self._lease():
+        with self._lease(f"participant record write for room {room_id}"):
             async with self._locked(room_id):
                 existing = await self._store.get_participant(room_id, participant.participant_id)
                 if existing is not None:
@@ -278,7 +285,7 @@ class ConferenceRoster:
         """
         if self._store is None:
             return
-        with self._lease():
+        with self._lease(f"participant record write for room {room_id}"):
             async with self._locked(room_id):
                 participant = await self._store.get_participant(room_id, participant_id)
                 if participant is None or participant.status not in PRESENT_STATUSES:

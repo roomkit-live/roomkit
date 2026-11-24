@@ -248,7 +248,7 @@ class ConferenceAccessMixin:
         is this mixin's own code and the resource calls themselves, so the
         lease never covers integrator code (RFC 12.10.4).
         """
-        with self._resource_lease():
+        with self._resource_lease(f"conference admission check for room {room_id}"):
             async with self._locked_room(room_id):
                 standing = await self._roster.standing(room_id, participant_id)
                 # No await from here to the return, so the two conditions are one

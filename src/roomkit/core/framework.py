@@ -626,7 +626,8 @@ class RoomKit(
         # Each agent's background setup: its worker and how its results come
         # back (RFC §23.4).
         self._background_setups: dict[str, BackgroundSetup] = {}
-        self._resource_leases: set[asyncio.Event] = set()
+        # Each resource lease's release signal, and the operation it covers.
+        self._resource_leases: dict[asyncio.Event, str] = {}
         self._resource_leases_sealed = False
         # Telemetry
         if isinstance(telemetry, _TelemetryProviderCls):
@@ -1276,8 +1277,14 @@ class RoomKit(
         self._telemetry.close()
 
     @contextlib.contextmanager
-    def _resource_lease(self, *, read: bool = False) -> Generator[None, None, None]:
-        """Hold the store and the lock manager open across one operation.
+    def _resource_lease(
+        self, operation: str, *, read: bool = False
+    ) -> Generator[None, None, None]:
+        """Hold the store and the lock manager open across one *operation*.
+
+        *operation* names what the lease covers ("conference roster write for
+        room r", "room context read for room r"): the close names it in its
+        log when the lease outlives the close's last unwind (RFC §12.10.4).
 
         Taken by a channel around work those resources have already been
         given — a roster write inside the room lock, from taking the lock to
@@ -1309,11 +1316,11 @@ class RoomKit(
                 "arriving now would run against resources that are being released"
             )
         released = asyncio.Event()
-        self._resource_leases.add(released)
+        self._resource_leases[released] = operation
         try:
             yield
         finally:
-            self._resource_leases.discard(released)
+            self._resource_leases.pop(released, None)
             released.set()
 
     async def _await_resource_leases(self, until: float) -> None:
@@ -1325,7 +1332,8 @@ class RoomKit(
         it costs the shutdown its latency and nothing else; nothing
         integrator-owned runs under a lease. Still, the close is bounded
         (RFC 12.10.4): an operation still running at *until* is named in the
-        log and the resources are released under it, its write failing. The
+        log, each by what its lease covers, and the resources are released
+        under it, its write failing. The
         loop re-reads the registry because a lease can still register while
         this waits — a straggler announcement building its room context, say.
 
@@ -1345,10 +1353,12 @@ class RoomKit(
                 for waiter in waiters:
                     waiter.cancel()
         if self._resource_leases:
+            left = sorted(self._resource_leases.values())
             logger.warning(
-                "Closing with %d operation(s) the store or the lock manager still runs: "
-                "the resources are released under them",
-                len(self._resource_leases),
+                "Closing with %d operation(s) the store or the lock manager still runs, "
+                "the resources released under them: %s",
+                len(left),
+                ", ".join(left),
             )
         self._resource_leases_sealed = True
 

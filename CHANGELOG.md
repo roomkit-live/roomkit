@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The kit's close names each piece of work it abandons by the work it runs (RFC §12.10.4, RMK-2010), where a delivery set and a call into a room were logged as `Task-4`: a call by its method and its caller's task (`process_inbound call in task Task-23`), the kit's own tasks by their name (`roomkit-delivery-set-<room>`).
 
+- The kit's close names each operation the store or the lock manager still runs once its last unwind ran out, by what it covers (`conference roster write for room r`, `room context read for room r`), as it releases them under it (RFC §12.10.4, RMK-2101), where it logged only their number.
+
 - A realtime session whose provider reconnects, ACTIVE to CONNECTING, no longer logs `made an undocumented transition` (RFC §12.2, RMK-2018): the transition is the RFC's.
 
 - Two voices a diarizing voice channel tells apart on one stream are two speakers (RFC §6.4, §12.2.3, RMK-2026): the model reads each of their turns under the voice's name (`Speaker A: "…"`), where it read them as one anonymous stream unless an `ON_TRANSCRIPTION` hook named their participants or two people were on the room's roster. A voice whose sender a participant record names, as a hook that matches it to a person makes it, reads as that participant, as before. A labelled voice is also a source of its own among names that read alike (RFC §6.4): two labels a hook names alike without naming their participant are ranked apart (`Sylvain (2, not Sylvain)`), so a hook that knows two labels are one person gives their `participant_id`; and in a room an earlier version wrote, a voice whose name was registered under the stream's owner reads with rank 2 from its next turn.

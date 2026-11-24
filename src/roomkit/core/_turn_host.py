@@ -236,7 +236,7 @@ class KitHost(OwnerHost):
     async def channel_rows(
         self, room_id: str, channel_id: str, first: int | None
     ) -> list[RoomEvent]:
-        with self._kit._resource_lease():
+        with self._kit._resource_lease(f"channel rows read for room {room_id}"):
             return await read_channel_rows(self._kit.store, room_id, channel_id, first)
 
     async def _room_vision(self, scope: _Scope, args: RoomVision) -> str | None:

@@ -769,7 +769,7 @@ class HelpersMixin:
                 context = await self._build_context(room_id)
             except Exception:
                 # Room may not exist yet (e.g. ON_ROOM_CREATED before bindings exist)
-                with self._resource_lease():
+                with self._resource_lease(f"room read for room {room_id}"):
                     room = await self._store.get_room(room_id)
                 if room is None:
                     return
@@ -989,7 +989,7 @@ class HelpersMixin:
         room's ON_STATUS_POSTED hooks (RFC §19.8).
         """
         await self._ensure_status_bus_subscribed()
-        with self._resource_lease(read=read):
+        with self._resource_lease(f"room context read for room {room_id}", read=read):
             async with self._store.connection():
                 room, bindings, participants = await self._store.load_room_context(room_id)
                 if room is None:

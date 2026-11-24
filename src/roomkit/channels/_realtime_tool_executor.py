@@ -461,7 +461,7 @@ async def tool_loop_context(
     if room is not None:
         ctx.room = room
     elif framework is not None and room_id:
-        with framework._resource_lease():
+        with framework._resource_lease(f"realtime tool call's room read for room {room_id}"):
             ctx.room = await framework.store.get_room(room_id)
     return ctx
 

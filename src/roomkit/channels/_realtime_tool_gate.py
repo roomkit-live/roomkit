@@ -358,7 +358,7 @@ class RealtimeToolGateMixin:
             return None
         # Under the framework's lease, like every store read a channel makes:
         # a call landing while the kit closes must not read a closing store.
-        with self._framework._resource_lease():
+        with self._framework._resource_lease(f"participant role read for room {room_id}"):
             participant = await self._framework.store.get_participant(room_id, participant_id)
         return participant.role if participant is not None else None
 

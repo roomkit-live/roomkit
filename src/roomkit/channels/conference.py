@@ -889,18 +889,20 @@ class ConferenceChannel(
         and the resource calls themselves — the acquisition, the generation
         checks, one store write, the lock's release — never integrator code,
         which is what makes it safe for ``RoomKit.close()`` to wait for the
-        lease with no deadline. And the wait terminates: every holder of the
-        room lock is itself under a lease and finishes, so a queued
+        lease within its last unwind. And the wait terminates: every holder
+        of the room lock is itself under a lease and finishes, so a queued
         acquisition gets the lock, finds the barrier down, writes nothing and
-        lets go. The channel's own ``close()`` does not wait for any of it —
-        a write the store already has is not the channel's to wait for, and
+        lets go; a lease still held once that unwind ran out is named in the
+        close's log and the resources are released under it. The channel's
+        own ``close()`` does not wait for any of it — a write the store
+        already has is not the channel's to wait for, and
         holding ``close()`` open on it held every channel behind this one in
         its conference (RFC 12.10.4).
         """
         if self._roster_closed:
             yield False
             return
-        with self._resource_lease():
+        with self._resource_lease(f"conference roster write for room {room_id}"):
             room = contextlib.AsyncExitStack()
             try:
                 await room.enter_async_context(self._locked_room(room_id))
@@ -952,9 +954,9 @@ class ConferenceChannel(
         inside of is not the channel's — it is the framework's, released by
         ``RoomKit.close()`` only after every channel has closed. Each such
         write sits under the framework's resource lease (see
-        :meth:`_roster_write`), and the framework waits for every lease, with
-        no deadline, before releasing the store and the lock manager. Waiting
-        for it *here*, without a deadline, is what a review of the multichannel
+        :meth:`_roster_write`), and the framework waits for every lease, within
+        its last unwind, before releasing the store and the lock manager.
+        Waiting for it *here*, without a deadline, is what a review of the multichannel
         shutdown found wanting: the framework closes channels in sequence, so
         one channel's slow store held every channel behind it in its
         conference — the exact failure the media-first ordering above exists
@@ -1015,8 +1017,9 @@ class ConferenceChannel(
             return contextlib.nullcontext()
         return self._framework._lock_manager.locked(room_id)
 
-    def _resource_lease(self) -> AbstractContextManager[None]:
-        """The framework's lease on the store and the room lock, or nothing.
+    def _resource_lease(self, operation: str) -> AbstractContextManager[None]:
+        """The framework's lease on the store and the room lock for
+        *operation*, which names what it covers, or nothing.
 
         Taken around every operation this channel starts on either resource —
         a roster write from the moment the lock acquisition begins to the
@@ -1027,13 +1030,13 @@ class ConferenceChannel(
         channel's own ``close()`` stay bounded without anything being released
         under work it is still running (RFC 12.10.4). Nothing integrator-owned
         ever runs under one: a resolver or a hook can suspend forever, and a
-        lease is a promise the framework waits on without a deadline. Without
-        a framework there is no store and no lock manager, so there is nothing
-        to hold open.
+        lease is a promise the framework waits on for as long as its close's
+        last unwind allows. Without a framework there is no store and no lock
+        manager, so there is nothing to hold open.
         """
         if self._framework is None:
             return contextlib.nullcontext()
-        return self._framework._resource_lease()
+        return self._framework._resource_lease(operation)
 
     def _room(self, room_id: str) -> ConferenceRoomState:
         """The channel's record for a room, created on first mention.

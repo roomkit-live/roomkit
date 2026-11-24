@@ -2153,6 +2153,55 @@ class TestARosterWriteOutlivingTheChannel:
         assert locks.used_after_close == [], f"locks used after close: {locks.used_after_close}"
         assert [p.id for p in store.recorded] == ["p-alice"]
 
+    async def test_a_write_still_in_the_store_once_the_unwind_ran_out_is_named(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cut_unwind: float,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The wait is bounded all the same, and says what it gave up on.
+
+        A roster write still in the store once the close's last unwind ran
+        out does not hold the close: the close names it in its log, by what
+        each lease covers, and releases the store under it, so the write,
+        once it goes on, is refused (RFC 12.10.4, RK-12.10.4-032).
+        """
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        entered = asyncio.Event()
+        gate = asyncio.Event()
+
+        class _HeldStore(_ClosingStore):
+            async def add_participant(self, participant: Participant) -> Participant:
+                entered.set()
+                await gate.wait()
+                return await super().add_participant(participant)
+
+        store = _HeldStore()
+        backend = MockConferenceBackend()
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
+        kit = RoomKit(store=store)
+        kit.register_channel(channel)
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf")
+
+        arriving = asyncio.create_task(backend.simulate_participant_joined(ROOM, "p-alice"))
+        await asyncio.wait_for(entered.wait(), timeout=5.0)
+        with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+            await asyncio.wait_for(kit.close(), timeout=5.0)
+        gate.set()
+        await asyncio.wait_for(arriving, timeout=5.0)
+
+        released = [
+            r.getMessage() for r in caplog.records if "released under them" in r.getMessage()
+        ]
+        assert released == [
+            "Closing with 2 operation(s) the store or the lock manager still runs, the "
+            f"resources released under them: conference roster write for room {ROOM}, "
+            f"participant record write for room {ROOM}"
+        ]
+        assert store.used_after_close == ["add_participant"]
+        assert await InMemoryStore.list_participants(store, ROOM) == []
+
     @pytest.mark.wallclock
     async def test_one_budget_covers_every_callback_it_waits_for(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2611,7 +2660,7 @@ class TestACallbackResumingAfterTheShutdown:
         await kit.close()
         with (
             pytest.raises(KitClosedError, match=r"RoomKit\.close\(\) has sealed"),
-            kit._resource_lease(),
+            kit._resource_lease("conference roster write for room r"),
         ):
             pass  # pragma: no cover — the lease refuses before the body runs
 

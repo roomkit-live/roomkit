@@ -51,19 +51,19 @@ class KitWiringEnv(WiringEnv):
         return await self._kit._build_context(room_id, carrying=carrying)
 
     async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
-        with self._kit._resource_lease():
+        with self._kit._resource_lease(f"tool rows read for room {room_id}"):
             return await read_tool_rows(self._kit._store, room_id, channel_id, limit)
 
     async def history_rows(
         self, room_id: str, channel_id: str, *, after_index: int, limit: int
     ) -> list[RoomEvent]:
-        with self._kit._resource_lease():
+        with self._kit._resource_lease(f"history rows read for room {room_id}"):
             return await read_history_rows(
                 self._kit._store, room_id, channel_id, after_index=after_index, limit=limit
             )
 
     async def message_before(self, room_id: str, index: int) -> int:
-        with self._kit._resource_lease():
+        with self._kit._resource_lease(f"message index read for room {room_id}"):
             return await read_message_before(self._kit._store, room_id, index)
 
     async def can_publish_direct(

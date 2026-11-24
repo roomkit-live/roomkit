@@ -1296,6 +1296,11 @@ _ABANDONED_AS = {
     "on-complete": r"roomkit-task-on-complete-task-\w+",
 }
 
+# The operation each case leaves under the kit's resource lease, as the
+# close's log names it once the resources are released under it: only the
+# store read does (RFC §12.10.4, RMK-2101).
+_RELEASED_UNDER = {"store-read": ["room context read for room r"]}
+
 
 @pytest.mark.parametrize("case", list(_ABANDONED_AS))
 async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
@@ -1310,8 +1315,9 @@ async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
     operation stuck under the kit's resource lease does not hold the close:
     it is abandoned once the grace and the unwinds ran out, and named in the
     log once. A source whose ``stop()`` ignores its cut has its receive task
-    cut all the same, and each task is named by the work it runs (RFC
-    §12.10.4, RMK-2010)."""
+    cut all the same, and each task is named by the work it runs; a store
+    operation the resources are released under is named by what its lease
+    covers (RFC §12.10.4, RMK-2010, RMK-2101)."""
     # A channel's own close waits on a budget of its own (an agent's, for
     # its turns), and so does the turn backend across Redis (its cancel
     # bound): under test as short as the kit's unwind.
@@ -1339,6 +1345,12 @@ async def test_work_ignoring_its_cut_is_abandoned_once_the_unwind_ran_out(
         assert (len(logged), work.release.is_set()) == (1, False)
         named = logged[0].getMessage().split(": ", 1)[1]
         assert re.fullmatch(_ABANDONED_AS[case], named), named
+        released = [
+            r.getMessage().split(": ", 1)[1].split(", ")
+            for r in caplog.records
+            if "the resources released under them" in r.getMessage()
+        ]
+        assert released == ([_RELEASED_UNDER[case]] if case in _RELEASED_UNDER else [])
         if case == "source-stop":
             assert work.steps == ["receive task cut"]
     finally:
