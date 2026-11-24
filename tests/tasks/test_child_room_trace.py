@@ -73,6 +73,8 @@ def _recording_kit() -> MagicMock:
     kit._commit_indexed = kit.store.commit_event
     # No ON_ERROR hook to fire a failed turn's error to.
     kit._hook_context = AsyncMock(return_value=None)
+    # The child room holds no row the trace's first text would follow.
+    kit._latest_index = AsyncMock(return_value=None)
     return kit
 
 
@@ -128,6 +130,7 @@ class TestPersistChildStream:
         kit._commit_blocked_events = AsyncMock()
         kit._persist_side_effects = AsyncMock()
         kit._report_intelligence_errors = AsyncMock()
+        kit._latest_index = AsyncMock(return_value=None)
         header = "data:image/png;base64,"
         shot = AIImagePart(url=header + "A" * (300 * 1024 - len(header)), mime_type="image/png")
 

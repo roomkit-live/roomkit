@@ -202,7 +202,7 @@ async def _persist_child_stream(
         room_id=child_room_id,
         chain_depth=chain_depth,
         correlation_id=correlation_id,
-    )
+    ).following(await kit._latest_index(child_room_id))
     try:
         answer = await _drain_turn(writer, sr)
     except Exception as exc:

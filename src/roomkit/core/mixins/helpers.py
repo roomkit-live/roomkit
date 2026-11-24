@@ -521,6 +521,17 @@ class HelpersMixin:
             return None
         return None if room is None else room.created_at
 
+    async def _latest_index(self, room_id: str) -> int | None:
+        """The index of the last row the store holds of the room *room_id*;
+        None when it holds no room or no row, or fails the read: a streamed
+        text then names no row it follows (RFC §6.4)."""
+        try:
+            room = await self._store.get_room(room_id)
+        except Exception:
+            logger.debug("Room %s could not be read for its latest index", room_id, exc_info=True)
+            return None
+        return None if room is None else room.latest_index
+
     # -- Error surfacing --
 
     async def _fire_error_hook(

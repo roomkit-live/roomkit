@@ -18,7 +18,12 @@ from roomkit.core.exceptions import RoomNotFoundError, error_type_name
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins._response_reader import ResponseReader
 from roomkit.core.mixins._stream_reach import reads_the_stream
-from roomkit.core.mixins._streaming_segments import LaneSink, SegmentWriter, TurnScope
+from roomkit.core.mixins._streaming_segments import (
+    FOLLOWS_INDEX,
+    LaneSink,
+    SegmentWriter,
+    TurnScope,
+)
 from roomkit.core.mixins.helpers import HelpersMixin, _unless_created_again
 from roomkit.core.task_utils import cancel_reason
 from roomkit.core.visibility import answer_scope, answers_reach
@@ -186,6 +191,7 @@ class InboundStreamingMixin(HelpersMixin):
         # The rows take the trigger's thread parent, rooted once for the run
         # (RFC §10.1 step 8): a root deleted since is not named.
         scope = TurnScope.answering(await self._with_thread_root(room_id, sr.trigger_event))
+        follows_index = await self._latest_index(room_id)
         writer = self._segment_writer(
             sr,
             room_id,
@@ -200,6 +206,7 @@ class InboundStreamingMixin(HelpersMixin):
             correlation_id=correlation_id,
             streamed_to=streamed_to,
             response_events=response_events,
+            follows_index=follows_index,
         )
 
         reader = ResponseReader(sr.stream)
@@ -210,7 +217,7 @@ class InboundStreamingMixin(HelpersMixin):
             stream_error = await self._stream_to_target(
                 channel,
                 binding,
-                self._stream_placeholder(sr, room_id, scope, correlation_id),
+                self._stream_placeholder(sr, room_id, scope, correlation_id, follows_index),
                 sr,
                 writer,
                 reader,
@@ -261,6 +268,7 @@ class InboundStreamingMixin(HelpersMixin):
         correlation_id: str,
         streamed_to: set[str],
         response_events: list[RoomEvent] | None,
+        follows_index: int | None,
     ) -> SegmentWriter:
         """The writer of the rows of *sr*, a response in *room_id* within *scope*.
 
@@ -281,13 +289,18 @@ class InboundStreamingMixin(HelpersMixin):
             streamed_to=streamed_to,
             response_events=response_events,
             silent=self._discussion_silence(room_id, sr.source_channel_id),
-        )
+        ).following(follows_index)
 
     @staticmethod
     def _stream_placeholder(
-        sr: StreamingResponse, room_id: str, scope: TurnScope, correlation_id: str
+        sr: StreamingResponse,
+        room_id: str,
+        scope: TurnScope,
+        correlation_id: str,
+        follows_index: int | None,
     ) -> RoomEvent:
-        """The empty event a streaming channel renders the response under."""
+        """The empty event a streaming channel renders the response under; it
+        names the row the response's first text follows (RFC §6.4)."""
         return RoomEvent(
             room_id=room_id,
             source=EventSource(
@@ -301,6 +314,7 @@ class InboundStreamingMixin(HelpersMixin):
             correlation_id=correlation_id,
             parent_event_id=scope.parent_event_id,
             responds_to=sr.trigger_event.id,
+            metadata={} if follows_index is None else {FOLLOWS_INDEX: follows_index},
         )
 
     async def _stream_to_target(

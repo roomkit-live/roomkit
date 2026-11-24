@@ -163,7 +163,18 @@ class Normalizer:
                 result[key] = item
             else:
                 result[self._key(key)] = self.value(item, key)
+        self._follows_index(value, result)
         return result
+
+    def _follows_index(self, event: dict[str, Any], read: dict[str, Any]) -> None:
+        """Reads the row a streamed text names (``metadata.follows_index``, RFC
+        §6.4) as an index of its room, in *read*, *event* once normalized."""
+        room_id, metadata = event.get("room_id"), read.get("metadata")
+        if not (isinstance(room_id, str) and "source" in event and isinstance(metadata, dict)):
+            return
+        raw = metadata.get("follows_index")
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            metadata["follows_index"] = self.index(room_id, raw)
 
     def _key(self, key: str) -> str:
         """An object's key, an event of a timeline's id named as its event."""

@@ -71,6 +71,11 @@ _HOLD_LIMIT = 256
 discussion's silence token (RFC §19.7.5 rule 13): the token is short."""
 
 
+# The key of a streamed text's metadata that names the row it follows: the
+# index of the last row the room held when its writing began (RFC §6.4).
+FOLLOWS_INDEX = "follows_index"
+
+
 class RowSink(Protocol):
     """How a streamed turn's rows are committed, the one thing writers differ in."""
 
@@ -313,6 +318,17 @@ class SegmentWriter:
         # there a cut no longer finds it reading (RFC §12.2 step 13s).
         self.handed_end = False
         self.failure: Exception | None = None
+
+    # The last row the room held when the text being read began: the room's
+    # latest when the read began (:meth:`following`), then each row the turn
+    # stores. None while the room holds none.
+    _follows_index: int | None = None
+
+    def following(self, latest: int | None) -> SegmentWriter:
+        """The response's first text follows *latest*, the last row the room
+        holds as its read begins (RFC §6.4)."""
+        self._follows_index = latest
+        return self
 
     # -- what the stream hands in ------------------------------------------
 
@@ -603,6 +619,8 @@ class SegmentWriter:
             metadata.update(record)
         if cancelled or (record is not None and record.get("loop_end_reason") == "cancelled"):
             metadata["cancelled"] = True
+        if self._follows_index is not None:
+            metadata[FOLLOWS_INDEX] = self._follows_index
         event = self._build(EventType.MESSAGE, TextContent(body=body), metadata=metadata)
         # The streaming channel already rendered this text chunk by chunk —
         # only the others get it as an event.
@@ -653,7 +671,7 @@ class SegmentWriter:
             )
         await self._settle()
         try:
-            await self._kit.commit_event(self._room_id, own)
+            self._follows_index = (await self._kit.commit_event(self._room_id, own)).index
         except (RoomClosedError, RoomNotFoundError, KitClosedError):
             # As a row the room refuses: not kept, and the turn goes on, its
             # next row meeting the same refusal its own way.
@@ -795,6 +813,7 @@ class SegmentWriter:
         if exclude:
             self._hand_to_target(stored, exclude)
         if stored is not None:
+            self._follows_index = stored.index
             self.persisted.append(stored)
             if self._response_events is not None:
                 self._response_events.append(stored)

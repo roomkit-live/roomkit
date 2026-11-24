@@ -3361,6 +3361,30 @@ on that row once the stream ended, so the row the channel was handed carries non
 the marker is how the channel rendering the turn learns how it ended (RFC §6.4).
 A channel that renders text alone skips it, as it skips the other markers.
 
+### Where a streamed text reads in the conversation
+
+Rows are stored in the order they are written, and a text is written when
+something ends it. A record the room receives while a generation is under way,
+before its first word, is therefore stored before that text. Each text of a
+streamed response names the row it follows, `metadata["follows_index"]`: the
+index of the last row the room held when its writing began. That is the room's
+latest row as the kit begins to read the response, then each row the turn
+stores (a text, a tool call's start or end, its copy of an instruction). The
+event `deliver_stream` is handed carries the key too, so a screen places the
+first text before its first word. The timeline stays in index order; order by
+the pair to read the conversation as it was written, live and from the store:
+
+```python
+def place(event):
+    return (event.metadata.get("follows_index", event.index), event.index)
+
+conversation = sorted(await kit.get_timeline(room_id), key=place)
+```
+
+A row without the key reads at its index: a buffered response, and every row
+stored before the key existed. `examples/conversation_order.py` shows a screen
+doing it while the turn runs (RFC §6.4).
+
 A round the loop tries again without a call, a continuation the channel's
 policy asked for or a call the provider could not parse, ends on a
 `SegmentBreakMarker`: the round's text is a segment of its own, as text
