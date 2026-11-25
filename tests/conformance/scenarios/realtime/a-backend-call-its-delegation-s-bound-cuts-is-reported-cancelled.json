@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-call-its-delegation-s-bound-cuts-is-reported-cancelled",
+  "title": "A backend call the channel's bound on the run cuts is reported once, cancelled, and no ON_ERROR fires",
+  "rules": [
+    "§12.4.1",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-12.4.1-070",
+    "RK-12.4.1-058"
+  ],
+  "notes": "The handler is held at a gate no step opens; the bound is 200 ms.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "gate": "lookup-held",
+              "result": "late"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                }
+              ]
+            ]
+          },
+          "reasoning_timeout_ms": 200
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "lookup-held"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "interrupted"
+            }
+          ],
+          "backend_calls": [
+            {
+              "name": "lookup",
+              "cut": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": {
+              "$contains": "d1"
+            },
+            "name": "lookup",
+            "is_error": true,
+            "cancelled": true
+          }
+        }
+      ],
+      "errors": []
+    }
+  }
+}

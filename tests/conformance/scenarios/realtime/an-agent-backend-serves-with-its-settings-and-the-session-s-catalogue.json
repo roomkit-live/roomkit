@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-backend-serves-with-its-settings-and-the-session-s-catalogue",
+  "title": "An agent backend's turn runs with the agent's settings and the voice session's catalogue as its tools",
+  "rules": [
+    "§12.4.1",
+    "§19",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.4.1-071"
+  ],
+  "notes": "The agent's turn budget is not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "It is sunny."
+                  }
+                ]
+              },
+              "system_prompt": "Think it through.",
+              "temperature": 0.3
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "reasoner": [
+        {
+          "system_prompt": {
+            "$contains": "Think it through."
+          },
+          "temperature": 0.3,
+          "tools": {
+            "lookup": "$any",
+            "weather": "$any"
+          }
+        }
+      ]
+    }
+  }
+}

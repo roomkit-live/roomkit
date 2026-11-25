@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/tool-search-never-names-a-denied-tool",
+  "title": "Tool Search on a realtime channel names no tool its policy denies",
+  "rules": [
+    "§12.4",
+    "§21.1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.4-072"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "tool_search": true,
+          "tool_search_threshold": 2
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "find_tools",
+      "arguments": {
+        "query": "secret weather"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "\"weather\""
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "find_tools": "$any",
+              "weather": {
+                "$absent": true
+              },
+              "secret": {
+                "$absent": true
+              }
+            },
+            {
+              "weather": "$any",
+              "secret": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$lacks": "\"secret\""
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

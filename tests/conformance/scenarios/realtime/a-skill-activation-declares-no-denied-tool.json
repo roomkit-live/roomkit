@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-skill-activation-declares-no-denied-tool",
+  "title": "A skill activation reveals the tools it gates, never one the realtime channel's policy denies",
+  "rules": [
+    "§12.4",
+    "§21.1",
+    "§24.2"
+  ],
+  "requirements": [
+    "RK-12.4-072"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            },
+            "refund": {
+              "result": "refunded"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund",
+                "secret"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": "$any",
+              "refund": {
+                "$absent": true
+              },
+              "secret": {
+                "$absent": true
+              }
+            },
+            {
+              "lookup": "$any",
+              "refund": "$any",
+              "secret": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-participant-the-store-lacks-has-the-base-rules-until-it-gets-a-role",
+  "title": "A participant the store does not hold has the base rules; a role it gets mid-session holds from the next call",
+  "rules": [
+    "§12.4",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-12.4-073",
+    "RK-12.4-074"
+  ],
+  "notes": "The member override replaces the base rules; the tools stay declared as they were for no role.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ],
+            "role_overrides": {
+              "member": {
+                "mode": "replace"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "add_member",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "alice",
+      "role": "member"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": "$any",
+              "secret": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "Tool 'secret' is not permitted by the agent's tool policy."
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": "s3cret"
+            }
+          ],
+          "handlers": [
+            {
+              "name": "secret",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "name": "secret",
+            "is_error": true,
+            "refused": true
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c2",
+            "name": "secret",
+            "result": "s3cret",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-call-a-cut-delegation-left-is-answered-before-the-next-generation",
+  "title": "A call a cut delegation left unanswered is answered before the agent backend's next generation",
+  "rules": [
+    "§12.4.1",
+    "§19",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.4.1-079"
+  ],
+  "notes": "The first delegation's call is held at a gate no step opens until the 200 ms bound cuts the run.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "gate": "lookup-held",
+              "result": "late"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning_timeout_ms": 200,
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "calls": [
+                      {
+                        "id": "b1",
+                        "name": "lookup"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "Second answer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "lookup-held"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "reasoner": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "b1",
+              "name": "lookup",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

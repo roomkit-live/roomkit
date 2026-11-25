@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-backend-s-call-whose-arguments-do-not-read-is-refused-and-reported",
+  "title": "An agent backend's call cut before its arguments arrived is refused before the gate and reported",
+  "rules": [
+    "§12.4.1",
+    "§19",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.4.1-065",
+    "RK-12.4.1-066"
+  ],
+  "notes": "Shown by a call cut before its arguments arrived whole; the cancelled and failed outcomes a loop reports are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "calls": [
+                      {
+                        "id": "b1",
+                        "name": "lookup",
+                        "arguments": {
+                          "city": "Par"
+                        },
+                        "cut": true
+                      }
+                    ],
+                    "finish_reason": "length"
+                  },
+                  {
+                    "text": "Let me retry."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "handlers": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [],
+      "reports": [
+        {
+          "tool_call": {
+            "tool_call_id": {
+              "$contains": [
+                "d1",
+                "b1"
+              ]
+            },
+            "name": "lookup",
+            "is_error": true,
+            "refused": true
+          }
+        }
+      ]
+    },
+    "models": {
+      "reasoner": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "b1",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-s-delegations-run-one-at-a-time-each-reading-the-last",
+  "title": "A session's delegations run one at a time, the second reading what the first worked out",
+  "rules": [
+    "§12.4.1",
+    "§19",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-12.4.1-080"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "First answer.",
+                    "gate": "first"
+                  },
+                  {
+                    "text": "Second answer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "reasoner": [
+        {
+          "messages": [
+            {
+              "role": "user"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant",
+              "text": "First answer."
+            },
+            {
+              "role": "user"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

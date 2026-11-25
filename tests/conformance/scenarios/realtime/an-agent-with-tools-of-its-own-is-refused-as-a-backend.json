@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-with-tools-of-its-own-is-refused-as-a-backend",
+  "title": "An agent with tools of its own or a skill registry, even empty, is refused as a reasoning backend",
+  "rules": [
+    "§12.4.1",
+    "§19"
+  ],
+  "requirements": [
+    "RK-12.4.1-074"
+  ],
+  "notes": "An agent registered with a kit, a human-input handler, a sandbox, planning and an external handler are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt2",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "tools": [
+                {
+                  "name": "own",
+                  "returns": "mine"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt3",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "skills": []
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ]
+}

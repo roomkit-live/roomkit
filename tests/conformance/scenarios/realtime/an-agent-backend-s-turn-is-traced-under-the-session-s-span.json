@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-backend-s-turn-is-traced-under-the-session-s-span",
+  "title": "An agent backend's turn is traced under the voice session's span",
+  "rules": [
+    "§12.4.1",
+    "§16"
+  ],
+  "requirements": [
+    "RK-12.4.1-081"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "kit": {
+      "telemetry": true
+    },
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "It is sunny."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.end",
+      "channel_id": "rt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "realtime.session",
+      "expect": {
+        "result": [
+          {
+            "span_id": {
+              "$as": "session"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "llm.generate",
+      "expect": {
+        "result": [
+          {
+            "parent_id": {
+              "$as": "session"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-may-delegate-a-task",
+  "title": "A reasoning backend may delegate a task to an agent, which the kit runs as any delegated task",
+  "rules": [
+    "§12.4.1",
+    "§23"
+  ],
+  "requirements": [
+    "RK-12.4.1-013"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "delegate": {
+                    "agent_id": "worker",
+                    "task": "Find the order"
+                  }
+                },
+                {
+                  "say": "On it."
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Order found."
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "delegated": [
+        {
+          "trigger": "on_task_delegated",
+          "room_id": "r1"
+        }
+      ],
+      "completed": [
+        {
+          "trigger": "on_task_completed"
+        }
+      ]
+    }
+  }
+}

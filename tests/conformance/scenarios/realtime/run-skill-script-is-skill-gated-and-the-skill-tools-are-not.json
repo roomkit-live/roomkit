@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/run-skill-script-is-skill-gated-and-the-skill-tools-are-not",
+  "title": "A skill that gates every tool leaves activation open and keeps run_skill_script closed until activated",
+  "rules": [
+    "§12.4",
+    "§21.1",
+    "§24.2"
+  ],
+  "requirements": [
+    "RK-12.4-081"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Run the report.",
+              "scripts": {
+                "report.py": "print('ok')"
+              },
+              "allowed_tools": [
+                "*"
+              ]
+            }
+          ],
+          "script_executor": {
+            "result": {
+              "exit_code": 0,
+              "stdout": "report ready"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "run_skill_script",
+      "arguments": {
+        "skill_name": "billing",
+        "script_name": "report.py"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c3",
+      "name": "run_skill_script",
+      "arguments": {
+        "skill_name": "billing",
+        "script_name": "report.py"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "Tool 'run_skill_script' is gated by a skill."
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": {
+                "$lacks": "gated"
+              }
+            },
+            {
+              "call_id": "c3",
+              "result": {
+                "$contains": "report ready"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "script_executors": {
+      "rt": {
+        "calls": [
+          {
+            "skill_name": "billing"
+          }
+        ],
+        "closes": "$any"
+      }
+    }
+  }
+}

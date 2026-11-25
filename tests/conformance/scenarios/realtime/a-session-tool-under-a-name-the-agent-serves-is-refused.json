@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-tool-under-a-name-the-agent-serves-is-refused",
+  "title": "A session tool under a name the agent backend serves itself is refused at construction and at configure",
+  "rules": [
+    "§12.4.1",
+    "§21.5"
+  ],
+  "requirements": [
+    "RK-12.4.1-075"
+  ],
+  "notes": "The agent's re-read of a stored result is read_stored_result. Tool Search's names and a human-input tool are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt2",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "read_stored_result": {
+              "result": "x"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "realtime.configure",
+      "channel_id": "rt",
+      "tools": [
+        "read_stored_result",
+        "weather"
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-denied-or-skill-closed-tool-is-refused-before-its-arguments-are-read",
+  "title": "A tool the policy denies or a skill keeps closed is refused in its cause's words, never naming its schema",
+  "rules": [
+    "§12.4",
+    "§21.1",
+    "§24.2"
+  ],
+  "requirements": [
+    "RK-12.4-076"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "secret": {
+              "result": "s3cret",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            },
+            "refund": {
+              "result": "refunded",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund",
+                "secret"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "secret",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "refund",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "Tool 'secret' is not permitted by the agent's tool policy."
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": {
+                "$contains": "Tool 'refund' is gated by a skill. Activate the skill first using activate_skill."
+              }
+            }
+          ],
+          "handlers": []
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$lacks": "city"
+              }
+            },
+            {
+              "result": {
+                "$lacks": "city"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
