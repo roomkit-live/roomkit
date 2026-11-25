@@ -85,7 +85,8 @@ def read_backchannels(detector: MockBackchannelDetector | None) -> list[dict[str
     read: list[dict[str, Any]] = []
     for context in detector.evaluations if detector is not None else []:
         record = {
-            "transcript": context.transcript,
+            # No words, whether given as None or as "", read as none.
+            "transcript": context.transcript or None,
             "is_final": context.is_final,
             "speech_duration_ms": context.speech_duration_ms,
         }
