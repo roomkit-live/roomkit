@@ -52,6 +52,8 @@ from tests.conformance._realtime_io import (
     PIPELINE_MEMBERS,
     SESSION_MEMBERS,
 )
+from tests.conformance._realtime_reads import ON_USAGE_MEMBERS
+from tests.conformance._realtime_reads import SESSION_MEMBERS as READS_MEMBERS
 from tests.conformance._realtime_session import REALTIME_ARGUMENTS
 from tests.conformance._realtime_tools import (
     BACKEND_ACTION,
@@ -993,7 +995,9 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
 def _realtime(realtime: Mapping[str, Any], path: str, found: list[str]) -> None:
     """A realtime channel's members, its tools', its policy's, its backend's,
     its injection result's and its pipeline's."""
-    _members(realtime, REALTIME | SESSION_MEMBERS, path, found)
+    _members(realtime, REALTIME | SESSION_MEMBERS | READS_MEMBERS, path, found)
+    if "on_usage" in realtime:
+        _members(realtime["on_usage"], ON_USAGE_MEMBERS, f"{path}.on_usage", found)
     for name, tool in realtime.get("tools", {}).items():
         _members(tool, REALTIME_TOOL, f"{path}.tools.{name}", found)
     if isinstance(realtime.get("inject_result"), dict):

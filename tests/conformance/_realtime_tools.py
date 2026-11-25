@@ -19,6 +19,7 @@ from roomkit import (
     ToolPolicy,
 )
 from tests.conformance._agent import scripted_agent
+from tests.conformance._realtime_reads import session_names
 from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
 
@@ -243,6 +244,8 @@ def _request(request: ReasoningRequest) -> dict[str, Any]:
     return {
         "delegation_id": request.delegation_id,
         "first": request.first,
+        "session": session_names(request.session),
+        "transcript": [{"role": line.role, "text": line.text} for line in request.transcript],
         "participant_role": request.participant_role,
         "tools": declared_names(request.tools),
         "unavailable": dict(request.unavailable),

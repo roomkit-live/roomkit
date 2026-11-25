@@ -10,7 +10,6 @@ from roomkit import RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.injection import VoiceInjectionResult
-from roomkit.voice.realtime.mock import MockRealtimeTransport
 from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput, ReasoningRequest
 from tests.conformance._realtime_io import (
     IO_ARGUMENTS,
@@ -21,6 +20,17 @@ from tests.conformance._realtime_io import (
     io_call,
 )
 from tests.conformance._realtime_io import read as io_read
+from tests.conformance._realtime_reads import (
+    CONFIGURATION,
+    READS_ARGUMENTS,
+    RecordingTransport,
+    configuration,
+    on_usage,
+    own_configuration,
+    reads_call,
+)
+from tests.conformance._realtime_reads import channel_options as reads_options
+from tests.conformance._realtime_reads import read as reads_read
 from tests.conformance._realtime_tools import (
     BackendRecord,
     act,
@@ -43,6 +53,7 @@ class _Provider(IOProvider):
         self.injections: list[dict[str, Any]] = []
         self.outstanding: set[str] = set()
         self.declared: list[dict[str, int]] = []
+        self.reconfigures: list[dict[str, Any]] = []
 
     async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
         self.declared.append(declared_names(kwargs.get("tools")))
@@ -62,6 +73,7 @@ class _Provider(IOProvider):
         await super().submit_tool_result(session, call_id, result)
 
     async def reconfigure(self, session: VoiceSession, **kwargs: Any) -> None:
+        self.reconfigures.append(configuration(session, kwargs))
         if kwargs.get("tools") is not None:
             self.declared.append(declared_names(kwargs["tools"]))
         orphaned = sorted(self.outstanding)
@@ -95,9 +107,13 @@ class ScriptedRealtimeSession:
         self._gates = gates
         self._kit = kit
         self._session: VoiceSession | None = None
+        # Every session started, by room: a channel starts one per room.
+        self._rooms: dict[str, VoiceSession] = {}
         self.handlers: list[dict[str, str]] = []
         self.backend = BackendRecord()
-        options = dict(options) | channel_options(spec, self.trace)
+        options = dict(options) | channel_options(spec, self.trace) | reads_options(spec)
+        self.usage_reports = on_usage(self.provider, spec, gates)
+        self.transport = RecordingTransport()
         if "reasoning" in spec:
             options["reasoning_backend"] = reasoning_backend(
                 spec["reasoning"], harness, kit, self.backend
@@ -107,7 +123,7 @@ class ScriptedRealtimeSession:
         self.channel = RealtimeVoiceChannel(
             channel_id,
             provider=self.provider,
-            transport=MockRealtimeTransport(),
+            transport=self.transport,
             tools=[declaration(name, tool) for name, tool in self._tools.items()],
             tool_handler=None if spec.get("tool_handler") is False else self._handle,
             **options,
@@ -122,21 +138,50 @@ class ScriptedRealtimeSession:
         return session
 
     async def start(self, spec: Mapping[str, Any]) -> None:
-        if self._session is not None or self.provider.connecting is not None:
-            raise ValueError("this scripted channel already started its session")
+        held = self._session is None and self.provider.connecting is not None
+        if held or spec["room_id"] in self._rooms:
+            raise ValueError("this scripted channel already started a session in that room")
         self.provider.hold = {key: spec[key] for key in START_MEMBERS if key in spec}
-        metadata = None
+        # The session's own prompt, voice and tools, given as it opens
+        # (README, ``realtime.start``).
+        metadata = own_configuration(spec)
         if (tools := spec.get("tools")) is not None:
-            # The session's own tools, given as it opens (README, ``realtime.start``).
-            metadata = {"tools": [declaration(name, self._tools.get(name, {})) for name in tools]}
+            metadata["tools"] = [declaration(name, self._tools.get(name, {})) for name in tools]
         organization = {k: spec[k] for k in ("organization_id",) if k in spec}
-        self._session = await self.channel.start_session(
-            spec["room_id"], spec["participant_id"], object(), metadata=metadata, **organization
+        session = await self.channel.start_session(
+            spec["room_id"],
+            spec["participant_id"],
+            object(),
+            metadata=metadata or None,
+            **organization,
+        )
+        self._session = self._session or session
+        self._rooms[spec["room_id"]] = session
+
+    async def reconfigure(self, spec: Mapping[str, Any]) -> None:
+        """``realtime.reconfigure``: the session of the room it names, the
+        channel's first when it names none."""
+        session = self.session
+        if "room_id" in spec:
+            if spec["room_id"] not in self._rooms:
+                raise ValueError(f"no session of this channel in room {spec['room_id']}")
+            session = self._rooms[spec["room_id"]]
+        tools = spec.get("tools")
+        await self.channel.reconfigure_session(
+            session,
+            system_prompt=spec.get("system_prompt"),
+            voice=spec.get("voice"),
+            tools=None if tools is None else [self._declare(name) for name in tools],
         )
 
-    def configure(self, tools: list[str]) -> None:
+    def _declare(self, name: str) -> dict[str, Any]:
+        return declaration(name, self._tools.get(name, {}))
+
+    def configure(self, spec: Mapping[str, Any]) -> None:
         self.channel.configure(
-            tools=[declaration(name, self._tools.get(name, {})) for name in tools]
+            tools=[self._declare(name) for name in spec["tools"]],
+            system_prompt=spec.get("system_prompt"),
+            voice=spec.get("voice"),
         )
 
     async def _handle(self, name: str, arguments: dict[str, Any]) -> str:
@@ -178,11 +223,20 @@ class ScriptedRealtimeSession:
             "backend_requests": list(self.backend.requests),
             "backend_calls": list(self.backend.calls),
             **io_read(self.provider, self.channel, self.trace, spec),
+            **reads_read(
+                self.provider,
+                self.transport,
+                self._session,
+                self.provider.reconfigures,
+                self.usage_reports,
+            ),
         }
 
 
 REALTIME_ARGUMENTS = {
-    "realtime.start": {"channel_id", "room_id", "participant_id", "tools"} | START_MEMBERS,
+    "realtime.start": {"channel_id", "room_id", "participant_id", "tools"}
+    | START_MEMBERS
+    | set(CONFIGURATION),
     "realtime.end": {"channel_id"},
     "realtime.read": {"channel_id"} | READ_MEMBERS,
     "realtime.inject": {"channel_id", "text", "role"},
@@ -190,8 +244,9 @@ REALTIME_ARGUMENTS = {
     "realtime.cancel": {"channel_id", "call_ids"},
     "realtime.delegate": {"channel_id", "delegation_id", "target"},
     "realtime.error": {"channel_id", "code", "message"},
-    "realtime.configure": {"channel_id", "tools"},
+    "realtime.configure": {"channel_id", "tools", "system_prompt", "voice"},
     **IO_ARGUMENTS,
+    **READS_ARGUMENTS,
 }
 
 
@@ -224,12 +279,14 @@ async def realtime_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
         case "realtime.error":
             await provider.simulate_error(fixture.session, spec["code"], spec["message"])
         case "realtime.configure":
-            fixture.configure(spec["tools"])
+            fixture.configure(spec)
         case _:
             raise ValueError(f"Unknown realtime call {spec['call']}")
     return None
 
 
-REALTIME_CALLS = dict.fromkeys(REALTIME_ARGUMENTS, realtime_call) | dict.fromkeys(
-    IO_ARGUMENTS, io_call
+REALTIME_CALLS = (
+    dict.fromkeys(REALTIME_ARGUMENTS, realtime_call)
+    | dict.fromkeys(IO_ARGUMENTS, io_call)
+    | dict.fromkeys(READS_ARGUMENTS, reads_call)
 )

@@ -22,6 +22,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from tests.conformance._realtime_reads import configuration
 from tests.conformance._voice import _vad
 from tests.conformance._voice_pipeline import (
     Trace,
@@ -85,7 +86,9 @@ class IOProvider(MockRealtimeProvider):
 
     async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
         self.connecting = session
-        self.connects.append({"server_vad": kwargs.get("server_vad", True)})
+        self.connects.append(
+            {"server_vad": kwargs.get("server_vad", True), **configuration(session, kwargs)}
+        )
         if (gate := self.hold.get("gate")) is not None:
             await self._gates.hold(gate)
         if (message := self.hold.get("fail")) is not None:
