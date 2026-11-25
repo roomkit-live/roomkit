@@ -22,6 +22,7 @@ import pytest
 from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.store.sqlite import SQLiteStore
 from tests import redis_turn_mode
+from tests.conformance._executors import takes_a_transport
 from tests.conformance._harness import Harness
 from tests.conformance._shape import unknown_members
 
@@ -271,6 +272,31 @@ def _cases(stores: tuple[str, ...] = _STORES) -> list[Any]:
     return cases
 
 
+def _runs_on_the_contract_alone(scenario: dict[str, Any]) -> bool:
+    """Whether the scenario runs a second time, its kit's transport behind the
+    runner's own (README, « On a transport written on the contract alone »):
+    the runner builds its kit with a transport, and no setting of the scenario
+    puts the runner's own in front of it already."""
+    kit = scenario.get("setup", {}).get("kit", {})
+    already = (
+        kit.get("turn_backend_contract_only")
+        or kit.get("turn_backend_faults")
+        or kit.get("executor_catalogue") is False
+    )
+    return takes_a_transport(scenario) and not already
+
+
+def _cases_on_the_contract_alone() -> list[Any]:
+    """The scenarios that run a second time, with the marks of their first run."""
+    cases = []
+    for path in _scenarios():
+        scenario_id = path.relative_to(SCENARIOS).with_suffix("").as_posix()
+        scenario = _load(path)
+        if _runs_on_the_contract_alone(scenario):
+            cases.append(pytest.param(path, id=scenario_id, marks=_marks(scenario_id, scenario)))
+    return cases
+
+
 def test_the_copy_is_the_one_synced_from_its_specs_commit() -> None:
     """The fingerprint ``make conformance-sync`` recorded, ``sha256sum`` over
     ``sha256sum`` of each file of ``scenarios/`` by path in byte order, is the
@@ -314,4 +340,14 @@ async def test_scenario(path: Path, store: str, tmp_path: Path) -> None:
     finally:
         if reader is not None:
             await reader.close()
+    assert not problems, "\n".join(problems)
+
+
+@pytest.mark.parametrize("path", _cases_on_the_contract_alone())
+async def test_scenario_on_the_contract_alone(path: Path) -> None:
+    """A kit served by a transport written on the public contract alone gives
+    what the scenario expects, as on the backend of the suite's turn mode."""
+    scenario = _load(path)
+    scenario.setdefault("setup", {}).setdefault("kit", {})["turn_backend_contract_only"] = True
+    problems = await Harness(scenario).run()
     assert not problems, "\n".join(problems)

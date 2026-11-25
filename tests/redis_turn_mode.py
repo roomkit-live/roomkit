@@ -76,6 +76,10 @@ async def handled_across(kit: RoomKit) -> bool:
     answer came back, what came before is handled or being handled.
     """
     backend = kit._turns.backend
+    # A conformance runner's own transport in front of it names the backend
+    # it hands to (tests/conformance/_owner_nodes.py): the inbox is that one's.
+    while (inner := getattr(backend, "inner", None)) is not None:
+        backend = inner
     if not isinstance(backend, RedisTurnBackend) or not backend._started or backend._closed:
         # Its inbox is read only once it started: nothing reached it before.
         return False

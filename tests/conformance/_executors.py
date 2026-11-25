@@ -161,7 +161,7 @@ class Executors:
         """The turn backend the kit is built with, when the scenario has
         executors of its own, bounds a turn, holds a turn's end or kills the
         owner; the kit's default otherwise."""
-        if not (self._specs or self._bounds is not None or self.held_ends or self._kills_owner):
+        if not takes_a_transport(self._harness.scenario):
             return {}
         self._backend = self._node("main")
         self._submit_reserved(self._backend)
@@ -205,8 +205,12 @@ class Executors:
             return None
         if not self._distributed or (process != "main" and process not in self._process_ids):
             raise UnreadableError(f"no process {process!r} on a distributed turn backend")
-        node: str = self._node(process).node_id  # type: ignore[attr-defined]
-        return node
+        node: Any = self._node(process)
+        while isinstance(node, WithoutCatalogue):
+            # Behind the runner's own transport, the node is the one it hands to.
+            node = node.inner
+        node_id: str = node.node_id
+        return node_id
 
     def _node(self, name: str | None) -> TurnBackend:
         if name not in self._nodes:
@@ -399,6 +403,19 @@ def _trigger(hook: Mapping[str, Any]) -> tuple[HookTrigger, HookExecution]:
     """The trigger and the execution a scenario's hook names."""
     trigger = read(lambda: HookTrigger(hook["trigger"]))
     return trigger, read(lambda: HookExecution(hook.get("execution", "sync")))
+
+
+def takes_a_transport(scenario: Mapping[str, Any]) -> bool:
+    """Whether the runner builds the scenario's kit with a turn backend: the
+    scenario has executors of its own, bounds a turn, holds a turn's end or
+    kills the owner. Its kit takes its default otherwise."""
+    setup = scenario.get("setup", {})
+    return bool(
+        setup.get("executors")
+        or setup.get("kit", {}).get("turn_timeouts") is not None
+        or any("holds_end" in channel for channel in setup.get("channels", []))
+        or any(step.get("call") == "owner.kill" for step in scenario.get("steps", []))
+    )
 
 
 def _bounds(spec: Mapping[str, Any] | None) -> TurnTimeouts | None:
