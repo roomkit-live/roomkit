@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-room-bridges-no-more-sessions-than-max-participants",
+  "title": "With max_participants 2, a third session's join is refused before anything binds it: no frame reaches it, and neither its frames nor its speech reach the room",
+  "rules": [
+    "§12.7.2"
+  ],
+  "requirements": [
+    "RK-12.7.2-007"
+  ],
+  "notes": "Carol's session is made by the transport and pushed to the full room: the join is refused, and her session, the caller's, stays open. Dave's join makes a session of its own, which the refusal disconnects. Alice's one frame starts no speech of her own (her script's first entry is a speech start); Carol's two frames would end a speech that a bound session would have transcribed.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "max_participants": 2
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "carol speaks"
+      ]
+    },
+    {
+      "call": "voice.connect",
+      "channel_id": "phone",
+      "participant_id": "carol"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "carol",
+      "push": true,
+      "expect": {
+        "error": "bridge_full"
+      }
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "dave",
+      "expect": {
+        "error": "bridge_full"
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "carol",
+      "frames": [
+        "AwQ=",
+        "BQY="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [],
+            "bob": [
+              "AQI="
+            ],
+            "carol": []
+          },
+          "transports": {
+            "primary": [
+              {
+                "call": "connect",
+                "participant_id": "alice"
+              },
+              {
+                "call": "start_listening",
+                "participant_id": "alice"
+              },
+              {
+                "call": "connect",
+                "participant_id": "bob"
+              },
+              {
+                "call": "start_listening",
+                "participant_id": "bob"
+              },
+              {
+                "call": "connect",
+                "participant_id": "carol"
+              },
+              {
+                "call": "connect",
+                "participant_id": "dave"
+              },
+              {
+                "call": "disconnect",
+                "participant_id": "dave"
+              },
+              {
+                "call": "send_audio_sync",
+                "participant_id": "bob"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "transcribed": []
+    }
+  }
+}
