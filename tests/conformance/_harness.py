@@ -103,6 +103,7 @@ from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._publications import Publications
+from tests.conformance._realtime_io import parked_send_workers
 from tests.conformance._realtime_session import REALTIME_CALLS, ScriptedRealtimeSession
 from tests.conformance._recording import RECORDING_CALLS
 from tests.conformance._routing import ROUTING_CALLS
@@ -1078,7 +1079,17 @@ class Harness:
         tasks.extend(task for task in self._background.values() if not task.done())
         tasks.extend(self._task_runs())
         for fixture in self.realtime_sessions.values():
-            tasks.extend(task for task in fixture.channel._scheduled_tasks if not task.done())
+            # A session's resident audio send worker lives until the session
+            # ends: it is busy only while it has audio to send.
+            workers, working = parked_send_workers(fixture.channel)
+            tasks.extend(
+                task
+                for task in fixture.channel._scheduled_tasks
+                if not task.done() and task not in workers
+            )
+            if working:
+                busy = True
+                await asyncio.sleep(0.001)
         if after_turn:
             tasks.extend(task for task in self._after_turn if not task.done())
             tasks.extend(task for task in self._spawned if not task.done())

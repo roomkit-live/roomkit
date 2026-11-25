@@ -47,6 +47,11 @@ from tests.conformance._mcp_shape import MCP_HOST_ARGUMENTS
 from tests.conformance._mcp_shape import mcp_problems as host_mcp_problems
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
+from tests.conformance._realtime_io import (
+    INJECT_RESULT_MEMBERS,
+    PIPELINE_MEMBERS,
+    SESSION_MEMBERS,
+)
 from tests.conformance._realtime_session import REALTIME_ARGUMENTS
 from tests.conformance._realtime_tools import (
     BACKEND_ACTION,
@@ -986,10 +991,15 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 
 def _realtime(realtime: Mapping[str, Any], path: str, found: list[str]) -> None:
-    """A realtime channel's members, its tools', its policy's and its backend's."""
-    _members(realtime, REALTIME, path, found)
+    """A realtime channel's members, its tools', its policy's, its backend's,
+    its injection result's and its pipeline's."""
+    _members(realtime, REALTIME | SESSION_MEMBERS, path, found)
     for name, tool in realtime.get("tools", {}).items():
         _members(tool, REALTIME_TOOL, f"{path}.tools.{name}", found)
+    if isinstance(realtime.get("inject_result"), dict):
+        _members(realtime["inject_result"], INJECT_RESULT_MEMBERS, f"{path}.inject_result", found)
+    if "pipeline" in realtime:
+        _members(realtime["pipeline"], PIPELINE_MEMBERS, f"{path}.pipeline", found)
     if "tool_policy" in realtime:
         _tool_policy(realtime["tool_policy"], f"{path}.tool_policy", found)
     reasoning = realtime.get("reasoning", {})

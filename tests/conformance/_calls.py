@@ -60,6 +60,7 @@ from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import ScriptedAIRouter, scripted_agent
 from tests.conformance._extra_tools import read as read_extra_tools
 from tests.conformance._extra_tools import replace as replace_extra_tool
+from tests.conformance._realtime_io import ScriptedProviderError
 from tests.conformance._realtime_session import ScriptedRealtimeSession
 from tests.conformance._realtime_tools import channel_options
 from tests.conformance._room_queries import call as room_query
@@ -207,6 +208,9 @@ def error_of(error: Exception) -> dict[str, Any]:
         return {"name": "invalid_argument"}
     if isinstance(error, ScriptedFailureError):
         return {"name": "channel_failed"}
+    if isinstance(error, ScriptedProviderError):
+        # A scripted realtime provider's own failure, its connect's (§12.4).
+        return {"name": "provider_failed"}
     for cls, name in _ERRORS:
         if isinstance(error, cls):
             reason = getattr(error, "reason", None)

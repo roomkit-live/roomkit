@@ -10,8 +10,17 @@ from roomkit import RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.injection import VoiceInjectionResult
-from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.realtime.mock import MockRealtimeTransport
 from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput, ReasoningRequest
+from tests.conformance._realtime_io import (
+    IO_ARGUMENTS,
+    READ_MEMBERS,
+    START_MEMBERS,
+    IOProvider,
+    channel_options,
+    io_call,
+)
+from tests.conformance._realtime_io import read as io_read
 from tests.conformance._realtime_tools import (
     BackendRecord,
     act,
@@ -19,17 +28,18 @@ from tests.conformance._realtime_tools import (
     declared_names,
     reasoning_backend,
 )
+from tests.conformance._voice_pipeline import Trace
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
     from tests.conformance._script import Gates
 
 
-class _Provider(MockRealtimeProvider):
+class _Provider(IOProvider):
     """Expose the provider's outbound wire and its connection-scoped call ids."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, spec: Mapping[str, Any], gates: Gates) -> None:
+        super().__init__(spec, gates)
         self.injections: list[dict[str, Any]] = []
         self.outstanding: set[str] = set()
         self.declared: list[dict[str, int]] = []
@@ -76,14 +86,15 @@ class ScriptedRealtimeSession:
         harness: Harness,
         options: Mapping[str, Any],
     ) -> None:
-        self.provider = _Provider()
+        self.provider = _Provider(spec, gates)
+        self.trace: Trace = []
         self._tools = spec.get("tools", {})
         self._gates = gates
         self._kit = kit
         self._session: VoiceSession | None = None
         self.handlers: list[dict[str, str]] = []
         self.backend = BackendRecord()
-        options = dict(options)
+        options = dict(options) | channel_options(spec, self.trace)
         if "reasoning" in spec:
             options["reasoning_backend"] = reasoning_backend(
                 spec["reasoning"], harness, kit, self.backend
@@ -101,21 +112,23 @@ class ScriptedRealtimeSession:
 
     @property
     def session(self) -> VoiceSession:
-        if self._session is None:
+        """The session started, or the one a held start is creating."""
+        session = self._session or self.provider.connecting
+        if session is None:
             raise ValueError("start the realtime session first")
-        return self._session
+        return session
 
-    async def start(
-        self, room_id: str, participant_id: str, tools: list[str] | None = None
-    ) -> None:
-        if self._session is not None:
+    async def start(self, spec: Mapping[str, Any]) -> None:
+        if self._session is not None or self.provider.connecting is not None:
             raise ValueError("this scripted channel already started its session")
+        self.provider.hold = {key: spec[key] for key in START_MEMBERS if key in spec}
         metadata = None
-        if tools is not None:
+        if (tools := spec.get("tools")) is not None:
             # The session's own tools, given as it opens (README, ``realtime.start``).
             metadata = {"tools": [declaration(name, self._tools.get(name, {})) for name in tools]}
+        organization = {k: spec[k] for k in ("organization_id",) if k in spec}
         self._session = await self.channel.start_session(
-            room_id, participant_id, object(), metadata=metadata
+            spec["room_id"], spec["participant_id"], object(), metadata=metadata, **organization
         )
 
     def configure(self, tools: list[str]) -> None:
@@ -151,7 +164,7 @@ class ScriptedRealtimeSession:
         self.handlers.append({"name": name, "outcome": "returned"})
         return tool["result"]
 
-    def read(self) -> dict[str, Any]:
+    def read(self, spec: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "injections": list(self.provider.injections),
             "results": [
@@ -161,19 +174,21 @@ class ScriptedRealtimeSession:
             "declared": list(self.provider.declared),
             "backend_requests": list(self.backend.requests),
             "backend_calls": list(self.backend.calls),
+            **io_read(self.provider, self.channel, self.trace, spec),
         }
 
 
 REALTIME_ARGUMENTS = {
-    "realtime.start": {"channel_id", "room_id", "participant_id", "tools"},
+    "realtime.start": {"channel_id", "room_id", "participant_id", "tools"} | START_MEMBERS,
     "realtime.end": {"channel_id"},
-    "realtime.read": {"channel_id"},
+    "realtime.read": {"channel_id"} | READ_MEMBERS,
     "realtime.inject": {"channel_id", "text", "role"},
     "realtime.tool_call": {"channel_id", "call_id", "name", "arguments", "arguments_text"},
     "realtime.cancel": {"channel_id", "call_ids"},
     "realtime.delegate": {"channel_id", "delegation_id", "target"},
     "realtime.error": {"channel_id", "code", "message"},
     "realtime.configure": {"channel_id", "tools"},
+    **IO_ARGUMENTS,
 }
 
 
@@ -182,11 +197,11 @@ async def realtime_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
     provider = fixture.provider
     match spec["call"]:
         case "realtime.start":
-            await fixture.start(spec["room_id"], spec["participant_id"], spec.get("tools"))
+            await fixture.start(spec)
         case "realtime.end":
             await fixture.channel.end_session(fixture.session)
         case "realtime.read":
-            return fixture.read()
+            return fixture.read(spec)
         case "realtime.inject":
             await fixture.channel.inject_text(fixture.session, spec["text"], role=spec["role"])
         case "realtime.tool_call":
@@ -212,4 +227,6 @@ async def realtime_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
     return None
 
 
-REALTIME_CALLS = dict.fromkeys(REALTIME_ARGUMENTS, realtime_call)
+REALTIME_CALLS = dict.fromkeys(REALTIME_ARGUMENTS, realtime_call) | dict.fromkeys(
+    IO_ARGUMENTS, io_call
+)
