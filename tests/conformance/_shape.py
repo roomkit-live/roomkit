@@ -52,8 +52,8 @@ from tests.conformance._realtime_io import (
     PIPELINE_MEMBERS,
     SESSION_MEMBERS,
 )
+from tests.conformance._realtime_reads import CHANNEL_MEMBERS as READS_MEMBERS
 from tests.conformance._realtime_reads import ON_USAGE_MEMBERS
-from tests.conformance._realtime_reads import SESSION_MEMBERS as READS_MEMBERS
 from tests.conformance._realtime_session import REALTIME_ARGUMENTS
 from tests.conformance._realtime_tools import (
     BACKEND_ACTION,

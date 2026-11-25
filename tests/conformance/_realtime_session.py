@@ -145,7 +145,7 @@ class ScriptedRealtimeSession:
         # (README, ``realtime.start``).
         metadata = prompt_and_voice(spec)
         if (tools := spec.get("tools")) is not None:
-            metadata["tools"] = [declaration(name, self._tools.get(name, {})) for name in tools]
+            metadata["tools"] = [self.declare(name) for name in tools]
         organization = {k: spec[k] for k in ("organization_id",) if k in spec}
         session = await self.channel.start_session(
             spec["room_id"],
@@ -157,28 +157,19 @@ class ScriptedRealtimeSession:
         self._session = self._session or session
         self._rooms[spec["room_id"]] = session
 
-    async def reconfigure(self, spec: Mapping[str, Any]) -> None:
-        """``realtime.reconfigure``: the session of the room it names, the
-        channel's first when it names none."""
-        session = self.session
-        if "room_id" in spec:
-            if spec["room_id"] not in self._rooms:
-                raise ValueError(f"no session of this channel in room {spec['room_id']}")
-            session = self._rooms[spec["room_id"]]
-        tools = spec.get("tools")
-        await self.channel.reconfigure_session(
-            session,
-            system_prompt=spec.get("system_prompt"),
-            voice=spec.get("voice"),
-            tools=None if tools is None else [self._declare(name) for name in tools],
-        )
+    def session_in(self, room_id: str) -> VoiceSession:
+        """The session this channel started in *room_id*."""
+        if room_id not in self._rooms:
+            raise ValueError(f"no session of this channel in room {room_id}")
+        return self._rooms[room_id]
 
-    def _declare(self, name: str) -> dict[str, Any]:
+    def declare(self, name: str) -> dict[str, Any]:
+        """The declaration of the channel's scripted tool *name*."""
         return declaration(name, self._tools.get(name, {}))
 
     def configure(self, spec: Mapping[str, Any]) -> None:
         self.channel.configure(
-            tools=[self._declare(name) for name in spec["tools"]],
+            tools=[self.declare(name) for name in spec["tools"]],
             system_prompt=spec.get("system_prompt"),
             voice=spec.get("voice"),
         )

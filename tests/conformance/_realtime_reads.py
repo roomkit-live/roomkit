@@ -24,9 +24,9 @@ if TYPE_CHECKING:
     from tests.conformance._script import Gates
 
 # The members of a channel's ``realtime`` spec this module reads, and of its
-# ``on_usage``; the session's own configuration ``realtime.start`` and
-# ``realtime.configure`` take.
-SESSION_MEMBERS = {"system_prompt", "voice", "on_usage"}
+# ``on_usage``; the prompt and voice the channel's spec, ``realtime.start``
+# and ``realtime.configure`` take.
+CHANNEL_MEMBERS = {"system_prompt", "voice", "on_usage"}
 ON_USAGE_MEMBERS = {"gate", "fails"}
 CONFIGURATION = ("system_prompt", "voice")
 
@@ -140,7 +140,16 @@ async def reads_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
     fixture = harness.realtime_sessions[spec["channel_id"]]
     match spec["call"]:
         case "realtime.reconfigure":
-            await fixture.reconfigure(spec)
+            # The session of the room the call names, the channel's first
+            # when it names none (README, ``realtime.reconfigure``).
+            session = fixture.session_in(spec["room_id"]) if "room_id" in spec else fixture.session
+            tools = spec.get("tools")
+            await fixture.channel.reconfigure_session(
+                session,
+                system_prompt=spec.get("system_prompt"),
+                voice=spec.get("voice"),
+                tools=None if tools is None else [fixture.declare(name) for name in tools],
+            )
         case "realtime.usage":
             await fixture.provider.simulate_usage(
                 fixture.session,
