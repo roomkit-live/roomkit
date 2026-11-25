@@ -7,13 +7,15 @@ import struct
 
 import pytest
 
-from roomkit import RoomKit, VoiceChannel
+from roomkit import HookExecution, HookTrigger, RoomKit, VoiceChannel
+from roomkit.voice import MockVADProvider, VADEvent, VADEventType
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
 from roomkit.voice.pipeline.config import AudioFormat, AudioPipelineConfig, AudioPipelineContract
 from roomkit.voice.pipeline.mixer.python import PythonMixerProvider
+from roomkit.voice.stt import MockSTTProvider
 from tests.conference.test_conference_realtime import until
 
 
@@ -1301,6 +1303,64 @@ class TestBeforeBridgeAudioHook:
 # ======================================================================
 # Phase 3.1: Bridge + STT (transcription alongside bridge)
 # ======================================================================
+
+
+class TestBridgeCapacity:
+    """A join the bridge has no room for binds nothing (RFC §12.7.2)."""
+
+    @staticmethod
+    async def _full_room() -> tuple[RoomKit, MockVoiceBackend, list[str]]:
+        backend = MockVoiceBackend()
+        speech = [
+            VADEvent(type=VADEventType.SPEECH_START),
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"\x00\x01" * 160),
+        ]
+        voice = VoiceChannel(
+            "voice",
+            backend=backend,
+            stt=MockSTTProvider(transcripts=["carol speaks"]),
+            pipeline=AudioPipelineConfig(vad=MockVADProvider(events=speech)),
+            bridge=AudioBridgeConfig(max_participants=2),
+        )
+        kit = RoomKit()
+        kit.register_channel(voice)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "voice")
+        heard: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION, execution=HookExecution.ASYNC)
+        async def on_transcription(event: object, ctx: object) -> None:
+            heard.append(event.text)  # type: ignore[attr-defined]
+
+        await kit.join("r1", "voice", participant_id="alice")
+        await kit.join("r1", "voice", participant_id="bob")
+        return kit, backend, heard
+
+    async def test_a_session_joined_past_max_participants_is_not_bound(self) -> None:
+        kit, backend, heard = await self._full_room()
+        carol = await backend.connect("r1", "carol", "voice")
+
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "voice", session=carol)
+        frame = AudioFrame(data=b"\x00\x01" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(carol, frame)
+        await backend.simulate_audio_received(carol, frame)
+        await kit.close()
+
+        assert heard == []
+        timeline = await kit.get_timeline("r1")
+        assert [e for e in timeline if e.source.participant_id == "carol"] == []
+        assert [sid for sid, _ in backend.sent_audio] == []
+
+    async def test_a_session_the_kit_made_for_a_refused_join_is_hung_up(self) -> None:
+        kit, backend, _ = await self._full_room()
+
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "voice", participant_id="carol")
+
+        carol = next(s for s in backend.list_sessions("r1") if s.participant_id == "carol")
+        assert carol.state.value == "ended"
+        await kit.close()
 
 
 class TestBridgeWithSTT:

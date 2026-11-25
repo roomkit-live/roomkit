@@ -147,6 +147,9 @@ class VoiceOpsMixin(HelpersMixin):
                 organization's.
             ChannelNotRegisteredError: If the channel is not registered.
             ChannelNotFoundError: If the channel is not attached to the room.
+            RuntimeError: If the voice channel's bridge already holds
+                ``max_participants`` sessions in the room: the session is
+                left unbound, and one the join made is disconnected.
         """
         await self.get_room(room_id, organization_id=organization_id)
         channel = self._channels.get(channel_id)
@@ -226,7 +229,14 @@ class VoiceOpsMixin(HelpersMixin):
         if session is None:
             raise RuntimeError("Voice session was not created by the backend")
 
-        channel.bind_session(session, room_id, binding, backend=backend)
+        try:
+            channel.bind_session(session, room_id, binding, backend=backend)
+        except Exception:
+            # Refused (a full bridge, RFC §12.7.2): nothing is bound, and a
+            # session the kit made for this join is hung up, not left open.
+            if created:
+                await create_backend.disconnect(session)
+            raise
         await record_reached(
             self._store, self._lock_manager, room_id, session.participant_id, channel_id
         )

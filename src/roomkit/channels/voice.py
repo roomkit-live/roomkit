@@ -1289,7 +1289,16 @@ class VoiceChannel(
                 sessions from different transports (e.g. SIP + WebRTC),
                 pass the session's own backend so the bridge sends audio
                 through the correct transport.
+
+        Raises:
+            RuntimeError: The bridge already holds ``max_participants``
+                sessions in the room; the session is left unbound.
         """
+        # A bridge with no room left refuses the session before anything binds
+        # it: refused, it gets no binding, no pipeline and no speech (RFC §12.7.2).
+        bridge_backend = backend or self._added_backend_holding(session) or self._backend
+        if self._bridge is not None and bridge_backend is not None:
+            self._bridge.add_session(session, room_id, bridge_backend)
         if self._tts_context is not None:
             self._tts_context.open(session.id)
         with self._state_lock:
@@ -1324,12 +1333,8 @@ class VoiceChannel(
         self._voice_session_spans[session.id] = span_id
         # Notify pipeline of session activation, under the session's span
         self._pipeline_session_active(session, parent_span=span_id)
-        # Register session with audio bridge
-        bridge_backend = backend or self._added_backend_holding(session) or self._backend
         if bridge_backend is not None and bridge_backend is not self._backend:
             self._session_backends[session.id] = bridge_backend
-        if self._bridge is not None and bridge_backend is not None:
-            self._bridge.add_session(session, room_id, bridge_backend)
         # Initialize batch buffer for this session
         if self._batch_mode:
             self._batch_audio_buffers[session.id] = bytearray()
