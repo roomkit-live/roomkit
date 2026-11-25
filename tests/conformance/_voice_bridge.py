@@ -33,7 +33,6 @@ _TRANSPORT_CALLS = (
     "send_transcription",
     "cancel_audio",
     "send_dtmf",
-    "stop_listening",
     "disconnect",
     "close",
 )
@@ -53,6 +52,7 @@ async def _add_backend(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) 
     name = spec["backend"]
     transport = fixture.transports.get(name)
     if transport is None:
+        assert fixture.new_transport is not None
         transport = fixture.new_transport(spec)
         fixture.transports[name] = transport
     fixture.channel.add_backend(transport)
@@ -81,6 +81,7 @@ def read_transports(fixture: Any) -> dict[str, list[dict[str, Any]]]:
     """Each transport's calls, each naming its session's participant: every
     distinct call once, in the order it was first made (how many times a
     transport is asked for a chunk or a transcription is the implementation's)."""
+    owners = {sid: p for t in fixture.transports.values() for sid, p in t.owners.items()}
     read: dict[str, list[dict[str, Any]]] = {}
     for name, transport in fixture.transports.items():
         calls: list[dict[str, Any]] = []
@@ -92,7 +93,7 @@ def read_transports(fixture: Any) -> dict[str, list[dict[str, Any]]]:
             if call.method == "connect":
                 record["participant_id"] = call.args["participant_id"]
             elif session_id is not None:
-                record["participant_id"] = transport.owners.get(session_id, session_id)
+                record["participant_id"] = owners.get(session_id, session_id)
             if record not in calls:
                 calls.append(record)
         read[name] = calls
@@ -101,9 +102,10 @@ def read_transports(fixture: Any) -> dict[str, list[dict[str, Any]]]:
 
 def patched_bridge_audio(payload: BridgeAudioEvent, patch: Mapping[str, Any]) -> BridgeAudioEvent:
     """A bridge hook's ``modify``: ``event.frame.data`` (base64) replaces the bytes."""
-    frame = dict(patch["frame"])
-    frame["data"] = base64.b64decode(frame["data"], validate=True)
-    return replace(payload, frame=replace(payload.frame, **frame))
+    if set(patch) != {"frame"} or set(patch["frame"]) != {"data"}:
+        raise ValueError("a bridge hook's modify replaces event.frame.data alone")
+    data = base64.b64decode(patch["frame"]["data"], validate=True)
+    return replace(payload, frame=replace(payload.frame, data=data))
 
 
 BRIDGE_CALLS = {
