@@ -84,7 +84,7 @@ class ScriptedSTT(STTProvider):
 
     @property
     def supports_language_override(self) -> bool:
-        return bool(self._spec.get("supports_language_override", True))
+        return bool(self._spec.get("supports_language_override", False))
 
     def _open(self, language: str | None) -> tuple[dict[str, Any], Mapping[str, Any]]:
         record: dict[str, Any] = {"language": language, "sound_ms": 0.0, "silence_ms": 0.0}
@@ -120,6 +120,9 @@ class ScriptedSTT(STTProvider):
         record, script = self._open(language)
         results = list(script.get("results", []))
         then = script.get("then")
+        if then and not results:
+            await self._finish(script)
+            return
         async for chunk in audio_stream:
             sound = any(chunk.data)
             key = "sound_ms" if sound else "silence_ms"
