@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-failing-on-usage-callback-breaks-nothing",
+  "title": "An on_usage callback that fails leaves the session working: later reports are recorded and handed to it, and a tool call is served",
+  "rules": [
+    "§12.4.2"
+  ],
+  "requirements": [
+    "RK-12.4.2-012"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "on_usage": {
+            "fails": "billing down"
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 10,
+      "output_tokens": 5
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 20,
+      "output_tokens": 8
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": {
+            "input_tokens": 20,
+            "output_tokens": 8
+          },
+          "usage_reports": [
+            {
+              "usage": {
+                "input_tokens": 10
+              }
+            },
+            {
+              "usage": {
+                "input_tokens": 20
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-backend-turn-that-did-not-complete-is-answered-as-a-failed-backend",
+  "title": "An agent backend's turn its round cap cuts gives its narration as progress, never as the answer, and the delegation is answered as a failing backend's is",
+  "rules": [
+    "§12.4.1",
+    "§19"
+  ],
+  "requirements": [
+    "RK-12.4.1-069"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "A turn its deadline or its budget cut, or whose answer was cut or never came, is not shown.",
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "Let me check",
+                    "calls": [
+                      {
+                        "id": "b1",
+                        "name": "lookup"
+                      }
+                    ]
+                  },
+                  {
+                    "calls": [
+                      {
+                        "id": "b2",
+                        "name": "lookup"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "never"
+                  }
+                ]
+              },
+              "max_tool_rounds": 1
+            }
+          }
+        }
+      },
+      {
+        "id": "failing",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning_error": "backend down"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "failing"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "failing",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "agent",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "failing",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "agent",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": "Let me check",
+              "spoken": "$any"
+            },
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$as": "failed"
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "failing",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$as": "failed"
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

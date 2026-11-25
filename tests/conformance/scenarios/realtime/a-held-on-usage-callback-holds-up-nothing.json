@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-held-on-usage-callback-holds-up-nothing",
+  "title": "An on_usage callback that holds does not hold the provider: its next report is recorded and a tool call is served meanwhile",
+  "rules": [
+    "§12.4.2"
+  ],
+  "requirements": [
+    "RK-12.4.2-011"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "submit_gate": "submitting",
+          "on_usage": {
+            "gate": "billing"
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 10,
+      "output_tokens": 5
+    },
+    {
+      "wait_for": "billing"
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 20,
+      "output_tokens": 8
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": {
+            "input_tokens": 20,
+            "output_tokens": 8
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "wait_for": "submitting"
+    },
+    {
+      "open": "submitting"
+    },
+    {
+      "open": "billing"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ],
+          "usage_reports": [
+            {
+              "usage": {
+                "input_tokens": 10
+              }
+            },
+            {
+              "usage": {
+                "input_tokens": 20
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

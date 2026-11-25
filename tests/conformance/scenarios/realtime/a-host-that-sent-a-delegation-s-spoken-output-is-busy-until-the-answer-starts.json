@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-host-that-sent-a-delegation-s-spoken-output-is-busy-until-the-answer-starts",
+  "title": "A realtime channel that sent the model a delegation's spoken output is not idle until the model's answer starts, then once it ends",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-020"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "say": "It will be sunny",
+                  "final": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": "It will be sunny",
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 100,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 5000,
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

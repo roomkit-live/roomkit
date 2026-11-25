@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-provider-that-cannot-call-tools-is-declared-none",
+  "title": "A provider whose model cannot call tools is declared none of the channel's tools",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-059"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The warning, once, is not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "toolless",
+        "type": "realtime_voice",
+        "realtime": {
+          "supports_tools": false,
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "plain",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "toolless"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "plain"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "toolless",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "plain",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "toolless",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "plain",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

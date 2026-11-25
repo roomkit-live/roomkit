@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-that-gives-no-answer-is-answered-aloud-once",
+  "title": "A backend that yields nothing, fails, or overruns the channel's bound on its run is still answered with one spoken output",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-056"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "What the output says is the implementation's wording: only that there is one, spoken, is read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "empty",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "runs": [
+              []
+            ]
+          }
+        }
+      },
+      {
+        "id": "failing",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning_error": "backend down"
+        }
+      },
+      {
+        "id": "slow",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "gate": "never",
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                }
+              ]
+            ]
+          },
+          "reasoning_timeout_ms": 50
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "empty"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "failing"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "slow"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "empty",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "failing",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "slow",
+      "room_id": "r3",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "empty",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "failing",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "slow",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "empty",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$present": true
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "failing",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$present": true
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "slow",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$present": true
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

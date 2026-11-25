@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/last-usage-holds-what-the-provider-reported-last",
+  "title": "A session's last_usage is empty until the provider reports, then holds the two totals and the provider's own keys beside them",
+  "rules": [
+    "§12.4.2"
+  ],
+  "requirements": [
+    "RK-12.4.2-004",
+    "RK-12.4.2-005",
+    "RK-12.4.2-006"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "RK-12.4.2-004: that the map is read-only is not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": null
+        }
+      }
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 120,
+      "output_tokens": 45,
+      "details": {
+        "cached_tokens": 30,
+        "audio_output_tokens": 40
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": {
+            "input_tokens": 120,
+            "output_tokens": 45,
+            "cached_tokens": 30,
+            "audio_output_tokens": 40
+          }
+        }
+      }
+    }
+  ]
+}

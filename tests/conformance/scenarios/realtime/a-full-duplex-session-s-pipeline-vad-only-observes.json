@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-full-duplex-session-s-pipeline-vad-only-observes",
+  "title": "On a full-duplex provider the pipeline VAD's speech over the model fires ON_SPEECH_START and nothing else: the server VAD stays on, no activity signal, no interrupt or truncation, no flush, no ON_BARGE_IN, and the model's audio still plays",
+  "rules": [
+    "§12.4",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4-018",
+    "RK-12.4-125",
+    "RK-12.4.1-025",
+    "RK-12.4.1-029"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "RK-12.4-018: what the VAD feeds besides the speech hooks (diarization, level metering, metrics) is not read. RK-12.4.1-025: the sensor here is the pipeline VAD; a transport-level barge-in is not scripted. A flush the channel would ask through a client message of its own, outside the transport's interface, is not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "duplex",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "pipeline": {
+            "vad": [
+              {
+                "type": "speech_start"
+              },
+              {
+                "type": "speech_end"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "duplex"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "starts",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "barge",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "duplex",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "duplex",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "provider",
+      "frames": [
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "transport",
+      "frames": [
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "duplex",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ],
+          "provider_calls": [],
+          "transport_calls": [],
+          "transport_audio": [
+            "ABAAEAAQABA=",
+            "ACAAIAAgACA="
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "starts": [
+        {
+          "room_id": "r1"
+        }
+      ],
+      "barge": []
+    }
+  }
+}

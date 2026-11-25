@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-starts-with-its-own-configuration-else-its-room-s-else-the-channel-s",
+  "title": "A session connects with the prompt, voice and tools it was opened with, else its room's active agent's, else the channel's, field by field",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-069",
+    "RK-12.4-115"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The guide agent sets no voice: the channel's fills that field under its prompt. Its tools are not read: the tools a pipeline's agent declares are §19.5's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt",
+          "voice": "channel-voice",
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          }
+        }
+      },
+      {
+        "id": "guided",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt",
+          "voice": "channel-voice",
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "guide",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Guide prompt",
+        "agent": {
+          "name": "guide"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "guided"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "guided"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "pipeline",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "guide"
+        }
+      ],
+      "agents": [
+        "guide"
+      ],
+      "voice_channel_id": "guided"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "system_prompt": "Own prompt",
+      "voice": "own-voice",
+      "tools": [
+        "weather"
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "guided",
+      "room_id": "r3",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "guided",
+      "room_id": "r4",
+      "participant_id": "alice",
+      "system_prompt": "Own prompt"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Own prompt",
+              "voice": "own-voice"
+            },
+            {
+              "room_id": "r2",
+              "system_prompt": "Channel prompt",
+              "voice": "channel-voice"
+            }
+          ],
+          "declared": [
+            {
+              "weather": 0,
+              "lookup": {
+                "$absent": true
+              }
+            },
+            {
+              "lookup": 0,
+              "weather": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "guided",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r3",
+              "system_prompt": {
+                "$starts_with": "Guide prompt"
+              },
+              "voice": "channel-voice"
+            },
+            {
+              "room_id": "r4",
+              "system_prompt": "Own prompt",
+              "voice": "channel-voice"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

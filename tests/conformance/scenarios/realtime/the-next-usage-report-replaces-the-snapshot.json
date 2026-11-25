@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-next-usage-report-replaces-the-snapshot",
+  "title": "A second usage report replaces last_usage: a key the first gave and the second does not is gone",
+  "rules": [
+    "§12.4.2"
+  ],
+  "requirements": [
+    "RK-12.4.2-010"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 120,
+      "output_tokens": 45,
+      "details": {
+        "cached_tokens": 30,
+        "audio_output_tokens": 40
+      }
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 200,
+      "output_tokens": 80
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": {
+            "input_tokens": 200,
+            "output_tokens": 80,
+            "cached_tokens": {
+              "$absent": true
+            },
+            "audio_output_tokens": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-channel-clears-the-snapshot-at-each-turn-s-end",
+  "title": "The channel clears last_usage when the model's response ends, and on_usage saw the report",
+  "rules": [
+    "§12.4.2"
+  ],
+  "requirements": [
+    "RK-12.4.2-015"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "on_usage": {}
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.usage",
+      "channel_id": "rt",
+      "input_tokens": 10,
+      "output_tokens": 5
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": {
+            "input_tokens": 10,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "last_usage": null,
+          "usage_reports": [
+            {
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

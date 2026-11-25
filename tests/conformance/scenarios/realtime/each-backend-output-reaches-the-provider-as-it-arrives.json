@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/each-backend-output-reaches-the-provider-as-it-arrives",
+  "title": "A backend working in steps has each output it yields sent to the provider as it arrives, before the rest of its run",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-053"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "gate": "looking",
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "say": "Let me look that up"
+                },
+                {
+                  "call": "lookup"
+                },
+                {
+                  "say": "It is found",
+                  "final": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "looking"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": "Let me look that up",
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "looking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": "Let me look that up",
+              "spoken": true
+            },
+            {
+              "delegation_id": "d1",
+              "text": "It is found",
+              "spoken": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

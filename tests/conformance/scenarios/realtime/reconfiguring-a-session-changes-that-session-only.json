@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/reconfiguring-a-session-changes-that-session-only",
+  "title": "Reconfiguring one session reaches that session only: another room's session and the channel's next session keep the channel's configuration, which only the channel's own configuration call changes",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-070"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt",
+          "voice": "channel-voice",
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.reconfigure",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "system_prompt": "Handoff prompt",
+      "voice": "handoff-voice",
+      "tools": [
+        "weather"
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r3",
+      "participant_id": "carol"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Channel prompt",
+              "voice": "channel-voice"
+            },
+            {
+              "room_id": "r2",
+              "system_prompt": "Channel prompt",
+              "voice": "channel-voice"
+            },
+            {
+              "room_id": "r3",
+              "system_prompt": "Channel prompt",
+              "voice": "channel-voice"
+            }
+          ],
+          "reconfigures": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Handoff prompt",
+              "voice": "handoff-voice"
+            }
+          ],
+          "declared": [
+            {
+              "lookup": 0,
+              "weather": 1
+            },
+            {
+              "lookup": 0,
+              "weather": 1
+            },
+            {
+              "weather": 0,
+              "lookup": {
+                "$absent": true
+              }
+            },
+            {
+              "lookup": 0,
+              "weather": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.configure",
+      "channel_id": "rt",
+      "tools": [
+        "lookup"
+      ],
+      "system_prompt": "New default",
+      "voice": "new-voice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r4",
+      "participant_id": "dave"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            "$any",
+            "$any",
+            "$any",
+            {
+              "room_id": "r4",
+              "system_prompt": "New default",
+              "voice": "new-voice"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

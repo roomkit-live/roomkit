@@ -1,0 +1,353 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-s-request-carries-its-session-and-the-transcript-since-the-last",
+  "title": "Each request a backend is handed carries its session, its delegation, whether it is the session's first, the catalogue and what it is not offered, and both roles' transcript since the previous request on a full-duplex provider, none on a provider that takes turns",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-049",
+    "RK-12.4.1-052"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "RK-12.4.1-049: report_refusal and report_call are not used here; an agent backend uses them (an-agent-backend-s-call-whose-arguments-do-not-read-is-refused-and-reported, a-call-the-agent-backend-s-provider-served-is-reported-once).",
+  "setup": {
+    "channels": [
+      {
+        "id": "duplex",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                },
+                {
+                  "say": "Found it",
+                  "final": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "turns",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                },
+                {
+                  "say": "Found it",
+                  "final": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "duplex"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "turns"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "duplex",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "turns",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "What is the weather?",
+      "role": "user",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "What is the weather?",
+      "role": "user"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "Let me check.",
+      "role": "assistant",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "Let me check.",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "duplex",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "And tomorrow?",
+      "role": "user",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "duplex",
+      "text": "And tomorrow?",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "duplex",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "What is the weather?",
+      "role": "user",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "What is the weather?",
+      "role": "user"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "Let me check.",
+      "role": "assistant",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "Let me check.",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "turns",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "And tomorrow?",
+      "role": "user",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "turns",
+      "text": "And tomorrow?",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "turns",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "duplex",
+      "expect": {
+        "result": {
+          "backend_requests": [
+            {
+              "delegation_id": "d1",
+              "first": true,
+              "session": {
+                "room_id": "r1",
+                "participant_id": "alice"
+              },
+              "transcript": [
+                {
+                  "role": "user",
+                  "text": "What is the weather?"
+                },
+                {
+                  "role": "assistant",
+                  "text": "Let me check."
+                }
+              ],
+              "tools": {
+                "lookup": 0,
+                "secret": {
+                  "$absent": true
+                }
+              },
+              "unavailable": {
+                "secret": {
+                  "$present": true
+                }
+              },
+              "participant_role": null
+            },
+            {
+              "delegation_id": "d2",
+              "first": false,
+              "session": {
+                "room_id": "r1",
+                "participant_id": "alice"
+              },
+              "transcript": [
+                {
+                  "role": "user",
+                  "text": "And tomorrow?"
+                }
+              ]
+            }
+          ],
+          "backend_calls": [
+            {
+              "name": "lookup",
+              "text": "found"
+            },
+            {
+              "name": "lookup",
+              "text": "found"
+            }
+          ],
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": "Found it",
+              "spoken": true
+            },
+            {
+              "delegation_id": "d2",
+              "text": "Found it",
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "turns",
+      "expect": {
+        "result": {
+          "backend_requests": [
+            {
+              "delegation_id": "d1",
+              "first": true,
+              "session": {
+                "room_id": "r2",
+                "participant_id": "bob"
+              },
+              "transcript": []
+            },
+            {
+              "delegation_id": "d2",
+              "first": false,
+              "transcript": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
