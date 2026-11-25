@@ -405,9 +405,11 @@ class TurnExecutor:
         await self._tell_closed()
         return left
 
-    def _listen_closed(self, listener: Callable[[], Awaitable[None]]) -> None:
+    def watch_closed(self, listener: Callable[[], Awaitable[None]]) -> None:
         """Have *listener* run once this executor closed: a backend serving
-        it learns it no longer covers its channels."""
+        it learns it no longer covers its channels, and tells its room owner
+        (:meth:`TurnBackend.executors_changed`, RFC §10.6.7). A listener given
+        again is kept once."""
         if listener not in self._closed_listeners:
             self._closed_listeners.append(listener)
 

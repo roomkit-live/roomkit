@@ -2518,6 +2518,7 @@
     "takes": ["def", "channel_id", "room_hooks=()", "organization_id=None"],
     "timeouts": ["property"],
     "use_wiring": ["def", "env"],
+    "watch_closed": ["def", "listener"],
     "wire": ["def", "channel"],
     "wiring": ["property"]
   },

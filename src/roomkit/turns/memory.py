@@ -229,7 +229,7 @@ class InMemoryTurnBackend(TurnBackend):
         if executor not in self._executors:
             self._executors.append(executor)
             if executor is not own:
-                executor._listen_closed(self.executors_changed)
+                executor.watch_closed(self.executors_changed)
         executor.reach_owner(self._port)
         if executor is not own:
             await self.executors_changed()

@@ -195,18 +195,78 @@ class _OnTheContractAlone(TurnBackend):
         await self._inner.close()
 
 
+class _ServingItsOwnExecutors(TurnBackend):
+    """A backend written outside the core that serves its executors itself,
+    by the public names alone: it lists them, the owner's own aside, and
+    tells its owner once it serves one and when one closes. It carries no
+    turn, and its heartbeat interval outlasts a test."""
+
+    timeouts = TurnTimeouts(heartbeat_interval=60.0)
+
+    def __init__(self) -> None:
+        self._served: list[TurnExecutor] = []
+        self._owner: RoomOwner | None = None
+
+    async def submit(self, request: TurnRequest) -> TurnLink:
+        raise NotImplementedError("this backend carries no turn")
+
+    async def serve(self, executor: TurnExecutor) -> None:
+        self._served.append(executor)
+        executor.watch_closed(self.executors_changed)
+        await self.executors_changed()
+
+    async def control(self, message: ChannelControl) -> ChannelResult | None:
+        return None
+
+    async def attend(self, owner: RoomOwner) -> None:
+        self._owner = owner
+
+    async def executors(self) -> list[ExecutorInfo]:
+        own = self._owner.executor if self._owner is not None else None
+        return [
+            ExecutorInfo(
+                executor_id=executor.executor_id,
+                hosts=executor.hosted,
+                organizations=executor.organizations,
+                room_hooks=frozenset(executor.hooks.defined_room_hooks()),
+            )
+            for executor in self._served
+            if executor is not own and not executor.closed
+        ]
+
+    async def close(self) -> None:
+        self._served.clear()
+
+
+def _in_memory() -> tuple[TurnBackend, TurnBackend]:
+    backend = InMemoryTurnBackend()
+    return backend, backend
+
+
+def _on_the_contract_alone() -> tuple[TurnBackend, TurnBackend]:
+    backend = InMemoryTurnBackend()
+    return backend, _OnTheContractAlone(backend)
+
+
+def _serving_its_own_executors() -> tuple[TurnBackend, TurnBackend]:
+    backend = _ServingItsOwnExecutors()
+    return backend, backend
+
+
 @pytest.mark.parametrize(
-    "carried",
-    [lambda backend: backend, _OnTheContractAlone],
-    ids=["in-memory", "on-the-contract-alone"],
+    "backends",
+    [_in_memory, _on_the_contract_alone, _serving_its_own_executors],
+    ids=["in-memory", "on-the-contract-alone", "serving-its-own-executors"],
 )
 async def test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_changes(
-    carried: Callable[[TurnBackend], TurnBackend],
+    backends: Callable[[], tuple[TurnBackend, TurnBackend]],
 ) -> None:
-    backend = InMemoryTurnBackend()
+    """*backends* gives the backend the executors are served on and the one
+    the kit is built with: the same, or the first behind a wrapper."""
+    backend, given = backends()
     host, late = _executor("host", "coder"), _executor("late", "coder")
     await backend.serve(host)
-    kit = RoomKit(turn_backend=carried(backend))
+    kit = RoomKit(turn_backend=given)
     for agent in ("coder", "stranger"):
         kit.register_channel(ChannelDeclaration(channel_id=agent))
     kit.register_channel(AIChannel("helper", provider=MockAIProvider(responses=["hi"])))
@@ -220,6 +280,9 @@ async def test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_ch
             ("r2", "coder"),
         ):
             await kit.attach_channel(room_id, agent, category=ChannelCategory.INTELLIGENCE)
+        # The watch the first attach started made its first look: from here
+        # the kit learns of an executor from its backend alone.
+        await _heard_all(kit)
         await host.close()
         await backend.serve(late)
         await _heard_all(kit)

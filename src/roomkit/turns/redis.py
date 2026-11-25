@@ -237,7 +237,7 @@ class RedisTurnBackend(TurnBackend):
         executor.reach_owner(self._routes.port)
         # The owner's own executor covers nothing kit.executors() lists.
         if executor is not self._placement.own:
-            executor._listen_closed(self.executors_changed)
+            executor.watch_closed(self.executors_changed)
             await self.executors_changed()
 
     async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
