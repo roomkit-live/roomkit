@@ -262,9 +262,10 @@ class InterruptionHandler:
                 is_final=speech_final,
             )
             bc_result = self._backchannel_detector.classify(ctx)
-            if bc_result.pending:
+            if bc_result.pending and not speech_final:
                 # The words may still become an acknowledgement: the next
-                # ones decide, never the speech's duration.
+                # ones decide, never the speech's duration. A final has no
+                # next words: it is never pending, and is judged as it is.
                 return InterruptionDecision(
                     should_interrupt=False,
                     pending_confirmation=True,

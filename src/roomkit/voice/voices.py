@@ -69,9 +69,9 @@ def filter_voices(
 
     ``language`` matches a tag equal to it or starting with it and a hyphen
     (``"fr"`` matches ``fr-CA``; ``fr-CA`` does not match ``fr-FR``);
-    ``gender`` matches exactly; ``query`` is a case-insensitive substring of
-    the name or the description. A voice with no language or gender does not
-    match a filter on it.
+    ``gender`` matches its whole value, without regard to case; ``query`` is a
+    case-insensitive substring of the name or the description. A voice with no
+    language or gender does not match a filter on it.
     """
     wanted_language = language.lower() if language else None
     wanted_gender = gender.lower() if gender else None

@@ -14,6 +14,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from roomkit import HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.voice import TTSPlaybackState
 from roomkit.models.channel import ChannelBinding
@@ -52,6 +54,17 @@ class _KeywordDetector(BackchannelDetector):
         self.seen.append(context.transcript)
         text = (context.transcript or "").strip().lower()
         return BackchannelDecision(is_backchannel=text in self._WORDS)
+
+
+class _AlwaysPending(BackchannelDetector):
+    """A detector that never decides, whatever the words, a final's included."""
+
+    @property
+    def name(self) -> str:
+        return "always-pending"
+
+    def classify(self, context: BackchannelContext) -> BackchannelDecision:
+        return BackchannelDecision(is_backchannel=False, pending=True)
 
 
 class _PartialsSTT(STTProvider):
@@ -404,11 +417,16 @@ class TestHeldSpeechEndingBeforeItsWords:
     transcript, not discarded unheard (RFC §12.3.13)."""
 
     async def _speak_and_stop(
-        self, final: str, *, bot_still_talking: bool = True, is_final: bool = True
+        self,
+        final: str,
+        *,
+        bot_still_talking: bool = True,
+        is_final: bool = True,
+        detector: BackchannelDetector | None = None,
     ) -> tuple:
         kit, channel, session, _, seen = await _room(
             _FinalOnlySTT(final, is_final=is_final),
-            detector=PhraseBackchannelDetector(),
+            detector=detector or PhraseBackchannelDetector(),
             transcript_wait_ms=2000,
         )
         channel._on_pipeline_vad_event(session, _ONSET)  # noqa: SLF001
@@ -430,8 +448,17 @@ class TestHeldSpeechEndingBeforeItsWords:
         assert session.id in channel._playing_sessions  # noqa: SLF001
         await kit.close()
 
-    async def test_a_stop_cuts_the_bot_off_and_is_the_turn(self) -> None:
-        kit, channel, session, seen = await self._speak_and_stop("Stop")
+    @pytest.mark.parametrize(
+        "detector",
+        [PhraseBackchannelDetector, _AlwaysPending],
+        ids=["phrase-detector", "detector-answering-pending"],
+    )
+    async def test_a_stop_cuts_the_bot_off_and_is_the_turn(
+        self, detector: type[BackchannelDetector]
+    ) -> None:
+        """A final is never pending (RFC §12.3.13): a detector that answers
+        pending for it holds nothing, and its words cut in and are the turn."""
+        kit, channel, session, seen = await self._speak_and_stop("Stop", detector=detector())
 
         assert len(seen["barge_in"]) == 1
         assert [e.text for e in seen["transcription"]] == ["Stop"]

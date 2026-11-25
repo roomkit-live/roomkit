@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A voice join past the bridge's `max_participants` binds nothing (RFC §12.7.2, RMK-2121), where `join` raised but left the session bound to the room, its speech transcribed into the timeline. The `RuntimeError` is raised before the session is bound, and a session the join made itself is disconnected.
 
+- A voice channel judges a final transcript as it is when its backchannel detector answers `pending` for it (RFC §12.3.13, RMK-2122), where the verdict held the speech for words that never came and the user's utterance was discarded without a turn or a cut: a final is never pending, and a pending verdict on it reads as its `is_backchannel`.
+
 - A voice transcript stays the session participant's when an `ON_TRANSCRIPTION` hook names a participant the room does not reach through that voice channel (RFC §12.2.3, §5.5, RMK-2116), where the message became that participant's whatever channel they were on: a log line names the participant left out
 
 - A voice channel compares a final transcript with the response being played in whole words (RFC §12.3.13, RMK-2113), where its interruption policy read every transcript as a partial: while the echo guard was open, a final whose last word only starts a word of the response, `Your ta` over `Your table is ready.`, was taken for that response's echo and the user's turn was discarded.
