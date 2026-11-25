@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-bot-s-own-presence-and-tracks-are-not-relayed",
+  "title": "The bot reported back as a participant and a publisher fires no conference hook, is no participant and is not subscribed",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-124",
+    "RK-12.10.4-129",
+    "RK-12.10.4-130",
+    "RK-12.10.4-131"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_conference_participant_joined",
+        "execution": "async"
+      },
+      {
+        "name": "published",
+        "trigger": "on_conference_track_published",
+        "execution": "async"
+      },
+      {
+        "name": "muted",
+        "trigger": "on_conference_track_muted",
+        "execution": "async"
+      },
+      {
+        "name": "unmuted",
+        "trigger": "on_conference_track_unmuted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.echo",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "track_id": "b1"
+    },
+    {
+      "call": "conference.mute",
+      "channel_id": "conf",
+      "track_id": "b1"
+    },
+    {
+      "call": "conference.unmute",
+      "channel_id": "conf",
+      "track_id": "b1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "joined": [],
+      "published": [],
+      "muted": [],
+      "unmuted": []
+    },
+    "participants": {
+      "r1": []
+    }
+  }
+}

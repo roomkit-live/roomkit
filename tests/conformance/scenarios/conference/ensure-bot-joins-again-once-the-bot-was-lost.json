@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/ensure-bot-joins-again-once-the-bot-was-lost",
+  "title": "ensure_bot joins a new session once the backend reported the bot's own one ended",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-094"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "first"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.bot_lost",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "second"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "first"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "second"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

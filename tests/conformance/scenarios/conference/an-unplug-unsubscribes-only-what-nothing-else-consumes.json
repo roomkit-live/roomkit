@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-unplug-unsubscribes-only-what-nothing-else-consumes",
+  "title": "Unplugging the recognizer closes its lanes and keeps the track recording still consumes; unplugging the recording then unsubscribes it",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-187"
+  ],
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": "rec"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "t1",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "active_lanes": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "active_lanes": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "recording"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "unsubscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

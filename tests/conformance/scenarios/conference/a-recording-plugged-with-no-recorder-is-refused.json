@@ -1,0 +1,49 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recording-plugged-with-no-recorder-is-refused",
+  "title": "A recording plugged with no recorder is refused, and the channel records nothing",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-182"
+  ],
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": null,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "recording_configured": false
+          }
+        }
+      }
+    }
+  ]
+}

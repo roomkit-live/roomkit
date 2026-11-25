@@ -1,0 +1,51 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-attach-over-an-empty-conference-joins-nothing",
+  "title": "An attach over an empty conference ensures the room and asks for its occupancy, and joins nothing",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-081",
+    "RK-12.10.4-091"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "With a fresh kit no roster can stand in for the occupancy probe: the channel asks the SFU, its one control-plane call beside ensure_room().",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1"
+            },
+            {
+              "call": "list_participants",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

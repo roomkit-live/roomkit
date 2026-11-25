@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-detach-from-an-announcement-s-handler-runs-its-teardown-after-it",
+  "title": "A handler of the bot's arrival announcement detaches the channel: the detach returns, and the bot leaves once the handler is over",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-118"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The handler of the bot's conference_started announcement detaches the channel and reads the SFU's calls before it returns: no leave yet. That admission closes at once is not observed.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "conference_started",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "detach_channel",
+                "room_id": "r1",
+                "channel_id": "conf"
+              },
+              {
+                "call": "conference.read",
+                "channel_id": "conf",
+                "calls": [
+                  "leave"
+                ],
+                "expect": {
+                  "result": {
+                    "calls": []
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/explicit-bot-grants-are-replaced-on-a-running-channel",
+  "title": "Explicit bot grants set on a running channel are replaced by the next set, each carried to the live bot",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-200"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The backend cannot update grants in place, so each change is carried by a new session: bots lists the live one.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "first"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "subscribe": true,
+        "moderate": true
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "moderate": true,
+                "publish_audio": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": true,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "subscribe": true,
+        "moderate": false
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "moderate": false,
+                "publish_audio": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

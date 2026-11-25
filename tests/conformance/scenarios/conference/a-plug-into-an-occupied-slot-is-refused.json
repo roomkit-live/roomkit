@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-plug-into-an-occupied-slot-is-refused",
+  "title": "Plugging a recognizer, a voice or a recording into a slot that holds one is refused",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-183"
+  ],
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": "rec"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": "other",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": true,
+            "recording_configured": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/unplugging-an-empty-slot-changes-nothing",
+  "title": "Unplugging a voice, a recording or a realtime model the channel does not hold changes nothing",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-184"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "recording"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "realtime"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "unsubscribe_track",
+        "update_bot_grants",
+        "stop_playback",
+        "close_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [],
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "info": {
+            "stt_configured": true,
+            "realtime_configured": false,
+            "recording_configured": false,
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "bot_session_id": {
+                  "$as": "bot"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

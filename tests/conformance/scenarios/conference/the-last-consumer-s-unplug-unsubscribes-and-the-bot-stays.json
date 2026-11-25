@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-last-consumer-s-unplug-unsubscribes-and-the-bot-stays",
+  "title": "Unplugging a track's last consumer unsubscribes it while the voice keeps the bot in the conference",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-167"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Whether the narrower needs keep the session or replace it is left open (§12.10.4: narrowed in place where the backend can, else left standing or not); a bot stays either way.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "t1",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "unsubscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

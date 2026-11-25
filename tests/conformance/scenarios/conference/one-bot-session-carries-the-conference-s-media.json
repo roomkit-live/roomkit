@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/one-bot-session-carries-the-conference-s-media",
+  "title": "The bot's one session subscribes the meeting's audio and publishes the spoken reply on its own track",
+  "rules": [
+    "§12.10.1",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.1-008"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "That the subscribed tracks feed the pipelines is not observed: no frame is fed.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "t1",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Hello there"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "utterances": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "complete": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

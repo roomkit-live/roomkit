@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-lost-bot-rejoins-with-no-new-event",
+  "title": "Once the backend reports the bot's session ended, the channel joins again on its own, with no new event",
+  "rules": [
+    "§12.10.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.3-028"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "One re-join is observed: its bound and its backoff, which a run of failed joins would show, are not.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.bot_lost",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "first"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "second"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/only-the-audio-tracks-consumed-are-subscribed",
+  "title": "A transcribing channel subscribes the audio track it consumes, itself, and neither a camera nor a screen share",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-161",
+    "RK-12.10.4-162",
+    "RK-12.10.4-164"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "t1",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "v1",
+      "kind": "video"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "s1",
+      "kind": "screen_share"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

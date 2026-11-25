@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-plug-over-an-empty-conference-joins-at-the-first-arrival",
+  "title": "A recognizer plugged over an empty conference joins nothing until a participant arrives",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-179"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Of the triggers that stand ready, the arrival is observed; the mint and the delivery are not.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

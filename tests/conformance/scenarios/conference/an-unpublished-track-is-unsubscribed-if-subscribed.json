@@ -1,0 +1,91 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-unpublished-track-is-unsubscribed-if-subscribed",
+  "title": "A subscribed track withdrawn by its participant is unsubscribed, and a track never subscribed is not",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-111"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "t1",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "v1",
+      "kind": "video"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "t1"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "v1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "unsubscribe_track",
+              "track_id": "t1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

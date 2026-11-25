@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/clearing-the-explicit-grants-returns-to-derived-ones",
+  "title": "Explicit grants cleared on a running channel give way to the grants derived from its configuration",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-203"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Once cleared, the bot holds the grants it held before any explicit set, derived from the same configuration; what derivation gives is §12.10.3's, not asserted.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "first"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "$as": "derived"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": true,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "subscribe": false,
+        "moderate": true
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "subscribe": false,
+                "moderate": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": null
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "$as": "derived"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

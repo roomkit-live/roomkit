@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/explicit-grants-on-a-channel-with-no-need-join-nothing",
+  "title": "Explicit grants set on a channel that consumes nothing and says nothing join no bot, even once a participant arrives",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-204"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "publish_audio": true
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    }
+  ]
+}

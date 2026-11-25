@@ -1,0 +1,68 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-speech-to-speech-bot-joins-to-listen-and-to-speak",
+  "title": "A conference whose intelligence is a realtime model joins its bot with grants to subscribe and to publish audio",
+  "rules": [
+    "§12.10.12",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.12-044"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {}
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "subscribe": true,
+                "publish_audio": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

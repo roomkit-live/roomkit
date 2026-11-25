@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/each-kind-is-plugged-and-unplugged-on-a-running-channel",
+  "title": "Recognition, voice, recording and a realtime model are each plugged into and unplugged from a running channel, and the disclosure follows",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-177",
+    "RK-12.10.4-213"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime",
+    "recording"
+  ],
+  "notes": "The disclosure surface names no voice: the voice plugged is shown by the bot it lets join, and its unplug, the channel's last need, by the bot's leave.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": true,
+            "realtime_configured": false,
+            "recording_configured": false
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": false
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": "rec"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "recording_configured": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "recording"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "recording_configured": false
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "realtime"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "realtime_configured": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "realtime"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "realtime_configured": false
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": true
+          }
+        }
+      }
+    }
+  ]
+}

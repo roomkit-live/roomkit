@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-explicit-set-that-does-not-cover-the-needs-is-accepted",
+  "title": "Explicit grants withdrawing subscribe under a plugged recognizer are accepted and carried to the bot",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-202"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "first"
+          },
+          "room_id": "r1"
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "subscribe": false
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "grants": {
+                "subscribe": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

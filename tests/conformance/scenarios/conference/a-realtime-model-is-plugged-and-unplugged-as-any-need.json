@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-realtime-model-is-plugged-and-unplugged-as-any-need",
+  "title": "A realtime model plugged over an occupied conference joins at once, a second one is refused, and its unplug takes the bot out",
+  "rules": [
+    "§12.10.12",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.12-045"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The occupied conference is joined at the plug, before a second arrival; how many times the channel asks for the occupancy is not asserted.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "realtime"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "realtime",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "realtime"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "subscribe": true,
+                "publish_audio": true
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/plugging-a-recognizer-joins-an-occupied-conference-at-once",
+  "title": "A recognizer plugged into a channel with no session joins the conference it finds occupied before the plug returns",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-178"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The join is read before the plug returns. How many times the channel asks for the occupancy is not asserted: once joined, an implementation may ask again to subscribe the tracks already published.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "list_participants",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "list_participants",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

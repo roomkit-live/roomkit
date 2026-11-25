@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-detach-leaves-only-where-the-bot-joined",
+  "title": "A detach takes the bot out of the conference it joined, and calls no leave where it never joined",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-113"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
