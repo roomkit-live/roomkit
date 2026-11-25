@@ -53,7 +53,7 @@ from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
 from roomkit.orchestration.strategies._loop_verdict import SUBMIT_REVIEW, read_review
 from roomkit.orchestration.strategies.supervisor import WorkerStrategy
 from roomkit.tasks.handback import bounded, result_text, worker_block
-from roomkit.tasks.models import task_cut_reason, task_work
+from roomkit.tasks.models import failed_task_words, task_cut_reason, task_work
 from roomkit.tools.fence import fence
 
 if TYPE_CHECKING:
@@ -482,13 +482,9 @@ def _failed_in_its_turn(result: DelegatedTaskResult | None) -> bool:
 
 
 def _failed_task_text(result: DelegatedTaskResult | None) -> str:
-    """A producer's failed task, named without its error (RFC §23.3 step 8)."""
-    reason = _cut_reason(result)
-    return (
-        f"the producer's task failed (cut short: {reason})"
-        if reason
-        else ("the producer's task failed")
-    )
+    """A producer's failed task, named with why and without its error (RFC
+    §23.3 step 8)."""
+    return f"the producer's task {failed_task_words(result)}"
 
 
 def _delivered_text(outcome: _LoopOutcome | None) -> str:

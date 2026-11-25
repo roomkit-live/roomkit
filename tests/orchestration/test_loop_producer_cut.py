@@ -230,7 +230,8 @@ async def test_the_async_loop_names_the_producers_cut() -> None:
 
     assert text == (
         "[Your background review loop stopped before any output: "
-        "the producer's task failed (cut short: max_rounds). Tell the user.]"
+        "the producer's task failed: it reached its limit of tool rounds before giving an answer "
+        "(max_rounds). Tell the user.]"
     )
 
 
@@ -239,7 +240,7 @@ async def test_the_async_loop_says_its_producer_failed_without_the_error() -> No
 
     assert text == (
         "[Your background review loop stopped before any output: "
-        "the producer's task failed. Tell the user.]"
+        "the producer's task failed: an error ended it (error). Tell the user.]"
     )
     assert "SECRET" not in text
 
@@ -302,5 +303,5 @@ async def test_the_async_loop_names_a_producer_failing_after_a_round_as_failed()
 
     assert text == (
         "[Your background review loop stopped before any output: "
-        "the producer's task failed. Tell the user.]"
+        "the producer's task failed: an error ended it (error). Tell the user.]"
     )

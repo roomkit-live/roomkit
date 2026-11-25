@@ -1708,7 +1708,10 @@ def test_the_hand_back_names_its_worker_by_an_identifier() -> None:
 
     header = _delegation_result_text(result, "weather").splitlines()[0]
 
-    assert header.startswith("[Background task from w-Say-it-is-sunny failed. Task: “weather”.")
+    assert header.startswith(
+        "[Background task from w-Say-it-is-sunny failed: it gave no answer (empty_response). "
+        "Task: “weather”."
+    )
 
 
 class TestQuoted:

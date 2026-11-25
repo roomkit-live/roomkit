@@ -358,7 +358,7 @@ class TestPerWorkerDelegation:
             result = await boss._channel_tool_handler("delegate_to_w1", {"task": "Do work"})
         parsed = json.loads(result)
         # A failed task reads as failed, never with its error (RMK-295).
-        assert parsed["result"] == "The task failed."
+        assert parsed["result"] == "The task failed: an error ended it (error)."
 
     async def test_wait_for_result_none(self) -> None:
         boss = _make_agent("boss")
@@ -657,7 +657,7 @@ class TestRunSequential:
         result = await _run_sequential(kit, "r1", [w1], "task")
         parsed = json.loads(result)
         # A failed task reads as failed, never with its error (RMK-295).
-        assert parsed["results"][0]["output"] == "The task failed."
+        assert parsed["results"][0]["output"] == "The task failed: an error ended it (error)."
 
     async def test_per_task_timeout_fails_one_worker_and_continues(self) -> None:
         # A worker that exceeds its per-task budget is recorded as failed, but

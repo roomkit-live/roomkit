@@ -20,6 +20,7 @@ from roomkit._text import quoted
 from roomkit.core.exceptions import ChannelNotFoundError
 from roomkit.models.enums import EventStatus, EventType, TaskStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.tasks.models import task_end_words
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -35,15 +36,16 @@ _TASK_NAME_CHARS = 200
 
 def posted_text(result: DelegatedTaskResult, task: str) -> str | None:
     """What a posted result says: the task (*task*, quoted), then the
-    worker's output; that the task failed or was cancelled, without its
-    error (RFC §9.3); ``None`` for a completed task with nothing to say."""
+    worker's output; that the task was cancelled, or that it failed and why,
+    without its error (RFC §9.3); ``None`` for a completed task with nothing
+    to say."""
     named = f" {quoted(task, _TASK_NAME_CHARS)}" if task.strip() else ""
     if result.status == TaskStatus.COMPLETED:
         output = (result.output or "").strip()
         return f"Result of the task{named}:\n\n{output}" if output else None
     if result.status == TaskStatus.CANCELLED:
         return f"The task{named} was cancelled."
-    return f"The task{named} failed."
+    return f"The task{named} failed: {task_end_words(result)}."
 
 
 async def post_result(

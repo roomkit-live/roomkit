@@ -7,11 +7,12 @@ import logging
 import time
 from typing import Any
 
+from roomkit._text import one_of
 from roomkit.core._failure_log import mark_reported, was_reported
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError
 from roomkit.models.enums import TaskStatus
 from roomkit.models.response_metadata import TURNS_KEY, TurnEntries
-from roomkit.models.task import DelegatedTaskResult
+from roomkit.models.task import TASK_END_WORDS, DelegatedTaskResult, failed_words
 
 logger = logging.getLogger("roomkit.tasks")
 
@@ -163,6 +164,46 @@ def task_cut_reason(result: Any) -> str | None:
     if reason is None or getattr(result, "error", None) != TaskCutShortError.message_for(reason):
         return None
     return reason
+
+
+def task_end_reason(result: Any) -> str | None:
+    """Why a delegated task did not complete, from the closed list a model may
+    read (:data:`~roomkit.models.task.TASK_END_WORDS`, RFC §23.3): how its
+    worker's turn was cut short, ``cancelled`` for a task cancelled from
+    outside, ``empty_response`` for one that failed with no error (its
+    worker's turn answered nothing, as one whose raise its delivery kept from
+    the task does), ``error`` for any other failure, a cut by a reason off
+    the list included. ``None`` for a task that completed, or for no result."""
+    status = getattr(result, "status", None)
+    if result is None or status == TaskStatus.COMPLETED:
+        return None
+    if status == TaskStatus.CANCELLED:
+        return "cancelled"
+    if getattr(result, "error", None) is None:
+        # No failure reached the task: its worker's turn answered nothing.
+        return "empty_response"
+    return one_of(task_cut_reason(result), TASK_END_WORDS, "error")
+
+
+def end_reason_metadata(result: Any) -> dict[str, str]:
+    """What a task's end says of why it did not complete, in its hand-back's
+    metadata, its ``ON_TASK_COMPLETED`` event and its entry on the status
+    bus: its end reason under ``task_end_reason``, nothing for a task that
+    completed or for no result (RFC §23.3)."""
+    reason = task_end_reason(result)
+    return {"task_end_reason": reason} if reason is not None else {}
+
+
+def failed_task_words(result: Any) -> str:
+    """That *result*'s task failed and why, as a model reads it, never with
+    its error (RFC §9.3) nor the narration a worker cut short left."""
+    return failed_words(task_end_reason(result) or "error")
+
+
+def task_end_words(result: Any) -> str:
+    """Why *result*'s task did not complete, in the runtime's words alone,
+    as a person reads it in the room (RFC §23.3 step 8)."""
+    return TASK_END_WORDS[task_end_reason(result) or "error"]
 
 
 def finished_task_fields(

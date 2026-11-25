@@ -63,6 +63,8 @@ from roomkit.tasks.models import (
     DelegatedTask,
     DelegatedTaskResult,
     cancelled_task_fields,
+    end_reason_metadata,
+    failed_task_words,
     finished_task_fields,
     task_work,
 )
@@ -274,13 +276,14 @@ def task_name(task: str) -> str:
 
 def _hand_back_metadata(result: DelegatedTaskResult, task: str) -> dict[str, Any]:
     """The task a hand-back carries, relayed or posted, so a hook tells a task's
-    result from any other event and names the task without reading its text
-    (RFC §23.3 step 8)."""
+    result from any other event, names the task and reads why one that did not
+    complete ended, without reading its text (RFC §23.3 step 8)."""
     return {
         "task_id": result.task_id,
         "agent_id": result.agent_id,
         "task_status": str(result.status),
         "task": task_name(task),
+        **end_reason_metadata(result),
     }
 
 
@@ -291,15 +294,16 @@ def _delegation_result_text(
     max_result_chars: int = MAX_RESULT_CHARS,
 ) -> str:
     """What the notified agent receives of a finished background delegation: its
-    outcome, what was asked (*task*, so a result back after the conversation moved
-    on is said for what was asked), then the worker's output, up to
-    *max_result_chars*. *worker* names the worker as the room addresses it (a
-    discussion agent's handle); None, its channel id."""
+    outcome, with why for one that failed, what was asked (*task*, so a result
+    back after the conversation moved on is said for what was asked), then the
+    worker's output, up to *max_result_chars*. *worker* names the worker as the
+    room addresses it (a discussion agent's handle); None, its channel id."""
     # A failed task's error is an exception's message: for the logs and
-    # ON_TASK_COMPLETED, never for a model (RFC §9.3).
+    # ON_TASK_COMPLETED, never for a model (RFC §9.3), which reads why from
+    # the closed list.
     outcome = {TaskStatus.COMPLETED: "completed", TaskStatus.CANCELLED: "cancelled"}.get(
-        result.status, "failed"
-    )
+        result.status
+    ) or failed_task_words(result)
     # What was asked is quoted, the worker named by an identifier (RFC §6.4).
     asked = f" Task: {quoted(task, _TASK_NAME_CHARS)}." if task.strip() else ""
     named = identifier(worker or result.agent_id, "worker")
@@ -1046,6 +1050,8 @@ class DelegationMixin(HelpersMixin):
             error=result.error,
             loop_end_reason=result.metadata.get("loop_end_reason"),
         )
+        # Why the task did not complete, as a model reads it (RFC §23.3).
+        hook_meta.update(end_reason_metadata(result))
         hook_event = RoomEvent(
             room_id=result.parent_room_id,
             source=EventSource(

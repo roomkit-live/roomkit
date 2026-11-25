@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from roomkit._text import identifier, one_of, quoted
+from roomkit.models.task import TASK_END_WORDS, failed_words
 
 TASKS_NOTE = (
     "The background tasks of this conversation. What each was asked and how far it got "
@@ -75,14 +76,22 @@ def _task_line(task: dict[str, Any], now: datetime, handles: Mapping[str, str]) 
     line = f"- {identifier(named, 'worker', NAME_LIMIT)}"
     line += f", asked {quoted(asked, TEXT_LIMIT)}" if asked else ""
     if not _running(task):
-        ending = one_of(task.get("status"), _ENDINGS, "ended")
-        return f"{line}: {ending}{_ago(task.get('ended'), now)}"
+        return f"{line}: {_ending(task)}{_ago(task.get('ended'), now)}"
     age = _age(task.get("since"), now)
     state = "running" if age is None else f"running for {_span(age)}"
     if task.get("progress"):
         progress = quoted(task["progress"], TEXT_LIMIT)
         state += f"; at {progress}{_ago(task.get('progress_at'), now)}"
     return f"{line}: {state}; no result yet"
+
+
+def _ending(task: dict[str, Any]) -> str:
+    """How *task* ended, in the block's own words: one of its endings, a
+    failed one with why when its line names a reason of the closed list
+    (RFC §23.4)."""
+    ending = one_of(task.get("status"), _ENDINGS, "ended")
+    reason = one_of(task.get("end_reason"), TASK_END_WORDS, "")
+    return failed_words(reason) if ending == "failed" and reason else ending
 
 
 def _ago(ts: Any, now: datetime) -> str:

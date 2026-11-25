@@ -710,7 +710,7 @@ system event (AI-channel source; `metadata`: `from_agent`, `to_agent`,
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `ON_TASK_DELEGATED` | ASYNC | `(event, ctx) -> None` | `kit.delegate()` dispatched a task to a child room. INTERNAL event, type `TASK_DELEGATED`; `metadata`: `task_id`, `child_room_id`, `agent_id`. |
-| `ON_TASK_COMPLETED` | ASYNC | `(event, ctx) -> None` | A delegated task finished. Fires in the parent room; type `TASK_COMPLETED`, body = output or error. |
+| `ON_TASK_COMPLETED` | ASYNC | `(event, ctx) -> None` | A delegated task finished. Fires in the parent room; type `TASK_COMPLETED`, body = output or error; `metadata`: `task_status`, and for a task that did not complete `task_end_reason`, one code of the closed list a model may read (`max_rounds`, `timeout`, `cancelled`, `empty_response`, `error`...). |
 
 ### Video
 

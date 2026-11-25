@@ -17,12 +17,19 @@ from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.channels.declared import id_of, owner_tools_of
 from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
+from roomkit.models.task import end_reason_fields
 from roomkit.orchestration._call_room import RoomToolServe, in_call_room
 from roomkit.providers.ai.base import AITool
 from roomkit.tasks.brief import context_block, previous_tasks_block, task_brief
 from roomkit.tasks.cache import CompletedTaskCache
 from roomkit.tasks.handback import MAX_RESULT_CHARS, bounded, check_max_result_chars
-from roomkit.tasks.models import DelegatedTask, TaskStatus, task_work
+from roomkit.tasks.models import (
+    DelegatedTask,
+    DelegatedTaskResult,
+    TaskStatus,
+    task_end_reason,
+    task_work,
+)
 
 if TYPE_CHECKING:
     from roomkit.channels.ai import AIChannel
@@ -194,8 +201,9 @@ def _asked_conversation(asked: Any, maximum: int) -> int:
 
 def _call_answer(task: DelegatedTask, agent_id: str, waited: int | None) -> dict[str, Any]:
     """What a call that started *task* answers: its receipt; for a task run
-    inline (*waited*, the bound of its result), how it ended and its work,
-    bounded as a relayed result is (RFC §23.3 step 8)."""
+    inline (*waited*, the bound of its result), how it ended, why when it did
+    not complete, and its work, bounded as a relayed result is (RFC §23.3
+    step 8)."""
     answer: dict[str, Any] = {
         "status": "delegated",
         "task_id": task.id,
@@ -205,8 +213,16 @@ def _call_answer(task: DelegatedTask, agent_id: str, waited: int | None) -> dict
     if waited is not None:
         ended = task.result
         answer["status"] = str(ended.status) if ended is not None else str(TaskStatus.FAILED)
+        answer.update(_why_not_completed(ended))
         answer["result"] = bounded(task_work(ended), waited)
     return answer
+
+
+def _why_not_completed(ended: DelegatedTaskResult | None) -> dict[str, str]:
+    """Why an inline task did not complete, by its code and in the runtime's
+    words, as ``task_status`` says it; nothing for one that completed. A task
+    that left no result failed on an error (RFC §23.4)."""
+    return end_reason_fields(task_end_reason(ended) if ended is not None else "error")
 
 
 class DelegateHandler:

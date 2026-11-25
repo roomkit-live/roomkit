@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._discussion_turn import discussion_handles
 from roomkit.core.exceptions import RoomNotFoundError, UnservedToolCallError
 from roomkit.models.enums import TaskStatus
+from roomkit.models.task import END_REASON_KEYS, end_reason_fields
 from roomkit.orchestration.status_bus import (
     StatusBus,
     StatusEntry,
@@ -18,6 +19,7 @@ from roomkit.orchestration.status_bus import (
     post_agent_lifecycle,
 )
 from roomkit.tasks._room_tasks import TaskReach, why_not_cancelled
+from roomkit.tasks.models import end_reason_metadata
 from roomkit.tools.context import current_tool_call, current_tool_room, current_tool_room_id
 
 if TYPE_CHECKING:
@@ -55,7 +57,8 @@ def post_task_pending(kit: RoomKit, task: DelegatedTask) -> None:
 
 def post_task_ended(kit: RoomKit, result: DelegatedTaskResult) -> None:
     """Post a delegated task's end: ``completed`` with its result, or ``failed``
-    saying it failed or was cancelled, never the error's text (RFC §9.3)."""
+    saying it failed or was cancelled, never the error's text (RFC §9.3), with
+    why under ``task_end_reason``."""
     completed = result.status == TaskStatus.COMPLETED
     if completed:
         detail = result.output or ""
@@ -70,6 +73,7 @@ def post_task_ended(kit: RoomKit, result: DelegatedTaskResult) -> None:
         metadata={
             **_task_metadata(result.parent_room_id, result.task_id, result.child_room_id),
             "task_status": str(result.status),
+            **end_reason_metadata(result),
             "duration_ms": round(result.duration_ms),
         },
     )
@@ -107,7 +111,9 @@ async def post_task_progress(kit: RoomKit, detail: str) -> bool:
 
 def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
     """One line per task, from its entries in posting order: the task from its
-    ``pending`` entry, its state and result from its latest terminal one, its
+    ``pending`` entry, its state from its latest terminal one, with its result
+    when it completed and else why it did not (``end_reason``, a code of the
+    closed list, and ``end_reason_text``, the runtime's words for it), its
     progress from its latest ``info`` one, which never ends it. Returned rows
     and their nested results can be edited independently of the source entries.
 
@@ -133,20 +139,31 @@ def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
             line["task_id"] = task_id
         if entry.status == StatusLevel.PENDING:
             line.update(task=entry.detail, status="running", since=entry.ts)
-            line.pop("result", None)
-            line.pop("ended", None)
+            for key in ("result", "ended", *END_REASON_KEYS):
+                line.pop(key, None)
             continue
         if entry.status == StatusLevel.INFO:
             # A task whose pending entry left the bus's window: running still.
             line.setdefault("status", "running")
             line.update(progress=entry.detail, progress_at=entry.ts)
             continue
-        status = str(entry.metadata.get("task_status") or entry.status)
-        line.update(status=status, ended=entry.ts)
-        if status == str(TaskStatus.COMPLETED):
-            # The whole outcome when the summary was cut (RFC §19.8).
-            line["result"] = deepcopy(entry.metadata.get("result", entry.detail))
+        _end_line(line, str(entry.metadata.get("task_status") or entry.status), entry)
     return list(tasks.values())
+
+
+def _end_line(line: dict[str, Any], status: str, entry: StatusEntry) -> None:
+    """End *line* with *status* at *entry*, a terminal one: with its result
+    when it completed, the whole outcome when the summary was cut (RFC §19.8),
+    else with why it did not, as *entry* names it and never as an earlier end
+    of the line did. A reason the closed list does not name gives none: an
+    entry posted from elsewhere gives a line no words of its own (RFC §23.4)."""
+    line.update(status=status, ended=entry.ts)
+    for key in END_REASON_KEYS:
+        line.pop(key, None)
+    if status == str(TaskStatus.COMPLETED):
+        line["result"] = deepcopy(entry.metadata.get("result", entry.detail))
+    else:
+        line.update(end_reason_fields(entry.metadata.get("task_end_reason")))
 
 
 def _end_run_line(line: dict[str, Any] | None, entry: StatusEntry) -> None:
@@ -156,9 +173,7 @@ def _end_run_line(line: dict[str, Any] | None, entry: StatusEntry) -> None:
     if line is None:
         return
     status = str(TaskStatus.FAILED if entry.status == StatusLevel.FAILED else TaskStatus.COMPLETED)
-    line.update(status=status, ended=entry.ts)
-    if status == str(TaskStatus.COMPLETED):
-        line["result"] = deepcopy(entry.metadata.get("result", entry.detail))
+    _end_line(line, status, entry)
 
 
 class TaskStatusTool:
@@ -169,8 +184,9 @@ class TaskStatusTool:
     — independently of the delegation helpers. It answers with the tasks posted
     for the room of the call (delegations, orchestration workers): those running
     and those ended, the latest state of each, with its worker, the task, and its
-    result when it completed; ``task_id`` narrows the answer to one task. It reads
-    the bus for that room only: one room's tasks never show in another.
+    result when it completed or why it did not; ``task_id`` narrows the answer
+    to one task. It reads the bus for that room only: one room's tasks never
+    show in another.
 
     Args:
         kit: The framework whose ``status_bus`` the tool reads.

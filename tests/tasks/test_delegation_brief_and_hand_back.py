@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit
+from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, TaskCutShortError
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.models.context import RoomContext
@@ -220,7 +220,15 @@ def _result(status: TaskStatus, output: str | None = None, error: str | None = N
 
 def test_a_failed_task_posts_that_it_failed_without_its_error() -> None:
     text = posted_text(_result(TaskStatus.FAILED, error="Traceback: secret"), "Count.")
-    assert text == "The task “Count.” failed."
+    assert text == "The task “Count.” failed: an error ended it."
+
+
+def test_a_cut_task_posts_why_in_the_runtimes_words() -> None:
+    cut = _result(TaskStatus.FAILED, error=TaskCutShortError.message_for("max_rounds"))
+    cut.metadata["loop_end_reason"] = "max_rounds"
+    assert posted_text(cut, "Count.") == (
+        "The task “Count.” failed: it reached its limit of tool rounds before giving an answer."
+    )
 
 
 def test_a_completed_task_with_nothing_to_say_posts_nothing() -> None:

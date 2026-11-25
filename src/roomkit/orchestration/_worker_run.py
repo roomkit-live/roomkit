@@ -20,7 +20,7 @@ from roomkit.core.exceptions import ToolTimeoutError
 from roomkit.models.enums import TaskStatus
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
-from roomkit.tasks.models import task_work
+from roomkit.tasks.models import failed_task_words, task_end_reason, task_work
 from roomkit.tasks.status import RUN_ENTRY
 from roomkit.tools.timeout import answer_within
 
@@ -41,10 +41,11 @@ def task_input(event: RoomEvent) -> str:
 def task_output(result: Any) -> str:
     """The text a strategy reads of a delegated task result: its work.
 
-    A failed task reads as failed, never with its error, which is an
-    exception's message for the logs and hooks, not for a model (RFC §9.3),
-    nor with the narration a worker cut short keeps as its output (RFC
-    §23.3). Accepts a real result, a duck-typed object, or ``None``.
+    A failed task reads as failed, with why from the closed list a model may
+    read, never with its error, which is an exception's message for the logs
+    and hooks, not for a model (RFC §9.3), nor with the narration a worker cut
+    short keeps as its output (RFC §23.3). Accepts a real result, a duck-typed
+    object, or ``None``.
     """
     if result is None:
         return ""
@@ -53,7 +54,7 @@ def task_output(result: Any) -> str:
     if getattr(result, "status", None) == TaskStatus.CANCELLED:
         return "The task was cancelled."
     failed = getattr(result, "error", None) or getattr(result, "status", None) == TaskStatus.FAILED
-    return "The task failed." if failed else ""
+    return f"The task {failed_task_words(result)}." if failed else ""
 
 
 def task_completed(result: Any) -> bool:
@@ -70,16 +71,31 @@ class WorkerOutcome:
             failed, was cancelled or timed out (never an error's message).
         completed: Whether the task completed.
         task: The delegated task; ``None`` when it timed out.
+        timed_out: Whether the strategy's bound cut the delegation.
     """
 
     output: str
     completed: bool
     task: DelegatedTask | None = None
+    timed_out: bool = False
 
     @property
     def result(self) -> DelegatedTaskResult | None:
         """The task's result; ``None`` when it timed out."""
         return self.task.result if self.task is not None else None
+
+    @property
+    def end_reason(self) -> str | None:
+        """Why the delegation did not complete, of the closed list a model
+        may read (RFC §19.7.3): ``timeout`` when the strategy's bound cut it,
+        whatever its task then ended with, else its task's end reason."""
+        return "timeout" if self.timed_out else task_end_reason(self.result)
+
+
+def _timed_out(timeout: float | None, task: DelegatedTask | None = None) -> WorkerOutcome:
+    """The outcome of a delegation the strategy's *timeout* cut: read as
+    timed out, by that bound."""
+    return WorkerOutcome(f"The task timed out after {timeout:g}s.", False, task, timed_out=True)
 
 
 class WorkerEnd(NamedTuple):
@@ -164,14 +180,15 @@ async def _posted(
     try:
         outcome = await delegation
     except asyncio.CancelledError:
-        post(StatusLevel.FAILED, "cancelled")
+        post(StatusLevel.FAILED, "cancelled", reason="cancelled")
         raise
     except Exception as exc:
-        post(StatusLevel.FAILED, str(exc))
+        post(StatusLevel.FAILED, str(exc), reason="error")
         raise
     if status is not None:
         end = status.ended(outcome)
-        post(end.level, end.detail, task=outcome.task, metadata=end.metadata)
+        reason = outcome.end_reason if end.level == StatusLevel.FAILED else None
+        post(end.level, end.detail, task=outcome.task, metadata=end.metadata, reason=reason)
     return outcome
 
 
@@ -184,7 +201,7 @@ async def _await_started(
         result = await answer_within(timeout, task.agent_id, task.wait())
     except ToolTimeoutError:
         await kit.task_runner.cancel(task.id)
-        return WorkerOutcome(f"The task timed out after {timeout:g}s.", False, task)
+        return _timed_out(timeout, task)
     return WorkerOutcome(task_output(result), task_completed(result), task)
 
 
@@ -203,7 +220,7 @@ async def _delegate(
     try:
         delegated = await answer_within(timeout, worker_id, answer)
     except ToolTimeoutError:
-        return WorkerOutcome(f"The task timed out after {timeout:g}s.", False)
+        return _timed_out(timeout)
     result = delegated.result
     return WorkerOutcome(task_output(result), task_completed(result), delegated)
 
@@ -246,11 +263,16 @@ class _Posts:
         *,
         task: DelegatedTask | None = None,
         metadata: dict[str, Any] | None = None,
+        reason: str | None = None,
     ) -> None:
+        """Post an entry of the run; a failed terminal one names why under
+        ``task_end_reason`` (*reason*), as a task's own entry does."""
         status = self._status
         if status is None:
             return
         metadata = {**status.metadata, **(metadata or {}), RUN_ENTRY: True}
+        if reason is not None:
+            metadata["task_end_reason"] = reason
         task_id = task.id if task is not None else self._task_id
         if task_id:
             metadata["task_id"] = task_id

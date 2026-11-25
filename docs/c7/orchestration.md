@@ -230,6 +230,25 @@ await kit.cancel_task(task.id)
   in the background; with `organization_id=`, only one running for a room
   of that organization: another organization's task answers `False`, as one
   the kit does not hold, and keeps running.
+- A task that did not complete tells whoever asked why, by one code of a
+  closed list and the runtime's words for it (RFC §23.3 step 6): a turn cut
+  short (`max_rounds`, `timeout`, `budget_exceeded`, `truncated`,
+  `empty_response`, `unfinished`, `force_stopped`, an ACP agent's
+  `max_tokens`, `max_turn_requests`, `refusal`, `interrupted`), `cancelled`,
+  `empty_response` for a worker that answered nothing, or `error` for any
+  other failure, whose detail (a provider's message, a raise) stays on the
+  task's result and `ON_TASK_COMPLETED`. The relayed hand-back reads
+  `failed: it reached its limit of tool rounds before giving an answer
+  (max_rounds)`; its metadata, `ON_TASK_COMPLETED` and the task's status
+  entry carry `task_end_reason`; `task_status`, `room_tasks()` and an inline
+  `delegate_task` answer `end_reason` and `end_reason_text`, read from the
+  entry only when the list names the reason. A strategy reads a worker's
+  failed task the same way (`The task failed: … (max_rounds).`), and a
+  worker past the strategy's own `task_timeout` as `The task timed out
+  after 30s.`; its run's failed entry names `task_end_reason` too (the
+  task's, `timeout`, `cancelled` or `error`). A worker's last narration
+  stays on `result.output`, for the host alone
+  (`examples/task_end_reason.py`).
 - `hand_back="relay"`: the agent is told the result and says it in a turn of
   its own, at the front of the queue. `"post"`: the result is posted as the
   agent's message, as it is, with no generation; it waits at the front of the
@@ -759,7 +778,8 @@ room's last messages both the calling agent and the notified channel may read.
 its results carries back to the agent.
 `wait_in_task_rooms=True` makes a call from a task's room, a worker delegating in
 turn, run its task inline: it answers with the task's `status` and its `result`
-(empty for a failed task), and cancelling the worker's task cancels it too; a
+(empty for a failed task, which adds why: `end_reason`, `end_reason_text`), and
+cancelling the worker's task cancels it too; a
 host's own `handler.handle(...)` on a task's room waits the same way. Without it,
 the call starts a background task, as from any room, and the worker's own task
 may end before its result comes back.
