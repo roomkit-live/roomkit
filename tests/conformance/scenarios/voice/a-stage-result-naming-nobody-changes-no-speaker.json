@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-stage-result-naming-nobody-changes-no-speaker",
+  "title": "A stage result attributed to nobody between two of one voice fires no change",
+  "rules": [
+    "§12.3.9"
+  ],
+  "requirements": [
+    "RK-12.3.9-006"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "change",
+        "trigger": "on_speaker_change",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "speakers": [
+        {
+          "speaker_id": "A",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "A",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": null,
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "A",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI=",
+        "AQI=",
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "change": [
+        {
+          "voice": {
+            "speaker_id": "A",
+            "source": "pipeline"
+          }
+        }
+      ]
+    }
+  }
+}

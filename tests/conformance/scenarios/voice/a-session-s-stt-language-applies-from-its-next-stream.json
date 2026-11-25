@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-session-s-stt-language-applies-from-its-next-stream",
+  "title": "A language chosen for a session during an utterance reaches the next stream, not the open one",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-060",
+    "RK-12.2-061"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "partial",
+        "trigger": "on_partial_transcription",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "heard"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "supports_language_override": true,
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "bon",
+                "final": false
+              }
+            ],
+            "at_end": [
+              {
+                "text": "bonjour"
+              }
+            ]
+          },
+          {
+            "at_end": [
+              {
+                "text": "merci"
+              }
+            ]
+          }
+        ]
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "heard"
+    },
+    {
+      "call": "voice.set_stt_language",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "language": "fr"
+    },
+    {
+      "open": "heard"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "language": null
+            },
+            {
+              "language": "fr"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "bonjour"
+          }
+        },
+        {
+          "content": {
+            "body": "merci"
+          }
+        }
+      ]
+    }
+  }
+}

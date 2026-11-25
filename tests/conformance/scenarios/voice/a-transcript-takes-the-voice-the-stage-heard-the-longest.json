@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-transcript-takes-the-voice-the-stage-heard-the-longest",
+  "title": "The stage's voice heard the longest over an utterance names its transcript",
+  "rules": [
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-12.2.3-044",
+    "RK-12.2.3-050",
+    "RK-12.2.3-051"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tx",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "sender_name": "Bea"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "change",
+        "trigger": "on_speaker_change",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        null,
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "hello"
+      ],
+      "pipeline_speakers": true,
+      "speakers": [
+        {
+          "speaker_id": "A",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "B",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "B",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "B",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI=",
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "tx": [
+        {
+          "voice": {
+            "text": "hello",
+            "speaker": "B",
+            "speaker_epoch": 0,
+            "sender_name": "Speaker B"
+          }
+        }
+      ],
+      "change": [
+        {
+          "voice": {
+            "speaker_id": "A",
+            "source": "pipeline"
+          }
+        },
+        {
+          "voice": {
+            "speaker_id": "B",
+            "source": "pipeline"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "source": {
+            "participant_id": "alice"
+          },
+          "metadata": {
+            "speaker_label": "B",
+            "speaker_epoch": 0,
+            "sender_name": "Bea"
+          }
+        }
+      ]
+    }
+  }
+}

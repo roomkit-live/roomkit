@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-turn-s-wait-takes-in-the-transcript-of-speech-that-ended",
+  "title": "A wait that passed while ended speech is still being transcribed routes the turn with it",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-013"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "incomplete",
+        "trigger": "on_turn_incomplete",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "applied"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "streams": [
+          {
+            "at_end": [
+              {
+                "text": "first"
+              }
+            ]
+          },
+          {
+            "gate": "late",
+            "at_end": [
+              {
+                "text": "more"
+              }
+            ]
+          }
+        ]
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "turn_decisions": [
+        {
+          "is_complete": false,
+          "suggested_wait_ms": 0,
+          "gate": "judging"
+        },
+        {
+          "is_complete": true
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "judging"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "open": "judging"
+    },
+    {
+      "wait_for": "applied"
+    },
+    {
+      "open": "applied"
+    },
+    {
+      "idle": true
+    },
+    {
+      "open": "late"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "first more"
+          }
+        }
+      ]
+    }
+  }
+}

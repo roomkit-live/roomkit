@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-stage-s-speaker-is-read-as-a-recognizer-label",
+  "title": "The stage's speaker ids are normalised as labels and keep epoch 0 for the session",
+  "rules": [
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-12.2.3-046",
+    "RK-12.2.3-049",
+    "RK-12.2.3-052"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "one",
+        "two",
+        "three",
+        "four"
+      ],
+      "pipeline_speakers": true,
+      "speakers": [
+        {
+          "speaker_id": "speaker_1",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "speaker_1",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "Speaker 2",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "Speaker 2",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "Speakerphone",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "Speakerphone",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "speaker",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "speaker",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "one"
+          },
+          "metadata": {
+            "speaker_label": "1",
+            "speaker_epoch": 0,
+            "sender_name": "Speaker 1"
+          }
+        },
+        {
+          "content": {
+            "body": "two"
+          },
+          "metadata": {
+            "speaker_label": "2",
+            "speaker_epoch": 0,
+            "sender_name": "Speaker 2"
+          }
+        },
+        {
+          "content": {
+            "body": "three"
+          },
+          "metadata": {
+            "speaker_label": "Speakerphone",
+            "speaker_epoch": 0,
+            "sender_name": "Speaker Speakerphone"
+          }
+        },
+        {
+          "content": {
+            "body": "four"
+          },
+          "metadata": {
+            "speaker_label": "speaker",
+            "speaker_epoch": 0,
+            "sender_name": "Speaker speaker"
+          }
+        }
+      ]
+    }
+  }
+}

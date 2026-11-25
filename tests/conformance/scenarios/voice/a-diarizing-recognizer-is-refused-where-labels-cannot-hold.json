@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-diarizing-recognizer-is-refused-where-labels-cannot-hold",
+  "title": "A diarizing recognizer behind a VAD, or in batch mode, is refused at construction",
+  "rules": [
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-12.2.3-019"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "supports_diarization": true
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "batch",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "supports_diarization": true
+      },
+      "batch_mode": true,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {}
+}

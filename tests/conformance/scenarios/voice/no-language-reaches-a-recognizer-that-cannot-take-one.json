@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/no-language-reaches-a-recognizer-that-cannot-take-one",
+  "title": "A session's language chosen for a recognizer without per-call languages never reaches it",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-058"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "supports_language_override": false,
+        "streams": [
+          {
+            "at_end": [
+              {
+                "text": "hello"
+              }
+            ]
+          }
+        ]
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ]
+    },
+    {
+      "call": "voice.set_stt_language",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "language": "fr",
+      "expect": {
+        "error": "language_override_unsupported"
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "language": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

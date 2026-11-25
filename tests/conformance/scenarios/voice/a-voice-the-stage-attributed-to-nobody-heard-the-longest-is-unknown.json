@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-voice-the-stage-attributed-to-nobody-heard-the-longest-is-unknown",
+  "title": "A stage result naming nobody counts as an unknown speaker, who names the utterance",
+  "rules": [
+    "§12.2.3",
+    "§12.3.9"
+  ],
+  "requirements": [
+    "RK-12.2.3-047",
+    "RK-12.3.9-007"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "hello"
+      ],
+      "pipeline_speakers": true,
+      "speakers": [
+        {
+          "speaker_id": "A",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": "",
+          "confidence": 0.9,
+          "is_new_speaker": false
+        },
+        {
+          "speaker_id": null,
+          "confidence": 0.9,
+          "is_new_speaker": false
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "source": {
+            "participant_id": "alice"
+          },
+          "metadata": {
+            "speaker_label": {
+              "$absent": true
+            },
+            "sender_name": "Unknown speaker"
+          }
+        }
+      ]
+    }
+  }
+}

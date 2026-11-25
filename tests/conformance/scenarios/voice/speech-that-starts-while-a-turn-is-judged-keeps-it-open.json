@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-that-starts-while-a-turn-is-judged-keeps-it-open",
+  "title": "Speech begun while the detector judges a turn incomplete keeps it open past its wait",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-011"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "incomplete",
+        "trigger": "on_turn_incomplete",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "applied"
+          }
+        ]
+      },
+      {
+        "name": "level",
+        "trigger": "on_vad_audio_level",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "level"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "audio_level",
+          "level_db": -20
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "first",
+        "more"
+      ],
+      "turn_decisions": [
+        {
+          "is_complete": false,
+          "suggested_wait_ms": 0,
+          "gate": "judging"
+        },
+        {
+          "is_complete": true
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "judging"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "judging"
+    },
+    {
+      "wait_for": "applied"
+    },
+    {
+      "open": "applied"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "level"
+    },
+    {
+      "open": "level"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "first more"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-incomplete-turn-is-routed-once-its-wait-passes-in-silence",
+  "title": "A turn judged incomplete is routed once the decision's wait, or the default one, passes",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-010",
+    "RK-12.3.12-015"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "complete",
+        "trigger": "on_turn_complete",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "first",
+        "more",
+        "again"
+      ],
+      "turn_decisions": [
+        {
+          "is_complete": false,
+          "suggested_wait_ms": 50
+        }
+      ],
+      "turn_incomplete_wait_ms": 60000
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "phone2",
+      "room_id": "r2",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "first",
+        "more",
+        "again"
+      ],
+      "turn_decisions": [
+        {
+          "is_complete": false
+        }
+      ],
+      "turn_incomplete_wait_ms": 50
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone2",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone2"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "complete": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "voice": {
+              "text": "first",
+              "confidence": 0.0
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "text": "first",
+              "confidence": 0.0
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "first"
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "body": "first"
+          }
+        }
+      ]
+    }
+  }
+}
