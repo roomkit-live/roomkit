@@ -232,10 +232,14 @@ class VoiceOpsMixin(HelpersMixin):
         try:
             channel.bind_session(session, room_id, binding, backend=backend)
         except Exception:
-            # Refused (a full bridge, RFC §12.7.2): nothing is bound, and a
-            # session the kit made for this join is hung up, not left open.
+            # A refused bind leaves nothing bound (a full bridge refuses first,
+            # RFC §12.7.2); a session the kit made for this join is hung up,
+            # not left open, and the refusal is what the caller gets.
             if created:
-                await create_backend.disconnect(session)
+                try:
+                    await create_backend.disconnect(session)
+                except Exception:
+                    logger.exception("Disconnecting refused voice session %s failed", session.id)
             raise
         await record_reached(
             self._store, self._lock_manager, room_id, session.participant_id, channel_id

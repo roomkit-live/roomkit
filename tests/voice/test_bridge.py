@@ -1362,6 +1362,19 @@ class TestBridgeCapacity:
         assert carol.state.value == "ended"
         await kit.close()
 
+    async def test_a_hang_up_that_fails_leaves_the_refusal_to_the_caller(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit, backend, _ = await self._full_room()
+
+        async def broken_disconnect(session: object) -> None:
+            raise ConnectionError("transport gone")
+
+        monkeypatch.setattr(backend, "disconnect", broken_disconnect)
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "voice", participant_id="carol")
+        await kit.close()
+
 
 class TestBridgeWithSTT:
     """Verify bridge forwarding and STT transcription fire from the same frames."""
