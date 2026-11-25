@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-lane-normalises-a-track-s-format-before-its-other-stages",
+  "title": "A lane resamples a track's frames to the pipeline's format before its AGC, denoiser and VAD, in that order, then recognizes the utterance",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-145",
+    "RK-12.10.4-149"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "agc": {},
+      "denoiser": {},
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Bonjour"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQABAAEAAQABAAEA",
+        "AQABAAEAAQABAAEA"
+      ],
+      "sample_rate": 48000
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "agc",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            },
+            {
+              "stage": "denoiser",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            },
+            {
+              "stage": "agc",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            },
+            {
+              "stage": "denoiser",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "mic",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            }
+          ],
+          "stt_streams": [
+            {
+              "language": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Bonjour"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

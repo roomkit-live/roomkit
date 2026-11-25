@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/recognition-held-on-one-track-delays-no-other-track",
+  "title": "While recognition of one track's utterance is held, another track's frames are delivered and its utterance is transcribed and stored first",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-008"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Slow words"
+              }
+            ],
+            "gate": "recognizing"
+          },
+          {
+            "results": [
+              {
+                "text": "Quick words"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "wait_for": "recognizing"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "track_ids": [
+        "b-mic"
+      ]
+    },
+    {
+      "open": "recognizing"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Quick words"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "bob"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Slow words"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

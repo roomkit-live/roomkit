@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/two-tracks-speaking-at-once-are-each-transcribed-and-attributed",
+  "title": "Two participants speaking at once on their own tracks each get their own lane, and each transcription is attributed to its track's publisher",
+  "rules": [
+    "§12.10.1",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.1-010",
+    "RK-12.10.4-147"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Alice speaks first"
+              }
+            ]
+          },
+          {
+            "results": [
+              {
+                "text": "Bob speaks over her"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "track_ids": [
+        "a-mic"
+      ]
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "track_ids": [
+        "b-mic"
+      ]
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AgA=",
+        "AwA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "track_ids": [
+        "a-mic"
+      ]
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AgA=",
+        "AwA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "a-mic"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "b-mic"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "a-mic"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "a-mic"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "b-mic"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "b-mic"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Alice speaks first"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Bob speaks over her"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "bob"
+          }
+        }
+      ]
+    }
+  }
+}

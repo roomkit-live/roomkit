@@ -1,0 +1,75 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-number-a-caller-dialled-is-not-taken-for-the-caller",
+  "title": "An arrival whose SFU asserts only the trunk and destination numbers the caller dialled stays unknown, the resolver not asked",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-036"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+18005550100"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "trunk_number": "+18005550100",
+        "destination_number": "+18005550100"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [],
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "dial-in-1"
+        }
+      ]
+    }
+  }
+}

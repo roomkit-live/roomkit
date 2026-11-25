@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-track-s-recording-declares-the-format-its-frames-carry",
+  "title": "Two tracks delivered in different formats are each recorded as the format their frames carry, not the format the lanes normalise to",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-015"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AQACAA=="
+      ],
+      "sample_rate": 48000,
+      "channels": 2
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic",
+                  "codec": "pcm_s16le",
+                  "sample_rate": 16000,
+                  "channels": 1
+                }
+              ]
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "b-mic",
+                  "codec": "pcm_s16le",
+                  "sample_rate": 48000,
+                  "channels": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

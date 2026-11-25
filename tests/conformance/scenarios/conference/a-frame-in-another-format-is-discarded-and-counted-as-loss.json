@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-frame-in-another-format-is-discarded-and-counted-as-loss",
+  "title": "A frame arriving in another format than the one its track's recording was opened on is not written, and is counted as discarded",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-019",
+    "RK-12.10.8-020"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQACAA==",
+        "AQACAA=="
+      ],
+      "channels": 2
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic",
+                  "channels": 1
+                }
+              ],
+              "chunks": [
+                "AQA=",
+                "AgA="
+              ]
+            }
+          ],
+          "dropped": 2
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

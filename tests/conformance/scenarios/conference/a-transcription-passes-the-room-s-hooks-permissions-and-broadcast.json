@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-transcription-passes-the-room-s-hooks-permissions-and-broadcast",
+  "title": "A conference transcription runs the room's before-broadcast hook and reaches the room's other channels as any inbound event, a channel without read access excepted",
+  "rules": [
+    "§12.10.1",
+    "§12.10.9"
+  ],
+  "requirements": [
+    "RK-12.10.1-006",
+    "RK-12.10.9-002"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws-reader",
+        "type": "websocket"
+      },
+      {
+        "id": "ws-writer",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws-reader"
+          },
+          {
+            "channel_id": "ws-writer",
+            "access": "write_only"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "screen",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Minutes start now"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "screen": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "Minutes start now"
+            },
+            "source": {
+              "channel_id": "conf",
+              "participant_id": "alice"
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ws-reader": [
+          {
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "Minutes start now"
+            },
+            "source": {
+              "channel_id": "conf",
+              "participant_id": "alice"
+            }
+          }
+        ],
+        "ws-writer": []
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-provider-attribute-never-overwrites-the-integrator-s-field",
+  "title": "An arrival's provider attributes are not merged flat into the participant's metadata, so the integrator's field of the same name is kept",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-044"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "dial-in-1",
+            "channel_id": "conf",
+            "metadata": {
+              "tier": "gold"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "tier": "platinum",
+        "phone_number": "+15550101"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-2",
+      "metadata": {
+        "tier": "silver"
+      },
+      "client_metadata": {
+        "nickname": "bob"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "metadata": {
+            "tier": "gold",
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "id": "dial-in-2",
+          "metadata": {
+            "tier": {
+              "$absent": true
+            },
+            "nickname": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

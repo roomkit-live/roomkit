@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-dial-in-is-resolved-on-arrival-on-the-caller-number-its-sfu-asserts",
+  "title": "A dial-in that never speaks is resolved on arrival on the caller number its SFU asserts, the Identity linked to the record keyed on its backend identity",
+  "rules": [
+    "§12.10.2",
+    "§12.10.9"
+  ],
+  "requirements": [
+    "RK-12.10.2-030",
+    "RK-12.10.2-033",
+    "RK-12.10.2-034",
+    "RK-12.10.9-005"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      }
+    ],
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "external_id": "dial-in-1",
+          "identification": "identified",
+          "identity_id": "user-42",
+          "display_name": "Alice"
+        }
+      ]
+    },
+    "timeline": {
+      "r1": []
+    }
+  }
+}

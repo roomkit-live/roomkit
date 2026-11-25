@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-muted-binding-hands-no-frame-to-a-lane",
+  "title": "Once the conference's binding is muted, its track has no lane: frames fed then give no speech edge and no transcription",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-157"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Before the mute"
+              }
+            ]
+          },
+          {
+            "results": [
+              {
+                "text": "After the mute"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "mute",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "muted": true
+        }
+      }
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AwA=",
+        "BAA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Before the mute"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "started": [
+        {
+          "trigger": "on_speech_start"
+        }
+      ]
+    }
+  }
+}

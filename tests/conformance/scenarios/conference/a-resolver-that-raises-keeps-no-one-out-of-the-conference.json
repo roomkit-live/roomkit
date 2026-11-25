@@ -1,0 +1,63 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-resolver-that-raises-keeps-no-one-out-of-the-conference",
+  "title": "An arrival whose identity resolver raises still joins the room's roster, unknown",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-050"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "fail": "the directory is down"
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "dial-in-1"
+        }
+      ]
+    }
+  }
+}

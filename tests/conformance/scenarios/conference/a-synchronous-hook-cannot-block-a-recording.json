@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-synchronous-hook-cannot-block-a-recording",
+  "title": "A synchronous ON_RECORDING_STARTED hook that blocks stops no recording: the track's frames are still written",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-034"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "veto",
+        "trigger": "on_recording_started",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "no consent"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic"
+                }
+              ],
+              "chunks": [
+                "AQA=",
+                "AgA="
+              ],
+              "stopped": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "veto": [
+        {
+          "trigger": "on_recording_started"
+        }
+      ]
+    }
+  }
+}

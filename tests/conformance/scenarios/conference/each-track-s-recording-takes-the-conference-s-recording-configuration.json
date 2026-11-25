@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/each-track-s-recording-takes-the-conference-s-recording-configuration",
+  "title": "Each track's recording is opened with the conference's recording format, storage, metadata and encryption",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-006"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "format": "flac",
+        "storage": "meetings",
+        "metadata": {
+          "case": "4471"
+        },
+        "encryption": "vault",
+        "storage_encrypted_at_rest": true
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic"
+                }
+              ],
+              "config": {
+                "format": "flac",
+                "storage": "meetings",
+                "metadata": {
+                  "case": "4471"
+                },
+                "encryption": "vault",
+                "storage_encrypted_at_rest": true
+              }
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "b-mic"
+                }
+              ],
+              "config": {
+                "format": "flac",
+                "storage": "meetings",
+                "metadata": {
+                  "case": "4471"
+                },
+                "encryption": "vault",
+                "storage_encrypted_at_rest": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

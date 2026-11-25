@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-lane-s-utterance-is-one-room-event-attributed-to-its-publisher",
+  "title": "An utterance on a participant's track, several frames long, is recognized once and stored as one room event attributed to the publisher, with no AEC or diarization configured",
+  "rules": [
+    "§12.10.1",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.1-005",
+    "RK-12.10.4-145",
+    "RK-12.10.4-150",
+    "RK-12.10.4-152",
+    "RK-12.10.4-153"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        null,
+        {
+          "type": "speech_start"
+        },
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Hello everyone"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA=",
+        "AwA=",
+        "BAA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "language": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Hello everyone"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

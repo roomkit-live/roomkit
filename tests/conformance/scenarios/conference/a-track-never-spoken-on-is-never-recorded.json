@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-track-never-spoken-on-is-never-recorded",
+  "title": "A track subscribed and unpublished without a frame opens no recording and fires no recording hook",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-035"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_recording_stopped",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "mic"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [],
+          "dropped": 0
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [],
+      "stopped": []
+    }
+  }
+}

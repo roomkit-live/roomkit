@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-track-s-recording-ends-with-its-track-alone",
+  "title": "Unpublishing one track finalizes and reports its recording at once, while the other track's recording goes on and is reported only once the conference ends",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-017",
+    "RK-12.10.8-032"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_recording_stopped",
+        "execution": "async"
+      },
+      {
+        "name": "arrived",
+        "trigger": "on_conference_participant_joined",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "a-mic"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "carol"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AwA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic"
+                }
+              ],
+              "chunks": [
+                "AQA="
+              ],
+              "stopped": true
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "b-mic"
+                }
+              ],
+              "chunks": [
+                "AgA=",
+                "AwA="
+              ],
+              "stopped": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "stopped": [
+        {
+          "trigger": "on_recording_stopped",
+          "room_id": "r1",
+          "conference": {
+            "track_id": "a-mic",
+            "participant_id": "alice"
+          }
+        },
+        {
+          "trigger": "on_recording_stopped",
+          "room_id": "r1",
+          "conference": {
+            "track_id": "b-mic",
+            "participant_id": "bob"
+          }
+        }
+      ]
+    },
+    "hook_order": [
+      "arrived",
+      "arrived",
+      "stopped",
+      "arrived",
+      "stopped"
+    ]
+  }
+}

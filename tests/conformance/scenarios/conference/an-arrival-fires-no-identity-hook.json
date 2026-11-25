@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-arrival-fires-no-identity-hook",
+  "title": "An arrival the resolver answers unknown or ambiguous fires no identity hook, refuses no one and injects nothing into the room",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-047"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "user-42"
+                },
+                {
+                  "id": "user-43"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown"
+      },
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-2",
+      "metadata": {
+        "caller_number": "+15550199"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      },
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550199"
+      }
+    ],
+    "hooks": {
+      "unknown": [],
+      "ambiguous": []
+    },
+    "timeline": {
+      "r1": []
+    },
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1"
+        },
+        {
+          "id": "dial-in-2"
+        }
+      ]
+    }
+  }
+}

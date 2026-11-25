@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/each-track-is-recorded-apart-and-attributed-to-its-publisher",
+  "title": "Each subscribed track gets a recording of its own, opened with that one track, attributed to its publisher as resolved and to the conference channel",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-013",
+    "RK-12.10.8-014",
+    "RK-12.10.8-006"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {},
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "track_id": "d-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "d-mic",
+      "frames": [
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic",
+                  "kind": "audio",
+                  "channel_id": "conf",
+                  "participant_id": "alice"
+                }
+              ],
+              "config": {
+                "format": "wav",
+                "encryption": null,
+                "storage_encrypted_at_rest": false
+              },
+              "chunks": [
+                "AQA="
+              ]
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "d-mic",
+                  "kind": "audio",
+                  "channel_id": "conf",
+                  "participant_id": "dial-in-1"
+                }
+              ],
+              "config": {
+                "format": "wav",
+                "encryption": null,
+                "storage_encrypted_at_rest": false
+              },
+              "chunks": [
+                "AgA="
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "alice"
+        },
+        {
+          "id": "dial-in-1",
+          "identity_id": "user-42"
+        }
+      ]
+    }
+  }
+}

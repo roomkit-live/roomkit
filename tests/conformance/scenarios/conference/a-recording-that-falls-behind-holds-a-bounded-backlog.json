@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recording-that-falls-behind-holds-a-bounded-backlog",
+  "title": "A track whose recording writes fall behind holds no more frames than the channel's bound, the rest discarded and counted",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-024"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "write_gates": {
+          "mic": "writing"
+        }
+      },
+      "max_queued_frames": 2
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "wait_for": "writing"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AgA=",
+        "AwA=",
+        "BAA=",
+        "BQA="
+      ]
+    },
+    {
+      "open": "writing"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic"
+                }
+              ],
+              "chunks": [
+                "AQA=",
+                "$any",
+                "$any"
+              ]
+            }
+          ],
+          "dropped": 2
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

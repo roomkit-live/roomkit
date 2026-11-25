@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-arrival-whose-resolution-times-out-joins-unknown",
+  "title": "An arrival whose identity resolution outlives the identity timeout joins unknown, and identity_timeout is emitted",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-049"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_timeout_ms": 50,
+      "identity_resolver": {
+        "answers": [
+          {
+            "gate": "directory",
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "dial-in-1"
+        }
+      ]
+    },
+    "framework_events": {
+      "r1": [
+        "room_channel_attached",
+        {
+          "event": "identity_timeout",
+          "channel_id": "conf"
+        }
+      ]
+    }
+  }
+}

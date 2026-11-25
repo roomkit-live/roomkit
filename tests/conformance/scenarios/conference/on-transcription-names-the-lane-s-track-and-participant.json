@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/on-transcription-names-the-lane-s-track-and-participant",
+  "title": "ON_TRANSCRIPTION fires once per lane utterance, naming its track and its participant",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-155"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_transcription"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Alice here"
+              }
+            ]
+          },
+          {
+            "results": [
+              {
+                "text": "Bob here"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "heard": [
+        {
+          "trigger": "on_transcription",
+          "room_id": "r1",
+          "conference": {
+            "room_id": "r1",
+            "track_id": "a-mic",
+            "participant_id": "alice",
+            "text": "Alice here"
+          }
+        },
+        {
+          "trigger": "on_transcription",
+          "room_id": "r1",
+          "conference": {
+            "room_id": "r1",
+            "track_id": "b-mic",
+            "participant_id": "bob",
+            "text": "Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-ambiguous-arrival-is-pending-and-a-rejected-one-unknown",
+  "title": "An arrival resolved ambiguous is recorded as a pending identification with its candidates, and one resolved rejected or challenged stays unknown",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-048"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "user-42"
+                },
+                {
+                  "id": "user-43"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "rejected",
+              "reason": "blocked"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550177"
+            },
+            "result": {
+              "status": "challenge_sent"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-2",
+      "metadata": {
+        "caller_number": "+15550199"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-3",
+      "metadata": {
+        "caller_number": "+15550177"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identification": "pending",
+          "candidates": [
+            "user-42",
+            "user-43"
+          ],
+          "identity_id": null
+        },
+        {
+          "id": "dial-in-2",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "dial-in-2"
+        },
+        {
+          "id": "dial-in-3",
+          "identification": "unknown",
+          "identity_id": null,
+          "external_id": "dial-in-3"
+        }
+      ]
+    }
+  }
+}

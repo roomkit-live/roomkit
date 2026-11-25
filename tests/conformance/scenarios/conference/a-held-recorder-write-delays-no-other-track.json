@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-held-recorder-write-delays-no-other-track",
+  "title": "While a write of one track's recording is held, another track's frames are delivered and written",
+  "rules": [
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.8-022"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "write_gates": {
+          "a-mic": "writing"
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "a-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "b-mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "a-mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "wait_for": "writing"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "b-mic",
+      "frames": [
+        "AgA=",
+        "AwA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "track_ids": [
+        "b-mic"
+      ]
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic"
+                }
+              ],
+              "chunks": []
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "b-mic"
+                }
+              ],
+              "chunks": [
+                "AgA=",
+                "AwA="
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "writing"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "a-mic"
+                }
+              ],
+              "chunks": [
+                "AQA="
+              ]
+            },
+            {
+              "tracks": [
+                {
+                  "track_id": "b-mic"
+                }
+              ],
+              "chunks": [
+                "AgA=",
+                "AwA="
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

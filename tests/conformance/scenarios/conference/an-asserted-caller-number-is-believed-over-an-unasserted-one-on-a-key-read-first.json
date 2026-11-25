@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-asserted-caller-number-is-believed-over-an-unasserted-one-on-a-key-read-first",
+  "title": "A caller number the SFU asserts is resolved over one the participant's client supplied under a key read first",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-040"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-99",
+                "display_name": "Mallory"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "address_keys": [
+        "sfu_caller_number",
+        "caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "caller_number": "+15550101"
+      },
+      "client_metadata": {
+        "sfu_caller_number": "+15550199"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      }
+    ],
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identity_id": "user-42"
+        }
+      ]
+    }
+  }
+}

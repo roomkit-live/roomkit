@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-lane-s-speech-edges-name-the-participant-and-track",
+  "title": "ON_SPEECH_START and ON_SPEECH_END fire at a lane's VAD boundaries, naming the publishing participant and the track",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-156"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "ended",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        null,
+        {
+          "type": "speech_start"
+        },
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Ready"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA=",
+        "AwA=",
+        "BAA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [
+        {
+          "trigger": "on_speech_start",
+          "room_id": "r1",
+          "conference": {
+            "room_id": "r1",
+            "track_id": "mic",
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "ended": [
+        {
+          "trigger": "on_speech_end",
+          "room_id": "r1",
+          "conference": {
+            "room_id": "r1",
+            "track_id": "mic",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    },
+    "hook_order": [
+      "started",
+      "ended"
+    ]
+  }
+}
