@@ -139,6 +139,9 @@ class ScriptedRealtimeSession:
             await act(tool, self.channel, self.session, self._kit)
             if "after_gate" in tool:
                 await self._gates.hold(tool["after_gate"])
+            if "delay_ms" in tool:
+                # Still working a while past its ending (README, a tool's ``delay_ms``).
+                await asyncio.sleep(tool["delay_ms"] / 1000)
         except asyncio.CancelledError:
             self.handlers.append({"name": name, "outcome": "interrupted"})
             raise

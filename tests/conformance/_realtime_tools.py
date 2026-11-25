@@ -54,6 +54,7 @@ REALTIME_TOOL = {
     "action",
     "in_task",
     "after_gate",
+    "delay_ms",
 }
 REASONING = {"runs", "agent"}
 BACKEND_ACTION = {
