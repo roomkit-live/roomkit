@@ -53,13 +53,9 @@ class RecordingTransport(MockRealtimeTransport):
         self.calls.append(MockCall(method="interrupt", args={"session_id": session.id}))
 
 
-def channel_options(spec: Mapping[str, Any]) -> dict[str, Any]:
-    """The channel's own prompt and voice, when its spec names them."""
-    return {key: spec[key] for key in CONFIGURATION if key in spec}
-
-
-def own_configuration(spec: Mapping[str, Any]) -> dict[str, Any]:
-    """The prompt and voice a ``realtime.start`` opens its session with."""
+def prompt_and_voice(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """The prompt and voice *spec* names: the channel's, from its ``realtime``
+    spec, or the session's own, from a ``realtime.start``."""
     return {key: spec[key] for key in CONFIGURATION if key in spec}
 
 

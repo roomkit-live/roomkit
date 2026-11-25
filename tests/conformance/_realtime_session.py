@@ -26,10 +26,9 @@ from tests.conformance._realtime_reads import (
     RecordingTransport,
     configuration,
     on_usage,
-    own_configuration,
+    prompt_and_voice,
     reads_call,
 )
-from tests.conformance._realtime_reads import channel_options as reads_options
 from tests.conformance._realtime_reads import read as reads_read
 from tests.conformance._realtime_tools import (
     BackendRecord,
@@ -111,7 +110,7 @@ class ScriptedRealtimeSession:
         self._rooms: dict[str, VoiceSession] = {}
         self.handlers: list[dict[str, str]] = []
         self.backend = BackendRecord()
-        options = dict(options) | channel_options(spec, self.trace) | reads_options(spec)
+        options = dict(options) | channel_options(spec, self.trace) | prompt_and_voice(spec)
         self.usage_reports = on_usage(self.provider, spec, gates)
         self.transport = RecordingTransport()
         if "reasoning" in spec:
@@ -144,7 +143,7 @@ class ScriptedRealtimeSession:
         self.provider.hold = {key: spec[key] for key in START_MEMBERS if key in spec}
         # The session's own prompt, voice and tools, given as it opens
         # (README, ``realtime.start``).
-        metadata = own_configuration(spec)
+        metadata = prompt_and_voice(spec)
         if (tools := spec.get("tools")) is not None:
             metadata["tools"] = [declaration(name, self._tools.get(name, {})) for name in tools]
         organization = {k: spec[k] for k in ("organization_id",) if k in spec}
