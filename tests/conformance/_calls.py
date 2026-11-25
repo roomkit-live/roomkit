@@ -178,6 +178,10 @@ def error_of(error: Exception) -> dict[str, Any]:
         # A verb of the turn's host refused once the turn is over (RFC
         # §10.6.5), its error naming the verb first.
         return {"name": "needs_turn", "reason": str(error).split(" needs a turn: ", 1)[0]}
+    if isinstance(error, RuntimeError) and "has reached max bridge participants" in str(error):
+        # A voice join the bridge has no room for, refused before anything
+        # binds the session (RFC §12.7.2).
+        return {"name": "bridge_full"}
     if isinstance(error, RuntimeError) and str(error) == "Released before an answer arrived":
         # A human-input request given up before an answer, as its waiter
         # reads it: withdrawn with its turn, or released (RFC §10.6.5).
