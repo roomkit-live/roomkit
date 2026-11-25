@@ -1,7 +1,8 @@
 """The conference's scripted SFU and its bot (RFC §12.10.3, §12.10.4).
 
 ``conference.read`` returns what the scripted SFU received (each call, each
-utterance published on a bot's track) and the channel's disclosure surface.
+utterance published on a bot's track), the bot sessions it holds with their
+grants, and the channel's disclosure surface.
 ``conference.ensure_bot``, ``plug``, ``unplug`` and ``set_bot_grants`` drive the
 channel's own operations; ``conference.bot_lost`` and ``conference.echo`` make
 the SFU report the bot's end, or the bot itself, through its callbacks.
@@ -53,6 +54,27 @@ _INFO = (
     "recording_configured",
     "vision_configured",
     "e2ee",
+)
+# The calls ``conference.read`` lists, the names its ``calls`` may filter on.
+_CALL_NAMES = frozenset(
+    {
+        "ensure_room",
+        "close_room",
+        "list_participants",
+        "join_as_bot",
+        "update_bot_grants",
+        "leave",
+        "stop_playback",
+        "subscribe_track",
+        "unsubscribe_track",
+        "publish_audio",
+        "publish_video",
+        "mint_access",
+        "remove_participant",
+        "mute_track",
+        "unmute_track",
+        "close",
+    }
 )
 _ROOM_INFO = (
     "bot_present",
@@ -129,6 +151,8 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
     backend = fixture.backend
     assert isinstance(backend, ScriptedSFU)
     names = spec.get("calls")
+    if names is not None and (unknown := set(names) - _CALL_NAMES):
+        raise UnreadableError(f"conference.read names no call {sorted(unknown)}")
     calls = [
         _call(backend, record)
         for record in backend.calls
@@ -138,7 +162,17 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
         {"session": utterance.bot_id, "complete": utterance.complete}
         for utterance in backend.utterances
     ]
-    return {"calls": calls, "utterances": utterances, "info": _info(fixture.channel)}
+    # The sessions the SFU holds now, each with the grants it last gave it.
+    bots = [
+        {"session": bot.id, "room_id": bot.room_id, "grants": _grants(backend.bot_grants[bot.id])}
+        for bot in backend.bots
+    ]
+    return {
+        "calls": calls,
+        "utterances": utterances,
+        "bots": bots,
+        "info": _info(fixture.channel),
+    }
 
 
 async def _ensure_bot(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
