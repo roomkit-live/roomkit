@@ -557,7 +557,9 @@ def scripted_channel(
             harness.acp_context[channel["id"]] = context
         return acp_channel
     if "realtime" in channel:
-        session = ScriptedRealtimeSession(channel["id"], channel["realtime"], harness.gates)
+        session = ScriptedRealtimeSession(
+            channel["id"], channel["realtime"], harness.gates, kit, harness
+        )
         harness.realtime_sessions[channel["id"]] = session
         return session.channel
     if "model" in channel:

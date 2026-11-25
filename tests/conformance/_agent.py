@@ -738,6 +738,7 @@ def scripted_agent(
     sandbox_executors: dict[str, Any] | None = None,
     speak_turns: dict[str, list[Any]] | None = None,
     thinker_calls: dict[str, list[Any]] | None = None,
+    host_handler: bool = True,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -747,7 +748,9 @@ def scripted_agent(
     calls' arguments read by *labelled* as the model writes them. A model
     *shared* holds under its name is answered from, as another process's
     channel of the same id is (README, ``processes``). Its *mcp* servers,
-    connected, are declared before its own tools and serve before them."""
+    connected, are declared before its own tools and serve before them.
+    Without *host_handler*, it is given no tool handler of the host's: a
+    reasoning backend's agent (README, ``realtime.reasoning.agent``)."""
     if spec.get("mcp_servers") and not mcp:
         raise ValueError("mcp_servers: only a setup channel's servers are connected")
     shared = shared or {}
@@ -879,7 +882,7 @@ def scripted_agent(
             if tool.get("declared", True)
         ]
         + _kit_tools(spec.get("kit_tools", []), kit),
-        tool_handler=_audited(handler, spec, auditors),
+        tool_handler=_audited(handler, spec, auditors) if host_handler else None,
         **kwargs,
     )
     return channel, models

@@ -48,6 +48,13 @@ from tests.conformance._mcp_shape import mcp_problems as host_mcp_problems
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._realtime_session import REALTIME_ARGUMENTS
+from tests.conformance._realtime_tools import (
+    BACKEND_ACTION,
+    REALTIME,
+    REALTIME_TOOL,
+    REASONING,
+)
+from tests.conformance._realtime_tools import DELEGATE as REALTIME_DELEGATE
 from tests.conformance._recording import RECORDING_ARGUMENTS
 from tests.conformance._routing import (
     CONDITIONS,
@@ -937,10 +944,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         for index, reaction in enumerate(channel.get(kind, [])):
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
     if "realtime" in channel:
-        realtime = channel["realtime"]
-        _members(realtime, {"tools", "reasoning_error"}, f"{path}.realtime", found)
-        for name, tool in realtime.get("tools", {}).items():
-            _members(tool, {"gate", "result", "reconnect"}, f"{path}.realtime.tools.{name}", found)
+        _realtime(channel["realtime"], f"{path}.realtime", found)
     if "model" in channel:
         _model(channel["model"], f"{path}.model", found)
     if "acp" in channel:
@@ -979,6 +983,25 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.extend(
             handler_problems(channel["external_tool_handler"], f"{path}.external_tool_handler")
         )
+
+
+def _realtime(realtime: Mapping[str, Any], path: str, found: list[str]) -> None:
+    """A realtime channel's members, its tools', its policy's and its backend's."""
+    _members(realtime, REALTIME, path, found)
+    for name, tool in realtime.get("tools", {}).items():
+        _members(tool, REALTIME_TOOL, f"{path}.tools.{name}", found)
+    if "tool_policy" in realtime:
+        _tool_policy(realtime["tool_policy"], f"{path}.tool_policy", found)
+    reasoning = realtime.get("reasoning", {})
+    _members(reasoning, REASONING, f"{path}.reasoning", found)
+    for index, run in enumerate(reasoning.get("runs", [])):
+        for position, action in enumerate(run):
+            where = f"{path}.reasoning.runs[{index}][{position}]"
+            _members(action, BACKEND_ACTION, where, found)
+            if "delegate" in action:
+                _members(action["delegate"], REALTIME_DELEGATE, f"{where}.delegate", found)
+    if "agent" in reasoning:
+        _channel(reasoning["agent"], f"{path}.reasoning.agent", found)
 
 
 def _tool_policy(policy: Any, path: str, found: list[str]) -> None:
