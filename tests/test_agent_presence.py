@@ -224,12 +224,7 @@ class _ServingItsOwnExecutors(TurnBackend):
     async def executors(self) -> list[ExecutorInfo]:
         own = self._owner.executor if self._owner is not None else None
         return [
-            ExecutorInfo(
-                executor_id=executor.executor_id,
-                hosts=executor.hosted,
-                organizations=executor.organizations,
-                room_hooks=frozenset(executor.hooks.defined_room_hooks()),
-            )
+            ExecutorInfo.of(executor)
             for executor in self._served
             if executor is not own and not executor.closed
         ]
@@ -300,6 +295,34 @@ async def test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_ch
         ],
         "r2": [("online", "coder"), ("offline", "coder"), ("online", "coder")],
     }
+
+
+@pytest.mark.parametrize(
+    "backends",
+    [_in_memory, _serving_its_own_executors],
+    ids=["in-memory", "serving-its-own-executors"],
+)
+async def test_an_executor_that_hosts_by_a_predicate_covers_its_agent(
+    backends: Callable[[], tuple[TurnBackend, TurnBackend]],
+) -> None:
+    """A predicate names no channel a list could carry: the backend's entry
+    of the executor asks the executor itself (``ExecutorInfo.of``)."""
+    backend, given = backends()
+    host = TurnExecutor(
+        lambda _: None, hosts=lambda channel_id: channel_id == "coder", executor_id="host"
+    )
+    await backend.serve(host)
+    kit = RoomKit(turn_backend=given)
+    kit.register_channel(ChannelDeclaration(channel_id="coder"))
+    await _rooms(kit, "r1")
+    try:
+        await kit.attach_channel("r1", "coder", category=ChannelCategory.INTELLIGENCE)
+        presence = _presence(await kit.agent_presence("r1"))
+    finally:
+        await kit.close()
+        await host.close()
+
+    assert presence == {"coder": (True, ["host"])}
 
 
 async def test_a_room_hook_no_executor_defines_takes_its_agent_offline_in_that_room() -> None:

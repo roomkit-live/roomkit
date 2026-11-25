@@ -41,7 +41,7 @@ from roomkit.turns._redis_presence import Keys, Registry
 from roomkit.turns._redis_routes import REFUSED, Routes
 from roomkit.turns.base import TurnBackend, TurnTimeouts, not_taken
 from roomkit.turns.memory import InMemoryTurnBackend
-from roomkit.turns.presence import ExecutorInfo, local_info
+from roomkit.turns.presence import ExecutorInfo
 from roomkit.turns.wire import (
     ChannelCall,
     ChannelControlEnvelope,
@@ -253,7 +253,7 @@ class RedisTurnBackend(TurnBackend):
         self._start()
         own = self._placement.own
         here = [
-            local_info(e, self.node_id)
+            ExecutorInfo.of(e, self.node_id)
             for e in self._placement.here
             if e is not own and not e.closed
         ]

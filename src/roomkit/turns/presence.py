@@ -56,6 +56,24 @@ class ExecutorInfo(BaseModel):
     # included; ``None`` reads ``hosts``.
     _declares: Callable[[str], bool] | None = PrivateAttr(default=None)
 
+    @classmethod
+    def of(cls, executor: TurnExecutor, node: str | None = None) -> ExecutorInfo:
+        """The info of *executor*, served in this process, as a backend
+        lists it (:meth:`TurnBackend.executors`): it covers the channels the
+        executor hosts as the executor tells them, one that chooses them by a
+        predicate included, which ``hosts`` cannot name. *node* is the
+        process as the backend names it."""
+        info = cls(
+            executor_id=executor.executor_id,
+            node=node,
+            hosts=executor.hosted,
+            organizations=executor.organizations,
+            room_hooks=frozenset(executor.hooks.defined_room_hooks()),
+            online=not executor.closed,
+        )
+        info._declares = executor.hosts_channel
+        return info
+
     def covers(
         self,
         channel_id: str,
@@ -90,18 +108,3 @@ class AgentPresence(BaseModel):
     channel_id: str
     online: bool
     executors: list[str]
-
-
-def local_info(executor: TurnExecutor, node: str | None = None) -> ExecutorInfo:
-    """The info of *executor*, served in this process: it tells the channels
-    it covers as the executor does, a predicate included."""
-    info = ExecutorInfo(
-        executor_id=executor.executor_id,
-        node=node,
-        hosts=executor.hosted,
-        organizations=executor.organizations,
-        room_hooks=frozenset(executor.hooks.defined_room_hooks()),
-        online=not executor.closed,
-    )
-    info._declares = executor.hosts_channel
-    return info

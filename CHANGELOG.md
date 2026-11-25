@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ExecutorInfo.of(executor, node=None)` builds the entry of an executor served in this process, as a turn backend lists it in `executors()` (RFC §10.6.7, RMK-2012): it covers the channels the executor hosts as the executor tells them, one that chooses them by a predicate included. A backend written outside RoomKit could only fill the entry's fields, and `hosts` cannot name a predicate: such an executor was listed as covering nothing, and its agents read offline. The backends RoomKit provides built the entry with an internal function, `local_info`, which this replaces.
+
 - `TurnExecutor.watch_closed(listener)` is public, where it was `_listen_closed` (RFC §10.6.7, RMK-2012): a turn backend written outside RoomKit learns that an executor it serves closed, as the backends RoomKit provides do, and then calls `executors_changed()` so its room owner publishes the agents' presence at once. Without it such a backend could tell its owner that an executor is served, not that one closed by itself: the presence followed at the owner's next look, a heartbeat interval later.
 
 - `TurnBackend.watch_executors(listener)`, `executors_changed()` and `executors_now()` are public, where they were `_watch_executors`, `_executors_changed` and `_executors_now` (RFC §10.6.7, RMK-2012): a turn backend written outside RoomKit tells its room owner of the executors it serves by the contract's public names. It calls `executors_changed()` once it serves an executor and when one it serves closes, overrides `executors_now()` when its list may lag, and, when it wraps another backend, hands it the listener of `watch_executors`. A backend that overrode `_executors_now` renames it.

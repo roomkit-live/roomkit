@@ -944,7 +944,8 @@
   },
   "roomkit.ExecutorInfo": {
     "__init__": ["def", "*", "executor_id", "node=None", "hosts=None", "organizations=None", "room_hooks=frozenset([])", "last_beat=None", "online=True"],
-    "covers": ["def", "channel_id", "room_hooks=()", "organization_id=None"]
+    "covers": ["def", "channel_id", "room_hooks=()", "organization_id=None"],
+    "of": ["classmethod", "executor", "node=None"]
   },
   "roomkit.ExecutorLink": {
     "receive": ["async def"],
