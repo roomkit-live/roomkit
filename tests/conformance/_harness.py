@@ -77,6 +77,7 @@ from tests.conformance._calls import (
 )
 from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
+from tests.conformance._conference_sfu import conference_work
 from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
 from tests.conformance._delivery import (
     backend_busy,
@@ -1078,6 +1079,7 @@ class Harness:
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
         tasks.extend(self._task_runs())
+        tasks.extend(conference_work(self.conferences))
         for fixture in self.realtime_sessions.values():
             # A session's resident audio send worker lives until the session
             # ends: it is busy only while it has audio to send.

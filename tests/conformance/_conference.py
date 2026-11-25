@@ -12,6 +12,7 @@ from roomkit import ConferenceChannel, ConferenceRealtimeConfig, MockConferenceB
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
+from tests.conformance._conference_sfu import SFU_ARGUMENTS, SFU_CALLS, ScriptedSFU
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -58,7 +59,7 @@ class ConferenceFixture:
 
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    backend = MockConferenceBackend()
+    backend = ScriptedSFU()
     model = None
     realtime = None
     if "tools" in spec:
@@ -101,6 +102,7 @@ CONFERENCE_ARGUMENTS = {
     "conference.active_speaker": {"channel_id", "participant_id"},
     "conference.connection_quality": {"channel_id", "participant_id", "quality"},
     "conference.tool_call": {"channel_id", "call_id", "name", "arguments"},
+    **SFU_ARGUMENTS,
 }
 
 
@@ -138,4 +140,8 @@ async def _notify(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
     return None
 
 
-CONFERENCE_CALLS = {**dict.fromkeys(CONFERENCE_ARGUMENTS, _notify), "conference.open": _open}
+CONFERENCE_CALLS = {
+    **dict.fromkeys(CONFERENCE_ARGUMENTS, _notify),
+    "conference.open": _open,
+    **SFU_CALLS,
+}
