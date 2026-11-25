@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridge-with-no-stt-or-tts-carries-only-the-participants-audio",
+  "title": "A bridged channel with no STT and no TTS provider forwards the participants' frames and synthesizes no reply",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-012"
+  ],
+  "notes": "Alice's speech ends, which a channel with an STT would transcribe; no transcription comes. A streamed reply reaches no participant's transport.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true,
+      "tts": null,
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.stream",
+      "channel_id": "phone",
+      "chunks": [
+        "Hello there."
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [],
+            "bob": [
+              "AQI=",
+              "AwQ="
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "transcribed": []
+    }
+  }
+}

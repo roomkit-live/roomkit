@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-added-transport-s-barge-in-cancels-the-playback-on-that-transport",
+  "title": "A barge-in an added transport detects cuts its session's playback, the cancel sent on that transport, whose INTERRUPTION decides it",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-019",
+    "RK-12.7.3-024",
+    "RK-12.7.3-026"
+  ],
+  "notes": "The primary transport declares no capability; the added one declares INTERRUPTION and BARGE_IN. Read on the primary, INTERRUPTION would leave the playback uncancelled.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "barged",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "capabilities": []
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line",
+      "capabilities": [
+        "interruption",
+        "barge_in"
+      ],
+      "playback_gate": "playing",
+      "session_ids": {
+        "caller": "line-1"
+      }
+    },
+    {
+      "call": "voice.connect",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "backend": "line"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "push": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "text": "Hello caller",
+      "background": true,
+      "as": "say"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "caller"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "say"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "transports": {
+            "primary": [
+              {
+                "call": "connect",
+                "participant_id": "alice"
+              },
+              {
+                "call": "start_listening",
+                "participant_id": "alice"
+              }
+            ],
+            "line": {
+              "$unordered": [
+                {
+                  "call": "connect",
+                  "participant_id": "caller"
+                },
+                {
+                  "call": "send_transcription",
+                  "participant_id": "caller"
+                },
+                {
+                  "call": "send_audio",
+                  "participant_id": "caller"
+                },
+                {
+                  "call": "cancel_audio",
+                  "participant_id": "caller"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "barged": [
+        {
+          "voice": {
+            "participant_id": "caller"
+          }
+        }
+      ]
+    }
+  }
+}

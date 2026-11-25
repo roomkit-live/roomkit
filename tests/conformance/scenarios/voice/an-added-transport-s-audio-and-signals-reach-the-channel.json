@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-added-transport-s-audio-and-signals-reach-the-channel",
+  "title": "A transport added to a voice channel feeds its session's audio through the channel's pipeline, and its session-ready signal and signalled digits reach the channel",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-019",
+    "RK-12.7.3-020"
+  ],
+  "notes": "The caller's session is made by the added transport and pushed to the room; the scripted VAD of the channel's one pipeline receives its frames under its session's key. The client-disconnected signal and barge-in are in their own scenarios. Not shown: a channel constructed with no transport refusing add_backend (voice.open always builds one), and the pipeline built for the primary transport's capabilities.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_session_started",
+        "execution": "async"
+      },
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "async"
+      },
+      {
+        "name": "digit",
+        "trigger": "on_dtmf",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "from the line"
+      ]
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line",
+      "capabilities": [
+        "dtmf_signaling"
+      ],
+      "session_ids": {
+        "caller": "line-1"
+      }
+    },
+    {
+      "call": "voice.connect",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "backend": "line"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "push": true
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.dtmf_received",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "digit": "5",
+      "duration_ms": 120
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "vad"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "line-1",
+              "frame": {
+                "data": "AQI="
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "line-1",
+              "frame": {
+                "data": "AwQ="
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "caller"
+            }
+          }
+        ]
+      },
+      "transcribed": [
+        {
+          "voice": {
+            "participant_id": "caller",
+            "text": "from the line"
+          }
+        }
+      ],
+      "digit": [
+        {
+          "voice": {
+            "participant_id": "caller",
+            "digit": "5"
+          }
+        }
+      ]
+    }
+  }
+}

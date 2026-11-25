@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-transport-that-cancels-its-echo-ends-its-session-s-playback-at-once",
+  "title": "A session whose own transport declares NATIVE_AEC has its playback ended as its audio is sent, so its speech right after is heard, whatever the primary transport declares",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-026"
+  ],
+  "notes": "The pipeline has no AEC and the primary transport does not declare NATIVE_AEC. Read on the caller's own transport, NATIVE_AEC ends the playback once its audio is sent, so the caller's speech right after is transcribed; read on the primary, the playback would stay open while its echo decays, and speech in that window is discarded.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "transcribed",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "right after"
+      ]
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line",
+      "capabilities": [
+        "interruption",
+        "barge_in",
+        "native_aec"
+      ],
+      "session_ids": {
+        "caller": "line-1"
+      }
+    },
+    {
+      "call": "voice.connect",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "backend": "line"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "push": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "text": "Hello caller"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "frames": [
+        "AQI=",
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "transcribed": [
+        {
+          "voice": {
+            "participant_id": "caller",
+            "text": "right after"
+          }
+        }
+      ]
+    }
+  }
+}

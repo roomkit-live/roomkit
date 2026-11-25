@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/closing-the-kit-closes-each-transport-of-a-voice-channel",
+  "title": "Closing the kit closes the transport added to a voice channel along with the one it was built with",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-028"
+  ],
+  "notes": "Alice leaves before the close, so the close finds no session to end on either transport.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line"
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "transports": {
+            "primary": [
+              {
+                "call": "connect",
+                "participant_id": "alice"
+              },
+              {
+                "call": "start_listening",
+                "participant_id": "alice"
+              },
+              {
+                "call": "disconnect",
+                "participant_id": "alice"
+              },
+              {
+                "call": "close"
+              }
+            ],
+            "line": [
+              {
+                "call": "close"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridged-frame-reaches-the-transport-format-through-the-listener-s-rate",
+  "title": "A frame bridged to a session of another rate enters its outbound pipeline at that rate, then reaches the transport in the format the pipeline declares",
+  "rules": [
+    "§12.7.4"
+  ],
+  "requirements": [
+    "RK-12.7.4-002"
+  ],
+  "notes": "Bob's session registers 8 kHz out; the pipeline declares a 16 kHz transport outbound format. The scripted postprocessor, first in Bob's outbound pipeline, receives the frame the bridge converted to 8 kHz; the pipeline's resampler then hands Bob's transport 16 kHz.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true,
+      "sample_rates": {
+        "alice": {
+          "input_sample_rate": 16000
+        },
+        "bob": {
+          "input_sample_rate": 16000,
+          "output_sample_rate": 8000
+        }
+      },
+      "contract": {
+        "transport_outbound_format": {
+          "sample_rate": 16000
+        }
+      },
+      "postprocessors": [
+        {
+          "name": "level"
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "level"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "level",
+              "call": "process",
+              "frame": {
+                "data": "$any",
+                "sample_rate": 8000
+              }
+            }
+          ],
+          "chunks": {
+            "bob": [
+              {
+                "data": "$any",
+                "sample_rate": 16000,
+                "channels": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

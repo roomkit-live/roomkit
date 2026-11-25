@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/adding-a-transport-twice-wires-it-once",
+  "title": "A transport added twice to a voice channel feeds each of its frames into the pipeline once",
+  "rules": [
+    "§12.7.3"
+  ],
+  "requirements": [
+    "RK-12.7.3-027"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line",
+      "session_ids": {
+        "caller": "line-1"
+      }
+    },
+    {
+      "call": "voice.add_backend",
+      "channel_id": "phone",
+      "backend": "line"
+    },
+    {
+      "call": "voice.connect",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "backend": "line"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "push": true
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "caller",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "vad"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "line-1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

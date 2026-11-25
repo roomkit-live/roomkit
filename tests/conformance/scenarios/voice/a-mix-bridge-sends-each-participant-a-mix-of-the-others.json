@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-mix-bridge-sends-each-participant-a-mix-of-the-others",
+  "title": "With the mix strategy and three participants, each receives a mix of the others' latest frames and never its own",
+  "rules": [
+    "§12.7.2",
+    "§12.7.5"
+  ],
+  "requirements": [
+    "RK-12.7.2-014",
+    "RK-12.7.5-001",
+    "RK-12.7.8-008"
+  ],
+  "notes": "Alice feeds a frame, then Bob another. Bob and Carol each receive the same mix of Alice's frame alone; Alice receives Bob's, never her own; Carol then receives a mix of both, unlike either alone. The samples a mix carries, scaled or not, are the clamp scenario's. A mix carries each other session's latest frame, fed in an earlier step (RK-12.7.2-005), as RMK-2051 leaves it beside §12.7.5's mixing window.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob",
+        "carol"
+      ],
+      "bridge": {
+        "mixing_strategy": "mix"
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "6AMw+A=="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "LAGQAQ=="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [
+              {
+                "$as": "bob"
+              }
+            ],
+            "bob": [
+              {
+                "$as": "alice"
+              }
+            ],
+            "carol": [
+              {
+                "$as": "alice"
+              },
+              {
+                "$as": "alice-and-bob"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
