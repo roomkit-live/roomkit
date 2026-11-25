@@ -11,12 +11,12 @@ from collections.abc import AsyncIterator, Awaitable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from roomkit.tools.policy import ToolPolicy
-from roomkit.voice.realtime.reasoning import (
+from roomkit import (
     AgentReasoningBackend,
     ReasoningBackend,
     ReasoningOutput,
     ReasoningRequest,
+    ToolPolicy,
 )
 from tests.conformance._agent import scripted_agent
 from tests.conformance._script_executor import ScriptedScriptExecutor
@@ -55,7 +55,7 @@ REALTIME_TOOL = {
     "in_task",
     "after_gate",
 }
-REASONING = {"runs", "agent", "agent_of"}
+REASONING = {"runs", "agent"}
 BACKEND_ACTION = {
     "call",
     "arguments",
@@ -94,22 +94,15 @@ class BackendRecord:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
 
-def channel_options(
-    channel_id: str,
-    spec: Mapping[str, Any],
-    harness: Harness | None,
-    kit: RoomKit | None,
-    record: BackendRecord,
-) -> dict[str, Any]:
-    """The realtime channel's keywords its spec sets beyond its tools."""
+def channel_options(channel_id: str, spec: Mapping[str, Any], harness: Harness) -> dict[str, Any]:
+    """The realtime channel's keywords its spec sets beyond its tools and its
+    backend, read from the scenario: a caller builds them under ``read``."""
     options: dict[str, Any] = {}
     if "tool_policy" in spec:
         options["tool_policy"] = ToolPolicy.model_validate(spec["tool_policy"])
     if "skills" in spec:
         options["skills"] = scripted_skill_registry(spec["skills"])
     if "script_executor" in spec:
-        if harness is None:
-            raise AssertionError("script_executor: no observation sink")
         sink = harness.observed.script_executors
         executor = sink.setdefault(channel_id, {"calls": [], "closes": 0})
         options["script_executor"] = ScriptedScriptExecutor(spec["script_executor"], executor)
@@ -118,37 +111,42 @@ def channel_options(
             options[setting] = spec[setting]
     if "reasoning_timeout_ms" in spec:
         options["reasoning_timeout_s"] = spec["reasoning_timeout_ms"] / 1000
-    if "reasoning" in spec:
-        if harness is None or kit is None:
-            raise AssertionError("reasoning: no kit to run the backend in")
-        options["reasoning_backend"] = _backend(spec["reasoning"], harness, kit, record)
     return options
 
 
-def _backend(
+def reasoning_backend(
     spec: Mapping[str, Any], harness: Harness, kit: RoomKit, record: BackendRecord
 ) -> ReasoningBackend:
-    """The backend *spec* names: its scripted runs, an agent of its own, or
-    the agent the kit holds under ``agent_of``."""
+    """The backend *spec* names: its scripted runs, or an agent of its own,
+    built as a setup's scripted agent is and never registered with *kit*.
+    The implementation's refusal of the agent is the channel's (README,
+    ``realtime.reasoning``); a runner's failure to read the agent is not."""
     if "runs" in spec:
         return ScriptedBackend(spec["runs"], harness.gates, kit, record)
-    if "agent_of" in spec:
-        held = kit.get_channel(spec["agent_of"])
-        if held is None:
-            raise AssertionError(f"agent_of: the kit holds no channel {spec['agent_of']!r}")
-        return AgentReasoningBackend(held)  # ty: ignore[invalid-argument-type]
+    agent_spec = spec["agent"]
     try:
         agent, models = scripted_agent(
-            spec["agent"],
+            agent_spec,
             harness.gates,
             kit,
             harness.labelled,
-            script_executors=harness.observed.script_executors,
+            harness.auditors,
+            lambda room_id, channel_id, event: harness.record(
+                "ingested", room_id, channel_id, event
+            ),
+            None,
+            harness.record_compacted,
+            harness.observed.script_executors,
+            harness.mcp.by_channel.get(agent_spec["id"], ()),
+            continuation_calls=harness.observed.continuations,
+            speak_turns=harness.observed.speak_turns,
+            thinker_calls=harness.observed.thinker_calls,
+            external_handlers=harness.external_handlers,
+            sandbox_executors=harness.observed.sandbox_executors,
             # Its own tools only when its spec gives some, which a backend refuses.
-            host_handler="tools" in spec["agent"],
+            host_handler="tools" in agent_spec,
         )
     except (ValueError, KeyError, TypeError) as error:
-        # The runner's reading, never a refusal the scenario expects.
         raise AssertionError(f"reasoning.agent: {type(error).__name__}: {error}") from error
     harness.models.update(models)
     return AgentReasoningBackend(agent)
@@ -187,8 +185,10 @@ class ScriptedBackend(ReasoningBackend):
                 else:
                     await self._act(request, action, tasks)
         finally:
+            # A call never joined ends with the run, its outcome retrieved.
             for task in tasks.values():
                 task.cancel()
+            await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     async def _act(
         self,

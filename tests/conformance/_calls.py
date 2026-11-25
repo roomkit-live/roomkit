@@ -61,6 +61,7 @@ from tests.conformance._agent import ScriptedAIRouter, scripted_agent
 from tests.conformance._extra_tools import read as read_extra_tools
 from tests.conformance._extra_tools import replace as replace_extra_tool
 from tests.conformance._realtime_session import ScriptedRealtimeSession
+from tests.conformance._realtime_tools import channel_options
 from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
@@ -557,8 +558,11 @@ def scripted_channel(
             harness.acp_context[channel["id"]] = context
         return acp_channel
     if "realtime" in channel:
+        options = read(lambda: channel_options(channel["id"], channel["realtime"], harness))
+        # Built outside `read`: a backend the implementation refuses refuses
+        # the channel, the call's invalid_argument (README, `realtime.reasoning`).
         session = ScriptedRealtimeSession(
-            channel["id"], channel["realtime"], harness.gates, kit, harness
+            channel["id"], channel["realtime"], harness.gates, kit, harness, options
         )
         harness.realtime_sessions[channel["id"]] = session
         return session.channel

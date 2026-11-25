@@ -15,9 +15,9 @@ from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput, 
 from tests.conformance._realtime_tools import (
     BackendRecord,
     act,
-    channel_options,
     declaration,
     declared_names,
+    reasoning_backend,
 )
 
 if TYPE_CHECKING:
@@ -72,8 +72,9 @@ class ScriptedRealtimeSession:
         channel_id: str,
         spec: Mapping[str, Any],
         gates: Gates,
-        kit: RoomKit | None = None,
-        harness: Harness | None = None,
+        kit: RoomKit,
+        harness: Harness,
+        options: Mapping[str, Any],
     ) -> None:
         self.provider = _Provider()
         self._tools = spec.get("tools", {})
@@ -82,7 +83,11 @@ class ScriptedRealtimeSession:
         self._session: VoiceSession | None = None
         self.handlers: list[dict[str, str]] = []
         self.backend = BackendRecord()
-        options = channel_options(channel_id, spec, harness, kit, self.backend)
+        options = dict(options)
+        if "reasoning" in spec:
+            options["reasoning_backend"] = reasoning_backend(
+                spec["reasoning"], harness, kit, self.backend
+            )
         if "reasoning_error" in spec:
             options["reasoning_backend"] = _FailingBackend(spec["reasoning_error"])
         self.channel = RealtimeVoiceChannel(
