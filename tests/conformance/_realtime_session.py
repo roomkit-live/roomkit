@@ -50,9 +50,12 @@ class _Provider(IOProvider):
 
     async def inject_text(
         self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
-    ) -> VoiceInjectionResult:
-        self.injections.append({"text": text, "role": role, "silent": silent})
-        return await super().inject_text(session, text, role=role, silent=silent)
+    ) -> VoiceInjectionResult | None:
+        result = await super().inject_text(session, text, role=role, silent=silent)
+        # A not_sent result submitted nothing (README, "Scripted realtime sessions").
+        if result is None or result.status != "not_sent":
+            self.injections.append({"text": text, "role": role, "silent": silent})
+        return result
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         self.outstanding.discard(call_id)

@@ -252,13 +252,38 @@ async def _audio(
     session: VoiceSession,
     spec: Mapping[str, Any],
 ) -> None:
-    """The caller's frames the transport receives, or the provider's output."""
+    """The caller's frames the transport receives, returned once the channel
+    forwarded or retained each one, or the provider's output."""
     frames = [base64.b64decode(frame, validate=True) for frame in spec["frames"]]
+    before = set(channel._scheduled_tasks)
     for frame in frames:
         if spec["source"] == "transport":
             await _transport(channel).simulate_client_audio(session, frame)
         else:
             await provider.simulate_audio(session, frame)
+    await _forwarded(channel, before)
+
+
+async def _forwarded(channel: RealtimeVoiceChannel, before: set[asyncio.Task[Any]]) -> None:
+    """Wait for the tasks that forward the caller's audio to the provider,
+    started since *before*: a frame the channel retains starts none."""
+    workers = set(channel._audio_send_workers.values())
+    forwarding = [
+        task
+        for task in channel._scheduled_tasks - before
+        if not task.done()
+        and task not in workers
+        and task.get_name().startswith(_FORWARDING_TASKS)
+    ]
+    if forwarding:
+        await asyncio.wait(forwarding, timeout=_FORWARD_BOUND_S)
+
+
+# The channel's tasks that forward the caller's audio to the provider: the
+# direct path's and the pipeline's (the provider's own audio has its resident
+# send worker, left to the idle wait).
+_FORWARDING_TASKS = ("rt_client_audio:", "rt_send_audio:")
+_FORWARD_BOUND_S = 5.0
 
 
 def _transport(channel: RealtimeVoiceChannel) -> MockRealtimeTransport:
