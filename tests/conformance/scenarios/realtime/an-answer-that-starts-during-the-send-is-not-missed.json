@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-answer-that-starts-during-the-send-is-not-missed",
+  "title": "A realtime host waits for the answer from before the result is sent, so an answer that starts and ends before the send returns is not missed",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-022"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "submit_gate": "sending"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 5000,
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

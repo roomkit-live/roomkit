@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-caller-s-audio-reaches-the-provider-and-the-provider-s-reaches-the-transport",
+  "title": "Once the session started, the transport's audio goes to the provider and the provider's audio to the transport, each in order",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-061",
+    "RK-12.4-128"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "That the provider's audio fires no hook is a negative over every trigger, which the scenario does not enumerate.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "source": "provider",
+      "frames": [
+        "ADAAMAAwADA=",
+        "ERERERERERE="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": [
+            "ABAAEAAQABA=",
+            "ACAAIAAgACA="
+          ],
+          "transport_audio": [
+            "ADAAMAAwADA=",
+            "ERERERERERE="
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-start-for-another-organization-s-room-creates-no-session",
+  "title": "A start acting for another organization finds no room and connects nothing; one acting for the room's organization starts",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-113"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "No session is seen as no connect asked of the provider; the transport's accept is not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ],
+        "organization_id": "org-a"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [],
+          "provider_audio": []
+        }
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-a"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-call-recovered-from-speech-mutes-no-input",
+  "title": "A call recovered from the model's words mutes nothing, on a channel that mutes the input during the provider's calls",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-044"
+  ],
+  "requires_features": [
+    "realtime",
+    "call_recovery"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "mute_on_tool_call": true,
+          "tools": {
+            "lookup": {
+              "gate": "inside",
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "call:lookup{}",
+      "role": "assistant"
+    },
+    {
+      "wait_for": "inside"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "input_muted": []
+        }
+      }
+    },
+    {
+      "open": "inside"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "input_muted": [],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

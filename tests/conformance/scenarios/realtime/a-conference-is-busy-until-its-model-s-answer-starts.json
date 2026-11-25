@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-conference-is-busy-until-its-model-s-answer-starts",
+  "title": "A conference that sent its realtime model a tool result is not idle until the model's answer starts, as a realtime voice channel",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-024"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The full-duplex starts of an answer, audible audio and a partial transcript, are shown on a realtime voice channel only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "lookup": "found"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "alice",
+      "content": {
+        "type": "text",
+        "body": "hello"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c1",
+      "name": "lookup",
+      "expect": {
+        "result": "found"
+      }
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 100,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "end"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 5000,
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

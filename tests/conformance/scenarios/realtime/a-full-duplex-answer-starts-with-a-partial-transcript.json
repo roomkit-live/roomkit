@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-full-duplex-answer-starts-with-a-partial-transcript",
+  "title": "On a full-duplex provider the awaited answer starts with a non-empty partial transcript of the assistant's words, not with an empty one",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-021"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "",
+      "role": "assistant",
+      "is_final": false
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 100,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Sure",
+      "role": "assistant",
+      "is_final": false
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 5000,
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

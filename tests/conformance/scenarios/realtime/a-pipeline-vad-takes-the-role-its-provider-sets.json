@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-pipeline-vad-takes-the-role-its-provider-sets",
+  "title": "A pipeline VAD is optional; configured, it disables the server VAD of a provider that takes turns and leaves a full-duplex provider's on",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-121"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "turns",
+        "type": "realtime_voice",
+        "realtime": {
+          "pipeline": {
+            "vad": []
+          }
+        }
+      },
+      {
+        "id": "duplex",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "pipeline": {
+            "vad": []
+          }
+        }
+      },
+      {
+        "id": "bare",
+        "type": "realtime_voice",
+        "realtime": {
+          "pipeline": {
+            "agc": {}
+          }
+        }
+      },
+      {
+        "id": "plain",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "turns"
+          },
+          {
+            "channel_id": "duplex"
+          },
+          {
+            "channel_id": "bare"
+          },
+          {
+            "channel_id": "plain"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "turns",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "duplex",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "bare",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "plain",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "turns",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "duplex",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "bare",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "plain",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-pipeline-vad-that-endpoints-takes-the-speech-edges-from-the-provider",
+  "title": "On a provider that takes turns, an endpointing pipeline VAD turns the server VAD off: the provider's speech start fires no ON_SPEECH_START, the pipeline's does",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-122"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The activity signals the pipeline VAD sends the provider are not read: they need a read of the provider's activity calls.",
+  "setup": {
+    "channels": [
+      {
+        "id": "heard",
+        "type": "realtime_voice",
+        "realtime": {
+          "pipeline": {
+            "vad": [
+              {
+                "type": "speech_start"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "spoken",
+        "type": "realtime_voice",
+        "realtime": {
+          "pipeline": {
+            "vad": [
+              {
+                "type": "speech_start"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "heard"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "spoken"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "starts",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "heard",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "spoken",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "heard",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.speech",
+      "channel_id": "heard",
+      "edge": "start"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "spoken",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "starts": [
+        {
+          "room_id": "r2"
+        }
+      ]
+    }
+  }
+}

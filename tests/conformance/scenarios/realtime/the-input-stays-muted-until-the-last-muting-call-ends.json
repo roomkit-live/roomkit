@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-input-stays-muted-until-the-last-muting-call-ends",
+  "title": "A channel that mutes the input during the provider's calls mutes it at the first call and unmutes it only once the last one ends",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-044"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "mute_on_tool_call": true,
+          "tools": {
+            "first": {
+              "gate": "first",
+              "result": "one"
+            },
+            "second": {
+              "gate": "second",
+              "result": "two"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "first"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "input_muted": [
+            true
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "second"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 100,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "input_muted": [
+            true
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "one"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "second"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "input_muted": [
+            true,
+            false
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "one"
+            },
+            {
+              "call_id": "c2",
+              "result": "two"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

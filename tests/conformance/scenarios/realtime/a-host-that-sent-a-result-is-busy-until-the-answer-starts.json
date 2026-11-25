@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-host-that-sent-a-result-is-busy-until-the-answer-starts",
+  "title": "A realtime host that sent the model a tool result is not idle until the model's answer starts, then once it ends",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-020",
+    "RK-12.4.1-021"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "A delegation's spoken output waits the same way; it needs a reasoning backend's step.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "found"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 100,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "timeout_ms": 5000,
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

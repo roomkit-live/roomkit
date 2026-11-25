@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-recorder-keeps-a-full-duplex-provider-s-silence",
+  "title": "A pipeline recorder records a full-duplex provider's silence as such, between its audible frames",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-032"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "pipeline": {
+            "recorder": {}
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "AAAAAAAAAAA=",
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "stages": [
+        "recorder"
+      ],
+      "calls": [
+        "tap_outbound"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "frame": {
+                "data": "ABAAEAAQABA="
+              }
+            },
+            {
+              "frame": {
+                "data": "AAAAAAAAAAA="
+              }
+            },
+            {
+              "frame": {
+                "data": "ACAAIAAgACA="
+              }
+            }
+          ],
+          "transport_audio": [
+            "ABAAEAAQABA=",
+            "AAAAAAAAAAA=",
+            "ACAAIAAgACA="
+          ]
+        }
+      }
+    }
+  ]
+}

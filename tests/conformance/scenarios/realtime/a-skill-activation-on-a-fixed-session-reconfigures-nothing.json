@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-skill-activation-on-a-fixed-session-reconfigures-nothing",
+  "title": "A skill activation on a provider that cannot be reconfigured mid-session is answered in the call's result and declares no new tool to the session; on one that can, a reconfiguration declares the skill's tool",
+  "rules": [
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.4.1-034"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "A handoff, the other change of a running agent, is not exercised, nor a reconfiguration that declares no tools: realtime.read's declared lists only the declarations of tools.",
+  "setup": {
+    "channels": [
+      {
+        "id": "fixed",
+        "type": "realtime_voice",
+        "realtime": {
+          "supports_mid_session_reconfigure": false,
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "refund": {
+              "result": "refunded"
+            }
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "live",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "refund": {
+              "result": "refunded"
+            }
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "fixed"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "live"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "fixed",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "live",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "fixed",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "live",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "fixed",
+      "expect": {
+        "result": {
+          "declared": [
+            "$any"
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "billing"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "live",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "refund": {
+                "$absent": true
+              }
+            },
+            {
+              "refund": "$any"
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "billing"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

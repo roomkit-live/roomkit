@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-provider-s-speech-edges-fire-their-hooks",
+  "title": "The speech start and end the provider detects fire ON_SPEECH_START and ON_SPEECH_END",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-063"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "starts",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      },
+      {
+        "name": "ends",
+        "trigger": "on_speech_end",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.speech",
+      "channel_id": "rt",
+      "edge": "start"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.speech",
+      "channel_id": "rt",
+      "edge": "end"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "starts": [
+        {
+          "room_id": "r1"
+        }
+      ],
+      "ends": [
+        {
+          "room_id": "r1"
+        }
+      ]
+    },
+    "hook_order": [
+      "starts",
+      "ends"
+    ]
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-answer-to-an-injection-is-one-deeper-and-a-silent-one-changes-nothing",
+  "title": "The model's answer to an injected event carries its depth plus one; a silent injection leaves that depth; the user's words open a chain again",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-117"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "chain_depth": 2,
+      "as": "asked"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "First answer",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "event_type": "edit",
+      "content": {
+        "type": "edit",
+        "target_event_id": "$asked",
+        "new_content": {
+          "type": "text",
+          "body": "question, corrected"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Second answer",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Thanks",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Welcome",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "question"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "corrected"
+              },
+              "silent": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "question, corrected"
+          },
+          "chain_depth": 2
+        },
+        {
+          "content": {
+            "body": "First answer"
+          },
+          "chain_depth": 3
+        },
+        {
+          "type": "edit",
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "Thanks"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "body": "Welcome"
+          },
+          "chain_depth": 1
+        }
+      ]
+    }
+  }
+}

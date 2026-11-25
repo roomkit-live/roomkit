@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-full-duplex-provider-keeps-the-pipeline-vad-to-observation",
+  "title": "On a full-duplex provider the pipeline VAD leaves the server VAD on, and its speech start over the model fires ON_SPEECH_START and no barge-in, where a provider that takes turns gets one",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-125"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "That the provider is neither interrupted nor sent activity signals is not read: it needs a read of the provider's interrupt and activity calls.",
+  "setup": {
+    "channels": [
+      {
+        "id": "duplex",
+        "type": "realtime_voice",
+        "realtime": {
+          "full_duplex": true,
+          "pipeline": {
+            "vad": [
+              {
+                "type": "speech_start"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "turns",
+        "type": "realtime_voice",
+        "realtime": {
+          "pipeline": {
+            "vad": [
+              {
+                "type": "speech_start"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "duplex"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "turns"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "barge",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "starts",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "duplex",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "turns",
+      "room_id": "r2",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "duplex",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "server_vad": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "turns",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "duplex",
+      "source": "transport",
+      "frames": [
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "turns",
+      "source": "transport",
+      "frames": [
+        "ACAAIAAgACA="
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "barge": [
+        {
+          "room_id": "r2"
+        }
+      ],
+      "starts": [
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2"
+        }
+      ]
+    }
+  }
+}

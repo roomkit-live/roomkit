@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-session-s-transcriptions-fire-their-hook-and-reach-the-room",
+  "title": "Each final transcription fires ON_TRANSCRIPTION and reaches the room as an event, the user's at depth 0, the model's answer one deeper",
+  "rules": [
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.4-062",
+    "RK-12.4-117"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Identity verification and a channel that emits no transcription are not exercised.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "transcripts",
+        "trigger": "on_transcription",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Hello",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Hi there",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "transcripts": [
+        {
+          "room_id": "r1",
+          "voice": {
+            "participant_id": "alice",
+            "text": "Hello",
+            "role": "user"
+          }
+        },
+        {
+          "room_id": "r1",
+          "voice": {
+            "text": "Hi there",
+            "role": "assistant"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "rt",
+            "participant_id": "alice"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "chain_depth": 0
+        },
+        {
+          "source": {
+            "channel_id": "rt"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hi there"
+          },
+          "chain_depth": 1
+        }
+      ]
+    }
+  }
+}
