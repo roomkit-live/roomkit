@@ -45,6 +45,7 @@ class Observed:
     bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
     framework_events: list[dict[str, Any]] = field(default_factory=list)
     ai_events: list[dict[str, Any]] = field(default_factory=list)
+    voice_events: list[dict[str, Any]] = field(default_factory=list)
     hooks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     hook_order: list[str] = field(default_factory=list)
     channel_closes: list[str] = field(default_factory=list)
@@ -149,9 +150,11 @@ class Normalizer:
     def _object(self, value: dict[str, Any], member: str | None) -> dict[str, Any]:
         indexes = self._indexes_of(value)
         # A participant's or an identity's id is the scenario's own (§5.5,
-        # §5.6), as are a voice session's id and an ACP option's id.
+        # §5.6), as are a voice session's id, an ACP option's id and the id of
+        # a voice a TTS catalog lists (§12.2).
         own_id = (
             (member == "session" and "participant_id" in value and "channel_id" in value)
+            or (member == "voices" and "gender" in value and "description" in value)
             or "identification" in value
             or "channel_addresses" in value
             or (value.get("type") in ("select", "boolean") and "currentValue" in value)

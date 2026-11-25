@@ -487,6 +487,7 @@ EXPECT = {
     "bindings",
     "framework_events",
     "ai_events",
+    "voice_events",
     "hooks",
     "hook_order",
     "channel_closes",

@@ -172,6 +172,10 @@ INPUT_EVENTS = ("user_input_required",)
 # ``expect.ai_events`` compares apart from ``framework_events``.
 AI_EVENTS = ("before_ai_generation", "ai_response")
 
+# The framework event of a voice session's failed synthesis or playback (§8.2,
+# §12.2), which ``expect.voice_events`` compares apart from ``framework_events``.
+VOICE_EVENTS = ("tts_error",)
+
 # A call that has not returned by then fails the scenario instead of hanging
 # it; so does a kit that does not go idle.
 CALL_BOUND_S = 10.0
@@ -631,6 +635,8 @@ class Harness:
                 flat[key] = value
         if event.type in AI_EVENTS:
             self.observed.ai_events.append(flat)
+        elif event.type in VOICE_EVENTS:
+            self.observed.voice_events.append(flat)
         else:
             self.observed.framework_events.append(flat)
 
@@ -718,7 +724,7 @@ class Harness:
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
         recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
-        recorded += LOCK_EVENTS
+        recorded += LOCK_EVENTS + VOICE_EVENTS
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
         self.auditors.set_up(setup.get("session_auditor"), self.kit)

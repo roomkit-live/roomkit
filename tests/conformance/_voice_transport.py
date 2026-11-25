@@ -185,6 +185,7 @@ def chunk_record(chunk: AudioChunk) -> dict[str, Any]:
         "data": base64.b64encode(chunk.data).decode("ascii"),
         "sample_rate": chunk.sample_rate,
         "channels": chunk.channels,
+        "format": chunk.format,
     }
 
 

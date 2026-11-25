@@ -99,13 +99,14 @@ class _Comparison:
             actual = grouped.get(alias, [])
             path = f"framework_events.{alias}"
             self.found.extend(framework_mismatches(events, actual, path, self.names))
-        ai_grouped: dict[str, list[Any]] = {}
-        for event in self.normalizer.value(self.observed.ai_events):
-            ai_grouped.setdefault(event.get("room_id", "*"), []).append(event)
-        for alias, events in self.expect.get("ai_events", {}).items():
-            actual = ai_grouped.get(alias, [])
-            path = f"ai_events.{alias}"
-            self.found.extend(framework_mismatches(events, actual, path, self.names))
+        for member in ("ai_events", "voice_events"):
+            apart: dict[str, list[Any]] = {}
+            for event in self.normalizer.value(getattr(self.observed, member)):
+                apart.setdefault(event.get("room_id", "*"), []).append(event)
+            for alias, events in self.expect.get(member, {}).items():
+                actual = apart.get(alias, [])
+                path = f"{member}.{alias}"
+                self.found.extend(framework_mismatches(events, actual, path, self.names))
 
     def hooks(self) -> None:
         for name, expected in self.expect.get("hooks", {}).items():

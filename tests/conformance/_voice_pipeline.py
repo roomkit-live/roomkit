@@ -31,6 +31,7 @@ from roomkit.voice.pipeline import (
     MockVADProvider,
     RecordingConfig,
     RecordingHandle,
+    RecordingMode,
     RecordingResult,
     VADConfig,
 )
@@ -321,7 +322,8 @@ def add_pipeline_stages(
     ]
     if "recorder" in spec:
         pipeline.recorder = _TracedRecorder(trace)
-        pipeline.recording_config = RecordingConfig()
+        mode = spec["recorder"].get("mode", RecordingMode.BOTH.value)
+        pipeline.recording_config = RecordingConfig(mode=RecordingMode(mode))
     if "vad_config" in spec:
         pipeline.vad_config = VADConfig(**spec["vad_config"])
     if "contract" in spec:

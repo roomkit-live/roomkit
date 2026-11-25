@@ -128,7 +128,10 @@ class ScriptedSTT(STTProvider):
             key = "sound_ms" if sound else "silence_ms"
             record[key] += _milliseconds(chunk.data, chunk.sample_rate, chunk.channels)
             if sound and results:
-                yield _result(results.pop(0))
+                result = results.pop(0)
+                if "gate" in result:
+                    await self._gates.hold(result["gate"])
+                yield _result(result)
             if then and not results:
                 await self._finish(script)
                 return

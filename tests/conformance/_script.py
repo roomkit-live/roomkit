@@ -761,6 +761,9 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
             data["event"] = patched_bridge_audio(payload, data["event"])
         elif isinstance(payload, PendingInputEvent | TranscriptionEvent):
             data["event"] = dataclasses.replace(payload, **data["event"])
+        elif isinstance(payload, str):
+            # BEFORE_TTS's text, replaced as a transcription's words are.
+            data["event"] = data["event"]["text"]
     data["injected_events"] = [
         InjectedEvent(
             event=complete_event(item["event"], room_id, SYSTEM_SOURCE),

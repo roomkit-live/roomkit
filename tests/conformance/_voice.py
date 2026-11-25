@@ -12,23 +12,31 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSession
-from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 from roomkit.voice.pipeline import AudioPipelineConfig
-from roomkit.voice.pipeline.backchannel.base import BackchannelDecision
 from roomkit.voice.pipeline.backchannel.mock import MockBackchannelDetector
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
 from roomkit.voice.pipeline.turn.base import TurnDecision
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.mock import MockSTTProvider
-from roomkit.voice.tts.context import TTSContext
-from roomkit.voice.tts.mock import MockTTSProvider
 from tests.conformance._voice_bridge import (
     BRIDGE_ARGUMENTS,
     BRIDGE_CALLS,
     BRIDGE_OPEN_ARGUMENTS,
     bridge_config,
     read_transports,
+)
+from tests.conformance._voice_interruption import (
+    INTERRUPTION_OPEN_ARGUMENTS,
+    interruption,
+    read_backchannels,
+)
+from tests.conformance._voice_outbound import (
+    OUTBOUND_ARGUMENTS,
+    OUTBOUND_CALLS,
+    OUTBOUND_OPEN_ARGUMENTS,
+    OutboundTransport,
+    read_outbound,
 )
 from tests.conformance._voice_pipeline import (
     READ_ARGUMENTS,
@@ -50,6 +58,15 @@ from tests.conformance._voice_stt import (
     settle_voice,
     turn_detector,
 )
+from tests.conformance._voice_synthesis import (
+    SYNTHESIS_ARGUMENTS,
+    SYNTHESIS_CALLS,
+    SYNTHESIS_OPEN_ARGUMENTS,
+    ScriptedTTS,
+    read_synthesis,
+    scripted_tts,
+    tts_context,
+)
 from tests.conformance._voice_transport import (
     FEED_ARGUMENTS,
     PRIMARY,
@@ -68,22 +85,25 @@ if TYPE_CHECKING:
     from tests.conformance._script import Gates
 
 
-class _Transport(PipelineTransport):
-    """An optional gate holds a real playback open while the caller talks."""
+class _Transport(OutboundTransport):
+    """An optional gate holds a real playback open while the caller talks:
+    every playback ``playback_gate``'s, or the n-th the n-th ``playback_gates``'."""
 
     def __init__(self, gates: Gates, gate: str | None, spec: Mapping[str, Any]) -> None:
         super().__init__(spec)
         self.gates = gates
         self.gate = gate
+        self.next_gates: list[str | None] = list(spec.get("playback_gates", []))
 
     async def send_audio(
         self, session: VoiceSession, audio: bytes | AsyncIterator[AudioChunk]
     ) -> None:
+        gate = self.gate or (self.next_gates.pop(0) if self.next_gates else None)
         await super().send_audio(session, self.played(session, audio))
-        if self.gate:
+        if gate:
             self.start_playing(session)
             try:
-                await self.gates.hold(self.gate)
+                await self.gates.hold(gate)
             finally:
                 self.stop_playing(session)
 
@@ -109,30 +129,11 @@ class _StreamingSTT(MockSTTProvider):
         yield TranscriptionResult(text=text, language=reported)
 
 
-class _StreamingTTS(MockTTSProvider):
-    """Synthesize each sentence actually supplied by the channel."""
-
-    @property
-    def supports_streaming_input(self) -> bool:
-        return True
-
-    async def synthesize_stream_input(
-        self,
-        text_stream: AsyncIterator[str],
-        *,
-        voice: str | None = None,
-        context: TTSContext | None = None,
-    ) -> AsyncIterator[AudioChunk]:
-        async for text in text_stream:
-            async for chunk in self.synthesize_stream(text, voice=voice, context=context):
-                yield chunk
-
-
 @dataclass
 class VoiceFixture:
     channel: VoiceChannel
     backend: _Transport
-    tts: MockTTSProvider | None
+    tts: ScriptedTTS | None
     sessions: dict[str, VoiceSession]
     room_id: str
     trace: Trace
@@ -141,6 +142,7 @@ class VoiceFixture:
     # Every transport by name, the one built here as PRIMARY (voice.add_backend).
     transports: dict[str, PipelineTransport] = field(default_factory=dict)
     new_transport: Callable[[Mapping[str, Any]], PipelineTransport] | None = None
+    detector: MockBackchannelDetector | None = None
 
 
 def _vad(spec: Mapping[str, Any]) -> VADEvent:
@@ -175,20 +177,10 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
     add_pipeline_stages(pipeline, spec, trace)
     if (scripted_turns := turn_detector(spec, harness.gates)) is not None:
         pipeline.turn_detector = scripted_turns
-    interruption = InterruptionConfig(
-        strategy=InterruptionStrategy.IMMEDIATE, allow_during_first_ms=0
-    )
-    if "backchannels" in spec:
-        interruption = InterruptionConfig(
-            strategy=InterruptionStrategy.SEMANTIC,
-            allow_during_first_ms=0,
-            backchannel_detector=MockBackchannelDetector(
-                [BackchannelDecision(is_backchannel=v) for v in spec["backchannels"]]
-            ),
-        )
+    config, detector = interruption(spec)
     backend = _Transport(harness.gates, spec.get("playback_gate"), spec)
     # ``tts: null`` builds the channel with no TTS provider (§12.7.3).
-    tts = None if "tts" in spec else _StreamingTTS()
+    tts = None if spec.get("tts", {}) is None else scripted_tts(spec.get("tts", {}), harness.gates)
     scripted = recognizer(spec, harness.gates)
     stt: MockSTTProvider | ScriptedSTT | None = scripted
     if "transcripts" in spec:
@@ -202,14 +194,18 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
         tts=tts,
         stt=stt,
         pipeline=pipeline,
-        interruption=interruption,
+        interruption=config,
+        max_sentences=spec.get("max_sentences"),
+        tts_context=tts_context(spec),
         bridge=bridge_config(spec),
         batch_mode=spec.get("batch_mode", False),
         pipeline_speakers=spec.get("pipeline_speakers", False),
     )
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
-    fixture = VoiceFixture(channel, backend, tts, {}, spec["room_id"], trace, {}, scripted)
+    fixture = VoiceFixture(
+        channel, backend, tts, {}, spec["room_id"], trace, {}, scripted, detector=detector
+    )
     fixture.transports[PRIMARY] = backend
     fixture.new_transport = lambda traits: _Transport(
         harness.gates, traits.get("playback_gate"), traits
@@ -301,6 +297,9 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
             for name, joined in fixture.joined.items()
         },
         "stages": read_stages(fixture.trace, spec),
+        "backchannel_contexts": read_backchannels(fixture.detector),
+        **read_synthesis(fixture.tts),
+        **read_outbound(transports, fixture.sessions),
     }
 
 
@@ -329,6 +328,8 @@ VOICE_CALLS = {
     **TRANSPORT_CALLS,
     **STT_CALLS,
     **BRIDGE_CALLS,
+    **SYNTHESIS_CALLS,
+    **OUTBOUND_CALLS,
 }
 VOICE_ARGUMENTS = {
     "voice.open": {
@@ -344,10 +345,14 @@ VOICE_ARGUMENTS = {
         "bridge",
         "backchannels",
         "playback_gate",
+        "playback_gates",
         *STAGE_ARGUMENTS,
         *TRANSPORT_OPEN_ARGUMENTS,
         *OPEN_ARGUMENTS,
         *BRIDGE_OPEN_ARGUMENTS,
+        *INTERRUPTION_OPEN_ARGUMENTS,
+        *SYNTHESIS_OPEN_ARGUMENTS,
+        *OUTBOUND_OPEN_ARGUMENTS,
     },
     "voice.feed": {"channel_id", "participant_id", "frames", "repeat", *FEED_ARGUMENTS},
     "voice.say": {"channel_id", "participant_id", "text"},
@@ -358,4 +363,6 @@ VOICE_ARGUMENTS = {
     **TRANSPORT_ARGUMENTS,
     **STT_ARGUMENTS,
     **BRIDGE_ARGUMENTS,
+    **SYNTHESIS_ARGUMENTS,
+    **OUTBOUND_ARGUMENTS,
 }

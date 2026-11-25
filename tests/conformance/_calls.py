@@ -72,6 +72,7 @@ from tests.conformance._script import (
 )
 from tests.conformance._store_faults import StoreFaultError
 from tests.conformance._strategies import room_orchestration
+from tests.conformance._voice_synthesis import UnsupportedError
 
 if TYPE_CHECKING:
     from roomkit.skills import SkillRegistry
@@ -185,6 +186,14 @@ def error_of(error: Exception) -> dict[str, Any]:
         # A session's STT language chosen for a provider that cannot honour
         # it, refused so that no language reaches it (RFC §12.2).
         return {"name": "language_override_unsupported"}
+    if isinstance(error, UnsupportedError):
+        # A method the voice transport or TTS provider does not support:
+        # out-of-band DTMF, a dialogue (RFC §12.3.6, §12.2).
+        return {"name": "not_supported"}
+    if isinstance(error, RuntimeError) and str(error).startswith(
+        "Cannot send DTMF on ended session "
+    ):
+        return {"name": "session_ended"}
     if isinstance(error, TypeError) and "not a strategy stored with the room" in str(error):
         return {"name": "kind_not_stored"}
     if isinstance(error, ChannelNotBoundError):
