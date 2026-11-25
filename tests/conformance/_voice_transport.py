@@ -1,8 +1,8 @@
 """The scripted voice transport's traits and session steps for RFC §12.2 voice.
 
 ``voice.open`` names the capabilities the transport declares, the ids it gives
-its sessions and where the AEC reference comes from; ``voice.join``,
-``voice.leave`` and ``voice.dtmf_received`` drive its sessions.
+its sessions, their sample rates and where the AEC reference comes from;
+``voice.join``, ``voice.leave`` and ``voice.dtmf_received`` drive its sessions.
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ _CAPABILITIES = {
     "native_bridge": VoiceCapability.NATIVE_BRIDGE,
 }
 _DEFAULT_CAPABILITIES = ["interruption", "barge_in"]
+# The name of the transport ``voice.open`` builds; ``voice.add_backend`` names the others.
+PRIMARY = "primary"
 
 
 class PipelineTransport(MockVoiceBackend):
@@ -46,6 +48,13 @@ class PipelineTransport(MockVoiceBackend):
         self._playback_callback = bool(spec.get("playback_callback", False))
         self._reference_continues = bool(spec.get("reference_continues", False))
         self.session_ids: dict[str, str] = dict(spec.get("session_ids", {}))
+        # What the transport writes on each session it makes for a participant:
+        # its input and output sample rates, as a transport records them (§12.7.4).
+        self.sample_rates: dict[str, dict[str, int]] = {
+            participant: dict(rates) for participant, rates in spec.get("sample_rates", {}).items()
+        }
+        # The participant of each session the transport made, kept once it ends.
+        self.owners: dict[str, str] = {}
         self.chunks: list[tuple[str, AudioChunk]] = []
         self._played_callbacks: list[Callable[[VoiceSession, AudioFrame], None]] = []
         self._dtmf_callbacks: list[Callable[[VoiceSession, DTMFEvent], Any]] = []
@@ -73,6 +82,13 @@ class PipelineTransport(MockVoiceBackend):
             if hasattr(result, "__await__"):
                 await result
 
+    async def start_listening(self, session: VoiceSession) -> None:
+        """A pull-model transport: the kit starts it listening on each session it makes."""
+        self.calls.append(MockVoiceCall(method="start_listening", args={"session_id": session.id}))
+
+    async def stop_listening(self, session: VoiceSession) -> None:
+        self.calls.append(MockVoiceCall(method="stop_listening", args={"session_id": session.id}))
+
     async def connect(
         self,
         room_id: str,
@@ -81,10 +97,14 @@ class PipelineTransport(MockVoiceBackend):
         *,
         metadata: dict[str, Any] | None = None,
     ) -> VoiceSession:
-        """The mock's connect, its session named by ``session_ids`` when it names one."""
+        """The mock's connect, its session named by ``session_ids`` when it names one,
+        its metadata carrying the participant's ``sample_rates``."""
+        metadata = {**self.sample_rates.get(participant_id, {}), **(metadata or {})}
         wanted = self.session_ids.pop(participant_id, None)
         if wanted is None:
-            return await super().connect(room_id, participant_id, channel_id, metadata=metadata)
+            made = await super().connect(room_id, participant_id, channel_id, metadata=metadata)
+            self.owners[made.id] = participant_id
+            return made
         session = VoiceSession(
             id=wanted,
             room_id=room_id,
@@ -94,6 +114,7 @@ class PipelineTransport(MockVoiceBackend):
             metadata=metadata or {},
         )
         self._sessions[session.id] = session
+        self.owners[session.id] = participant_id
         self.calls.append(
             MockVoiceCall(
                 method="connect",
@@ -177,13 +198,30 @@ def feed_frame(spec: Mapping[str, Any], encoded: str) -> AudioFrame:
     )
 
 
+def transport_of(fixture: Any, participant: str) -> PipelineTransport:
+    """The transport holding the participant's session: the one it speaks through."""
+    session = fixture.sessions[participant]
+    for transport in fixture.transports.values():
+        if transport.get_session(session.id) is not None:
+            return transport
+    return fixture.backend
+
+
 async def _join(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """The kit's ``join``: on ``backend`` when named, of the session ``voice.connect``
+    made when ``push``, else of a session the transport makes (the pull model)."""
     fixture = harness.voice_fixtures[spec["channel_id"]]
     participant = spec["participant_id"]
+    backend = fixture.transports[spec["backend"]] if "backend" in spec else None
+    pushed = fixture.sessions[participant] if spec.get("push") else None
     if "session_id" in spec:
-        fixture.backend.session_ids[participant] = spec["session_id"]
+        (backend or fixture.backend).session_ids[participant] = spec["session_id"]
     session = await kit.join(
-        fixture.room_id, fixture.channel.channel_id, participant_id=participant
+        spec.get("room_id", fixture.room_id),
+        fixture.channel.channel_id,
+        session=pushed,
+        participant_id=participant,
+        backend=backend,
     )
     assert isinstance(session, VoiceSession)
     fixture.sessions[participant] = session
@@ -197,7 +235,7 @@ async def _leave(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Non
 
 async def _dtmf_received(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     fixture = harness.voice_fixtures[spec["channel_id"]]
-    await fixture.backend.simulate_dtmf_received(
+    await transport_of(fixture, spec["participant_id"]).simulate_dtmf_received(
         fixture.sessions[spec["participant_id"]],
         DTMFEvent(digit=spec["digit"], duration_ms=spec["duration_ms"]),
     )
@@ -209,7 +247,7 @@ TRANSPORT_CALLS = {
     "voice.dtmf_received": _dtmf_received,
 }
 TRANSPORT_ARGUMENTS = {
-    "voice.join": {"channel_id", "participant_id", "session_id"},
+    "voice.join": {"channel_id", "participant_id", "session_id", "backend", "room_id", "push"},
     "voice.leave": {"channel_id", "participant_id"},
     "voice.dtmf_received": {"channel_id", "participant_id", "digit", "duration_ms"},
 }
@@ -219,5 +257,6 @@ TRANSPORT_OPEN_ARGUMENTS = {
     "playback_callback",
     "reference_continues",
     "session_ids",
+    "sample_rates",
 }
 FEED_ARGUMENTS = {"sample_rate", "channels", "timestamp_ms"}

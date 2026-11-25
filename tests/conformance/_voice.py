@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit import VoiceChannel
@@ -23,6 +23,13 @@ from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.context import TTSContext
 from roomkit.voice.tts.mock import MockTTSProvider
+from tests.conformance._voice_bridge import (
+    BRIDGE_ARGUMENTS,
+    BRIDGE_CALLS,
+    BRIDGE_OPEN_ARGUMENTS,
+    bridge_config,
+    read_transports,
+)
 from tests.conformance._voice_pipeline import (
     READ_ARGUMENTS,
     STAGE_ARGUMENTS,
@@ -45,12 +52,14 @@ from tests.conformance._voice_stt import (
 )
 from tests.conformance._voice_transport import (
     FEED_ARGUMENTS,
+    PRIMARY,
     TRANSPORT_ARGUMENTS,
     TRANSPORT_CALLS,
     TRANSPORT_OPEN_ARGUMENTS,
     PipelineTransport,
     chunk_record,
     feed_frame,
+    transport_of,
 )
 
 if TYPE_CHECKING:
@@ -123,12 +132,15 @@ class _StreamingTTS(MockTTSProvider):
 class VoiceFixture:
     channel: VoiceChannel
     backend: _Transport
-    tts: MockTTSProvider
+    tts: MockTTSProvider | None
     sessions: dict[str, VoiceSession]
     room_id: str
     trace: Trace
     joined: dict[str, list[VoiceSession]]
     recognizer: ScriptedSTT | None = None
+    # Every transport by name, the one built here as PRIMARY (voice.add_backend).
+    transports: dict[str, PipelineTransport] = field(default_factory=dict)
+    new_transport: Callable[[Mapping[str, Any]], PipelineTransport] | None = None
 
 
 def _vad(spec: Mapping[str, Any]) -> VADEvent:
@@ -175,7 +187,8 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
             ),
         )
     backend = _Transport(harness.gates, spec.get("playback_gate"), spec)
-    tts = _StreamingTTS()
+    # ``tts: null`` builds the channel with no TTS provider (§12.7.3).
+    tts = None if "tts" in spec else _StreamingTTS()
     scripted = recognizer(spec, harness.gates)
     stt: MockSTTProvider | ScriptedSTT | None = scripted
     if "transcripts" in spec:
@@ -190,13 +203,17 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
         stt=stt,
         pipeline=pipeline,
         interruption=interruption,
-        bridge=spec.get("bridge", False),
+        bridge=bridge_config(spec),
         batch_mode=spec.get("batch_mode", False),
         pipeline_speakers=spec.get("pipeline_speakers", False),
     )
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
     fixture = VoiceFixture(channel, backend, tts, {}, spec["room_id"], trace, {}, scripted)
+    fixture.transports[PRIMARY] = backend
+    fixture.new_transport = lambda traits: _Transport(
+        harness.gates, traits.get("playback_gate"), traits
+    )
     harness.voice_fixtures[channel.channel_id] = fixture
     for participant in spec["participants"]:
         session = await kit.join(spec["room_id"], channel.channel_id, participant_id=participant)
@@ -208,9 +225,10 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
 async def _feed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     fixture = harness.voice_fixtures[spec["channel_id"]]
     session = fixture.sessions[spec["participant_id"]]
+    transport = transport_of(fixture, spec["participant_id"])
     for _ in range(spec.get("repeat", 1)):
         for encoded in spec["frames"]:
-            await fixture.backend.simulate_audio_received(session, feed_frame(spec, encoded))
+            await transport.simulate_audio_received(session, feed_frame(spec, encoded))
 
 
 async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
@@ -246,30 +264,38 @@ async def _stream(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> No
 
 async def _barge_in(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     fixture = harness.voice_fixtures[spec["channel_id"]]
-    await fixture.backend.simulate_barge_in(fixture.sessions[spec["participant_id"]])
+    await transport_of(fixture, spec["participant_id"]).simulate_barge_in(
+        fixture.sessions[spec["participant_id"]]
+    )
 
 
 async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
     fixture = harness.voice_fixtures[spec["channel_id"]]
+    transports = list(fixture.transports.values())
     read: dict[str, Any] = {}
     if fixture.recognizer is not None:
         read["stt_streams"] = fixture.recognizer.read()
     return read | {
-        "synthesized": [call["text"] for call in fixture.tts.calls],
+        "synthesized": [call["text"] for call in fixture.tts.calls] if fixture.tts else [],
         "audio": {
             name: [
                 base64.b64encode(audio).decode("ascii")
-                for sid, audio in fixture.backend.sent_audio
+                for transport in transports
+                for sid, audio in transport.sent_audio
                 if sid == session.id
             ]
             for name, session in fixture.sessions.items()
         },
         "chunks": {
             name: [
-                chunk_record(chunk) for sid, chunk in fixture.backend.chunks if sid == session.id
+                chunk_record(chunk)
+                for transport in transports
+                for sid, chunk in transport.chunks
+                if sid == session.id
             ]
             for name, session in fixture.sessions.items()
         },
+        "transports": read_transports(fixture),
         "sessions": {
             name: [{"session_id": s.id, "state": s.state.value} for s in joined]
             for name, joined in fixture.joined.items()
@@ -302,6 +328,7 @@ VOICE_CALLS = {
     "voice.read": _read,
     **TRANSPORT_CALLS,
     **STT_CALLS,
+    **BRIDGE_CALLS,
 }
 VOICE_ARGUMENTS = {
     "voice.open": {
@@ -320,6 +347,7 @@ VOICE_ARGUMENTS = {
         *STAGE_ARGUMENTS,
         *TRANSPORT_OPEN_ARGUMENTS,
         *OPEN_ARGUMENTS,
+        *BRIDGE_OPEN_ARGUMENTS,
     },
     "voice.feed": {"channel_id", "participant_id", "frames", "repeat", *FEED_ARGUMENTS},
     "voice.say": {"channel_id", "participant_id", "text"},
@@ -329,4 +357,5 @@ VOICE_ARGUMENTS = {
     "voice.read": {"channel_id", *READ_ARGUMENTS},
     **TRANSPORT_ARGUMENTS,
     **STT_ARGUMENTS,
+    **BRIDGE_ARGUMENTS,
 }
