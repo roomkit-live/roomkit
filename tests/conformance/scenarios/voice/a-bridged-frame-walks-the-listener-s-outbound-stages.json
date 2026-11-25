@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-bridged-frame-walks-the-listener-s-outbound-stages",
+  "title": "A frame bridged to a listener goes through that listener's postprocessor, recorder and AEC reference, then reaches its transport at the transport's 8 kHz",
+  "rules": [
+    "§12.7.1",
+    "§12.7.3",
+    "§12.7.8"
+  ],
+  "requirements": [
+    "RK-12.7.1-007",
+    "RK-12.7.3-003",
+    "RK-12.7.8-005"
+  ],
+  "notes": "The resampled samples are not compared.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "session_ids": {
+        "alice": "s-alice",
+        "bob": "s-bob"
+      },
+      "bridge": true,
+      "aec": {},
+      "recorder": {},
+      "postprocessors": [
+        {
+          "name": "eq",
+          "output": "CQoLDA=="
+        }
+      ],
+      "contract": {
+        "transport_outbound_format": {
+          "sample_rate": 8000
+        }
+      }
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQIDBA=="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "eq",
+        "recorder",
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "tap_outbound",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA=="
+              }
+            },
+            {
+              "stage": "eq",
+              "call": "process",
+              "stream": "s-bob",
+              "frame": {
+                "data": "AQIDBA=="
+              }
+            },
+            {
+              "stage": "recorder",
+              "call": "tap_outbound",
+              "stream": "s-bob",
+              "frame": {
+                "data": "CQoLDA=="
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-bob",
+              "frame": {
+                "data": "CQoLDA=="
+              }
+            }
+          ],
+          "chunks": {
+            "alice": [],
+            "bob": [
+              {
+                "sample_rate": 8000,
+                "channels": 1,
+                "data": "$any"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

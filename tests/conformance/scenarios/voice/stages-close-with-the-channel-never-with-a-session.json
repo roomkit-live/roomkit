@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/stages-close-with-the-channel-never-with-a-session",
+  "title": "A session's end closes no pipeline stage; the kit's close, closing the channel, closes each stage once",
+  "rules": [
+    "§12.3.14"
+  ],
+  "requirements": [
+    "RK-12.3.14-010"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {},
+      "agc": {},
+      "denoiser": {},
+      "postprocessors": [
+        {
+          "name": "eq"
+        }
+      ],
+      "recorder": {},
+      "tones": [],
+      "turns": [
+        true
+      ],
+      "vad": [
+        null
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "calls": [
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "stages": []
+        }
+      }
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "calls": [
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "stages": {
+            "$unordered": [
+              {
+                "stage": "aec",
+                "call": "close"
+              },
+              {
+                "stage": "agc",
+                "call": "close"
+              },
+              {
+                "stage": "denoiser",
+                "call": "close"
+              },
+              {
+                "stage": "eq",
+                "call": "close"
+              },
+              {
+                "stage": "recorder",
+                "call": "close"
+              },
+              {
+                "stage": "vad",
+                "call": "close"
+              },
+              {
+                "stage": "dtmf",
+                "call": "close"
+              },
+              {
+                "stage": "turn_detector",
+                "call": "close"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/without-a-resampler-each-stage-gets-the-transport-s-frame",
+  "title": "With no resampler, every stage receives the frame the transport sent, at its own rate and channel count",
+  "rules": [
+    "§12.3.3"
+  ],
+  "requirements": [
+    "RK-12.3.3-008"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {},
+      "agc": {},
+      "denoiser": {},
+      "vad": [
+        null
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQIDBAUGBwg="
+      ],
+      "sample_rate": 8000,
+      "channels": 2,
+      "timestamp_ms": 40
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec",
+        "agc",
+        "denoiser",
+        "vad"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBAUGBwg=",
+                "sample_rate": 8000,
+                "channels": 2,
+                "timestamp_ms": 40
+              }
+            },
+            {
+              "stage": "agc",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBAUGBwg=",
+                "sample_rate": 8000,
+                "channels": 2,
+                "timestamp_ms": 40
+              }
+            },
+            {
+              "stage": "denoiser",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBAUGBwg=",
+                "sample_rate": 8000,
+                "channels": 2,
+                "timestamp_ms": 40
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBAUGBwg=",
+                "sample_rate": 8000,
+                "channels": 2,
+                "timestamp_ms": 40
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

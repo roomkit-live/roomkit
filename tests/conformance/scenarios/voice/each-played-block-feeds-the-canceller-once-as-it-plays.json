@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/each-played-block-feeds-the-canceller-once-as-it-plays",
+  "title": "A transport that reports each block it plays feeds the AEC its reference at playback, each block once, the outbound path feeding none of its own",
+  "rules": [
+    "§12.2",
+    "§12.3.4"
+  ],
+  "requirements": [
+    "RK-12.2-039",
+    "RK-12.3.4-011"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "playback_callback": true,
+      "aec": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi there."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec"
+      ],
+      "calls": [
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "bW9jay1hdWRpby1IaQA=",
+                "metadata": {
+                  "playback_ended": {
+                    "$absent": true
+                  }
+                }
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "bW9jay1hdWRpby10aGVyZS4A",
+                "metadata": {
+                  "playback_ended": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

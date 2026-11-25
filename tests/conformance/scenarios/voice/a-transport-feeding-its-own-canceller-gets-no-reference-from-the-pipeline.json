@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-transport-feeding-its-own-canceller-gets-no-reference-from-the-pipeline",
+  "title": "With a transport that feeds the AEC reference itself, the pipeline's AEC still processes the captured frames but the outbound path feeds it no reference",
+  "rules": [
+    "§12.3",
+    "§12.3.4",
+    "§12.3.14"
+  ],
+  "requirements": [
+    "RK-12.3-008",
+    "RK-12.3.4-009",
+    "RK-12.3.14-023"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "feeds_aec_reference": true,
+      "aec": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQI="
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

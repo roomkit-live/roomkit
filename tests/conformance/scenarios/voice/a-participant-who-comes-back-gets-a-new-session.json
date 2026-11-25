@@ -1,0 +1,65 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-participant-who-comes-back-gets-a-new-session",
+  "title": "A participant who left and joins again is given a session of another id",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-055"
+  ],
+  "notes": "The kit's join asks the transport for a new session; the session's state is its transport's on a voice channel and is not compared.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "sessions": {
+            "alice": [
+              {
+                "session_id": {
+                  "$as": "first"
+                }
+              },
+              {
+                "session_id": {
+                  "$as": "second"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

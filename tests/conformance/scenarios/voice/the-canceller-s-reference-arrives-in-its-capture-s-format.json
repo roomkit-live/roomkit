@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/the-canceller-s-reference-arrives-in-its-capture-s-format",
+  "title": "With frames captured at 8 kHz and a reply synthesized at 16 kHz, the AEC receives its reference at the captured frames' rate, channel count and sample width",
+  "rules": [
+    "§12.3.4"
+  ],
+  "requirements": [
+    "RK-12.3.4-016"
+  ],
+  "notes": "The implementation's own resampler converts the reference; its samples are not compared. The reference's frame size follows the synthesis and the capture's the transport (6 and 4 bytes here): a canceller needing fixed-size frames re-chunks the reference itself.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQIDBA=="
+      ],
+      "sample_rate": 8000
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA==",
+                "sample_rate": 8000,
+                "channels": 1,
+                "sample_width": 2
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 8000,
+                "channels": 1,
+                "sample_width": 2
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

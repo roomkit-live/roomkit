@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-reused-session-key-starts-its-stages-afresh",
+  "title": "A participant who leaves and comes back under the same session id walks the VAD's script from its start, each stage reset before the new session's first frame",
+  "rules": [
+    "§12.3.1"
+  ],
+  "requirements": [
+    "RK-12.3.1-024"
+  ],
+  "notes": "The scripted VAD keeps its position per stream key, and a reset of the key brings it back to its script's start; the trace shows the reset at the end of the first session and the one at the start of the second, before its first frame.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "speech",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        null
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "session_id": "s-alice"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "vad"
+      ],
+      "calls": [
+        "reset",
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "vad",
+              "call": "reset",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQI="
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "reset",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "vad",
+              "call": "reset",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AwQ="
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "speech": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

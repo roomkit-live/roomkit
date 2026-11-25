@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-aec-hears-a-stream-s-capture-and-reference-under-one-key",
+  "title": "The AEC receives each session's captured frames and the reply played to that session under the same stream key, the session's",
+  "rules": [
+    "§12.3.4"
+  ],
+  "requirements": [
+    "RK-12.3.4-006",
+    "RK-12.3.4-007"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "session_ids": {
+        "alice": "s-alice",
+        "bob": "s-bob"
+      },
+      "aec": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AwQ="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "text": "Bye."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQI="
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "bW9jay1hdWRpby1IaS4="
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-bob",
+              "frame": {
+                "data": "AwQ="
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-bob",
+              "frame": {
+                "data": "bW9jay1hdWRpby1CeWUuAA=="
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-reply-walks-the-outbound-stages-in-their-order",
+  "title": "Each chunk of a spoken reply goes through the postprocessors in list order, each handed the one before's output, then the recorder and the AEC reference, then the resampler to the transport's 8 kHz",
+  "rules": [
+    "§12.2",
+    "§12.3",
+    "§12.3.1",
+    "§12.3.3",
+    "§12.3.4",
+    "§12.3.10",
+    "§12.3.14"
+  ],
+  "requirements": [
+    "RK-12.2-038",
+    "RK-12.2-039",
+    "RK-12.2-043",
+    "RK-12.3-008",
+    "RK-12.3.1-014",
+    "RK-12.3.3-004",
+    "RK-12.3.4-010",
+    "RK-12.3.10-003",
+    "RK-12.3.14-021",
+    "RK-12.3.14-023",
+    "RK-12.3.14-024"
+  ],
+  "notes": "The transport reports no played block, as a network transport, so the pipeline feeds the AEC reference itself. The first postprocessor receives each chunk at the size the synthesis emitted it (14 and 18 bytes): re-chunking to a fixed size is a stage's own, not shown. Only the sample rate is converted on exit (the channel count and the codec stay those of the synthesis). The resampled samples are not compared.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {},
+      "recorder": {},
+      "postprocessors": [
+        {
+          "name": "first",
+          "output": "AQIDBA=="
+        },
+        {
+          "name": "second",
+          "output": "CQoLDA=="
+        }
+      ],
+      "contract": {
+        "transport_outbound_format": {
+          "sample_rate": 8000
+        }
+      }
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi there."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "first",
+        "second",
+        "recorder",
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "tap_outbound",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "first",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "bW9jay1hdWRpby1IaQA=",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "second",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA==",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "recorder",
+              "call": "tap_outbound",
+              "stream": "s-alice",
+              "frame": {
+                "data": "CQoLDA==",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "CQoLDA==",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "first",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "bW9jay1hdWRpby10aGVyZS4A",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "second",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA==",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "recorder",
+              "call": "tap_outbound",
+              "stream": "s-alice",
+              "frame": {
+                "data": "CQoLDA==",
+                "sample_rate": 16000
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "CQoLDA==",
+                "sample_rate": 16000
+              }
+            }
+          ],
+          "chunks": {
+            "alice": [
+              {
+                "sample_rate": 8000,
+                "channels": 1,
+                "data": "$any"
+              },
+              {
+                "sample_rate": 8000,
+                "channels": 1,
+                "data": "$any"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

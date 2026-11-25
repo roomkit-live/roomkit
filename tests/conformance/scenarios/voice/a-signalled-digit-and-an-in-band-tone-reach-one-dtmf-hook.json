@@ -1,0 +1,91 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-signalled-digit-and-an-in-band-tone-reach-one-dtmf-hook",
+  "title": "A digit the transport receives by signalling and a tone the pipeline's detector finds in the audio both fire ON_DTMF",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-052"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "digits",
+        "trigger": "on_dtmf",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "capabilities": [
+        "interruption",
+        "barge_in",
+        "dtmf_signaling"
+      ],
+      "tones": [
+        {
+          "digit": "5",
+          "duration_ms": 80
+        }
+      ]
+    },
+    {
+      "call": "voice.dtmf_received",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "#",
+      "duration_ms": 120
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "digits": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "digit": "#",
+            "duration_ms": 120
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "alice",
+            "digit": "5",
+            "duration_ms": 80
+          }
+        }
+      ]
+    }
+  }
+}

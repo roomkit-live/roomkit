@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-contract-hands-every-inbound-stage-the-internal-format",
+  "title": "With a format contract, a frame the transport sends at 8 kHz reaches the recorder and every stage at the internal 16 kHz, its timestamp kept and its original format in its metadata",
+  "rules": [
+    "§12.2",
+    "§12.3.1",
+    "§12.3.3",
+    "§12.3.6",
+    "§12.3.14"
+  ],
+  "requirements": [
+    "RK-12.2-017",
+    "RK-12.3.1-014",
+    "RK-12.3.3-003",
+    "RK-12.3.3-005",
+    "RK-12.3.3-006",
+    "RK-12.3.6-006",
+    "RK-12.3.14-011"
+  ],
+  "notes": "The implementation's own resampler converts; the converted samples are not compared. The recorder and the DTMF detector are each read against the main chain: their order between themselves is left open. Not shown of RK-12.3.1-014: the AEC reference converted under a contract, that no stage declares a format and none is validated at start, a stage refusing a setting at construction, and a frame stage passing a frame in another format on unchanged with a warning (each stage's own test).",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {},
+      "agc": {},
+      "denoiser": {},
+      "recorder": {},
+      "tones": [],
+      "vad": [
+        null
+      ],
+      "contract": {
+        "transport_inbound_format": {
+          "sample_rate": 8000
+        }
+      }
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQIDBAUGBwg="
+      ],
+      "sample_rate": 8000,
+      "timestamp_ms": 40
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "recorder",
+        "aec",
+        "agc",
+        "denoiser",
+        "vad"
+      ],
+      "calls": [
+        "tap_inbound",
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "recorder",
+              "call": "tap_inbound",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            },
+            {
+              "stage": "agc",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            },
+            {
+              "stage": "denoiser",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "dtmf",
+        "aec"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "dtmf",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            },
+            {
+              "stage": "aec",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "sample_width": 2,
+                "timestamp_ms": 40,
+                "metadata": {
+                  "original_sample_rate": 8000,
+                  "original_channels": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

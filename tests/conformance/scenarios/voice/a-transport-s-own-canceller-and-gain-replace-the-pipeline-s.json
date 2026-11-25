@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-transport-s-own-canceller-and-gain-replace-the-pipeline-s",
+  "title": "A transport declaring NATIVE_AEC and NATIVE_AGC has the pipeline skip its configured AEC and AGC, inbound and outbound, while the denoiser still runs",
+  "rules": [
+    "§12.2",
+    "§12.3.4",
+    "§12.3.5",
+    "§12.3.14"
+  ],
+  "requirements": [
+    "RK-12.2-051",
+    "RK-12.3.4-017",
+    "RK-12.3.5-007",
+    "RK-12.3.14-014",
+    "RK-12.3.14-015"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "capabilities": [
+        "interruption",
+        "barge_in",
+        "native_aec",
+        "native_agc"
+      ],
+      "aec": {},
+      "agc": {},
+      "denoiser": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec",
+        "agc",
+        "denoiser"
+      ],
+      "calls": [
+        "process",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "denoiser",
+              "call": "process",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQI="
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

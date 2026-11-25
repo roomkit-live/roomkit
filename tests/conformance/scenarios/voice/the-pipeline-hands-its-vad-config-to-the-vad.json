@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/the-pipeline-hands-its-vad-config-to-the-vad",
+  "title": "The VADConfig set on the pipeline reaches the VAD's configure() when the pipeline is built, before any session",
+  "rules": [
+    "§12.3.1"
+  ],
+  "requirements": [
+    "RK-12.3.1-008"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad_config": {
+        "silence_threshold_ms": 300
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "vad"
+      ],
+      "calls": [
+        "configure",
+        "reset"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "vad",
+              "call": "configure",
+              "config": {
+                "silence_threshold_ms": 300,
+                "speech_pad_ms": null,
+                "min_speech_duration_ms": null
+              }
+            },
+            {
+              "stage": "vad",
+              "call": "reset",
+              "stream": "s-alice"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/the-canceller-is-bypassed-between-replies-and-keeps-its-filter",
+  "title": "When the transport's played blocks stop with each reply, the AEC is made inactive once a reply has played and active again for the next, and is never reset meanwhile",
+  "rules": [
+    "§12.3.4"
+  ],
+  "requirements": [
+    "RK-12.3.4-015"
+  ],
+  "notes": "The reset is the session's start (§12.3.14). On a voice channel the echo tail's bypass follows each reply too, so the bypass at the end of the played blocks is not told apart from it: what is shown is the canceller inactive between replies, active again for the next, and never reset.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "playback_callback": true,
+      "aec": {}
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Bye."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "aec"
+      ],
+      "calls": [
+        "reset",
+        "set_stream_active",
+        "set_active"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "aec",
+              "call": "reset",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "aec",
+              "call": "set_stream_active",
+              "stream": "s-alice",
+              "active": true
+            },
+            {
+              "stage": "aec",
+              "call": "set_stream_active",
+              "stream": "s-alice",
+              "active": false
+            },
+            {
+              "stage": "aec",
+              "call": "set_stream_active",
+              "stream": "s-alice",
+              "active": true
+            },
+            {
+              "stage": "aec",
+              "call": "set_stream_active",
+              "stream": "s-alice",
+              "active": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
