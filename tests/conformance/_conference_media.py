@@ -233,20 +233,27 @@ def media_options(
         )
         options["pipeline"] = pipeline
     if "recording" in spec:
-        recording = spec["recording"]
-        encryption = recording.get("encryption")
-        options["recording"] = ConferenceRecordingConfig(
-            storage=recording.get("storage", "local"),
-            format=recording.get("format", "wav"),
-            metadata=dict(recording.get("metadata", {})),
-            encryption=_NamedEncryption(encryption) if encryption is not None else None,
-            storage_encrypted_at_rest=recording.get("storage_encrypted_at_rest", False),
+        options["recording"] = _recording_config(spec["recording"])
+        media.recorder = ConferenceRecorder(
+            harness.gates, spec["recording"].get("write_gates", {})
         )
-        media.recorder = ConferenceRecorder(harness.gates, recording.get("write_gates", {}))
         options["recorder"] = media.recorder
     if "max_queued_frames" in spec:
         options["max_queued_frames"] = spec["max_queued_frames"]
     return options, media
+
+
+def _recording_config(spec: Mapping[str, Any]) -> ConferenceRecordingConfig:
+    """The ConferenceRecordingConfig the scenario names: a member it does not
+    name keeps the implementation's default."""
+    members: dict[str, Any] = {
+        name: spec[name]
+        for name in ("storage", "format", "metadata", "storage_encrypted_at_rest")
+        if name in spec
+    }
+    if spec.get("encryption") is not None:
+        members["encryption"] = _NamedEncryption(spec["encryption"])
+    return ConferenceRecordingConfig(**members)
 
 
 def arrival(spec: Mapping[str, Any]) -> dict[str, Any]:
@@ -337,26 +344,8 @@ def conference_payload(payload: Any) -> dict[str, Any] | None:
             "participant_id": payload.participant_id,
             "text": payload.text,
         }
-    if isinstance(payload, ConferenceRecordingStarted):
-        return {
-            "room_id": payload.room_id,
-            "track_id": payload.track_id,
-            "participant_id": payload.participant_id,
-            "recording_id": payload.id,
-            "kind": getattr(payload.kind, "value", payload.kind),
-            "sample_rate": payload.sample_rate,
-            "channels": payload.channels,
-            "codec": payload.codec,
-        }
-    if isinstance(payload, ConferenceRecordingStopped):
-        return {
-            "room_id": payload.room_id,
-            "track_id": payload.track_id,
-            "participant_id": payload.participant_id,
-            "recording_id": payload.id,
-            "url": payload.url,
-            "format": payload.format,
-        }
+    if isinstance(payload, ConferenceRecordingStarted | ConferenceRecordingStopped):
+        return _recording_payload(payload)
     if isinstance(payload, RoomEvent) and isinstance(payload.content, SystemContent):
         data = payload.content.data or {}
         if payload.content.code in {"speech_start", "speech_end"} and "track_id" in data:
@@ -366,6 +355,26 @@ def conference_payload(payload: Any) -> dict[str, Any] | None:
                 "participant_id": data.get("participant_id"),
             }
     return None
+
+
+def _recording_payload(
+    payload: ConferenceRecordingStarted | ConferenceRecordingStopped,
+) -> dict[str, Any]:
+    """A track's recording report: its attribution, then what it says."""
+    named = {
+        "room_id": payload.room_id,
+        "track_id": payload.track_id,
+        "participant_id": payload.participant_id,
+        "recording_id": payload.id,
+    }
+    if isinstance(payload, ConferenceRecordingStarted):
+        return named | {
+            "kind": getattr(payload.kind, "value", payload.kind),
+            "sample_rate": payload.sample_rate,
+            "channels": payload.channels,
+            "codec": payload.codec,
+        }
+    return named | {"url": payload.url, "format": payload.format}
 
 
 MEDIA_CALLS = {"conference.feed": _feed, "conference.settle": _settle}
