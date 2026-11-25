@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-cut-drops-the-unplayed-audio-unless-flush-partial-tts-is-off",
+  "title": "With flush_partial_tts true a cut asks the transport to drop the unplayed audio; with it false the transport is not asked",
+  "rules": [
+    "§12.3.13",
+    "§12.6"
+  ],
+  "requirements": [
+    "RK-12.3.13-046",
+    "RK-12.6-006"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ]
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "line",
+      "room_id": "r2",
+      "participants": [
+        "bob"
+      ],
+      "playback_gates": [
+        "speaking"
+      ],
+      "interruption": {
+        "flush_partial_tts": false
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "line",
+      "participant_id": "bob",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "other"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "wait_for": "speaking"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "line",
+      "participant_id": "bob"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "open": "speaking"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "await": "other"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "line"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "cancel_audio": {
+            "alice": 1
+          }
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "line",
+      "expect": {
+        "result": {
+          "cancel_audio": {
+            "bob": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "stopped": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "bob"
+          }
+        }
+      ]
+    }
+  }
+}

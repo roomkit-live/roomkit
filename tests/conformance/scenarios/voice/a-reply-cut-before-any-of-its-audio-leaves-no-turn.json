@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-reply-cut-before-any-of-its-audio-leaves-no-turn",
+  "title": "A synthesis call cut before any of its audio reached the transport leaves no turn in the context",
+  "rules": [
+    "§12.2.2",
+    "§12.2",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.2.2-022"
+  ],
+  "notes": "The first call's synthesis holds at a gate, so the barge-in cuts it before any of its audio reached the transport; what the transport does with audio handed to it after its cancel_audio is the transport's own.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "tts": {
+        "context_level": "text",
+        "word_ms": 20,
+        "gates": [
+          "synthesizing"
+        ]
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "synthesizing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "synthesizing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Second reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "cancel_audio": {
+            "alice": 1
+          },
+          "tts_contexts": [
+            {
+              "turns": []
+            },
+            {
+              "turns": []
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "stopped": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

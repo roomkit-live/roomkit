@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-dialogue-is-refused-before-any-call-it-cannot-voice",
+  "title": "synthesize_dialogue raises on a TTS that voices no dialogue, and before any call when the turns name more speakers than its maximum or a speaker the voices map lacks",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-086"
+  ],
+  "notes": "The second TTS declares two speakers and keeps the interface's synthesize_dialogue: its refusals are the checks the interface makes before anything else; a dialogue it passes is not voiced by the scripted TTS, so a successful call is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "tts": {}
+    },
+    {
+      "call": "voice.synthesize_dialogue",
+      "channel_id": "phone",
+      "turns": [
+        {
+          "speaker": "a",
+          "text": "Hi."
+        },
+        {
+          "speaker": "b",
+          "text": "Hello."
+        }
+      ],
+      "voices": {
+        "a": "claire",
+        "b": "louis"
+      },
+      "expect": {
+        "error": {
+          "name": "not_supported"
+        }
+      }
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "duo",
+      "room_id": "r2",
+      "participants": [
+        "bob"
+      ],
+      "tts": {
+        "max_dialogue_speakers": 2
+      }
+    },
+    {
+      "call": "voice.synthesize_dialogue",
+      "channel_id": "duo",
+      "turns": [
+        {
+          "speaker": "a",
+          "text": "Hi."
+        },
+        {
+          "speaker": "b",
+          "text": "Hello."
+        },
+        {
+          "speaker": "c",
+          "text": "Hey."
+        }
+      ],
+      "voices": {
+        "a": "claire",
+        "b": "louis",
+        "c": "ava"
+      },
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.synthesize_dialogue",
+      "channel_id": "duo",
+      "turns": [
+        {
+          "speaker": "a",
+          "text": "Hi."
+        },
+        {
+          "speaker": "b",
+          "text": "Hello."
+        }
+      ],
+      "voices": {
+        "a": "claire"
+      },
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "duo",
+      "expect": {
+        "result": {
+          "synthesized": []
+        }
+      }
+    }
+  ]
+}

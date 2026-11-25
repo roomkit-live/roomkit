@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-that-resumes-past-min-speech-ms-supersedes-the-unheard-reply",
+  "title": "Speech of at least min_speech_ms that starts before the reply is heard and is routed cancels that reply as superseded: both user messages stay, and the model reads them both",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-018"
+  ],
+  "notes": "min_speech_ms 0: any routed speech supersedes. The reply's synthesis holds at a gate, so none of it was heard.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Your table is ready."
+            },
+            {
+              "text": "A table for two, noted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table",
+        "for two"
+      ],
+      "interruption": {
+        "min_speech_ms": 0
+      },
+      "tts": {
+        "gates": [
+          "synthesizing"
+        ]
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "synthesizing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "open": "synthesizing"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "metadata": {
+            "cancelled": true,
+            "cancellation_reason": "superseded"
+          }
+        },
+        {
+          "content": {
+            "body": "for two"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "A table for two, noted."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": "$any"
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Book a table"
+            },
+            {
+              "role": "user",
+              "text": "for two"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

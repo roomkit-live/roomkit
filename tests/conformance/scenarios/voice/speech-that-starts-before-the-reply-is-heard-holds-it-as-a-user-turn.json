@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-that-starts-before-the-reply-is-heard-holds-it-as-a-user-turn",
+  "title": "Speech that starts after the turn is routed and before the reply's first audio holds the reply: none of it is sent while the speech lasts, no barge-in fires, and the speech is a user turn",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-017"
+  ],
+  "notes": "The reply's synthesis holds at a gate until the second speech has started; the transport is read while that speech lasts. The speech is shorter than its 60 s minimum, so the held reply is not superseded (RK-12.3.12-018 is). Speech over audible audio keeping its echo guard is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Your table by the window is ready."
+            },
+            {
+              "text": "For two, noted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "began",
+        "trigger": "on_speech_start",
+        "execution": "async",
+        "reactions": [
+          {},
+          {
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "name": "heard",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table",
+        "for two"
+      ],
+      "interruption": {
+        "min_speech_ms": 60000
+      },
+      "tts": {
+        "gates": [
+          "synthesizing"
+        ]
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "synthesizing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "synthesizing"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "chunks": {
+            "alice": []
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [],
+      "heard": [
+        {
+          "voice": {
+            "text": "Book a table"
+          }
+        },
+        {
+          "voice": {
+            "text": "for two"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        },
+        "$any",
+        "$any",
+        "$any"
+      ]
+    }
+  }
+}

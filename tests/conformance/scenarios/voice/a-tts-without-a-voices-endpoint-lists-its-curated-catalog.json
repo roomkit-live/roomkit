@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-tts-without-a-voices-endpoint-lists-its-curated-catalog",
+  "title": "The default list_voices of a TTS returns its curated catalog, filtered",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-081"
+  ],
+  "notes": "The scripted TTS keeps the interface's list_voices and offers the catalog as its curated voices.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "tts": {
+        "voices": [
+          {
+            "id": "claire",
+            "name": "Claire",
+            "language": "fr-CA",
+            "gender": "female",
+            "description": "Warm"
+          },
+          {
+            "id": "louis",
+            "name": "Louis",
+            "language": "fr-FR",
+            "gender": "male",
+            "description": "Calm narrator"
+          },
+          {
+            "id": "ava",
+            "name": "Ava",
+            "language": "en",
+            "gender": "female",
+            "description": "Upbeat"
+          },
+          {
+            "id": "sam",
+            "name": "Sam",
+            "description": "A voice of unknown language and gender"
+          }
+        ]
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire",
+              "name": "Claire",
+              "language": "fr-CA",
+              "gender": "female",
+              "description": "Warm"
+            },
+            {
+              "id": "louis"
+            },
+            {
+              "id": "ava"
+            },
+            {
+              "id": "sam",
+              "language": null,
+              "gender": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "gender": "male",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "louis"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

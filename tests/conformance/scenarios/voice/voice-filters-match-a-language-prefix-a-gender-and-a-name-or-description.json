@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/voice-filters-match-a-language-prefix-a-gender-and-a-name-or-description",
+  "title": "list_voices matches a language tag or its prefix, a gender exactly, a query in the name or description without regard to case; an unknown language or gender matches no filter on it",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-082"
+  ],
+  "notes": "Sam has neither language nor gender: no language or gender filter matches it, a query on its description does.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "tts": {
+        "voices": [
+          {
+            "id": "claire",
+            "name": "Claire",
+            "language": "fr-CA",
+            "gender": "female",
+            "description": "Warm"
+          },
+          {
+            "id": "louis",
+            "name": "Louis",
+            "language": "fr-FR",
+            "gender": "male",
+            "description": "Calm narrator"
+          },
+          {
+            "id": "ava",
+            "name": "Ava",
+            "language": "en",
+            "gender": "female",
+            "description": "Upbeat"
+          },
+          {
+            "id": "sam",
+            "name": "Sam",
+            "description": "A voice of unknown language and gender"
+          }
+        ]
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "fr",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            },
+            {
+              "id": "louis"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "fr-CA",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "fr-BE",
+      "expect": {
+        "result": {
+          "voices": []
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "f",
+      "expect": {
+        "result": {
+          "voices": []
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "gender": "female",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            },
+            {
+              "id": "ava"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "gender": "fem",
+      "expect": {
+        "result": {
+          "voices": []
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "query": "NARRATOR",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "louis"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "query": "clai",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "query": "unknown",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "sam"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "fr",
+      "gender": "female",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "language": "en",
+      "query": "up",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "ava"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

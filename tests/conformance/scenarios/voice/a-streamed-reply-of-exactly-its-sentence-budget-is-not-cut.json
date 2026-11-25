@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-streamed-reply-of-exactly-its-sentence-budget-is-not-cut",
+  "title": "A streamed reply of exactly max_sentences sentences is spoken whole and stored as a response",
+  "rules": [
+    "§12.2",
+    "§12.2 step 12s"
+  ],
+  "requirements": [
+    "RK-12.2-031"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Your table by the window is ready now. ",
+                "The kitchen closes at ten tonight."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answered",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "max_sentences": 2,
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now.",
+            "The kitchen closes at ten tonight."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "answered": [
+        "$any"
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Your table by the window is ready now. The kitchen closes at ten tonight."
+          },
+          "metadata": {
+            "cancelled": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

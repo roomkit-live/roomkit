@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-encoded-tts-chunk-never-reaches-the-transport",
+  "title": "A TTS chunk in an encoded format is refused before the transport, reported as tts_error naming the format; PCM chunks reach it",
+  "rules": [
+    "§12.2",
+    "§8.2"
+  ],
+  "requirements": [
+    "RK-12.2-046",
+    "RK-12.2-076"
+  ],
+  "notes": "pcm is the alias of pcm_s16le the RFC admits. No outbound stage is configured, so the refusal coming before the outbound pipeline is not shown apart from before the transport.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "tts": {
+        "format": "mp3"
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "chunks": {
+            "alice": []
+          },
+          "audio": {
+            "alice": []
+          }
+        }
+      }
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "pcm",
+      "room_id": "r2",
+      "participants": [
+        "bob"
+      ],
+      "tts": {
+        "format": "pcm"
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "pcm",
+      "participant_id": "bob",
+      "text": "Hi there."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "pcm"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "pcm",
+      "expect": {
+        "result": {
+          "chunks": {
+            "bob": [
+              {
+                "format": "pcm"
+              },
+              {
+                "format": "pcm"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "voice_events": {
+      "r1": [
+        {
+          "event": "tts_error",
+          "data": {
+            "error": {
+              "$contains": "'mp3'"
+            },
+            "session_id": "s-alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-session-whose-playback-fails-is-reported-and-the-served-one-fires-after-tts",
+  "title": "Of two sessions spoken to, the one whose playback fails is reported as tts_error, and AFTER_TTS fires for the one served",
+  "rules": [
+    "§12.2",
+    "§8.2",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.2-025"
+  ],
+  "notes": "The transport fails bob's playback; alice's plays. The order of the two sessions' synthesis is not asserted; that the sessions play in parallel, and that the error is reported once the playback is released, are not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "spoken",
+        "trigger": "after_tts",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "session_ids": {
+        "alice": "s-alice",
+        "bob": "s-bob"
+      },
+      "playback_fails": [
+        "bob"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "content": {
+        "type": "text",
+        "body": "Your table is ready."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [
+              "$any"
+            ],
+            "bob": []
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "spoken": [
+        {
+          "voice": {
+            "text": "Your table is ready."
+          }
+        }
+      ]
+    },
+    "voice_events": {
+      "r1": [
+        {
+          "event": "tts_error",
+          "data": {
+            "error": "the playback to bob fails",
+            "session_id": "s-bob"
+          }
+        }
+      ]
+    }
+  }
+}

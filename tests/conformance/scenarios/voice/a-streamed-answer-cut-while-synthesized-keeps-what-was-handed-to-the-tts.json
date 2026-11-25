@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-streamed-answer-cut-while-synthesized-keeps-what-was-handed-to-the-tts",
+  "title": "An agent's streamed answer cut while still synthesized is recorded with the sentences handed to the TTS and played_ms, without played_percentage",
+  "rules": [
+    "§12.3.13",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.3.13-049",
+    "RK-12.3.13-050"
+  ],
+  "notes": "BEFORE_TTS holds the answer's second sentence once the first was synthesized and sent: neither the second nor the third was handed to the TTS when the barge-in came, and the answer's synthesis had not ended. What is synthesized after the cut depends on the transport's playback, which a cancel_audio stops.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Your table by the window is ready now. ",
+                "The kitchen closes at ten tonight. ",
+                "Enjoy your meal with us this evening."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "cut"
+          }
+        ]
+      },
+      {
+        "name": "checked",
+        "trigger": "before_tts",
+        "execution": "sync",
+        "reactions": [
+          {},
+          {
+            "gate": "checking"
+          },
+          {}
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "checking"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now."
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "wait_for": "cut"
+    },
+    {
+      "open": "cut"
+    },
+    {
+      "open": "checking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "Book a table"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "agent"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "phone",
+              "participant_id": {
+                "$absent": true
+              }
+            },
+            "content": {
+              "body": "Your table by the window is ready now."
+            },
+            "metadata": {
+              "interrupted": true,
+              "played_ms": {
+                "$present": true
+              },
+              "played_percentage": {
+                "$absent": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

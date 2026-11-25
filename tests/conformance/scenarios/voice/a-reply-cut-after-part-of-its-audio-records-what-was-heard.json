@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-reply-cut-after-part-of-its-audio-records-what-was-heard",
+  "title": "A synthesis call cut after part of its audio played records an interrupted turn with played_ms and its audio cut there",
+  "rules": [
+    "§12.2.2",
+    "§12.2",
+    "§12.3.13",
+    "§12.6"
+  ],
+  "requirements": [
+    "RK-12.2-041",
+    "RK-12.2.2-023",
+    "RK-12.3.13-053",
+    "RK-12.6-008"
+  ],
+  "notes": "The reply is one second of audio, all of it handed to the transport, which holds the playback; four hundred frames the VAD hears no speech in are fed before the barge-in, so that some of it was heard: the turn's played_ms and its audio stop there. played_ms is above 0 only through the real time those frames take, a wide margin; that the audio is cut at played_ms is not compared byte for byte (the time heard is measured).",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [],
+      "tts": {
+        "context_level": "audio",
+        "word_ms": 500
+      },
+      "tts_context": {
+        "include_audio": true
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ],
+      "repeat": 400
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Next."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": []
+            },
+            {
+              "turns": [
+                {
+                  "role": "assistant",
+                  "text": "First reply.",
+                  "interrupted": true,
+                  "played_ms": {
+                    "$present": true
+                  },
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

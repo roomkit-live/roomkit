@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-tts-consuming-self-receives-its-own-played-turns-only",
+  "title": "A TTS at SELF receives which of its own turns were played and how far, never the user's",
+  "rules": [
+    "§12.2.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2.2-009"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "tts": {
+        "context_level": "self",
+        "word_ms": 20
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Second reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "context_id": "s-alice",
+              "next_turn_id": {
+                "$as": "first"
+              },
+              "turns": []
+            },
+            {
+              "context_id": "s-alice",
+              "turns": [
+                {
+                  "turn_id": {
+                    "$as": "first"
+                  },
+                  "role": "assistant",
+                  "text": "First reply.",
+                  "played_ms": 40
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/the-channel-refuses-a-digit-a-duration-or-a-session-it-cannot-send",
+  "title": "A digit outside the DTMF set, a duration outside 1 to 10000 ms and an ended session are refused before the transport",
+  "rules": [
+    "§12.3.6"
+  ],
+  "requirements": [
+    "RK-12.3.6-010",
+    "RK-12.3.6-013"
+  ],
+  "notes": "The transport declares dtmf_signaling, so each refusal is the channel's own validation.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "capabilities": [
+        "interruption",
+        "barge_in",
+        "dtmf_signaling"
+      ]
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "E",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "a",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "12",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "x",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "1",
+      "duration_ms": 0,
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "1",
+      "duration_ms": 10001,
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "dtmf_sent": {
+            "alice": []
+          }
+        }
+      }
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.send_dtmf",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "digit": "1",
+      "expect": {
+        "error": {
+          "name": "session_ended"
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "dtmf_sent": {
+            "alice": []
+          }
+        }
+      }
+    }
+  ]
+}

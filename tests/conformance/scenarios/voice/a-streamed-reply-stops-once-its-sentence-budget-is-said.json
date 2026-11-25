@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-streamed-reply-stops-once-its-sentence-budget-is-said",
+  "title": "With max_sentences, a streamed reply that goes on past the budget stops there: the next sentence is not synthesized, the text read is stored cancelled and the turn reports no response",
+  "rules": [
+    "§12.2",
+    "§12.2 step 12s"
+  ],
+  "requirements": [
+    "RK-12.2-031"
+  ],
+  "notes": "The reply's third sentence goes past the budget of two. say() is the application's own text: it has no budget. A reply that goes on with a tool call or another round is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Your table by the window is ready now. ",
+                "The kitchen closes at ten tonight. ",
+                "Enjoy your meal with us this evening."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answered",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "max_sentences": 2,
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now.",
+            "The kitchen closes at ten tonight."
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table by the window is ready now. The kitchen closes at ten tonight. Enjoy your meal with us this evening."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now.",
+            "The kitchen closes at ten tonight.",
+            "Your table by the window is ready now. The kitchen closes at ten tonight. Enjoy your meal with us this evening."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "answered": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": {
+              "$starts_with": "Your table by the window is ready now. The kitchen closes at ten tonight."
+            }
+          },
+          "metadata": {
+            "cancelled": true
+          }
+        }
+      ]
+    }
+  }
+}

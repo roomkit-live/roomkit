@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-backchannel-leaves-no-turn-in-the-context",
+  "title": "A speech segment classified as a backchannel during playback is not recorded in the context",
+  "rules": [
+    "§12.2.2",
+    "§12.2",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.2.2-019"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ack",
+        "trigger": "on_backchannel",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "acknowledged"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "partials": [
+        "uh-huh"
+      ],
+      "transcripts": [
+        "uh-huh"
+      ],
+      "backchannels": [
+        true
+      ],
+      "tts": {
+        "context_level": "text",
+        "word_ms": 20
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Still speaking",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "acknowledged"
+    },
+    {
+      "open": "acknowledged"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Next."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": []
+            },
+            {
+              "turns": [
+                {
+                  "role": "assistant",
+                  "text": "Still speaking"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "ack": [
+        {
+          "voice": {
+            "text": "uh-huh"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": []
+    }
+  }
+}

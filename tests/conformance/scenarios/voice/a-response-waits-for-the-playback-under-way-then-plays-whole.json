@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-response-waits-for-the-playback-under-way-then-plays-whole",
+  "title": "A response that reaches a session while a say() plays waits until that playback was sent whole, then plays: nothing is cut",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-037"
+  ],
+  "notes": "Several responses waiting in turn, a playback sent whole taken over rather than cut, and what a cut play() reports are not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "spoken"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "voice.stream",
+      "channel_id": "phone",
+      "chunks": [
+        "Your order is on its way."
+      ],
+      "background": true,
+      "as": "answer"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready."
+          ]
+        }
+      }
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "spoken"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "answer"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready.",
+            "Your order is on its way."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "stopped": []
+    }
+  }
+}

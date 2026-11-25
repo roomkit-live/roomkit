@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-tts-consuming-text-receives-both-roles-of-the-session-s-dialogue",
+  "title": "A TTS at TEXT receives the session's user turn after ON_TRANSCRIPTION and each assistant turn once played, as sent to it, under the id its call was given",
+  "rules": [
+    "§12.2.2",
+    "§12.2",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.2-021",
+    "RK-12.2-041",
+    "RK-12.2.2-009",
+    "RK-12.2.2-017",
+    "RK-12.2.2-020"
+  ],
+  "notes": "Each scripted word carries 20 ms of audio, so the checked reply, four words played whole, records 80 ms. The audio half of the user turn (RK-12.2.2-017) is in voice/a-tts-consuming-audio-receives-what-was-said-and-played. A text filter (the channel's tts_filter) before the turn's text is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "checked",
+        "trigger": "before_tts",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "text": "First reply, as checked."
+              }
+            }
+          },
+          {}
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "tts": {
+        "context_level": "text",
+        "word_ms": 20
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Second reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "First reply, as checked.",
+            "Second reply."
+          ],
+          "tts_contexts": [
+            {
+              "context_id": "s-alice",
+              "next_turn_id": {
+                "$as": "first"
+              },
+              "turns": [
+                {
+                  "role": "user",
+                  "participant_id": "alice",
+                  "text": "Book a table",
+                  "audio": null,
+                  "played_ms": null,
+                  "interrupted": false
+                }
+              ]
+            },
+            {
+              "context_id": "s-alice",
+              "next_turn_id": {
+                "$as": "second"
+              },
+              "turns": [
+                {
+                  "role": "user",
+                  "participant_id": "alice",
+                  "text": "Book a table",
+                  "audio": null
+                },
+                {
+                  "turn_id": {
+                    "$as": "first"
+                  },
+                  "role": "assistant",
+                  "text": "First reply, as checked.",
+                  "audio": null,
+                  "played_ms": 80,
+                  "interrupted": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        }
+      ]
+    }
+  }
+}

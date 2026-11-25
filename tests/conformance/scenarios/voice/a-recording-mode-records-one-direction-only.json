@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-recording-mode-records-one-direction-only",
+  "title": "Under INBOUND_ONLY the recorder is handed the capture alone, under OUTBOUND_ONLY the reply alone",
+  "rules": [
+    "§12.3.7"
+  ],
+  "requirements": [
+    "RK-12.3.7-003"
+  ],
+  "notes": "BOTH, the default, is read by voice/a-reply-walks-the-outbound-stages-in-their-order and the inbound stage scenarios.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "recorder": {
+        "mode": "inbound_only"
+      },
+      "vad": [
+        null
+      ]
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "line",
+      "room_id": "r2",
+      "participants": [
+        "bob"
+      ],
+      "session_ids": {
+        "bob": "s-bob"
+      },
+      "recorder": {
+        "mode": "outbound_only"
+      },
+      "vad": [
+        null
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "line",
+      "participant_id": "bob",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "line",
+      "participant_id": "bob",
+      "text": "Hi."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "line"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "recorder"
+      ],
+      "calls": [
+        "tap_inbound",
+        "tap_outbound"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "recorder",
+              "call": "tap_inbound",
+              "stream": "s-alice"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "line",
+      "stages": [
+        "recorder"
+      ],
+      "calls": [
+        "tap_inbound",
+        "tap_outbound"
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "stage": "recorder",
+              "call": "tap_outbound",
+              "stream": "s-bob"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

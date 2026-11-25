@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-context-drops-its-oldest-audio-past-max-audio-seconds-and-keeps-its-text",
+  "title": "Past max_audio_seconds the oldest audio of the context is dropped, its text kept",
+  "rules": [
+    "§12.2.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2.2-012"
+  ],
+  "notes": "Each reply plays 2 ms of audio: the third brings the context to 6 ms, past the 5 ms bound.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "tts": {
+        "context_level": "audio",
+        "word_ms": 1
+      },
+      "tts_context": {
+        "include_audio": true,
+        "max_audio_seconds": 0.005
+      }
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "One two."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Three four."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Five six."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Seven."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": []
+            },
+            {
+              "turns": [
+                {
+                  "text": "One two.",
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "turns": [
+                {
+                  "text": "One two.",
+                  "audio": {
+                    "$present": true
+                  }
+                },
+                {
+                  "text": "Three four.",
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "turns": [
+                {
+                  "text": "One two.",
+                  "audio": null
+                },
+                {
+                  "text": "Three four.",
+                  "audio": {
+                    "$present": true
+                  }
+                },
+                {
+                  "text": "Five six.",
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

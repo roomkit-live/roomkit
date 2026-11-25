@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/disabled-speech-during-playback-waits-for-the-reply-to-end",
+  "title": "Under DISABLED, speech during playback cuts nothing and is processed once the reply ends",
+  "rules": [
+    "§12.3.13",
+    "§12.6"
+  ],
+  "requirements": [
+    "RK-12.3.13-012"
+  ],
+  "notes": "AFTER_TTS fires once the reply was played whole; the speech said during it is transcribed only after.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      },
+      {
+        "name": "spoken",
+        "trigger": "after_tts",
+        "execution": "async"
+      },
+      {
+        "name": "heard",
+        "trigger": "on_transcription",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "interruption": {
+        "strategy": "disabled"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Wait a moment"
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready."
+          ]
+        }
+      }
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [],
+      "stopped": [],
+      "spoken": [
+        {
+          "voice": {
+            "text": "Your table is ready."
+          }
+        }
+      ],
+      "heard": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "text": "Wait a moment"
+          }
+        }
+      ]
+    },
+    "hook_order": [
+      "spoken",
+      "heard"
+    ],
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Wait a moment"
+          }
+        }
+      ]
+    }
+  }
+}

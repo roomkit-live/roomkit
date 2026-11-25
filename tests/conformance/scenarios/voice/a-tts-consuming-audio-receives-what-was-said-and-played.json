@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-tts-consuming-audio-receives-what-was-said-and-played",
+  "title": "A TTS at AUDIO with include_audio receives the user's utterance as captured and the audio synthesized for each played turn",
+  "rules": [
+    "§12.2.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2.2-009",
+    "RK-12.2.2-013",
+    "RK-12.2.2-017",
+    "RK-12.2.2-021"
+  ],
+  "notes": "Each scripted word carries 1 ms of 16 kHz PCM (16 samples of value 1); the assistant turn holds both words' audio. The user turn holds the utterance the VAD captured at its speech end.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "tts": {
+        "context_level": "audio",
+        "word_ms": 1
+      },
+      "tts_context": {
+        "include_audio": true
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Second reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "participant_id": "alice",
+                  "text": "Book a table",
+                  "audio": {
+                    "$as": "utterance"
+                  }
+                }
+              ]
+            },
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "participant_id": "alice",
+                  "text": "Book a table",
+                  "audio": {
+                    "$as": "utterance"
+                  }
+                },
+                {
+                  "role": "assistant",
+                  "text": "First reply.",
+                  "audio": "AQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAA==",
+                  "played_ms": 2
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

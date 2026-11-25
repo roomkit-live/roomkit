@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/say-and-play-cut-the-playback-under-way-and-a-response-cuts-a-play",
+  "title": "say() and play() do not wait: each cuts the playback under way with reason new_tts, and a response cuts a play()",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-037"
+  ],
+  "notes": "The play() cuts the say() still playing; the streamed response then cuts the play() still playing. Not shown here: a response waiting for a say() (the next scenario), several responses waiting in turn, a playback sent whole taken over rather than cut, and what a cut play() reports of what was heard.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "first",
+        "second",
+        "third",
+        null
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "spoken"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "voice.play",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "audio": "UklGRmQBAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUABAAABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAA==",
+      "background": true,
+      "as": "played"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "spoken"
+    },
+    {
+      "call": "voice.stream",
+      "channel_id": "phone",
+      "chunks": [
+        "Your order is on its way."
+      ],
+      "background": true,
+      "as": "answer"
+    },
+    {
+      "wait_for": "third"
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "played"
+    },
+    {
+      "open": "third"
+    },
+    {
+      "await": "answer"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready.",
+            "Your order is on its way."
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "stopped": [
+        {
+          "voice": {
+            "participant_id": "alice",
+            "reason": "new_tts",
+            "text": "Your table is ready."
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "alice",
+            "reason": "new_tts",
+            "text": "(audio)"
+          }
+        }
+      ]
+    }
+  }
+}
