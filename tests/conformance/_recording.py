@@ -13,6 +13,7 @@ from roomkit.recorder.base import (
     RoomRecorderBinding,
 )
 from roomkit.recorder.mock import MockMediaRecorder
+from tests.conformance._conference_media import read_recordings
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -59,7 +60,9 @@ async def _feed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
     feed.feed(base64.b64decode(spec["data"], validate=True))
 
 
-async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> list[str]:
+async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    if "channel_id" in spec:
+        return read_recordings(harness, spec["channel_id"])
     return [
         base64.b64encode(chunk.data).decode("ascii")
         for chunk in harness.media_recorders[spec["recorder"]].chunks
@@ -82,6 +85,6 @@ RECORDING_ARGUMENTS = {
     "recording.start": {"room_id", "recorder"},
     "recording.track": {"room_id", "track_id"},
     "recording.feed": {"room_id", "track_id", "data"},
-    "recording.read": {"recorder"},
+    "recording.read": {"recorder", "channel_id"},
     "recording.stop": {"room_id"},
 }

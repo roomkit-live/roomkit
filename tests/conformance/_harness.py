@@ -77,6 +77,7 @@ from tests.conformance._calls import (
 )
 from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
+from tests.conformance._conference_media import conference_payload
 from tests.conformance._conference_sfu import conference_work
 from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
 from tests.conformance._delivery import (
@@ -514,6 +515,8 @@ class Harness:
             call["voice"] = voice
         if (video := video_payload(payload)) is not None:
             call["video"] = video
+        if (conference := conference_payload(payload)) is not None:
+            call["conference"] = conference
         if isinstance(payload, RecordingStartedEvent | RecordingStoppedEvent):
             call["recording"] = {"recording_id": payload.id, "room_id": payload.room_id}
             if isinstance(payload, RecordingStoppedEvent):

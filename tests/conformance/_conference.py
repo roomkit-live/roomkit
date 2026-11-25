@@ -12,7 +12,18 @@ from roomkit import ConferenceChannel, ConferenceRealtimeConfig, MockConferenceB
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
-from tests.conformance._conference_sfu import SFU_ARGUMENTS, SFU_CALLS, ScriptedSFU
+from tests.conformance._conference_media import (
+    ARRIVAL,
+    MEDIA_ARGUMENTS,
+    MEDIA_CALLS,
+    MEDIA_OPEN,
+    ConferenceMedia,
+    arrival,
+    media_backend,
+    media_options,
+    read_media,
+)
+from tests.conformance._conference_sfu import SFU_ARGUMENTS, SFU_CALLS
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -56,10 +67,11 @@ class ConferenceFixture:
     channel: ConferenceChannel
     backend: MockConferenceBackend
     model: _Model | None
+    media: ConferenceMedia | None = None
 
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    backend = ScriptedSFU()
+    backend = media_backend(spec)
     model = None
     realtime = None
     if "tools" in spec:
@@ -77,23 +89,24 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
             ],
             tool_handler=answer,
         )
+    options, media = media_options(spec, harness, MockSTTProvider() if realtime is None else None)
     channel = ConferenceChannel(
         spec["channel_id"],
         backend=backend,
-        stt=MockSTTProvider() if realtime is None else None,
         realtime=realtime,
         speak_text_events=True,
+        **options,
     )
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
     harness.conferences[channel.channel_id] = ConferenceFixture(
-        spec["room_id"], channel, backend, model
+        spec["room_id"], channel, backend, model, media
     )
 
 
 CONFERENCE_ARGUMENTS = {
-    "conference.open": {"channel_id", "room_id", "tools"},
-    "conference.join": {"channel_id", "participant_id"},
+    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN,
+    "conference.join": {"channel_id", "participant_id"} | ARRIVAL,
     "conference.leave": {"channel_id", "participant_id"},
     "conference.publish": {"channel_id", "participant_id", "track_id", "kind"},
     "conference.unpublish": {"channel_id", "track_id"},
@@ -103,6 +116,7 @@ CONFERENCE_ARGUMENTS = {
     "conference.connection_quality": {"channel_id", "participant_id", "quality"},
     "conference.tool_call": {"channel_id", "call_id", "name", "arguments"},
     **SFU_ARGUMENTS,
+    **MEDIA_ARGUMENTS,
 }
 
 
@@ -111,7 +125,9 @@ async def _notify(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
     backend, room = fixture.backend, fixture.room
     match spec["call"]:
         case "conference.join":
-            await backend.simulate_participant_joined(room, spec["participant_id"])
+            await backend.simulate_participant_joined(
+                room, spec["participant_id"], **arrival(spec)
+            )
         case "conference.leave":
             await backend.simulate_participant_left(room, spec["participant_id"])
         case "conference.publish":
@@ -140,8 +156,17 @@ async def _notify(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
     return None
 
 
+async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
+    """``conference.read``: what the scripted SFU received and holds, and what
+    the lanes' scripted stages and recognizer received."""
+    sfu = await SFU_CALLS["conference.read"](kit, harness, spec)
+    return sfu | await read_media(kit, harness, spec)
+
+
 CONFERENCE_CALLS = {
     **dict.fromkeys(CONFERENCE_ARGUMENTS, _notify),
     "conference.open": _open,
     **SFU_CALLS,
+    **MEDIA_CALLS,
+    "conference.read": _read,
 }
