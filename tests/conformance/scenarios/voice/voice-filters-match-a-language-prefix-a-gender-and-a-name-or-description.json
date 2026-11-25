@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "voice/voice-filters-match-a-language-prefix-a-gender-and-a-name-or-description",
-  "title": "list_voices matches a language tag or its prefix, a gender exactly, a query in the name or description without regard to case; an unknown language or gender matches no filter on it",
+  "title": "list_voices matches a language tag or its prefix, a gender's whole value without regard to case, and a query in the name or description without regard to case; an unknown language or gender matches no filter on it",
   "rules": [
     "§12.2"
   ],
   "requirements": [
     "RK-12.2-082"
   ],
-  "notes": "Sam has neither language nor gender: no language or gender filter matches it, a query on its description does.",
+  "notes": "Sam has neither language nor gender: no language or gender filter matches it, a query on its description does. \"fem\" is no gender's whole value; \"Female\" matches the voices whose gender is female.",
   "requires_features": [
     "voice"
   ],
@@ -133,6 +133,23 @@
       "expect": {
         "result": {
           "voices": []
+        }
+      }
+    },
+    {
+      "call": "voice.list_voices",
+      "channel_id": "phone",
+      "gender": "Female",
+      "expect": {
+        "result": {
+          "voices": [
+            {
+              "id": "claire"
+            },
+            {
+              "id": "ava"
+            }
+          ]
         }
       }
     },

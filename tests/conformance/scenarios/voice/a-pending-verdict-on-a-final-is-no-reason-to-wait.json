@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-pending-verdict-on-a-final-is-no-reason-to-wait",
+  "title": "A detector answering pending for a final transcript neither holds the speech nor waits for more words: the final is judged as it is",
+  "rules": [
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.3.13-045"
+  ],
+  "notes": "The recognizer gives its final, and no partial, with the speech's first frame: the detector answers pending for it, which a final cannot be, so its verdict reads as not a backchannel.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "cutting"
+          }
+        ]
+      },
+      {
+        "name": "stopped",
+        "trigger": "on_tts_cancelled",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "cut"
+          }
+        ]
+      },
+      {
+        "name": "ack",
+        "trigger": "on_backchannel",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Wait"
+              }
+            ]
+          }
+        ]
+      },
+      "backchannel_decisions": [
+        {
+          "transcript": "Wait",
+          "is_backchannel": false,
+          "pending": true
+        }
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "cutting"
+    },
+    {
+      "open": "cutting"
+    },
+    {
+      "wait_for": "cut"
+    },
+    {
+      "open": "cut"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [
+            {
+              "transcript": "Wait",
+              "is_final": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "ack": []
+    },
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "metadata": {
+              "interrupted": true
+            }
+          },
+          {
+            "content": {
+              "body": "Wait"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
