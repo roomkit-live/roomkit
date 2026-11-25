@@ -13,6 +13,7 @@
     "RK-19.7.3-015",
     "RK-19.7.3-026",
     "RK-19.7.3-028",
+    "RK-19.7.3-058",
     "RK-8.5-007",
     "RK-9.3-086"
   ],
@@ -157,7 +158,8 @@
             "agent_id": "gone",
             "status": "failed",
             "metadata": {
-              "strategy": "parallel"
+              "strategy": "parallel",
+              "task_end_reason": "error"
             }
           }
         ]
@@ -187,7 +189,8 @@
             "metadata": {
               "room_id": "r1",
               "strategy": "parallel",
-              "task_run": true
+              "task_run": true,
+              "task_end_reason": "cancelled"
             }
           }
         ]

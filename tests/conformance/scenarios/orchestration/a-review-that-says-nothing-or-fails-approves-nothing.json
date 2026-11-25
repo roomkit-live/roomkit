@@ -11,6 +11,7 @@
     "RK-19.7-016",
     "RK-19.7-021",
     "RK-19.7.3-026",
+    "RK-19.7.3-057",
     "RK-19.7.4-002",
     "RK-19.7.4-006",
     "RK-19.7.4-008",
@@ -118,7 +119,7 @@
           {
             "action": "review",
             "status": "failed",
-            "detail": "The task failed.",
+            "detail": "The task failed: an error ended it (error).",
             "metadata": {
               "approved": false
             }
@@ -130,7 +131,7 @@
           {
             "action": "review",
             "status": "failed",
-            "detail": "The task failed.",
+            "detail": "The task failed: an error ended it (error).",
             "metadata": {
               "approved": false
             }

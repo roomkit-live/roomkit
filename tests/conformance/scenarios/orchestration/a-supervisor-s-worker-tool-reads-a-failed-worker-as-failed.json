@@ -10,6 +10,7 @@
     "RK-19.7.3-009",
     "RK-19.7.3-026",
     "RK-19.7.3-027",
+    "RK-19.7.3-057",
     "RK-23.3-038",
     "RK-8.5-007"
   ],
@@ -124,7 +125,7 @@
           },
           {
             "status": "failed",
-            "detail": "The task failed.",
+            "detail": "The task failed: an error ended it (error).",
             "metadata": {
               "mode": "per_worker_wait",
               "task_id": {
@@ -144,7 +145,7 @@
         {
           "type": "tool_call_end",
           "content": {
-            "result": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed.\"}"
+            "result": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed: an error ended it (error).\"}"
           }
         },
         {
@@ -168,7 +169,7 @@
           "tool_results": [
             {
               "tool_call_id": "c1",
-              "content": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed.\"}",
+              "content": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed: an error ended it (error).\"}",
               "is_error": false
             }
           ]

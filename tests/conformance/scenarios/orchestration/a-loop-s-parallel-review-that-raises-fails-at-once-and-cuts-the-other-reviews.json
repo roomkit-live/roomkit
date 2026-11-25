@@ -9,6 +9,7 @@
     "RK-19.7-017",
     "RK-19.7.3-026",
     "RK-19.7.3-028",
+    "RK-19.7.3-058",
     "RK-19.7.4-028",
     "RK-19.7.4-032",
     "RK-9.2-034",
@@ -154,7 +155,8 @@
             "metadata": {
               "room_id": "r1",
               "strategy": "parallel",
-              "task_run": true
+              "task_run": true,
+              "task_end_reason": "cancelled"
             }
           }
         ]

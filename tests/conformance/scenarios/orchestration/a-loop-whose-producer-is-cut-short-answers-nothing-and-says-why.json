@@ -10,6 +10,8 @@
   "requirements": [
     "RK-19.7.3-026",
     "RK-19.7.3-027",
+    "RK-19.7.3-057",
+    "RK-19.7.3-058",
     "RK-19.7.4-012",
     "RK-19.7.4-013",
     "RK-19.7.4-014",
@@ -160,11 +162,12 @@
           {
             "action": "iteration",
             "status": "failed",
-            "detail": "The producer's task failed (cut short: max_rounds).",
+            "detail": "The producer's task failed: it reached its limit of tool rounds before giving an answer (max_rounds).",
             "metadata": {
               "task_id": {
                 "$present": true
-              }
+              },
+              "task_end_reason": "max_rounds"
             }
           }
         ]

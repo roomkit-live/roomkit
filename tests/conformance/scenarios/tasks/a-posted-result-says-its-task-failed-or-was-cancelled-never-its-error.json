@@ -10,6 +10,7 @@
     "RK-23.3-066",
     "RK-23.3-067",
     "RK-23.3-068",
+    "RK-23.3-122",
     "RK-9.3-086"
   ],
   "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_failed_task_posts_that_it_failed_without_its_error, test_a_completed_task_with_nothing_to_say_posts_nothing, test_a_cancelled_task_posts_that_it_was_cancelled; tasks/posting.py posted_text (the output stripped: nothing left posts nothing). counter's turn is held at a gate while the host cancels its task.",
@@ -183,11 +184,12 @@
           "addressed_to": [],
           "content": {
             "type": "text",
-            "body": "The task “Look it up.” failed."
+            "body": "The task “Look it up.” failed: it gave no answer."
           },
           "metadata": {
             "task_status": "failed",
-            "agent_id": "worker"
+            "agent_id": "worker",
+            "task_end_reason": "empty_response"
           }
         },
         {
@@ -202,7 +204,8 @@
           },
           "metadata": {
             "task_status": "cancelled",
-            "agent_id": "counter"
+            "agent_id": "counter",
+            "task_end_reason": "cancelled"
           }
         }
       ]
