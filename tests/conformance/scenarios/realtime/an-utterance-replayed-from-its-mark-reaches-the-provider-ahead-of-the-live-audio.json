@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-utterance-replayed-from-its-mark-reaches-the-provider-ahead-of-the-live-audio",
+  "title": "Frames a transport replays from the mark the session's metadata carries are retained through the handshake and reach the provider whole, wake word included, ahead of the audio that followed",
+  "rules": [
+    "§12.12",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.12-030",
+    "RK-12.12-032"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The frame captured before the mark is the tail of a previous conversation; the first two after it stand for the wake word, the third for the request that shares its utterance. The transport subscribes as it accepts the session, before the provider's connect, which holds at its gate: the replayed frames and the one captured during the handshake reach the provider once the handshake completed, in capture order.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ],
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "capture_source": "mic"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "ARABEAEQARA="
+      ]
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "wake"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "ERAREBEQERA=",
+        "EhASEBIQEhA=",
+        "IRAhECEQIRA="
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "capture_since": "wake",
+      "gate": "connecting",
+      "background": true,
+      "as": "start"
+    },
+    {
+      "wait_for": "connecting"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": []
+        }
+      }
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "MRAxEDEQMRA="
+      ]
+    },
+    {
+      "open": "connecting"
+    },
+    {
+      "await": "start"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "MhAyEDIQMhA="
+      ]
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": [
+            "ERAREBEQERA=",
+            "EhASEBIQEhA=",
+            "IRAhECEQIRA=",
+            "MRAxEDEQMRA=",
+            "MhAyEDIQMhA="
+          ]
+        }
+      }
+    }
+  ]
+}

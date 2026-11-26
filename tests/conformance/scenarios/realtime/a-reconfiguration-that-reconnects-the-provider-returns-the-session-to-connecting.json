@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-reconfiguration-that-reconnects-the-provider-returns-the-session-to-connecting",
+  "title": "A reconfiguration that ends the provider's connection to build another returns the session from ENDED to CONNECTING, then ACTIVE, while nobody hung up",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-054"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The provider reconfigures as the provider interface's default does: it disconnects the session, which leaves it ENDED, then connects it again; the reconnect's connect holds at the gate. The transport is never disconnected: the participant stays.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "reconnects_on_reconfigure": true
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.reconfigure",
+      "channel_id": "rt",
+      "system_prompt": "Handoff",
+      "gate": "reconnecting",
+      "background": true,
+      "as": "change"
+    },
+    {
+      "wait_for": "reconnecting"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "connecting",
+          "provider_calls": [
+            {
+              "call": "disconnect"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "reconnecting"
+    },
+    {
+      "await": "change"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "active",
+          "connects": [
+            "$any",
+            {
+              "system_prompt": "Handoff"
+            }
+          ],
+          "transport_calls": []
+        }
+      }
+    }
+  ]
+}

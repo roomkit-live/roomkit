@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-utterance-replayed-from-its-mark-is-discarded-when-the-handshake-fails",
+  "title": "Frames a transport replays from the mark the session's metadata carries, and those captured during the handshake, never reach the provider when its connect fails",
+  "rules": [
+    "§12.12",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.12-031"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ],
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "capture_source": "mic"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "wake"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "ERAREBEQERA=",
+        "EhASEBIQEhA=",
+        "IRAhECEQIRA="
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "capture_since": "wake",
+      "fail": "connect refused",
+      "gate": "connecting",
+      "background": true,
+      "as": "start"
+    },
+    {
+      "wait_for": "connecting"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "MRAxEDEQMRA="
+      ]
+    },
+    {
+      "open": "connecting"
+    },
+    {
+      "await": "start",
+      "expect": {
+        "error": "provider_failed"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": [],
+          "state": "ended"
+        }
+      }
+    }
+  ]
+}

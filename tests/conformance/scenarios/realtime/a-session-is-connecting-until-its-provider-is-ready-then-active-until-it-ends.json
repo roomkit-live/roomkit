@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-is-connecting-until-its-provider-is-ready-then-active-until-it-ends",
+  "title": "A realtime session is CONNECTING while its provider connects, ACTIVE once the provider is ready, and ENDED once it is ended",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-053"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "No read shows PAUSED: the framework never sets it. Left to each implementation: a provider that reconnects on its own while the participant stays (ACTIVE to CONNECTING), which its own connection decides, and a session a voice transport makes already connected, which starts ACTIVE.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "gate": "connecting",
+      "background": true,
+      "as": "start"
+    },
+    {
+      "wait_for": "connecting"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "connecting"
+        }
+      }
+    },
+    {
+      "open": "connecting"
+    },
+    {
+      "await": "start"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "active"
+        }
+      }
+    },
+    {
+      "call": "realtime.end",
+      "channel_id": "rt"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "ended"
+        }
+      }
+    }
+  ]
+}

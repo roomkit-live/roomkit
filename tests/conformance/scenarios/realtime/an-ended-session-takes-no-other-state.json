@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-ended-session-takes-no-other-state",
+  "title": "A realtime session that ended refuses every other state it is set, and stays ENDED",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-054"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.end",
+      "channel_id": "rt"
+    },
+    {
+      "call": "realtime.set_state",
+      "channel_id": "rt",
+      "state": "active",
+      "expect": {
+        "error": "session_ended"
+      }
+    },
+    {
+      "call": "realtime.set_state",
+      "channel_id": "rt",
+      "state": "paused",
+      "expect": {
+        "error": "session_ended"
+      }
+    },
+    {
+      "call": "realtime.set_state",
+      "channel_id": "rt",
+      "state": "connecting",
+      "expect": {
+        "error": "session_ended"
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "ended"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-paused-session-forwards-none-of-the-caller-s-audio-until-it-is-resumed",
+  "title": "While the integrator holds a realtime session PAUSED, the caller's audio does not reach the provider; resumed, the session is ACTIVE and the audio reaches it again",
+  "rules": [
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2-053"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.set_state",
+      "channel_id": "rt",
+      "state": "paused"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "paused"
+        }
+      }
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "source": "transport",
+      "frames": [
+        "QRBBEEEQQRA="
+      ]
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": []
+        }
+      }
+    },
+    {
+      "call": "realtime.set_state",
+      "channel_id": "rt",
+      "state": "active"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "state": "active"
+        }
+      }
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "source": "transport",
+      "frames": [
+        "QhBCEEIQQhA="
+      ]
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "provider_audio": [
+            "QhBCEEIQQhA="
+          ]
+        }
+      }
+    }
+  ]
+}
