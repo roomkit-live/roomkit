@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-grant-set-equal-to-the-grants-in-force-emits-nothing",
+  "title": "Explicit grants equal to those in force change nothing on the live session and emit nothing",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-212"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "$as": "held"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "publish_screen_share_audio": false,
+        "moderate": false,
+        "hidden": false
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave",
+        "update_bot_grants"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "$as": "held"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

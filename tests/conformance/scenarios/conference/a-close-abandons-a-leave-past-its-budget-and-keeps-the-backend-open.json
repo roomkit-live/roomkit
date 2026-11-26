@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-close-abandons-a-leave-past-its-budget-and-keeps-the-backend-open",
+  "title": "A leave that ignores its cancellation is abandoned past the close's budget: the close fails at once, and the backend is closed only once the leave has ended",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-019",
+    "RK-12.10.4-020",
+    "RK-12.10.4-021",
+    "RK-12.10.4-025"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The close returns, failed, while the leave still holds at its gate: it was cancelled past the budget and abandoned, and the backend it was using is not closed under it. Once the leave ends, the backend's close follows. Admission closing and playbacks stopping are not observed here (no voice); what the failure says of the retained backend is the implementation's text.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "leave",
+      "gate": "leaving",
+      "ignores_cancel": true
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              },
+              "cancelled": true
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "leaving_session_ids": [
+                  {
+                    "$as": "bot"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "leaving"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "close"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ]
+}

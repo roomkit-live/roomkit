@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-for-another-organization-s-room-finds-no-room",
+  "title": "A mint acting for another organization finds no room, and the backend is asked for nothing; for the room's own organization it mints",
+  "rules": [
+    "§12.10.4",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-12.10.4-137"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "org-a",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-a"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "participant_id": "alice"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

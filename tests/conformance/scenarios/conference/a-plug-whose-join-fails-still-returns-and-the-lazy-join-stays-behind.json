@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-plug-whose-join-fails-still-returns-and-the-lazy-join-stays-behind",
+  "title": "A plug whose join fails still returns, and the next arrival brings the bot in",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-180"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "join_as_bot",
+      "fail": "the SFU refuses the bot"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1"
+            }
+          ],
+          "bots": []
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

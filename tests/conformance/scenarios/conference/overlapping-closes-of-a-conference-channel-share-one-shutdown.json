@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/overlapping-closes-of-a-conference-channel-share-one-shutdown",
+  "title": "Two closes of one conference channel overlap: the second joins the first's shutdown, the first caller's cancellation cuts only its own wait, and a close after the success returns at once",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-022",
+    "RK-12.10.4-023"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "leave",
+      "gate": "leaving"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "leaving"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "background": true,
+      "as": "second"
+    },
+    {
+      "cancel": "first"
+    },
+    {
+      "open": "leaving"
+    },
+    {
+      "await": "second"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              },
+              "cancelled": {
+                "$absent": true
+              }
+            },
+            {
+              "call": "close"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "close"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

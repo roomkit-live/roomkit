@@ -1,0 +1,213 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/frames-the-sfu-still-delivers-after-the-mute-reach-no-lane-and-no-recording",
+  "title": "Once the binding is muted, the frames the SFU still delivers on a track whose unsubscription is held reach neither the track's lane nor its recording",
+  "rules": [
+    "§12.10.4",
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.10.4-169",
+    "RK-12.10.4-172"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The SFU still holds the track's subscription while the channel's unsubscription is held at its gate, so it delivers the frames fed after the mute: the frames the lane's stages processed are the same after them as before, and the recording holds only the frames fed before.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Before the mute"
+              }
+            ]
+          },
+          {
+            "results": [
+              {
+                "text": "After the mute"
+              }
+            ]
+          }
+        ]
+      },
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "stage_calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": {
+            "$as": "processed-before-the-mute"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "unsubscribe_track",
+      "gate": "unsubscribing"
+    },
+    {
+      "call": "mute",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "muted": true
+        }
+      }
+    },
+    {
+      "wait_for": "unsubscribing"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AwA=",
+        "BAA="
+      ]
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "subscribe_track",
+        "unsubscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "mic"
+            },
+            {
+              "call": "unsubscribe_track",
+              "track_id": "mic"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "unsubscribing"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "stage_calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "stages": {
+            "$as": "processed-before-the-mute"
+          }
+        }
+      }
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic"
+                }
+              ],
+              "chunks": [
+                "AQA=",
+                "AgA="
+              ],
+              "stopped": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Before the mute"
+          },
+          "source": {
+            "channel_id": "conf",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

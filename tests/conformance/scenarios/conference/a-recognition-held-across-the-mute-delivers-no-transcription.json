@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recognition-held-across-the-mute-delivers-no-transcription",
+  "title": "An utterance whose recognition is held across the mute is not delivered once the recognition returns, though its lane still runs",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-170"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The channel's unsubscription is held at its gate when the recognition returns, so the track's lane is still running: only the binding's gate stands between the transcription and the room.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Held across the mute"
+              }
+            ],
+            "gate": "recognizing"
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "unsubscribe_track",
+      "gate": "unsubscribing"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "wait_for": "recognizing"
+    },
+    {
+      "call": "mute",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "muted": true
+        }
+      }
+    },
+    {
+      "wait_for": "unsubscribing"
+    },
+    {
+      "open": "recognizing"
+    },
+    {
+      "open": "unsubscribing"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "$present": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": []
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-second-conference-channel-is-refused-on-a-room-that-has-one",
+  "title": "A second conference channel attached to a room that has one is refused",
+  "rules": [
+    "§12.10.1",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.1-003"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "conf2",
+      "room_id": "r1",
+      "expect": {
+        "error": "conference_already_attached"
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r1",
+      "channel_id": "conf2",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    }
+  ]
+}

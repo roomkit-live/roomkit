@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-plug-waits-for-the-configuration-change-before-it",
+  "title": "A plug issued while another plug's join is held waits for it, and is applied after it",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-185"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "join_as_bot",
+      "gate": "joining"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt",
+      "background": true,
+      "as": "stt"
+    },
+    {
+      "wait_for": "joining"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts",
+      "background": true,
+      "as": "tts"
+    },
+    {
+      "wait_for": "joining",
+      "pending": "tts"
+    },
+    {
+      "open": "joining"
+    },
+    {
+      "await": "stt"
+    },
+    {
+      "await": "tts"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "grants": {
+                "publish_audio": false
+              }
+            },
+            {
+              "call": "leave"
+            },
+            {
+              "call": "join_as_bot",
+              "grants": {
+                "publish_audio": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

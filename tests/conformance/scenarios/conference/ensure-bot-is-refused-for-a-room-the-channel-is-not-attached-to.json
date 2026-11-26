@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/ensure-bot-is-refused-for-a-room-the-channel-is-not-attached-to",
+  "title": "ensure_bot() fails with RoomNotAttachedError for a room the channel is not attached to, and when the channel is detached from the room while its join announces the session",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-097"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The join ensure_bot() makes announces the session before it returns (RK-12.10.4-096); the handler of that announcement detaches the channel, so the join ends detached: ensure_bot() fails, and the session it opened is taken out.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "conference_started",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "detach_channel",
+                "room_id": "r1",
+                "channel_id": "conf"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r2",
+      "expect": {
+        "error": "room_not_attached"
+      }
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "error": "room_not_attached"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "bots": []
+        }
+      }
+    }
+  ]
+}

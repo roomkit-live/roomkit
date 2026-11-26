@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-held-past-the-detach-s-budget-is-taken-back",
+  "title": "Mints held past the detach's budget are cancelled and the bot leaves without them; neither the one cancelled nor the one that ignored its cancellation hands out a credential",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-117",
+    "RK-12.10.4-141",
+    "RK-12.10.4-142"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The detach returns once its budget for the work in flight has passed. Carol's mint ignores its cancellation and returns once its gate opens, after the detach: it is still refused.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf",
+            "display_name": "Alice"
+          },
+          {
+            "id": "carol",
+            "channel_id": "conf"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "mint_access",
+      "gate": "alice-minting"
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "mint_access",
+      "gate": "carol-minting",
+      "ignores_cancel": true
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "alice-minting"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "carol",
+      "background": true,
+      "as": "carol"
+    },
+    {
+      "wait_for": "carol-minting"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "participant_id": "alice",
+              "cancelled": true
+            },
+            {
+              "call": "mint_access",
+              "participant_id": "carol",
+              "cancelled": true
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "error": "room_not_attached"
+      }
+    },
+    {
+      "open": "carol-minting"
+    },
+    {
+      "await": "carol",
+      "expect": {
+        "error": "room_not_attached"
+      }
+    }
+  ]
+}

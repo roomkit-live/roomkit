@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/unplugging-a-voice-mid-utterance-stops-playback-and-ends-the-utterance",
+  "title": "A voice unplugged while an utterance is being published stops the playback and closes the utterance with a terminal chunk",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-189"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "publish_audio",
+      "gate": "publishing",
+      "after": 1
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Hello there friend"
+        }
+      },
+      "background": true,
+      "as": "said"
+    },
+    {
+      "wait_for": "publishing"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "tts",
+      "background": true,
+      "as": "unplug"
+    },
+    {
+      "open": "publishing"
+    },
+    {
+      "await": "unplug"
+    },
+    {
+      "await": "said"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "stop_playback",
+        "publish_audio"
+      ],
+      "expect": {
+        "result": {
+          "calls": {
+            "$unordered": [
+              {
+                "call": "publish_audio",
+                "session": {
+                  "$as": "bot"
+                },
+                "is_final": false
+              },
+              {
+                "call": "publish_audio",
+                "session": {
+                  "$as": "bot"
+                }
+              },
+              {
+                "call": "stop_playback",
+                "session": {
+                  "$as": "bot"
+                }
+              },
+              {
+                "call": "publish_audio",
+                "session": {
+                  "$as": "bot"
+                },
+                "is_final": true
+              }
+            ]
+          },
+          "utterances": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "complete": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

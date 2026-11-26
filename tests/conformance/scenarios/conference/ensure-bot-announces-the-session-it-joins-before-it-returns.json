@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/ensure-bot-announces-the-session-it-joins-before-it-returns",
+  "title": "ensure_bot() that joins fires ON_SESSION_STARTED and announces conference_started before it returns",
+  "rules": [
+    "§12.10.4",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.4-096"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_session_started",
+        "reactions": [
+          {
+            "gate": "session-started"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "conference_started",
+        "reactions": [
+          {
+            "gate": "announced"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "background": true,
+      "as": "ensure"
+    },
+    {
+      "wait_for": "announced",
+      "pending": "ensure"
+    },
+    {
+      "open": "announced"
+    },
+    {
+      "wait_for": "session-started",
+      "pending": "ensure"
+    },
+    {
+      "open": "session-started"
+    },
+    {
+      "await": "ensure",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [
+        {
+          "trigger": "on_session_started",
+          "room_id": "r1"
+        }
+      ]
+    },
+    "media_events": {
+      "r1": [
+        {
+          "event": "conference_started",
+          "bot_session_id": {
+            "$as": "bot"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-after-the-detach-is-refused",
+  "title": "Once the channel is detached from the room, a mint is refused and the backend is asked for nothing",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-138"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "expect": {
+        "error": "room_not_attached"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    }
+  ]
+}

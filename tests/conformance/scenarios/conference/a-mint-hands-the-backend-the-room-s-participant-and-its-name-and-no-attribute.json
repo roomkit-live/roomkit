@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-hands-the-backend-the-room-s-participant-and-its-name-and-no-attribute",
+  "title": "A mint asks the backend for the room's participant by its id, with the name on record, and with no attribute of the channel's own",
+  "rules": [
+    "§12.10.2",
+    "§12.10.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.2-027",
+    "RK-12.10.3-050",
+    "RK-12.10.3-056",
+    "RK-12.10.4-136"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The participant's record holds an identity and metadata; the mint asks for no attribute, and the backend is handed none. The grants are not read: which default_grants the channel applies is conference.open's, which names none.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf",
+            "display_name": "Alice",
+            "identity_id": "user-7",
+            "metadata": {
+              "team": "blue"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "url": {
+            "$present": true
+          },
+          "token": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "room_id": "r1",
+              "participant_id": "alice",
+              "grants": "$any",
+              "display_name": "Alice",
+              "attributes": null
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

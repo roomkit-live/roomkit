@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/set-bot-grants-waits-for-a-plug-in-progress",
+  "title": "An explicit grant set issued while a plug is held at its occupancy probe is applied after the plug: the plug joins on the grants it derived, and the set re-joins",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-201"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "list_participants",
+      "gate": "probing"
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt",
+      "background": true,
+      "as": "stt"
+    },
+    {
+      "wait_for": "probing"
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "hidden": true
+      },
+      "background": true,
+      "as": "grants"
+    },
+    {
+      "wait_for": "probing",
+      "pending": "grants"
+    },
+    {
+      "open": "probing"
+    },
+    {
+      "await": "stt"
+    },
+    {
+      "await": "grants"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "grants": {
+                "hidden": false
+              }
+            },
+            {
+              "call": "leave"
+            },
+            {
+              "call": "join_as_bot",
+              "grants": {
+                "hidden": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

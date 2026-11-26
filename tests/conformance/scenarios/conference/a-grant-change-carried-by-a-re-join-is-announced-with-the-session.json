@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-grant-change-carried-by-a-re-join-is-announced-with-the-session",
+  "title": "Explicit grants that conceal the bot are carried by a re-join, and conference_bot_grants_changed names the new session and its hidden status",
+  "rules": [
+    "§12.10.4",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.7-009",
+    "RK-12.10.7-012"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "hidden": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "first"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "event": "conference_started",
+          "bot_session_id": {
+            "$as": "second"
+          }
+        },
+        {
+          "event": "conference_bot_grants_changed",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "bot_session_id": {
+            "$as": "second"
+          },
+          "hidden": true
+        }
+      ]
+    }
+  }
+}

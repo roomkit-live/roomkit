@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-backend-that-fails-its-close-fails-the-channel-s-close-for-good",
+  "title": "A backend that fails its own close fails the channel's close though the bot left, and a later close answers the same failure without running again",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-023",
+    "RK-12.10.4-027"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "close",
+      "fail": "the backend cannot close"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "close"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ]
+}

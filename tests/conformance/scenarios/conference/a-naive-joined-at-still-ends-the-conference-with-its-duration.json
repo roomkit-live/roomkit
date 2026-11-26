@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-naive-joined-at-still-ends-the-conference-with-its-duration",
+  "title": "A backend that hands back a session whose joined_at names no timezone does not cost the conference its end: conference_ended is announced with its duration",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-055"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "bot_joined_at": "2026-01-01T00:00:00"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "bot"
+          },
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

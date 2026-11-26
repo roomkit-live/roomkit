@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-end-the-sfu-reports-closes-the-session-s-media-and-the-next-need-re-joins",
+  "title": "A bot session the SFU reports ended comes off the books, is announced ended, its lanes are closed and its recordings finalized, and the bot re-joins",
+  "rules": [
+    "§12.10.3",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.3-023",
+    "RK-12.10.7-009"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Hello"
+              }
+            ]
+          }
+        ]
+      },
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "bot_session_id": {
+                  "$as": "bot"
+                },
+                "active_lanes": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.bot_lost",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": false,
+                "bot_session_id": null,
+                "active_lanes": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "again"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic"
+                }
+              ],
+              "stopped": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined",
+              "participant_id": "alice"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "recording_started",
+          "track_id": "mic"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "recording_stopped",
+              "track_id": "mic"
+            },
+            {
+              "event": "conference_ended",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_started",
+          "bot_session_id": {
+            "$as": "again"
+          }
+        }
+      ]
+    }
+  }
+}

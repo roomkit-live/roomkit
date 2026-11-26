@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/conference-events-follow-the-participants-and-the-bot",
+  "title": "A participant's arrival and departure, the bot's join and the detach's leave are each announced, with the room, the channel and the session",
+  "rules": [
+    "§12.10.4",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.4-114",
+    "RK-12.10.7-009",
+    "RK-12.10.7-010",
+    "RK-12.10.7-011"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.leave",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined",
+              "room_id": "r1",
+              "channel_id": "conf",
+              "participant_id": "alice"
+            },
+            {
+              "event": "conference_started",
+              "room_id": "r1",
+              "channel_id": "conf",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_participant_left",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "participant_id": "alice"
+        },
+        {
+          "event": "conference_ended",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "bot_session_id": {
+            "$as": "bot"
+          },
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-carries-the-caller-s-grants-and-attributes",
+  "title": "A mint's grants and attributes reach the backend as the caller passed them",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-134"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf",
+            "display_name": "Alice",
+            "identity_id": "user-7"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "grants": {
+        "moderate": true,
+        "publish_video": false
+      },
+      "attributes": {
+        "seat": "3"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "participant_id": "alice",
+              "grants": {
+                "publish_audio": true,
+                "publish_video": false,
+                "publish_screen_share": true,
+                "publish_screen_share_audio": false,
+                "subscribe": true,
+                "moderate": true,
+                "hidden": false
+              },
+              "attributes": {
+                "seat": "3",
+                "identity_id": {
+                  "$absent": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

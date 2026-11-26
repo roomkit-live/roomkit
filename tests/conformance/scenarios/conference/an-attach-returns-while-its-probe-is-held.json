@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-attach-returns-while-its-probe-is-held",
+  "title": "An attach returns while the occupancy probe it starts is held in the backend",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-089"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The probe's join is not held here: the empty conference starts none.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "faults": [
+        {
+          "method": "list_participants",
+          "gate": "probing"
+        }
+      ]
+    },
+    {
+      "wait_for": "probing"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "list_participants"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "list_participants",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "probing"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "conf": {
+          "$present": true
+        }
+      }
+    }
+  }
+}

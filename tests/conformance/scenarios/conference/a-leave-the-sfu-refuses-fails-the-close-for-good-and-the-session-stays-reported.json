@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-leave-the-sfu-refuses-fails-the-close-for-good-and-the-session-stays-reported",
+  "title": "A leave the SFU refuses fails the channel's close, the session stays on the channel's books, and a later close answers the same failure without running again",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-023",
+    "RK-12.10.4-027",
+    "RK-12.10.4-028",
+    "RK-12.10.4-029"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The failure is raised at the end of the close, after the backend's own close ran. That the failure names the session is the implementation's text: what is read is that the channel goes on reporting it, by its id.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "leave",
+      "fail": "the SFU refuses the departure"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "close"
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "leaving_session_ids": [
+                  {
+                    "$as": "bot"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave",
+        "close"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "close"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ]
+}

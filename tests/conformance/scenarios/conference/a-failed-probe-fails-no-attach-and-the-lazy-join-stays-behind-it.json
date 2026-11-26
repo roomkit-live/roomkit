@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-failed-probe-fails-no-attach-and-the-lazy-join-stays-behind-it",
+  "title": "An occupancy probe that fails does not fail the attach, and an arrival then brings the bot in",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-090"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "faults": [
+        {
+          "method": "list_participants",
+          "fail": "the SFU cannot list"
+        }
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "list_participants",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "list_participants",
+              "room_id": "r1"
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "conf": {
+          "$present": true
+        }
+      }
+    }
+  }
+}

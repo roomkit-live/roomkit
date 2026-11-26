@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-detach-closes-the-lanes-and-the-recordings-before-the-leave-and-announces-the-end-last",
+  "title": "A detach closes the lanes and finalizes the recordings before the bot leaves, and announces conference_ended last",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-119"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The leave() holds at its gate while the room's lanes and recordings are read: the lane's stages were reset since the detach began, as a stream's end resets them (RK-12.3.1-023), and each recording is finalized. The speech-to-speech session's close is not observed here (no realtime model).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Hello"
+              }
+            ]
+          }
+        ]
+      },
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "stage_calls": [
+        "reset"
+      ],
+      "expect": {
+        "result": {
+          "stages": {
+            "$as": "resets-before-the-detach"
+          },
+          "info": {
+            "rooms": {
+              "r1": {
+                "active_lanes": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "leave",
+      "gate": "leaving"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "background": true,
+      "as": "detach"
+    },
+    {
+      "wait_for": "leaving"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave"
+      ],
+      "stage_calls": [
+        "reset"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "stages": {
+            "$as": "resets-at-the-leave"
+          }
+        }
+      }
+    },
+    {
+      "call": "recording.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "recordings": [
+            {
+              "tracks": [
+                {
+                  "track_id": "mic"
+                }
+              ],
+              "stopped": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "leaving"
+    },
+    {
+      "await": "detach"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined",
+              "participant_id": "alice"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "recording_started",
+          "track_id": "mic"
+        },
+        {
+          "event": "recording_stopped",
+          "track_id": "mic"
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "bot"
+          }
+        }
+      ]
+    }
+  }
+}
