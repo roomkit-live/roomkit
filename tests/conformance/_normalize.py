@@ -46,6 +46,7 @@ class Observed:
     framework_events: list[dict[str, Any]] = field(default_factory=list)
     ai_events: list[dict[str, Any]] = field(default_factory=list)
     voice_events: list[dict[str, Any]] = field(default_factory=list)
+    media_events: list[dict[str, Any]] = field(default_factory=list)
     hooks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     hook_order: list[str] = field(default_factory=list)
     channel_closes: list[str] = field(default_factory=list)

@@ -77,6 +77,7 @@ from tests.conformance._calls import (
 )
 from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
+from tests.conformance._conference_faults import close_work, untaken_faults
 from tests.conformance._conference_media import conference_payload
 from tests.conformance._conference_sfu import conference_work
 from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
@@ -178,6 +179,24 @@ AI_EVENTS = ("before_ai_generation", "ai_response")
 # The framework event of a voice session's failed synthesis or playback (§8.2,
 # §12.2), which ``expect.voice_events`` compares apart from ``framework_events``.
 VOICE_EVENTS = ("tts_error",)
+
+# The framework events of the media features (§8.2, Level 3), which
+# ``expect.media_events`` compares apart from ``framework_events``.
+MEDIA_EVENTS = (
+    "voice_session_started",
+    "voice_session_ended",
+    "voice_session_ready",
+    "recording_started",
+    "recording_stopped",
+    "video_session_started",
+    "video_session_ended",
+    "video_vision_result",
+    "conference_started",
+    "conference_ended",
+    "conference_participant_joined",
+    "conference_participant_left",
+    "conference_bot_grants_changed",
+)
 
 # A call that has not returned by then fails the scenario instead of hanging
 # it; so does a kit that does not go idle.
@@ -642,6 +661,8 @@ class Harness:
             self.observed.ai_events.append(flat)
         elif event.type in VOICE_EVENTS:
             self.observed.voice_events.append(flat)
+        elif event.type in MEDIA_EVENTS:
+            self.observed.media_events.append(flat)
         else:
             self.observed.framework_events.append(flat)
 
@@ -692,6 +713,7 @@ class Harness:
             # A fault no call took tested nothing (README, "Steps").
             self._problems.extend(self.store_faults.untaken())
             self._problems.extend(self.executors.faults.untaken())
+            self._problems.extend(untaken_faults(self.conferences.values()))
             # The runner's own reads read what a store the kit closed holds.
             self.store_faults.closed = False
             await self._thinking_read()
@@ -729,7 +751,7 @@ class Harness:
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
         recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
-        recorded += LOCK_EVENTS + VOICE_EVENTS
+        recorded += LOCK_EVENTS + VOICE_EVENTS + MEDIA_EVENTS
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
         self.auditors.set_up(setup.get("session_auditor"), self.kit)
@@ -1083,6 +1105,7 @@ class Harness:
         tasks.extend(task for task in self._background.values() if not task.done())
         tasks.extend(self._task_runs())
         tasks.extend(conference_work(self.conferences))
+        tasks.extend(close_work(self.conferences.values()))
         for fixture in self.realtime_sessions.values():
             # A session's resident audio send worker lives until the session
             # ends: it is busy only while it has audio to send.

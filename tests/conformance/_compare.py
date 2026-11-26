@@ -99,7 +99,7 @@ class _Comparison:
             actual = grouped.get(alias, [])
             path = f"framework_events.{alias}"
             self.found.extend(framework_mismatches(events, actual, path, self.names))
-        for member in ("ai_events", "voice_events"):
+        for member in ("ai_events", "voice_events", "media_events"):
             apart: dict[str, list[Any]] = {}
             for event in self.normalizer.value(getattr(self.observed, member)):
                 apart.setdefault(event.get("room_id", "*"), []).append(event)

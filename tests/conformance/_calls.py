@@ -21,7 +21,9 @@ from roomkit.core.exceptions import (
     ChangeRefusedError,
     ChannelNotFoundError,
     ChannelNotRegisteredError,
+    ConferenceAlreadyAttachedError,
     ConferenceCapabilityError,
+    ConferenceCloseError,
     EventNotFoundError,
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
@@ -32,6 +34,7 @@ from roomkit.core.exceptions import (
     ReentrantCallError,
     ReentryLoopCapError,
     RoomClosedError,
+    RoomNotAttachedError,
     RoomNotFoundError,
     ShutdownCancelledError,
     TaskNotFoundError,
@@ -59,6 +62,7 @@ from roomkit.tasks import DelegatedTask
 from roomkit.voice import VoiceSession, parse_voice_session
 from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import ScriptedAIRouter, scripted_agent
+from tests.conformance._conference_faults import ScriptedBackendError
 from tests.conformance._extra_tools import read as read_extra_tools
 from tests.conformance._extra_tools import replace as replace_extra_tool
 from tests.conformance._realtime_io import ScriptedProviderError
@@ -126,6 +130,10 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (StoreFaultError, "store_failed"),
     (ChannelCloseFailedError, "channel_close_failed"),
     (ShutdownCancelledError, "shutdown_cancelled"),
+    (ConferenceAlreadyAttachedError, "conference_already_attached"),
+    (RoomNotAttachedError, "room_not_attached"),
+    (ScriptedBackendError, "backend_failed"),
+    (ConferenceCloseError, "conference_close_failed"),
 )
 
 

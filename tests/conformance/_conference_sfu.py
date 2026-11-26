@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit import (
@@ -27,6 +28,7 @@ from roomkit.recorder.mock import MockMediaRecorder
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 from tests.conformance._calls import UnreadableError
+from tests.conformance._conference_faults import SFUFaults
 from tests.conformance._voice_synthesis import scripted_tts
 
 if TYPE_CHECKING:
@@ -79,6 +81,7 @@ _CALL_NAMES = frozenset(
 _ROOM_INFO = (
     "bot_present",
     "bot_session_id",
+    "leaving_session_ids",
     "bot_hidden",
     "collecting",
     "active_lanes",
@@ -98,6 +101,17 @@ class ScriptedSFU(MockConferenceBackend):
     def __init__(self, *, capabilities: ConferenceCapability = ConferenceCapability.NONE) -> None:
         super().__init__(capabilities=capabilities)
         self.joined: dict[int, str] = {}
+        # The scenario's faults (``conference.fault``) and the ``joined_at``
+        # of the sessions it returns (``conference.open``'s ``bot_joined_at``).
+        self.held: SFUFaults | None = None
+        self.joined_at: datetime | None = None
+
+    async def _enter(self, method: str, **args: Any) -> None:
+        # Received first, then held or failed as a fault says, then the mock's own.
+        self._record(method, **args)
+        if self.held is not None:
+            await self.held.take(method, self.calls[-1])
+        await self.faults.apply(method)
 
     async def join_as_bot(
         self, room_id: str, identity: str, grants: ConferenceGrants
@@ -107,6 +121,8 @@ class ScriptedSFU(MockConferenceBackend):
         position = len(self.calls)
         bot = await super().join_as_bot(room_id, identity, grants)
         self.joined[id(self.calls[position])] = bot.id
+        if self.joined_at is not None:
+            bot.joined_at = self.joined_at
         return bot
 
 

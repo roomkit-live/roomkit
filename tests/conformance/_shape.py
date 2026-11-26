@@ -502,6 +502,7 @@ EXPECT = {
     "framework_events",
     "ai_events",
     "voice_events",
+    "media_events",
     "hooks",
     "hook_order",
     "channel_closes",

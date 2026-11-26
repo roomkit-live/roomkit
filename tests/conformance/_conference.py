@@ -12,6 +12,14 @@ from roomkit import ConferenceChannel, MockConferenceBackend, TrackKind
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
+from tests.conformance._conference_faults import (
+    FAULT_ARGUMENTS,
+    FAULT_CALLS,
+    FAULT_OPEN,
+    SFUFaults,
+    arm_open_faults,
+    bot_joined_at,
+)
 from tests.conformance._conference_media import (
     ARRIVAL,
     MEDIA_ARGUMENTS,
@@ -85,6 +93,9 @@ class ConferenceFixture:
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     backend = media_backend(spec, capabilities(spec))
+    backend.held = SFUFaults(harness.gates)
+    backend.joined_at = bot_joined_at(spec)
+    arm_open_faults(backend.held, spec)
     await seat_occupants(backend, spec)
     model = _Model() if "tools" in spec else None
     options, media = media_options(
@@ -101,7 +112,7 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
 
 
 CONFERENCE_ARGUMENTS = {
-    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN | OPTIONS_OPEN,
+    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN | OPTIONS_OPEN | FAULT_OPEN,
     "conference.join": {"channel_id", "participant_id"} | ARRIVAL,
     "conference.leave": {"channel_id", "participant_id"},
     "conference.publish": {"channel_id", "participant_id", "track_id", "kind"},
@@ -114,6 +125,7 @@ CONFERENCE_ARGUMENTS = {
     **SFU_ARGUMENTS,
     **MEDIA_ARGUMENTS,
     **OPTIONS_ARGUMENTS,
+    **FAULT_ARGUMENTS,
 }
 
 
@@ -168,5 +180,6 @@ CONFERENCE_CALLS = {
     **SFU_CALLS,
     **MEDIA_CALLS,
     **OPTIONS_CALLS,
+    **FAULT_CALLS,
     "conference.read": _read,
 }
