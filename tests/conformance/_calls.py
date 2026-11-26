@@ -220,7 +220,8 @@ def error_of(error: Exception) -> dict[str, Any]:
     if isinstance(error, ScriptedFailureError):
         return {"name": "channel_failed"}
     if isinstance(error, ScriptedProviderError):
-        # A scripted realtime provider's own failure, its connect's (§12.4).
+        # A scripted provider's own failure: a realtime provider's connect
+        # (§12.4), a room recorder's start (§12.11).
         return {"name": "provider_failed"}
     for cls, name in _ERRORS:
         if isinstance(error, cls):
