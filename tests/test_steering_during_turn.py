@@ -301,6 +301,55 @@ async def test_what_opens_no_turn_while_the_model_answers_is_not_steered(
     assert len(provider.calls) == 1
 
 
+def _instruction(body: str) -> InboundMessage:
+    return InboundMessage(
+        channel_id="ops",
+        sender_id="app",
+        content=TextContent(body=body),
+        event_type=EventType.INSTRUCTION,
+        addressed_to=["agent"],
+    )
+
+
+async def test_an_instruction_while_an_instructed_turn_runs_waits_a_turn_of_its_own(
+    streaming: bool,
+) -> None:
+    """An instruction is the application's, marked and never attributed (RFC
+    §6.4, §10.1.1 rule 6). One that comes while the turn another instruction
+    opened runs has that turn's author, and is still no message for it:
+    steered in, it would read as a speaker's words. It waits a turn of its
+    own, which reads it as an instruction (RMK-2146)."""
+    provider = _Gated(
+        [
+            AIResponse(content="The first task failed."),
+            AIResponse(content="The second task is done."),
+        ],
+        held=0,
+        streaming=streaming,
+    )
+    kit = await _kit(provider, steer=True)
+    first = _instruction("Report the first task's result.")
+    turn = asyncio.create_task(kit.process_inbound(first, room_id="r1"))
+    await asyncio.wait_for(provider.answering.wait(), 2)
+
+    second = asyncio.create_task(
+        kit.process_inbound(_instruction("Report the second task's result."), room_id="r1")
+    )
+    # Steered, the instruction returns at once; waiting a turn, once the first ends.
+    await asyncio.wait({second}, timeout=0.05)
+    assert not second.done()
+    provider.release.set()
+    await asyncio.wait_for(asyncio.gather(turn, second), 5)
+    await kit.close()
+
+    assert not second.result().blocked
+    assert len(provider.calls) == 2
+    opening = str(provider.calls[1].messages[-1].content)
+    assert opening.startswith("[Instruction from the application:"), opening
+    assert "Report the second task's result." in opening
+    assert not _read(provider.calls[1], "A copy of a runtime mark")
+
+
 async def test_off_a_message_during_a_turn_starts_its_own(streaming: bool) -> None:
     """``steer_room_turns`` off (the default): the second message's turn runs
     beside the first, as before."""

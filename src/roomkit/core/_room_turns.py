@@ -35,6 +35,7 @@ from roomkit.core.lanes import anchor_index
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
+from roomkit.models.enums import EventType
 from roomkit.models.event import RoomEvent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.steering import InjectMessage, SteeringDirective
@@ -245,8 +246,11 @@ def steered_message(
     has several speakers, as the turn's history labels them; none for an
     event that reads as no text, which waits a turn of its own, nor for an
     event that opens no turn (a notice, a reaction: RFC §6.4; an edit or a
-    delete: RFC §10.3), whose own turn the agent does not take."""
-    if opens_no_turn(event):
+    delete: RFC §10.3), whose own turn the agent does not take, nor for an
+    instruction (RFC §6.4, §10.1.1 rule 6): the application's, marked and
+    never attributed, it would read in a running turn as a speaker's words,
+    so it waits the turn that reads it as an instruction (RMK-2146)."""
+    if opens_no_turn(event) or event.type == EventType.INSTRUCTION:
         return None
     text = text_form(event.content)
     if not text:

@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With `steer_room_turns`, an instruction that comes while the turn another instruction opened runs waits a turn of its own (RFC §6.4, §10.1.1 rule 6, RMK-2146), where it was handed to that turn as a message of the room: the same author, the application, opened both. Steered in, it read unmarked, or under a speaker's label with its mark read as a copy, so a delegated task's result that came while the agent told another's read as a participant's words.
+
 - A realtime voice channel's recorded room track names the participant whose session it is (RFC §12.11, RMK-2142), where it carried no `participant_id`, so a recording of a realtime call could not say who spoke; a voice channel's track already named it.
 
 - An audio/video channel sends its avatar's frames through the call's video, the backend's `video` facet (RFC §12.8.8, RMK-2141), where it reached into one SIP backend's private sessions: on `RTPVideoBackend`, or any combined backend written on `AudioVideoBackend`, the avatar's video was dropped without a word. The frame is sent on the event loop, as the video bridge sends, each call's avatar frames timed on a clock of their own; one of several NAL units goes out in Annex B form, and the SIP and RTP facets' `send_video_sync` now sends each NAL unit of such a frame, as their `send_video` did, its 90 kHz time wrapped at 32 bits.
