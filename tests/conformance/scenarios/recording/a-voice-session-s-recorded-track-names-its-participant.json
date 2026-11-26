@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-voice-session-s-recorded-track-names-its-participant",
+  "title": "The track a voice session joining a recording room declares names the participant who publishes it",
+  "rules": [
+    "§12.11",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.11-038"
+  ],
+  "notes": "A voice session's track; a realtime session's is read by recording/a-realtime-session-s-recorded-track-names-its-participant, a conference track's by the conference recording scenarios (Section 12.10.8).",
+  "requires_features": [
+    "voice",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec"
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "voice",
+      "room_id": "r1",
+      "participants": [
+        "bob"
+      ]
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "calls": [
+        "on_track_added"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_track_added",
+            "recording_id": "rec",
+            "track": {
+              "kind": "audio",
+              "channel_id": "voice",
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

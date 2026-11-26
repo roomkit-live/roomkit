@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-realtime-session-s-recorded-track-names-its-participant",
+  "title": "The track a realtime session joining a recording room declares names the participant whose session it is",
+  "rules": [
+    "§12.11",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-12.11-038"
+  ],
+  "notes": "The realtime channel records its sessions' audio (realtime.recording); the framework knows the session's participant when it declares its track.",
+  "requires_features": [
+    "realtime",
+    "recording"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "recording": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "calls": [
+        "on_track_added"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_track_added",
+            "recording_id": "rec",
+            "track": {
+              "kind": "audio",
+              "channel_id": "rt",
+              "participant_id": "alice"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

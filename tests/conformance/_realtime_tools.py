@@ -18,6 +18,7 @@ from roomkit import (
     ReasoningRequest,
     ToolPolicy,
 )
+from roomkit.recorder import ChannelRecordingConfig
 from tests.conformance._agent import scripted_agent
 from tests.conformance._realtime_reads import session_names
 from tests.conformance._script_executor import ScriptedScriptExecutor
@@ -45,6 +46,7 @@ REALTIME = {
     "tool_handler",
     "reasoning",
     "reasoning_timeout_ms",
+    "recording",
 }
 REALTIME_TOOL = {
     "gate",
@@ -113,6 +115,10 @@ def channel_options(channel_id: str, spec: Mapping[str, Any], harness: Harness) 
             options[setting] = spec[setting]
     if "reasoning_timeout_ms" in spec:
         options["reasoning_timeout_s"] = spec["reasoning_timeout_ms"] / 1000
+    if spec.get("recording"):
+        # A room that records records its sessions' audio (README, "Scripted
+        # realtime sessions").
+        options["recording"] = ChannelRecordingConfig(audio=True)
     return options
 
 
