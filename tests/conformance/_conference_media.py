@@ -22,6 +22,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit import (
+    ConferenceBargeIn,
+    ConferenceCapability,
     ConferenceRecordingConfig,
     ConferenceRecordingStarted,
     ConferenceRecordingStopped,
@@ -61,8 +63,8 @@ ARRIVAL = {"display_name", "metadata", "client_metadata", "asserts_provenance"}
 class _AddressedBackend(ScriptedSFU):
     """The scripted SFU, naming a caller's address under keys of its own."""
 
-    def __init__(self, keys: list[str]) -> None:
-        super().__init__()
+    def __init__(self, keys: list[str], capabilities: ConferenceCapability) -> None:
+        super().__init__(capabilities=capabilities)
         self._keys = tuple(keys)
 
     @property
@@ -208,11 +210,12 @@ class ConferenceMedia:
     recorder: ConferenceRecorder | None = None
 
 
-def media_backend(spec: Mapping[str, Any]) -> ScriptedSFU:
-    """The scripted SFU ``conference.open`` names: with its own address keys."""
+def media_backend(spec: Mapping[str, Any], capabilities: ConferenceCapability) -> ScriptedSFU:
+    """The scripted SFU ``conference.open`` names: with its own address keys,
+    and the capabilities the scenario gives it."""
     if "address_keys" in spec:
-        return _AddressedBackend(list(spec["address_keys"]))
-    return ScriptedSFU()
+        return _AddressedBackend(list(spec["address_keys"]), capabilities)
+    return ScriptedSFU(capabilities=capabilities)
 
 
 def media_options(
@@ -334,9 +337,10 @@ def read_recordings(harness: Harness, channel_id: str) -> dict[str, Any]:
 
 
 def conference_payload(payload: Any) -> dict[str, Any] | None:
-    """What a conference's lane or recording hook names (README, "Scripted
-    conference media"): its room, track and participant, and the
-    transcription's text or the recording's facts."""
+    """What a conference's lane, recording or barge-in hook names (README,
+    "Scripted conference media", "Scripted conference options"): its room,
+    track and participant, and the transcription's text, the recording's
+    facts or the text the barge-in cut off."""
     if isinstance(payload, ConferenceTranscription):
         return {
             "room_id": payload.room_id,
@@ -346,6 +350,13 @@ def conference_payload(payload: Any) -> dict[str, Any] | None:
         }
     if isinstance(payload, ConferenceRecordingStarted | ConferenceRecordingStopped):
         return _recording_payload(payload)
+    if isinstance(payload, ConferenceBargeIn):
+        return {
+            "room_id": payload.room_id,
+            "track_id": payload.track_id,
+            "participant_id": payload.participant_id,
+            "interrupted_text": payload.interrupted_text,
+        }
     if isinstance(payload, RoomEvent) and isinstance(payload.content, SystemContent):
         data = payload.content.data or {}
         if payload.content.code in {"speech_start", "speech_end"} and "track_id" in data:

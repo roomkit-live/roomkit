@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from roomkit import ConferenceChannel, ConferenceRealtimeConfig, MockConferenceBackend, TrackKind
+from roomkit import ConferenceChannel, MockConferenceBackend, TrackKind
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
@@ -22,6 +22,18 @@ from tests.conformance._conference_media import (
     media_backend,
     media_options,
     read_media,
+)
+from tests.conformance._conference_options import (
+    OPTIONS_ARGUMENTS,
+    OPTIONS_CALLS,
+    OPTIONS_OPEN,
+    ConferenceOptions,
+    capabilities,
+    channel_options,
+    media_spec,
+    read_options,
+    realtime_config,
+    seat_occupants,
 )
 from tests.conformance._conference_sfu import SFU_ARGUMENTS, SFU_CALLS
 
@@ -68,44 +80,28 @@ class ConferenceFixture:
     backend: MockConferenceBackend
     model: _Model | None
     media: ConferenceMedia | None = None
+    options: ConferenceOptions | None = None
 
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    backend = media_backend(spec)
-    model = None
-    realtime = None
-    if "tools" in spec:
-        model = _Model()
-        tools = spec["tools"]
-
-        async def answer(room_id: str, name: str, arguments: dict[str, Any]) -> str:
-            return tools[name]
-
-        realtime = ConferenceRealtimeConfig(
-            provider=model,
-            tools=[
-                {"name": name, "description": name, "parameters": {"type": "object"}}
-                for name in tools
-            ],
-            tool_handler=answer,
-        )
-    options, media = media_options(spec, harness, MockSTTProvider() if realtime is None else None)
-    channel = ConferenceChannel(
-        spec["channel_id"],
-        backend=backend,
-        realtime=realtime,
-        speak_text_events=True,
-        **options,
+    backend = media_backend(spec, capabilities(spec))
+    await seat_occupants(backend, spec)
+    model = _Model() if "tools" in spec else None
+    options, media = media_options(
+        media_spec(spec), harness, MockSTTProvider() if model is None else None
     )
+    kept = channel_options(spec, harness, options, media)
+    realtime = None if model is None else realtime_config(spec, harness, model, kept)
+    channel = ConferenceChannel(spec["channel_id"], backend=backend, realtime=realtime, **options)
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
     harness.conferences[channel.channel_id] = ConferenceFixture(
-        spec["room_id"], channel, backend, model, media
+        spec["room_id"], channel, backend, model, media, kept
     )
 
 
 CONFERENCE_ARGUMENTS = {
-    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN,
+    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN | OPTIONS_OPEN,
     "conference.join": {"channel_id", "participant_id"} | ARRIVAL,
     "conference.leave": {"channel_id", "participant_id"},
     "conference.publish": {"channel_id", "participant_id", "track_id", "kind"},
@@ -117,6 +113,7 @@ CONFERENCE_ARGUMENTS = {
     "conference.tool_call": {"channel_id", "call_id", "name", "arguments"},
     **SFU_ARGUMENTS,
     **MEDIA_ARGUMENTS,
+    **OPTIONS_ARGUMENTS,
 }
 
 
@@ -157,10 +154,12 @@ async def _notify(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
 
 
 async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
-    """``conference.read``: what the scripted SFU received and holds, and what
-    the lanes' scripted stages and recognizer received."""
+    """``conference.read``: what the scripted SFU received and holds, what
+    the lanes' scripted stages and recognizer received, and what the
+    conference's own settings scripted."""
     sfu = await SFU_CALLS["conference.read"](kit, harness, spec)
-    return sfu | await read_media(kit, harness, spec)
+    media = await read_media(kit, harness, spec)
+    return sfu | media | read_options(harness.conferences[spec["channel_id"]])
 
 
 CONFERENCE_CALLS = {
@@ -168,5 +167,6 @@ CONFERENCE_CALLS = {
     "conference.open": _open,
     **SFU_CALLS,
     **MEDIA_CALLS,
+    **OPTIONS_CALLS,
     "conference.read": _read,
 }
