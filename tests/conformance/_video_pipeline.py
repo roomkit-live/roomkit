@@ -206,9 +206,8 @@ async def _join(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
     is the participant's even when the join is refused."""
     fixture = harness.video_fixtures[spec["channel_id"]]
     participant = spec["participant_id"]
-    room_id = next(iter(fixture.sessions.values())).room_id
     try:
-        await kit.join(room_id, fixture.channel.channel_id, participant_id=participant)
+        await kit.join(fixture.room_id, fixture.channel.channel_id, participant_id=participant)
     finally:
         made = fixture.backend.made.get(participant)
         if made is not None:

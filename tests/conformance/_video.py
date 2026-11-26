@@ -41,6 +41,7 @@ class VideoFixture:
     results: list[dict[str, Any]] = field(default_factory=list)
     stages: VideoStages = field(default_factory=VideoStages)
     vision: MockVisionProvider | None = None
+    room_id: str = ""
 
     async def settle(self) -> None:
         await settled(self.channel)
@@ -74,7 +75,7 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
         vision=vision,
         vision_interval_ms=spec.get("vision_interval_ms", 0),
     )
-    fixture = VideoFixture(channel, backend, stages=stages, vision=vision)
+    fixture = VideoFixture(channel, backend, stages=stages, vision=vision, room_id=room_id)
     harness.video_fixtures[channel_id] = fixture
     kit.on("video_vision_result")(fixture.vision_result)
     kit.register_channel(channel)

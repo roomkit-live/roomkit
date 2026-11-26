@@ -192,8 +192,8 @@ def error_of(error: Exception) -> dict[str, Any]:
         # §10.6.5), its error naming the verb first.
         return {"name": "needs_turn", "reason": str(error).split(" needs a turn: ", 1)[0]}
     if isinstance(error, RuntimeError) and "has reached max bridge participants" in str(error):
-        # A voice join the bridge has no room for, refused before anything
-        # binds the session (RFC §12.7.2).
+        # A voice or video join the bridge has no room for (RFC §12.7.2,
+        # §12.8.9).
         return {"name": "bridge_full"}
     if isinstance(error, RuntimeError) and str(error) == "Released before an answer arrived":
         # A human-input request given up before an answer, as its waiter
@@ -204,8 +204,9 @@ def error_of(error: Exception) -> dict[str, Any]:
         # it, refused so that no language reaches it (RFC §12.2).
         return {"name": "language_override_unsupported"}
     if isinstance(error, UnsupportedError):
-        # A method the voice transport or TTS provider does not support:
-        # out-of-band DTMF, a dialogue (RFC §12.3.6, §12.2).
+        # A method the voice transport, the TTS provider or a combined
+        # transport's video facet does not support: out-of-band DTMF, a
+        # dialogue, a session (RFC §12.3.6, §12.2, §12.8.3).
         return {"name": "not_supported"}
     if isinstance(error, RuntimeError) and str(error).startswith(
         "Cannot send DTMF on ended session "
@@ -221,7 +222,8 @@ def error_of(error: Exception) -> dict[str, Any]:
         return {"name": "channel_failed"}
     if isinstance(error, ScriptedProviderError):
         # A scripted provider's own failure: a realtime provider's connect
-        # (§12.4), a room recorder's start (§12.11).
+        # (§12.4), a room recorder's start (§12.11), a video recorder's start
+        # (§12.8.10).
         return {"name": "provider_failed"}
     for cls, name in _ERRORS:
         if isinstance(error, cls):
