@@ -16,8 +16,10 @@ from roomkit.channels.voice import VoiceChannel
 from roomkit.core.task_utils import cancel_and_wait
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType, HookTrigger
+from roomkit.video._annexb import access_unit
 from roomkit.video.backends.av import AudioVideoBackend
 from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
+from roomkit.video.video_frame import VideoFrame
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,7 +31,6 @@ if TYPE_CHECKING:
     from roomkit.video.base import VideoSession
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
-    from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
@@ -121,6 +122,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._avatar_queues: dict[str, Any] = {}
         # Lock to serialize H.264 encoding (x264 is not thread-safe)
         self._encoder_lock = threading.Lock()
+        self._avatar_frame_count = 0
 
         # Video bridge for session-to-session forwarding
         if video_bridge is True:
@@ -520,24 +522,30 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         pool.submit(self._send_avatar_frame_sync, session, frame)
 
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
-        """Encode and send a single avatar frame (synchronous, thread-safe)."""
+        """Encode one avatar frame and send it to the call through the call's
+        video, the backend's ``video`` facet, whatever transport serves it (RFC
+        §12.8.8); a call without video shows no avatar. Synchronous and
+        thread-safe."""
+        video_session = self._get_video_session(session.id)
+        if video_session is None or self._video_backend is None:
+            return
         with self._encoder_lock:
             nals = self._avatar_encoder.encode(frame)  # ty: ignore[unresolved-attribute]
+            self._avatar_frame_count += 1
+            count = self._avatar_frame_count
         if not nals:
             return
-
-        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
-
+        fps = self._avatar.fps if self._avatar is not None else 30
+        encoded = VideoFrame(
+            data=access_unit(nals),
+            width=frame.width,
+            height=frame.height,
+            timestamp_ms=count * 1000.0 / fps,
+            keyframe=any((nal[0] & 0x1F) == 5 for nal in nals if nal),
+            sequence=count,
+        )
         try:
-            vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
-            if vcs is not None:
-                rtp_session = getattr(vcs, "_session", None)
-                if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
-                    rtp_session.send_frame_auto(nals, is_key)
-                    return
-                self._avatar_frame_count = getattr(self, "_avatar_frame_count", 0) + 1
-                ts = self._avatar_frame_count * 3000
-                vcs.send_frame(nals, ts, is_key)
+            self._video_backend.send_video_sync(video_session, encoded)
         except Exception:
             logger.debug("Avatar frame send failed", exc_info=True)
 

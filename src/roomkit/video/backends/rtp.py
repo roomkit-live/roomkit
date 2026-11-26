@@ -231,7 +231,7 @@ class _RTPVideo(CallVideoBackend):
         if video_rtp is None:
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        data = [frame.data]
+        data = nal_units(frame.data)
         is_key = frame.keyframe
         try:
             loop = asyncio.get_running_loop()

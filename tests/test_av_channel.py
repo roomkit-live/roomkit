@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -17,9 +18,11 @@ from roomkit.recorder.base import (
     RoomRecorderBinding,
 )
 from roomkit.recorder.mock import MockMediaRecorder
+from roomkit.video.avatar.mock import MockAvatarProvider
 from roomkit.video.backends.av import AudioVideoBackend, CallVideoBackend
 from roomkit.video.base import VideoSession, VideoSessionState
 from roomkit.video.bridge import VideoBridgeConfig
+from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -332,6 +335,67 @@ class _CallsWithVideo(MockVoiceBackend, AudioVideoBackend):
             )
         )
         return call
+
+
+class _NalEncoder(VideoEncoderProvider):
+    """An encoder that encodes every frame as the same NAL units."""
+
+    def __init__(self, nals: list[bytes]) -> None:
+        self.nals = nals
+
+    @property
+    def name(self) -> str:
+        return "nal"
+
+    def encode(self, frame: VideoFrame) -> list[bytes]:
+        return list(self.nals)
+
+    def flush(self) -> list[bytes]:
+        return []
+
+
+class TestAvatarVideoGoesThroughTheCallsVideo:
+    """RFC §12.8.8: the avatar's encoded frames are sent through the video
+    backend, the call's ``video`` facet, whatever transport serves it."""
+
+    @pytest.mark.parametrize(
+        ("nals", "sent", "keyframe"),
+        [
+            ([b"\x41\x9a"], b"\x41\x9a", False),
+            (
+                [b"\x67\x42", b"\x65\x88"],
+                b"\x00\x00\x00\x01\x67\x42\x00\x00\x00\x01\x65\x88",
+                True,
+            ),
+        ],
+        ids=["one NAL unit, as it is", "several, in Annex B form"],
+    )
+    async def test_an_avatar_frame_is_sent_to_the_call_as_one_encoded_frame(
+        self, nals: list[bytes], sent: bytes, keyframe: bool
+    ) -> None:
+        backend = _CallsWithVideo()
+        avatar = MockAvatarProvider(idle_color=None)
+        await avatar.start(b"", width=1, height=1)
+        av = AudioVideoChannel(
+            "av",
+            backend=backend,
+            tts=MockTTSProvider(),
+            avatar=avatar,
+            avatar_encoder=_NalEncoder(nals),
+        )
+        kit = RoomKit()
+        kit.register_channel(av)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "av")
+        session = await kit.join("r1", "av", participant_id="alice")
+
+        await av.say(session, "Hello there")
+        assert await asyncio.to_thread(backend.video.first_sent.wait, 2.0)
+        await kit.close()
+
+        session_id, frame = backend.video.sent[0]
+        assert session_id == session.id
+        assert (frame.data, frame.keyframe) == (sent, keyframe)
 
 
 class TestAVVideoBridgeCapacity:

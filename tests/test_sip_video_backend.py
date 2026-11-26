@@ -463,23 +463,26 @@ class TestSIPVideoBackendAnswerMirrorsTheOffer:
 
 
 class TestSIPVideoBackendSendsWholeFrames:
-    """RMK-353: one VideoChunk holding an Annex B frame is sent as one frame."""
+    """RMK-353: an Annex B frame, as a VideoChunk or a VideoFrame, is sent as one frame."""
 
-    async def test_an_annex_b_chunk_is_one_frame_of_several_nal_units(
-        self, backend, mock_video_bridge, av_offer
+    @pytest.mark.parametrize("sync", [False, True], ids=["send_video", "send_video_sync"])
+    async def test_an_annex_b_frame_is_one_frame_of_several_nal_units(
+        self, backend, mock_video_bridge, av_offer, sync
     ):
         await backend._handle_invite(_FakeCall(sdp_offer=av_offer))
         video_session = backend.video.get_session("session-1")
         video_cs = mock_video_bridge.VideoCallSession.return_value
+        data = b"\x00\x00\x00\x01\x67\x42\x00\x00\x00\x01\x68\xce\x00\x00\x01\x65\x88"
 
         async def frames():
-            yield VideoChunk(
-                data=b"\x00\x00\x00\x01\x67\x42\x00\x00\x00\x01\x68\xce\x00\x00\x01\x65\x88",
-                keyframe=True,
-                timestamp_ms=0,
-            )
+            yield VideoChunk(data=data, keyframe=True, timestamp_ms=0)
 
-        await backend.video.send_video(video_session, frames())
+        if sync:
+            frame = VideoFrame(data=data, keyframe=True, timestamp_ms=0)
+            backend.video.send_video_sync(video_session, frame)
+            await asyncio.sleep(0)
+        else:
+            await backend.video.send_video(video_session, frames())
 
         video_cs.send_frame.assert_called_once_with(
             [b"\x67\x42", b"\x68\xce", b"\x65\x88"], 0, True

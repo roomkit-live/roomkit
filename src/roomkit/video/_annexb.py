@@ -38,3 +38,11 @@ def nal_units(data: bytes) -> list[bytes]:
     if data.startswith(_START_CODES):
         return split_annex_b(data)
     return [data]
+
+
+def access_unit(nals: list[bytes]) -> bytes:
+    """One encoded frame of *nals*, as :func:`nal_units` reads it back: a single
+    NAL unit as it is, several in Annex B form."""
+    if len(nals) == 1:
+        return nals[0]
+    return b"".join(_START_CODES[0] + nal for nal in nals)

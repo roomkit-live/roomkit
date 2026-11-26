@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -301,21 +302,27 @@ class TestRTPVideoBackendProperties:
 
 
 class TestRTPVideoBackendSendsWholeFrames:
-    """RMK-353: one VideoChunk holding an Annex B frame is sent as one frame."""
+    """RMK-353: an Annex B frame, as a VideoChunk or a VideoFrame, is sent as one frame."""
 
-    async def test_an_annex_b_chunk_is_one_frame_of_several_nal_units(self, backend, mock_aiortp):
+    @pytest.mark.parametrize("sync", [False, True], ids=["send_video", "send_video_sync"])
+    async def test_an_annex_b_frame_is_one_frame_of_several_nal_units(
+        self, backend, mock_aiortp, sync
+    ):
         session = await backend.connect("room-1", "user-1", "voice-1")
         video_session = backend.video.get_session(session.id)
         video_rtp = mock_aiortp.VideoRTPSession.create.return_value
+        data = b"\x00\x00\x00\x01\x41\x9a\x00\x00\x00\x01\x41\x9b"
 
         async def frames():
-            yield VideoChunk(
-                data=b"\x00\x00\x00\x01\x41\x9a\x00\x00\x00\x01\x41\x9b",
-                keyframe=False,
-                timestamp_ms=33,
-            )
+            yield VideoChunk(data=data, keyframe=False, timestamp_ms=33)
 
-        await backend.video.send_video(video_session, frames())
+        if sync:
+            backend.video.send_video_sync(
+                video_session, VideoFrame(data=data, keyframe=False, timestamp_ms=33)
+            )
+            await asyncio.sleep(0)
+        else:
+            await backend.video.send_video(video_session, frames())
 
         video_rtp.send_frame.assert_called_once_with([b"\x41\x9a", b"\x41\x9b"], 2970, False)
 

@@ -513,23 +513,24 @@ class _SIPVideo(CallVideoBackend):
         """Schedule a video frame for sending via SIP/RTP.
 
         Called by the video bridge from the inbound RTP callback chain
-        (datagram_received → on_frame → bridge.forward → here), which
-        already runs in the event loop thread.  Uses ``call_soon`` to
-        defer the actual send to the next event-loop iteration — this
-        lets audio packets and RTCP feedback (including PLI responses)
-        process between inbound and outbound video, preventing event
-        loop starvation at high frame rates.
+        (datagram_received → on_frame → bridge.forward → here), on the event
+        loop thread, and by an audio/video channel's avatar from its worker
+        thread.  Uses ``call_soon_threadsafe`` to defer the actual send to the
+        next event-loop iteration — this lets audio packets and RTCP feedback
+        (including PLI responses) process between inbound and outbound video,
+        preventing event loop starvation at high frame rates.  *frame* holds
+        one encoded frame: a single NAL unit, or several in Annex B form.
         """
         vcs = self._owner._video_call_sessions.get(session.id)
         if vcs is None:
             logger.debug("send_video_sync: no VCS for session %s", session.id[:8])
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        data = [frame.data]
+        data = nal_units(frame.data)
         is_key = frame.keyframe
         loop = self._owner._loop
         if loop is not None and loop.is_running():
-            loop.call_soon(vcs.send_frame, data, ts, is_key)
+            loop.call_soon_threadsafe(vcs.send_frame, data, ts, is_key)
         else:
             try:
                 vcs.send_frame(data, ts, is_key)
