@@ -44,8 +44,8 @@ from roomkit.turns.wire import (
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_beat import LiveExecutors
-    from roomkit.turns._redis_inbox import Envelope
     from roomkit.turns._redis_links import Post
+    from roomkit.turns.broker import BrokerMessage
     from roomkit.turns.executor import TurnExecutor
     from roomkit.turns.wire import ChannelControl
 
@@ -121,7 +121,7 @@ class Routes:
         # By reference, when it came: the work after a turn handled.
         self._published: OrderedDict[str, float] = OrderedDict()
         self._closing = False
-        self._routes: dict[str, Callable[[Envelope], None]] = {
+        self._routes: dict[str, Callable[[BrokerMessage], None]] = {
             "frame": self._frame,
             "control": self._control,
             "released": self._released,
@@ -140,7 +140,7 @@ class Routes:
         self.port: RoomOwner = _OwnerPort(self)
         """What this process's executors reach a room owner by outside a turn."""
 
-    def route(self, envelope: Envelope) -> None:
+    def route(self, envelope: BrokerMessage) -> None:
         """Hand one inbox entry on, in order, without waiting; a question
         written twice is answered again, not handled again, and one reaching
         a closing process is refused."""
@@ -255,7 +255,7 @@ class Routes:
             if not self._executor_links:
                 self._none_running.set()
 
-    def _first_time(self, question: Envelope) -> bool:
+    def _first_time(self, question: BrokerMessage) -> bool:
         """Whether *question* is new; one handled before is answered again
         with what it was answered."""
         handled = self._handled.get(question.ref)
@@ -272,7 +272,7 @@ class Routes:
             self._post_answer(question, answer)
         return False
 
-    def _first_work(self, work: Envelope) -> bool:
+    def _first_work(self, work: BrokerMessage) -> bool:
         """Whether *work* after a turn is new: written again, it is not
         published twice."""
         if work.ref in self._published:
@@ -285,7 +285,7 @@ class Routes:
             self._published.popitem(last=False)
         return True
 
-    def _refuse_closing(self, envelope: Envelope) -> None:
+    def _refuse_closing(self, envelope: BrokerMessage) -> None:
         """Answer what reaches this closing process at once, applying
         nothing: a request or a channel control is placed again, a room call
         learns it failed."""
@@ -299,19 +299,19 @@ class Routes:
 
     # -- Routes ---------------------------------------------------------------------
 
-    def _frame(self, envelope: Envelope) -> None:
+    def _frame(self, envelope: BrokerMessage) -> None:
         if (link := self._owner_links.get(envelope.target)) is not None:
             link.deliver(envelope.body)
 
-    def _control(self, envelope: Envelope) -> None:
+    def _control(self, envelope: BrokerMessage) -> None:
         if (link := self._executor_links.get(envelope.target)) is not None:
             link.deliver(envelope.body)
 
-    def _released(self, envelope: Envelope) -> None:
+    def _released(self, envelope: BrokerMessage) -> None:
         if (link := self._executor_links.get(envelope.target)) is not None:
             link.end("backend_closed")
 
-    def _answer(self, envelope: Envelope) -> None:
+    def _answer(self, envelope: BrokerMessage) -> None:
         if (answer := self._answers.get(envelope.ref)) is not None and not answer.done():
             answer.set_result(envelope.body)
 
@@ -329,7 +329,7 @@ class Routes:
                 return own
         return served
 
-    def _request(self, envelope: Envelope) -> None:
+    def _request(self, envelope: BrokerMessage) -> None:
         """A request of an owner elsewhere, for an executor of this process,
         answered at once: taken, or refused by an executor that closed."""
         served = self.shared.get(envelope.target)
@@ -357,7 +357,7 @@ class Routes:
         executor.take(link)
         self._answer_back(envelope, TAKEN)
 
-    async def _channel(self, envelope: Envelope) -> None:
+    async def _channel(self, envelope: BrokerMessage) -> None:
         """A channel control for an executor here, applied, then answered,
         with what it raised if it did: its owner waits for the answer."""
         served = self.shared.get(envelope.target)
@@ -390,7 +390,7 @@ class Routes:
                 result = ChannelResult(error=error_record(exc), executor_id=envelope.target)
         self._answer_back(envelope, (result or ChannelResult()).model_dump_json())
 
-    async def _owner_message(self, envelope: Envelope) -> None:
+    async def _owner_message(self, envelope: BrokerMessage) -> None:
         """Work an executor elsewhere began in a turn of this owner (RFC
         §10.6.3); a room call is answered, with what it raised if it did."""
         try:
@@ -418,13 +418,13 @@ class Routes:
             logger.exception("A room call of turn %s failed", message.turn_id)
             return HostResult(call_id=message.call_id, error=error_record(exc))
 
-    def _answer_back(self, question: Envelope, body: str) -> None:
+    def _answer_back(self, question: BrokerMessage, body: str) -> None:
         """Answer *question*, the answer kept for the question asked again."""
         if (handled := self._handled.get(question.ref)) is not None:
             self._handled[question.ref] = (handled[0], body)
         self._post_answer(question, body)
 
-    def _post_answer(self, question: Envelope, body: str) -> None:
+    def _post_answer(self, question: BrokerMessage, body: str) -> None:
         def lost(error: Exception) -> None:
             if not self._closing:
                 logger.error("An answer to %s could not be written: %s", question.sender, error)

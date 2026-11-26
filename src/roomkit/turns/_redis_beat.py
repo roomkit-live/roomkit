@@ -1,9 +1,10 @@
 """How a process of the Redis turn backend beats, and reads the others' beats
 (RFC §10.6.8).
 
-The beat runs on a thread of its own with a connection of its own, so a turn
-that keeps the event loop busy never stalls it; what it writes is built from
-what the event loop replaces whole and never changes in place. The view of
+The beat runs on a thread of its own, with an event loop and a writer of its
+own, so a turn that keeps the kit's event loop busy never stalls it; what it
+writes is built from what that loop replaces whole and never changes in
+place. The view of
 the others is read again each heartbeat interval on the event loop, with
 whether the processes running this one's turns still run them.
 """
@@ -11,19 +12,21 @@ whether the processes running this one's turns still run them.
 from __future__ import annotations
 
 import asyncio
-import json
+import contextlib
 import logging
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from roomkit.turns._hosting import Hosted
-from roomkit.turns._redis_presence import BEAT_SCRIPT, Declaration, Registry, View, member_of
+from roomkit.turns._redis_presence import Declaration, View, member_of
+from roomkit.turns.broker import Beat
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_routes import Routes
+    from roomkit.turns.broker import BeatWriter, TurnRegistry
     from roomkit.turns.executor import TurnExecutor
 
 logger = logging.getLogger("roomkit.turns")
@@ -97,7 +100,7 @@ class BeatPayload:
         ids = served.withdrawn | {executor.executor_id for executor in served.executors}
         return [member_of(self._node, id_) for id_ in ids]
 
-    def __call__(self) -> str:
+    def __call__(self) -> Beat:
         served = self._served
         executors = served.executors
         serving = [member_of(self._node, e.executor_id) for e in executors if not e.closed]
@@ -114,16 +117,20 @@ class BeatPayload:
         closed = (member_of(self._node, e.executor_id) for e in executors if e.closed)
         gone = [member for member in closed if member not in serving]
         gone.extend(member_of(self._node, eid) for eid in served.withdrawn)
-        payload = {
-            "node": self._node,
-            "generation": served.generation,
-            "declared": declared,
-            "undeclared": serving if served.closing else [],
-            "gone": gone,
-            "running": sorted(self._routes.running),
-            "owner": self._routes.owner is not None,
-        }
-        return json.dumps(payload)
+        return Beat(
+            node=self._node,
+            generation=served.generation,
+            declared=declared,
+            undeclared=serving if served.closing else [],
+            gone=gone,
+            running=sorted(self._routes.running),
+            owner=self._routes.owner is not None,
+        )
+
+    def withdrawn(self) -> Beat:
+        """This process's last beat: every executor it beat for is gone, it
+        runs no turn and is no room owner."""
+        return Beat(node=self._node, generation=self.generation + 1, gone=self.members)
 
     def _declaration(self, executor: TurnExecutor) -> str:
         """*executor*'s declaration now, the last one kept when the event
@@ -158,7 +165,7 @@ class LiveExecutors:
 
     def __init__(
         self,
-        registry: Registry,
+        registry: TurnRegistry,
         interval: float,
         timeout: float,
         open_turns: Callable[[], dict[str, list[str]]],
@@ -224,7 +231,7 @@ class LiveExecutors:
         return not self._unread() and beat is not None and self._view.now - beat < self._timeout_ms
 
     async def refresh(self) -> None:
-        self._view = await self._registry.view(forget_after_ms=10 * self._timeout_ms)
+        self._view = View.of(await self._registry.view(10 * self._timeout_ms))
         self._read_at = time.monotonic()
         self._failures = 0
         self._failing_since = None
@@ -262,13 +269,24 @@ class LiveExecutors:
                 # A read that hangs fails as one that raises.
                 async with asyncio.timeout(self._timeout):
                     await self.refresh()
-                    self._running = await self._registry.running(self._open_turns())
+                    self._running = await self._still_running(self._open_turns())
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self._failed(started, hung=isinstance(exc, self._timeout_errors))
                 logger.warning("Reading the turn processes alive failed", exc_info=True)
             await asyncio.sleep(self.interval)
+
+    async def _still_running(self, turns: dict[str, list[str]]) -> dict[str, frozenset[str]]:
+        """Which of *turns* (by node) each node ran at its last beat."""
+        asked = [(node, ids) for node, ids in turns.items() if ids]
+        if not asked:
+            return {}
+        found = (await self._registry.beats((), asked)).running
+        return {
+            node: frozenset(t for t, runs in zip(ids, flags, strict=True) if runs)
+            for (node, ids), flags in zip(asked, found, strict=True)
+        }
 
     def _failed(self, started: float, *, hung: bool) -> None:
         """A read begun at *started* failed. One that hung failed from its
@@ -286,39 +304,39 @@ class LiveExecutors:
 
 
 class BeatThread:
-    """Beats for this process from a thread of its own, on a connection of
-    its own (RFC §10.6.8): each beat is what *payload* builds then.
+    """Beats for this process from a thread of its own, on an event loop and
+    a writer of its own (RFC §10.6.8): each beat is what *payload* builds
+    then.
 
     Args:
-        connect: Opens the thread's connection.
-        keys: The keys a beat writes.
+        registry: What keeps the processes' beats: it gives the thread its
+            writer.
         interval: How often it beats.
-        ttl_ms: How long a beat's keys outlive it.
         payload: Builds what each beat writes.
-        bound: How long one call on the connection waits for its peer.
+        bound: How long one call of the writer waits for its peer.
         timeout_errors: What a call that bound cut raises: tried again at once.
     """
 
     def __init__(
         self,
-        connect: Callable[[], Any],
-        keys: list[str],
+        registry: TurnRegistry,
         interval: float,
-        ttl_ms: int,
-        payload: Callable[[], str],
+        payload: Callable[[], Beat],
         *,
         bound: float,
         timeout_errors: tuple[type[Exception], ...],
     ) -> None:
-        self._connect = connect
-        self._keys = keys
+        self._registry = registry
         self._interval = interval
-        self._ttl_ms = ttl_ms
         self._payload = payload
         self._bound = bound
         self._timeout_errors = timeout_errors
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # The thread's loop and what wakes its wait between two beats.
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._woken: asyncio.Event | None = None
+        self._writer: BeatWriter | None = None
 
     def start(self) -> None:
         if self._thread is None:
@@ -329,30 +347,46 @@ class BeatThread:
 
     def stop(self) -> None:
         self._stop.set()
+        loop, woken = self._loop, self._woken
+        if loop is not None and woken is not None:
+            # Its loop closed: the thread is gone already.
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(woken.set)
         if self._thread is not None:
             # A beat in flight connects, then calls, each within the bound.
             self._thread.join(timeout=2 * self._bound + 1.0)
             self._thread = None
 
     def _run(self) -> None:
-        client = self._connect()
-        beat = client.register_script(BEAT_SCRIPT)
+        asyncio.run(self._beat_until_stopped())
+
+    async def _beat_until_stopped(self) -> None:
+        self._woken = woken = asyncio.Event()
+        self._loop = asyncio.get_running_loop()
         try:
             while True:
                 # A beat its bound cut is tried again at once, on a new
                 # connection, so it lands inside the silence bound (RFC
                 # §10.6.8); a second cut in a row waits the interval.
-                if not self._beat_once(beat) and not self._stop.is_set():
-                    self._beat_once(beat)
-                if self._stop.wait(self._interval):
+                if not await self._beat_once() and not self._stop.is_set():
+                    await self._beat_once()
+                if self._stop.is_set():
+                    return
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(self._interval):
+                        await woken.wait()
+                if self._stop.is_set():
                     return
         finally:
-            client.close()
+            if self._writer is not None:
+                await self._writer.close()
 
-    def _beat_once(self, beat: Any) -> bool:
+    async def _beat_once(self) -> bool:
         """Beat; False when the call's bound cut it."""
         try:
-            beat(keys=self._keys, args=[self._ttl_ms, self._payload()])
+            if self._writer is None:
+                self._writer = await self._registry.beater()
+            await self._writer.beat(self._payload())
         except Exception as exc:
             logger.warning("A turn process beat failed", exc_info=True)
             return not isinstance(exc, self._timeout_errors)

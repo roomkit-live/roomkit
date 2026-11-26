@@ -22,10 +22,10 @@ import contextvars
 import logging
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from roomkit.turns._redis_inbox import Envelope
+    from roomkit.turns.broker import BrokerMessage, TurnBroker
 
 logger = logging.getLogger("roomkit.turns")
 
@@ -41,7 +41,7 @@ Written = Callable[[], None]
 # A message, who to tell when it cannot be written, its writes left (None:
 # until it is written), when it is written again no more (None: never), and
 # who to tell once it is written.
-_Queued = tuple["Envelope", Failed | None, int | None, float | None, Written | None]
+_Queued = tuple["BrokerMessage", Failed | None, int | None, float | None, Written | None]
 # Put on each queue on closing: its writer stops once it wrote what came before.
 _CLOSING = None
 
@@ -50,22 +50,14 @@ class Outbox:
     """The writes of this process, in order per destination node.
 
     Args:
-        client: The ``redis.asyncio`` client.
-        inbox_key: The inbox stream of a node.
-        ttl_ms: How long an inbox nobody writes to lives, and a writer idle.
+        broker: What carries the messages to the nodes' inboxes.
+        ttl_ms: How long a writer left idle stays.
         retry_delay: How long a writer waits before writing again what
             Redis refused.
     """
 
-    def __init__(
-        self,
-        client: Any,
-        inbox_key: Callable[[str], str],
-        ttl_ms: int,
-        retry_delay: float = RETRY_DELAY,
-    ) -> None:
-        self._client = client
-        self._inbox_key = inbox_key
+    def __init__(self, broker: TurnBroker, ttl_ms: int, retry_delay: float = RETRY_DELAY) -> None:
+        self._broker = broker
         self._ttl_ms = ttl_ms
         self._retry_delay = retry_delay
         self._queues: dict[str, asyncio.Queue[_Queued | None]] = {}
@@ -75,7 +67,7 @@ class Outbox:
     def post(
         self,
         node: str,
-        envelope: Envelope,
+        envelope: BrokerMessage,
         failed: Failed | None = None,
         *,
         writes: int | None = 1,
@@ -124,7 +116,6 @@ class Outbox:
         """Write what *node* is posted, in order, until the closing mark or
         an idle while; what Redis refused and may be written again goes
         first, a moment later."""
-        key = self._inbox_key(node)
         again: list[_Queued] = []
         closing = False
         try:
@@ -147,20 +138,16 @@ class Outbox:
                         continue
                     start = [first]
                 batch, closing = _batch(start, queue, closing)
-                again = await self._send(key, node, batch)
+                again = await self._send(node, batch)
         except asyncio.CancelledError:
             _tell(again, ConnectionError("The turn backend closed before writing it"))
             raise
 
-    async def _send(self, key: str, node: str, batch: list[_Queued]) -> list[_Queued]:
+    async def _send(self, node: str, batch: list[_Queued]) -> list[_Queued]:
         """Write *batch*: what Redis refused and has writes left, to write
         again; the senders of the rest are told."""
         try:
-            pipe = self._client.pipeline(transaction=False)
-            for envelope, *_ in batch:
-                pipe.xadd(key, envelope.fields())
-            pipe.pexpire(key, self._ttl_ms)
-            await pipe.execute()
+            await self._broker.post(node, [envelope for envelope, *_ in batch])
         except asyncio.CancelledError:
             _tell(batch, ConnectionError("The turn backend closed before writing it"))
             raise

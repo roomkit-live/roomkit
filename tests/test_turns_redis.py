@@ -50,11 +50,14 @@ from roomkit.store.sqlite import SQLiteStore
 from roomkit.tools.context import current_tool_room_id
 from roomkit.turns import TurnClient, TurnExecutor, TurnTimeouts, _redis_beat
 from roomkit.turns._redis_beat import BeatThread, LiveExecutors
-from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
-from roomkit.turns._redis_inbox import Envelope, Inbox
+from roomkit.turns._redis_broker import RedisTurnBroker
+from roomkit.turns._redis_clients import RedisClients, call_bound, read_block, redis_clients
+from roomkit.turns._redis_inbox import Inbox
+from roomkit.turns._redis_keys import Keys
 from roomkit.turns._redis_links import RedisExecutorLink
-from roomkit.turns._redis_presence import Keys, Registry
+from roomkit.turns._redis_registry import RedisTurnRegistry
 from roomkit.turns._redis_routes import REFUSED
+from roomkit.turns.broker import Beat
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import CommittedEvent, End, HostResult, RoomCall
 from tests import redis_turn_mode
@@ -984,7 +987,7 @@ async def test_a_cut_while_frames_are_written_leaves_no_hole(
 
     worker = _Worker("worker", _Words(streaming=True))
     host, executor = await _hosted(prefix, store, worker)
-    host._outbox._client = _SlowWrites(host._outbox._client)
+    host._broker._client = _SlowWrites(host._broker._client)
     kit = await _owner(prefix, "worker", store=store)
     try:
         for _ in range(10):
@@ -1434,7 +1437,7 @@ async def test_a_local_only_replacement_withdraws_only_its_own_declaration(
         delayed_beat = host._payload()
         await host.serve(local)
         # A beat built before the replacement can finish after the withdrawal.
-        await host._registry.beat(host.node_id, delayed_beat, host._ttl_ms)
+        await host._registry.beat(delayed_beat)
         # A fresh node reads the registry immediately, independently of any cached view.
         seen = await reader.executors()
         assert [(row.node, row.executor_id, row.hosts) for row in seen] == [
@@ -1461,7 +1464,7 @@ async def test_a_turn_s_end_still_queued_when_its_executor_s_process_closes_reac
     store = InMemoryStore()
     worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
     host, executor = await _hosted(prefix, store, worker)
-    host._outbox._client = _SlowWrites(host._outbox._client, delay=0.05)
+    host._broker._client = _SlowWrites(host._broker._client, delay=0.05)
     ended = asyncio.Event()
     send = RedisExecutorLink.send
 
@@ -1725,25 +1728,20 @@ async def test_a_beat_built_before_an_executor_was_served_again_does_not_withdra
 ) -> None:
     """The beat thread built its beat from the closed executor's set just
     before the new one of its id was served, and wrote it after."""
-    registry = Registry(redis_client, Keys(prefix))
+    registry = _registry(_clients(TIMEOUTS, redis_client), Keys(prefix), TIMEOUTS)
     member = "node-a:host-a"
     declared = '{"node":"node-a","executor_id":"host-a","channels":["worker"],"room_hooks":[]}'
 
-    def beat(generation: int, *, gone: bool) -> str:
-        return json.dumps(
-            {
-                "node": "node-a",
-                "generation": generation,
-                "declared": {} if gone else {member: declared},
-                "undeclared": [],
-                "gone": [member] if gone else [],
-                "running": [],
-                "owner": False,
-            }
+    def beat(generation: int, *, gone: bool) -> Beat:
+        return Beat(
+            node="node-a",
+            generation=generation,
+            declared={} if gone else {member: declared},
+            gone=[member] if gone else [],
         )
 
-    await registry.beat("node-a", beat(2, gone=False), 60_000)
-    await registry.beat("node-a", beat(1, gone=True), 60_000)
+    await registry.beat(beat(2, gone=False))
+    await registry.beat(beat(1, gone=True))
 
     assert await redis_client.zscore(f"{prefix}:alive", member) is not None
 
@@ -1958,7 +1956,7 @@ async def test_a_turn_that_ended_is_not_lost_to_a_stall_before_its_end_is_writte
     async def serve() -> tuple[RedisTurnBackend, TurnExecutor]:
         worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
         host, executor = await _hosted(prefix, store, worker)
-        host._outbox._client = _SlowWrites(host._outbox._client, delay=0.05)
+        host._broker._client = _SlowWrites(host._broker._client, delay=0.05)
         return host, executor
 
     host, executor = await process.run(serve())
@@ -2193,27 +2191,25 @@ _HALF_OPEN = [
     TurnTimeouts(heartbeat_interval=0.5, heartbeat_timeout=4.0),
 ]
 
-_BEAT = json.dumps(
-    {
-        "node": "n",
-        "generation": 1,
-        "declared": {"n:e": ""},
-        "undeclared": [],
-        "gone": [],
-        "running": [],
-        "owner": True,
-    }
-)
+_BEAT = Beat(node="n", generation=1, declared={"n:e": ""}, owner=True)
 """What the half-open tests' process beats: one executor, an owner."""
+
+
+def _clients(timeouts: TurnTimeouts, client: Any = None) -> RedisClients:
+    """The connections of a backend on the suite's Redis, bounded by
+    *timeouts*: *client* in its pool's place when given."""
+    return redis_clients(os.environ["REDIS_URL"], timeouts, client)
+
+
+def _registry(clients: RedisClients, keys: Keys, timeouts: TurnTimeouts) -> RedisTurnRegistry:
+    return RedisTurnRegistry(clients, keys, int(timeouts.heartbeat_timeout * 3000))
 
 
 def _beat_thread(url: str, keys: Keys, timeouts: TurnTimeouts) -> BeatThread:
     clients = redis_clients(url, timeouts)
     return BeatThread(
-        clients.beat,
-        keys.beat("n"),
+        _registry(clients, keys, timeouts),
         timeouts.heartbeat_interval,
-        int(timeouts.heartbeat_timeout * 3000),
         lambda: _BEAT,
         bound=call_bound(timeouts),
         timeout_errors=clients.timeout_errors,
@@ -2233,7 +2229,10 @@ async def test_a_half_open_beat_connection_takes_nobody_for_lost(
     keys = Keys(prefix)
     beat = _beat_thread(await proxy.url(), keys, timeouts)
     live = LiveExecutors(
-        Registry(redis_client, keys), timeouts.heartbeat_interval, timeouts.heartbeat_timeout, dict
+        _registry(_clients(timeouts, redis_client), keys, timeouts),
+        timeouts.heartbeat_interval,
+        timeouts.heartbeat_timeout,
+        dict,
     )
     beat.start()
     live.start()
@@ -2276,11 +2275,11 @@ async def test_a_half_open_inbox_reads_within_the_silence_bound(
         return await read(*args, **kwargs)
 
     clients.inbox.xread = xread
+    broker = RedisTurnBroker(clients, Keys(prefix), int(timeouts.heartbeat_timeout * 3000))
     inbox = Inbox(
-        clients.inbox,
-        key,
+        broker,
+        "n",
         lambda envelope: handed.append(time.monotonic()),
-        owns_client=True,
         block=read_block(timeouts),
         timeout_errors=clients.timeout_errors,
     )
@@ -2291,12 +2290,13 @@ async def test_a_half_open_inbox_reads_within_the_silence_bound(
 
     proxy.silence()
     written = time.monotonic()
-    await redis_client.xadd(key, Envelope("control", "n", "{}").fields())
+    await redis_client.xadd(key, {"kind": "control", "sender": "n", "body": "{}"})
     async with asyncio.timeout(3 * timeouts.heartbeat_timeout):
         while not handed:
             await asyncio.sleep(0.02)
 
     await inbox.close()
+    await broker.close()
     await proxy.close()
     assert handed[0] - written < timeouts.heartbeat_timeout
 
@@ -2313,7 +2313,7 @@ async def test_a_read_cut_by_its_connection_counts_from_its_start(
     beat = _beat_thread(os.environ["REDIS_URL"], keys, timeouts)
     clients = redis_clients(await proxy.url(), timeouts)
     live = LiveExecutors(
-        Registry(clients.pooled, keys),
+        _registry(clients, keys, timeouts),
         timeouts.heartbeat_interval,
         timeouts.heartbeat_timeout,
         dict,

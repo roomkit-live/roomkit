@@ -9,7 +9,7 @@ import contextvars
 import json
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -28,6 +28,7 @@ from roomkit.turns import (
     TurnExecutor,
     TurnTimeouts,
     _redis_beat,
+    _redis_broker,
     _redis_outbox,
     _redis_routes,
 )
@@ -37,12 +38,13 @@ from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._owner_turn import OwnerTurn
 from roomkit.turns._redis_beat import LiveExecutors
 from roomkit.turns._redis_clients import redis_clients
-from roomkit.turns._redis_inbox import Envelope
+from roomkit.turns._redis_keys import Keys
 from roomkit.turns._redis_links import RedisExecutorLink
 from roomkit.turns._redis_outbox import Outbox
 from roomkit.turns._redis_placement import Placement
-from roomkit.turns._redis_presence import Declaration, View, member_of
+from roomkit.turns._redis_presence import Declaration, member_of
 from roomkit.turns._redis_routes import REFUSED, TAKEN, Routes
+from roomkit.turns.broker import BrokerMessage, RegistryView
 from roomkit.turns.owner import registry_turn_client, turn_request
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import (
@@ -66,11 +68,11 @@ TICK = TurnTimeouts(heartbeat_interval=0.005, heartbeat_timeout=0.02, accept=0.0
 
 
 def test_an_inbox_entry_reads_back_from_bytes_or_text() -> None:
-    sent = Envelope("frame", "node-a", '{"x": 1}', target="turn-1", ref="")
-    as_bytes = {key.encode(): value.encode() for key, value in sent.fields().items()}
+    sent = BrokerMessage("frame", "node-a", '{"x": 1}', target="turn-1", ref="")
+    as_bytes = {key.encode(): value.encode() for key, value in _redis_broker._fields(sent).items()}
 
-    assert Envelope.parse(as_bytes) == sent
-    assert Envelope.parse(sent.fields()) == sent
+    assert _redis_broker._message(as_bytes) == sent
+    assert _redis_broker._message(_redis_broker._fields(sent)) == sent
 
 
 def test_a_declaration_takes_its_channels_with_every_room_hook_it_defines() -> None:
@@ -257,11 +259,9 @@ def test_the_backend_without_redis_names_the_extra() -> None:
 
 def test_two_rooms_whose_ids_read_alike_hold_apart() -> None:
     """``support:fr`` in ``acme`` and ``support`` in ``fr:acme`` are two holders."""
-    placement = Placement(None, "p", "node", None, loop_back=False)  # type: ignore[arg-type]
+    keys = Keys("p")
 
-    assert placement._holder_key("support:fr", "acme") != placement._holder_key(
-        "support", "fr:acme"
-    )
+    assert keys.holder("support:fr", "acme") != keys.holder("support", "fr:acme")
 
 
 def test_an_executor_restarted_elsewhere_is_another_member() -> None:
@@ -355,7 +355,7 @@ def test_a_request_written_twice_is_taken_once_and_answered_twice() -> None:
     taker = _Taker()
     routes.shared["host-a"] = taker  # type: ignore[assignment]
     request = _request()
-    asked = Envelope("request", "node-a", request.model_dump_json(), "host-a", "ref-1")
+    asked = BrokerMessage("request", "node-a", request.model_dump_json(), "host-a", "ref-1")
 
     routes.route(asked)
     routes.route(asked)
@@ -369,7 +369,7 @@ async def test_a_channel_control_written_twice_is_applied_once_and_answered_twic
     taker = _Taker()
     routes.shared["host-a"] = taker  # type: ignore[assignment]
     raw = ChannelControlEnvelope(message=RoomDetached(channel_id="agent", room_id="room"))
-    asked = Envelope("channel", "node-a", raw.model_dump_json(), "host-a", "ref-2")
+    asked = BrokerMessage("channel", "node-a", raw.model_dump_json(), "host-a", "ref-2")
 
     routes.route(asked)
     routes.route(asked)  # while the first is applied: its answer is coming
@@ -396,8 +396,8 @@ async def test_work_after_a_turn_written_twice_reaches_its_owner_once() -> None:
     )
     for kind, message, ref in (("owner", call, "ref-3"), ("work", published, "ref-4")):
         body = OwnerMessageEnvelope(message=message).model_dump_json()
-        routes.route(Envelope(kind, "node-a", body, "", ref))
-        routes.route(Envelope(kind, "node-a", body, "", ref))
+        routes.route(BrokerMessage(kind, "node-a", body, "", ref))
+        routes.route(BrokerMessage(kind, "node-a", body, "", ref))
     await asyncio.gather(*tasks)
 
     assert owner.calls == ["send"]
@@ -408,7 +408,7 @@ async def test_answers_and_work_after_a_turn_are_written_until_they_are() -> Non
     routes, posted, _ = _routes()
     routes.shared["host-a"] = _Taker()  # type: ignore[assignment]
     request = _request()
-    routes.route(Envelope("request", "node-a", request.model_dump_json(), "host-a", "ref-5"))
+    routes.route(BrokerMessage("request", "node-a", request.model_dump_json(), "host-a", "ref-5"))
 
     await routes.port.room_publication(
         RoomPublication(
@@ -434,7 +434,9 @@ def test_a_request_reaching_a_closing_process_is_refused_to_be_placed_again() ->
     routes.shared["host-a"] = taker  # type: ignore[assignment]
     routes.close()
 
-    routes.route(Envelope("request", "node-a", _request().model_dump_json(), "host-a", "ref-6"))
+    routes.route(
+        BrokerMessage("request", "node-a", _request().model_dump_json(), "host-a", "ref-6")
+    )
 
     assert taker.taken == []
     assert posted.of("answer") == [("node-a", "answer", REFUSED, "ref-6")]
@@ -466,7 +468,7 @@ async def test_a_channel_control_that_raised_is_answered_with_its_error() -> Non
     routes, posted, tasks = _routes()
     routes.shared["host-a"] = _Raises()  # type: ignore[assignment]
     raw = ChannelControlEnvelope(message=RoomDetached(channel_id="agent", room_id="room"))
-    routes.route(Envelope("channel", "node-a", raw.model_dump_json(), "host-a", "ref-7"))
+    routes.route(BrokerMessage("channel", "node-a", raw.model_dump_json(), "host-a", "ref-7"))
     await asyncio.gather(*tasks)
 
     (answer,) = posted.of("answer")
@@ -480,7 +482,7 @@ async def test_a_room_call_that_raised_is_answered_with_its_error() -> None:
         channel_id="agent", room_id="room", executor_id="host-a", turn_id="t-1", verb="send"
     )
     body = OwnerMessageEnvelope(message=call).model_dump_json()
-    routes.route(Envelope("owner", "node-a", body, "", "ref-8"))
+    routes.route(BrokerMessage("owner", "node-a", body, "", "ref-8"))
     await asyncio.gather(*tasks)
 
     (answer,) = posted.of("answer")
@@ -494,8 +496,8 @@ def test_a_question_handled_long_ago_is_forgotten(monkeypatch: pytest.MonkeyPatc
     routes.shared["host-a"] = taker  # type: ignore[assignment]
     first, second = _request(), _request()
 
-    routes.route(Envelope("request", "node-a", first.model_dump_json(), "host-a", "ref-9"))
-    routes.route(Envelope("request", "node-a", second.model_dump_json(), "host-a", "ref-10"))
+    routes.route(BrokerMessage("request", "node-a", first.model_dump_json(), "host-a", "ref-9"))
+    routes.route(BrokerMessage("request", "node-a", second.model_dump_json(), "host-a", "ref-10"))
 
     assert list(routes._handled) == ["ref-10"]
 
@@ -511,7 +513,7 @@ class _Registry:
         self.failed = asyncio.Event()
         self.hanging = asyncio.Event()
 
-    async def view(self, forget_after_ms: int) -> View:
+    async def view(self, forget_after_ms: int) -> RegistryView:
         if self.silent:  # the host stopped answering without a reset
             self.hanging.set()
             await asyncio.Event().wait()
@@ -519,10 +521,9 @@ class _Registry:
             self.fail_once = False
             self.failed.set()
             raise ConnectionError("Connection refused")
-        return View(now=1_000, beats={"node-a:w": 1_000}, owners={"node-a": 1_000})
-
-    async def running(self, turns: dict[str, list[str]]) -> dict[str, frozenset[str]]:
-        return {}
+        return RegistryView(
+            now=1_000, executors={"node-a:w": (1_000, None)}, owners={"node-a": 1_000}
+        )
 
 
 def _held_clock(monkeypatch: pytest.MonkeyPatch, *modules: Any) -> HeldClock:
@@ -592,89 +593,74 @@ async def test_the_others_unread_for_the_heartbeat_timeout_are_not_alive(
 _TURN: contextvars.ContextVar[str] = contextvars.ContextVar("turn")
 
 
-class _Client:
-    """A Redis client whose pipelines take *delay* to write."""
+class _Broker:
+    """A broker whose posts take *delay* to write."""
 
     def __init__(self, delay: float = 0.0) -> None:
         self.delay = delay
         self.written: list[str] = []
         self.contexts: list[str | None] = []
 
-    def pipeline(self, transaction: bool) -> _Pipe:
-        return _Pipe(self)
-
-
-class _Pipe:
-    def __init__(self, client: _Client) -> None:
-        self._client = client
-        self._bodies: list[str] = []
-
-    def xadd(self, key: str, fields: dict[str, str]) -> None:
-        self._bodies.append(fields["body"])
-
-    def pexpire(self, key: str, ttl: int) -> None:
-        return None
-
-    async def execute(self) -> None:
-        await asyncio.sleep(self._client.delay)
-        self._client.contexts.append(_TURN.get(None))
-        self._client.written.extend(self._bodies)
+    async def post(self, node: str, messages: Sequence[BrokerMessage]) -> None:
+        await asyncio.sleep(self.delay)
+        self.contexts.append(_TURN.get(None))
+        self.written.extend(message.body for message in messages)
 
 
 def _writers() -> list[asyncio.Task[Any]]:
     return [t for t in asyncio.all_tasks() if t.get_name().startswith("roomkit-turns-outbox-")]
 
 
-def _message(body: str) -> Envelope:
-    return Envelope("frame", "node-a", body, "turn-1")
+def _message(body: str) -> BrokerMessage:
+    return BrokerMessage("frame", "node-a", body, "turn-1")
 
 
 async def test_a_writer_left_idle_goes_and_the_next_message_starts_another(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = _held_clock(monkeypatch)
-    client = _Client()
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=50)
+    broker = _Broker()
+    outbox = Outbox(broker, ttl_ms=50)
     for node in ("a", "b", "c"):
         outbox.post(node, _message(node))
     await _until(clock, lambda: not _writers(), 0.2)  # idle past their ttl, the writers go
 
     outbox.post("a", _message("again"))
-    await _until(clock, lambda: len(client.written) == 4, 1.0)
+    await _until(clock, lambda: len(broker.written) == 4, 1.0)
 
-    assert client.written == ["a", "b", "c", "again"]
+    assert broker.written == ["a", "b", "c", "again"]
     clock.release()
     await outbox.close(drain=1.0)
 
 
 async def test_a_writer_carries_no_context_of_the_turn_that_posted_first() -> None:
-    client = _Client()
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000)
+    broker = _Broker()
+    outbox = Outbox(broker, ttl_ms=60_000)
     _TURN.set("turn-1 span")
     outbox.post("a", _message("m"))
     async with asyncio.timeout(1):
-        while not client.contexts:
+        while not broker.contexts:
             await asyncio.sleep(0.005)
 
-    assert client.contexts == [None]
+    assert broker.contexts == [None]
     await outbox.close(drain=1.0)
 
 
 async def test_closing_writes_what_is_queued() -> None:
-    client = _Client(delay=0.02)
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000)
+    broker = _Broker(delay=0.02)
+    outbox = Outbox(broker, ttl_ms=60_000)
     for body in ("m1", "m2", "m3"):
         outbox.post("a", _message(body))
         await asyncio.sleep(0)
 
     await outbox.close(drain=1.0)
 
-    assert client.written == ["m1", "m2", "m3"]
+    assert broker.written == ["m1", "m2", "m3"]
 
 
 async def test_closing_tells_the_senders_of_what_it_could_not_write() -> None:
-    client = _Client(delay=1.0)
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000)
+    broker = _Broker(delay=1.0)
+    outbox = Outbox(broker, ttl_ms=60_000)
     told: list[str] = []
     outbox.post("a", _message("m1"), lambda error: told.append("m1"))
     await asyncio.sleep(0.01)  # m1 is being written
@@ -683,15 +669,15 @@ async def test_closing_tells_the_senders_of_what_it_could_not_write() -> None:
     await outbox.close(drain=0.05)
     outbox.post("a", _message("m3"), lambda error: told.append("m3"))
 
-    assert client.written == []
+    assert broker.written == []
     assert told == ["m1", "m2", "m3"]
 
 
 async def test_a_sender_is_told_its_message_was_written_once_redis_took_it() -> None:
-    client = _Client(delay=0.05)
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000)
+    broker = _Broker(delay=0.05)
+    outbox = Outbox(broker, ttl_ms=60_000)
     told: list[list[str]] = []
-    outbox.post("a", _message("end"), written=lambda: told.append(list(client.written)))
+    outbox.post("a", _message("end"), written=lambda: told.append(list(broker.written)))
     await asyncio.sleep(0.01)  # being written
 
     assert told == []
@@ -700,7 +686,7 @@ async def test_a_sender_is_told_its_message_was_written_once_redis_took_it() -> 
 
 
 async def test_a_message_redis_refused_is_never_told_written() -> None:
-    outbox = Outbox(_RefusesAll(), lambda node: f"inbox:{node}", ttl_ms=60_000)
+    outbox = Outbox(_RefusesAll(), ttl_ms=60_000)
     told: list[str] = []
     outbox.post(
         "a",
@@ -749,23 +735,18 @@ async def test_a_stall_of_this_process_after_one_failed_read_is_not_the_others_s
         await live.close()
 
 
-class _RefusesFirst(_Client):
+class _RefusesFirst(_Broker):
     """Refuses its first write."""
 
     def __init__(self) -> None:
         super().__init__()
         self.refused = False
 
-    def pipeline(self, transaction: bool) -> _Pipe:
+    async def post(self, node: str, messages: Sequence[BrokerMessage]) -> None:
         if not self.refused:
             self.refused = True
-            return _RefusedPipe(self)
-        return _Pipe(self)
-
-
-class _RefusedPipe(_Pipe):
-    async def execute(self) -> None:
-        raise ConnectionError("OOM command not allowed")
+            raise ConnectionError("OOM command not allowed")
+        await super().post(node, messages)
 
 
 async def test_a_message_written_again_keeps_its_place_before_later_ones(
@@ -774,17 +755,17 @@ async def test_a_message_written_again_keeps_its_place_before_later_ones(
     """A typing indicator's start refused once still reaches the room
     before its stop."""
     clock = _held_clock(monkeypatch)
-    client = _RefusesFirst()
-    outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.02)
+    broker = _RefusesFirst()
+    outbox = Outbox(broker, ttl_ms=60_000, retry_delay=0.02)
     told: list[str] = []
     outbox.post("a", _message("start"), writes=None)
     outbox.post("a", _message("frame"), lambda error: told.append("frame"))
     await clock.past(0.005)
     outbox.post("a", _message("stop"), writes=None)
     # The refused start, written again before the stop.
-    await _until(clock, lambda: len(client.written) >= 2, 0.1)
+    await _until(clock, lambda: len(broker.written) >= 2, 0.1)
 
-    assert client.written == ["start", "stop"]
+    assert broker.written == ["start", "stop"]
     assert told == ["frame"]  # a turn's message is not written again
     clock.release()
     await outbox.close(drain=1.0)
@@ -793,7 +774,7 @@ async def test_a_message_written_again_keeps_its_place_before_later_ones(
 class _SlowRegistry(_Registry):
     """Every read answers, a little later than a heartbeat interval."""
 
-    async def view(self, forget_after_ms: int) -> View:
+    async def view(self, forget_after_ms: int) -> RegistryView:
         await asyncio.sleep(0.05)
         return await super().view(forget_after_ms)
 
@@ -811,9 +792,9 @@ async def test_the_others_read_slower_than_an_interval_are_still_alive() -> None
         await live.close()
 
 
-class _RefusesAll(_Client):
-    def pipeline(self, transaction: bool) -> _Pipe:
-        return _RefusedPipe(self)
+class _RefusesAll(_Broker):
+    async def post(self, node: str, messages: Sequence[BrokerMessage]) -> None:
+        raise ConnectionError("OOM command not allowed")
 
 
 async def test_a_turn_s_message_gets_its_write_behind_a_batch_written_again(
@@ -822,7 +803,7 @@ async def test_a_turn_s_message_gets_its_write_behind_a_batch_written_again(
     """Redis refusing: answers kept to be written again never keep a turn's
     message from its one write, nor its sender from learning it failed."""
     clock = _held_clock(monkeypatch)
-    outbox = Outbox(_RefusesAll(), lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.01)
+    outbox = Outbox(_RefusesAll(), ttl_ms=60_000, retry_delay=0.01)
     told: list[str] = []
     for i in range(300):
         outbox.post("a", _message(f"answer-{i}"), writes=None)
@@ -838,7 +819,7 @@ async def test_a_turn_s_message_gets_its_write_behind_a_batch_written_again(
 async def test_a_channel_control_for_an_executor_this_process_never_served_fails() -> None:
     routes, posted, tasks = _routes()
     raw = ChannelControlEnvelope(message=RoomDetached(channel_id="agent", room_id="room"))
-    routes.route(Envelope("channel", "node-a", raw.model_dump_json(), "host-x", "ref-11"))
+    routes.route(BrokerMessage("channel", "node-a", raw.model_dump_json(), "host-x", "ref-11"))
     await asyncio.gather(*tasks)
 
     (answer,) = posted.of("answer")
@@ -864,14 +845,14 @@ async def test_what_reaches_a_closing_process_is_refused_without_being_applied()
         frame=Ephemeral(channel="room:room", event={}),
     )
 
-    routes.route(Envelope("channel", "node-a", control.model_dump_json(), "host-a", "ref-12"))
+    routes.route(BrokerMessage("channel", "node-a", control.model_dump_json(), "host-a", "ref-12"))
     routes.route(
-        Envelope(
+        BrokerMessage(
             "owner", "node-a", OwnerMessageEnvelope(message=call).model_dump_json(), "", "r13"
         )
     )
     body = OwnerMessageEnvelope(message=published).model_dump_json()
-    routes.route(Envelope("work", "node-a", body, "", "ref-14"))
+    routes.route(BrokerMessage("work", "node-a", body, "", "ref-14"))
     await asyncio.gather(*tasks)
 
     assert taker.applied == [] and owner.calls == [] and owner.publications == []
@@ -911,7 +892,7 @@ async def test_a_message_written_again_for_a_while_is_given_up_after_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = _held_clock(monkeypatch, _redis_outbox)
-    outbox = Outbox(_RefusesAll(), lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.01)
+    outbox = Outbox(_RefusesAll(), ttl_ms=60_000, retry_delay=0.01)
     told: list[str] = []
     outbox.post("a", _message("work"), lambda error: told.append("work"), writes=None, within=0.05)
     await _until(clock, lambda: bool(told), 0.2)  # given up past its 0.05 s
@@ -929,7 +910,7 @@ class _HangsThenRefuses(_Registry):
         self.frozen = False
         self.hung = 0
 
-    async def view(self, forget_after_ms: int) -> View:
+    async def view(self, forget_after_ms: int) -> RegistryView:
         if self.frozen and not self.hung:
             self.hung += 1
             await asyncio.Event().wait()
@@ -969,7 +950,7 @@ class _CutThenRefuses(_Registry):
         self.frozen = False
         self.cut = 0
 
-    async def view(self, forget_after_ms: int) -> View:
+    async def view(self, forget_after_ms: int) -> RegistryView:
         if self.frozen and not self.cut:
             self.cut += 1
             await asyncio.sleep(self.bound)
@@ -1036,7 +1017,7 @@ async def test_a_channel_control_for_a_closed_executor_is_refused_to_be_placed_a
     routes.shared["host-a"] = closed  # type: ignore[assignment]
     raw = ChannelControlEnvelope(message=RoomDetached(channel_id="agent", room_id="room"))
 
-    routes.route(Envelope("channel", "node-a", raw.model_dump_json(), "host-a", "ref-15"))
+    routes.route(BrokerMessage("channel", "node-a", raw.model_dump_json(), "host-a", "ref-15"))
     await asyncio.gather(*tasks)
 
     assert closed.applied == []
@@ -1046,10 +1027,10 @@ async def test_a_channel_control_for_a_closed_executor_is_refused_to_be_placed_a
 class _Holders:
     """No room has a holder yet."""
 
-    async def get(self, key: str) -> None:
+    async def holder(self, channel: str, room: str) -> None:
         return None
 
-    async def set(self, key: str, value: str, ex: int) -> None:
+    async def hold(self, channel: str, room: str, member: str) -> None:
         return None
 
 
@@ -1067,9 +1048,7 @@ class _Alive:
 
 async def test_an_event_held_for_a_room_no_one_holds_goes_where_its_next_turn_goes() -> None:
     """RFC §10.6.3: a committed event goes where the room's turns would."""
-    placement = Placement(
-        _Holders(), "p", "node-a", _Alive(["node-b:w", "node-c:w"]), loop_back=False
-    )  # type: ignore[arg-type]
+    placement = Placement(_Holders(), "node-a", _Alive(["node-b:w", "node-c:w"]), loop_back=False)  # type: ignore[arg-type]
 
     for _ in range(3):
         held = await placement.hold("agent", "room", RoomNeeds())
@@ -1078,23 +1057,12 @@ async def test_an_event_held_for_a_room_no_one_holds_goes_where_its_next_turn_go
         assert held == placed
 
 
-class _HangingPipeline:
-    """A Redis pipeline on a connection dropped without a word: its write
-    never returns."""
+class _HangingBroker:
+    """A broker on a connection dropped without a word: its write never
+    returns."""
 
-    def xadd(self, key: str, fields: dict[str, str]) -> None:
-        pass
-
-    def pexpire(self, key: str, ttl: int) -> None:
-        pass
-
-    async def execute(self) -> None:
+    async def post(self, node: str, messages: Sequence[BrokerMessage]) -> None:
         await asyncio.Event().wait()
-
-
-class _HangingClient:
-    def pipeline(self, transaction: bool) -> _HangingPipeline:
-        return _HangingPipeline()
 
 
 @pytest.mark.parametrize("outcome", ["written", "failed", "released"])
@@ -1126,7 +1094,7 @@ async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = _held_clock(monkeypatch)
-    outbox = Outbox(_HangingClient(), lambda node: f"inbox:{node}", ttl_ms=60_000)
+    outbox = Outbox(_HangingBroker(), ttl_ms=60_000)
 
     def post(
         node: str,
@@ -1140,7 +1108,7 @@ async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound(
         within: float | None = None,
         written: Any = None,
     ) -> None:
-        envelope = Envelope(kind, "node-b", body, target=target, ref=ref)
+        envelope = BrokerMessage(kind, "node-b", body, target=target, ref=ref)
         outbox.post(node, envelope, failed, writes=writes, within=within, written=written)
 
     let_go: list[RedisExecutorLink] = []

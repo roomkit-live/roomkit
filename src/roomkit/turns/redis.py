@@ -33,13 +33,16 @@ from roomkit.core.task_utils import cancel_and_wait
 from roomkit.turns._codec import control_json, request_json
 from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._redis_beat import BeatPayload, BeatThread, LiveExecutors
+from roomkit.turns._redis_broker import RedisTurnBroker
 from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
-from roomkit.turns._redis_inbox import Envelope, Inbox
+from roomkit.turns._redis_inbox import Inbox
+from roomkit.turns._redis_keys import Keys
 from roomkit.turns._redis_outbox import Failed, Outbox, Written
 from roomkit.turns._redis_placement import Elsewhere, Placement
-from roomkit.turns._redis_presence import Keys, Registry
+from roomkit.turns._redis_registry import RedisTurnRegistry
 from roomkit.turns._redis_routes import REFUSED, Routes
 from roomkit.turns.base import TurnBackend, TurnTimeouts, not_taken
+from roomkit.turns.broker import BrokerMessage
 from roomkit.turns.memory import InMemoryTurnBackend
 from roomkit.turns.presence import ExecutorInfo
 from roomkit.turns.wire import (
@@ -106,17 +109,19 @@ class RedisTurnBackend(TurnBackend):
         self.node_id = uuid4().hex[:12]
         """This process's id among the backend's processes."""
         self._ttl_ms = int(self._timeouts.heartbeat_timeout * 3000)
+        # Redis is reached through these two alone: what carries the
+        # backend's messages, and what its processes share.
         keys = Keys(key_prefix)
-        self._outbox = Outbox(self._client, keys.inbox, self._ttl_ms)
+        self._broker = RedisTurnBroker(clients, keys, self._ttl_ms)
+        self._registry = RedisTurnRegistry(clients, keys, self._ttl_ms)
+        self._outbox = Outbox(self._broker, self._ttl_ms)
         self._inbox = Inbox(
-            clients.inbox,
-            keys.inbox(self.node_id),
+            self._broker,
+            self.node_id,
             self._route,
-            owns_client=True,
             block=read_block(self._timeouts),
             timeout_errors=clients.timeout_errors,
         )
-        self._registry = Registry(self._client, keys)
         self._live = LiveExecutors(
             self._registry,
             self._timeouts.heartbeat_interval,
@@ -125,10 +130,8 @@ class RedisTurnBackend(TurnBackend):
             timeout_errors=clients.timeout_errors,
         )
         self._beat = BeatThread(
-            clients.beat,
-            keys.beat(self.node_id),
+            self._registry,
             self._timeouts.heartbeat_interval,
-            self._ttl_ms,
             lambda: self._payload(),
             bound=call_bound(self._timeouts),
             timeout_errors=clients.timeout_errors,
@@ -137,9 +140,7 @@ class RedisTurnBackend(TurnBackend):
         # the tests' loop back sends them across Redis too.
         self._here = InMemoryTurnBackend()
         self._loop_back = _loop_back
-        self._placement = Placement(
-            self._client, key_prefix, self.node_id, self._live, loop_back=_loop_back
-        )
+        self._placement = Placement(self._registry, self.node_id, self._live, loop_back=_loop_back)
         self._tasks: set[asyncio.Task[Any]] = set()
         self._routes = Routes(
             self.node_id,
@@ -380,6 +381,7 @@ class RedisTurnBackend(TurnBackend):
         await self._undeclare(bound)
         await self._answer_what_is_under_way(bound)
         await self._inbox.close()
+        await self._broker.close()
         self._routing = False
         await self._outbox.close(drain=bound(self._timeouts.cancel))
         # The beat stops first, so none declares again what is withdrawn.
@@ -450,29 +452,38 @@ class RedisTurnBackend(TurnBackend):
         self._payload.close()
         if not self._payload.members and self._routes.owner is None:
             return  # it never beat
+        if not self._registry.connected():
+            return
         try:
             async with asyncio.timeout(bound(self._timeouts.cancel)):
-                await self._registry.beat(self.node_id, self._payload(), self._ttl_ms)
+                await self._registry.beat(self._payload())
         except Exception:
             logger.debug("Withdrawing this process's declarations failed", exc_info=True)
 
     async def _withdraw(self, bound: Callable[[float], float]) -> None:
-        """Withdraw this process's executors, and it as a room owner."""
+        """Withdraw this process's executors, by a last beat that leaves
+        them gone, and it as a room owner."""
+        if not self._registry.connected():
+            return
         try:
-            owner = self.node_id if self._routes.owner is not None else None
             async with asyncio.timeout(bound(self._timeouts.cancel)):
-                await self._registry.withdraw(self._payload.members, owner=owner)
+                last = self._payload.withdrawn()
+                if last.gone:
+                    await self._registry.beat(last)
+                if self._routes.owner is not None:
+                    await self._registry.forget_owner(self.node_id)
         except Exception:
             logger.debug("Withdrawing this process from Redis failed", exc_info=True)
 
     async def _beat_now(self) -> None:
         """Beat once from this task (alive from now), then from the thread."""
+        await self._registry.connect()
         generation = self._payload.generation
-        await self._registry.beat(self.node_id, self._payload(), self._ttl_ms)
+        await self._registry.beat(self._payload())
         self._payload.written(generation)
         self._beat.start()
 
-    def _route(self, envelope: Envelope) -> None:
+    def _route(self, envelope: BrokerMessage) -> None:
         self._routes.route(envelope)
 
     def _post(
@@ -488,7 +499,7 @@ class RedisTurnBackend(TurnBackend):
         within: float | None = None,
         written: Written | None = None,
     ) -> None:
-        envelope = Envelope(kind, self.node_id, body, target=target, ref=ref)
+        envelope = BrokerMessage(kind, self.node_id, body, target=target, ref=ref)
         self._outbox.post(node, envelope, failed, writes=writes, within=within, written=written)
 
     def _spawn(self, work: Coroutine[Any, Any, None], name: str) -> None:

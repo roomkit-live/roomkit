@@ -15,8 +15,7 @@ other; it holds the room once it took the turn.
 from __future__ import annotations
 
 from collections.abc import Collection
-from typing import TYPE_CHECKING, Any, NamedTuple
-from urllib.parse import quote
+from typing import TYPE_CHECKING, NamedTuple
 
 from roomkit.turns._organizations import RoomNeeds, concerns
 from roomkit.turns._redis_presence import Declaration, member_of
@@ -24,12 +23,10 @@ from roomkit.turns.base import no_executor, not_taken
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_beat import LiveExecutors
+    from roomkit.turns.broker import TurnRegistry
     from roomkit.turns.executor import TurnExecutor
     from roomkit.turns.presence import ExecutorInfo
     from roomkit.turns.wire import ChannelReleased, RoomAttached, RoomDetached
-
-# How long a room's holder is kept once no turn renews it.
-_HOLDER_TTL_S = 7 * 24 * 3600
 
 
 class Elsewhere(NamedTuple):
@@ -47,8 +44,7 @@ class Placement:
     """The executors of this process, and where each turn goes.
 
     Args:
-        client: The ``redis.asyncio`` client.
-        prefix: The keys' prefix.
+        registry: What keeps each room's holder.
         node: This process's node id.
         live: The processes alive, as this one reads them.
         loop_back: Tests only: this process's executors are reached across
@@ -56,10 +52,9 @@ class Placement:
     """
 
     def __init__(
-        self, client: Any, prefix: str, node: str, live: LiveExecutors, *, loop_back: bool
+        self, registry: TurnRegistry, node: str, live: LiveExecutors, *, loop_back: bool
     ) -> None:
-        self._client = client
-        self._prefix = prefix
+        self._registry = registry
         self._node = node
         self._live = live
         self._loop_back = loop_back
@@ -103,7 +98,7 @@ class Placement:
         """Record *placed* as the executor holding the room's state of
         *channel_id* from now."""
         holder = placed.member if isinstance(placed, Elsewhere) else self._here_member(placed)
-        await self._client.set(self._holder_key(channel_id, room_id), holder, ex=_HOLDER_TTL_S)
+        await self._registry.hold(channel_id, room_id, holder)
 
     async def hold(
         self,
@@ -149,8 +144,7 @@ class Placement:
         elsewhere = await self._takers_elsewhere(channel_id, needs, set(here) | set(excluded))
         if only is not None:
             return self._the_one(only, here, elsewhere, channel_id, needs)
-        stored = await self._client.get(self._holder_key(channel_id, room_id))
-        holder = _text(stored) if stored is not None else None
+        holder = await self._registry.holder(channel_id, room_id)
         if self._loop_back and here:
             chosen = here[holder] if holder in here else next(iter(here.values()))
             return Elsewhere(chosen.executor_id, self._node)
@@ -198,7 +192,7 @@ class Placement:
 
     async def forget(self, channel_id: str, room_id: str) -> None:
         """The room detached the channel: nothing holds its state any more."""
-        await self._client.delete(self._holder_key(channel_id, room_id))
+        await self._registry.forget_holder(channel_id, room_id)
 
     async def told(
         self, message: RoomAttached | RoomDetached | ChannelReleased
@@ -263,9 +257,6 @@ class Placement:
     def _here_member(self, executor: TurnExecutor) -> str:
         return member_of(self._node, executor.executor_id)
 
-    def _holder_key(self, channel_id: str, room_id: str) -> str:
-        return f"{self._prefix}:holder:{quote(channel_id, safe='')}:{quote(room_id, safe='')}"
-
 
 def _takers(
     alive: dict[str, Declaration],
@@ -279,7 +270,3 @@ def _takers(
         for member, declared in alive.items()
         if declared.node != node and member not in skipped and declared.takes(channel_id, needs)
     }
-
-
-def _text(value: Any) -> str:
-    return value if isinstance(value, str) else bytes(value).decode()
