@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-delivery-waiting-for-idle-waits-out-the-model-s-tool-call-its-answer-and-what-it-hears",
+  "title": "A delivery waiting for idle waits while a tool call runs, while the model's answer to its result has not started or not ended, and while the model hears someone speak",
+  "rules": [
+    "§12.10.12",
+    "§12.4.1",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-12.10.12-028"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The room is not idle while the tool call holds at its handler's gate, nor once its result is sent and the model's answer has not started, nor while that answer is open: the delivery goes in once it ends. Then, while the model hears someone speak, the room is not idle until the speech ends. The idle wait is read with a short bound only where something holds the room busy.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "lookup": {
+          "gate": "looking",
+          "result": "found"
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c1",
+      "name": "lookup",
+      "background": true,
+      "as": "call"
+    },
+    {
+      "wait_for": "looking"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "content": "Next item.",
+      "strategy": "wait_for_idle",
+      "background": true,
+      "as": "delivery"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 150,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "open": "looking"
+    },
+    {
+      "await": "call",
+      "expect": {
+        "result": "found"
+      }
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 150,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 150,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "injections": [
+              {
+                "text": {
+                  "$contains": "Connect the model."
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "end"
+    },
+    {
+      "await": "delivery",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "injections": [
+              {
+                "text": {
+                  "$contains": "Connect the model."
+                }
+              },
+              {
+                "text": "Next item."
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.speech",
+      "channel_id": "conf",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 150,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "realtime.speech",
+      "channel_id": "conf",
+      "edge": "end"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 2000,
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {}
+}

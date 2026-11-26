@@ -9,6 +9,7 @@
     "RK-12.10.4-145",
     "RK-12.10.4-149"
   ],
+  "notes": "The stages' reset calls are not read: whether a lane resets its stages before a track's first frame (RK-12.3.1-024) is not what this scenario is about.",
   "requires_features": [
     "conference"
   ],
@@ -75,6 +76,9 @@
     {
       "call": "conference.read",
       "channel_id": "conf",
+      "stage_calls": [
+        "process"
+      ],
       "expect": {
         "result": {
           "stages": [

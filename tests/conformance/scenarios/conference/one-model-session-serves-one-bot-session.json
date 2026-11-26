@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/one-model-session-serves-one-bot-session",
+  "title": "The model is connected once per bot session, however many triggers reach it, and disconnected when the backend loses the bot",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-043",
+    "RK-12.10.12-050"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {},
+      "vad": [],
+      "realtime": {
+        "input_sample_rate": 16000
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic-a",
+      "kind": "audio"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Still there?"
+      }
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic-a",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw==",
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "mix": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "session": {
+                  "$as": "first"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.bot_lost",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Back again."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot"
+            },
+            {
+              "call": "join_as_bot"
+            }
+          ],
+          "model": {
+            "connects": [
+              {
+                "session": {
+                  "$as": "first"
+                }
+              },
+              {
+                "session": {
+                  "$as": "second"
+                }
+              }
+            ],
+            "calls": [
+              {
+                "call": "disconnect",
+                "session": {
+                  "$as": "first"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

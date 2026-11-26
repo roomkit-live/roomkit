@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-model-response-is-one-utterance-its-end-closes",
+  "title": "A model response opens one utterance on the bot track, its audio its chunks and its end the chunk with is_final, with no text-synthesis hook",
+  "rules": [
+    "§12.10.12",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.12-033",
+    "RK-12.10.12-035"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "RK-12.10.12-033 in part, the response's opening and end: its barge-in is read by conference/a-barge-in-on-the-model-s-voice-names-the-speaker-and-closes-the-utterance, its leave by conference/a-model-response-the-conference-leaves-mid-utterance-ends-with-no-terminal-chunk.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tts"
+      },
+      {
+        "name": "after",
+        "trigger": "after_tts",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "conf",
+      "source": "provider",
+      "frames": [
+        "ZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAA==",
+        "yADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAMgAyADIAA=="
+      ]
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "end"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "publish_audio"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "publish_audio",
+              "is_final": false
+            },
+            {
+              "call": "publish_audio",
+              "is_final": false
+            },
+            {
+              "call": "publish_audio",
+              "is_final": true
+            }
+          ],
+          "utterances": [
+            {
+              "complete": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "before": [],
+      "after": []
+    }
+  }
+}

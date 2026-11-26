@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-model-connects-only-once-there-is-something-to-hear-or-say",
+  "title": "The model is not connected for a join or a published track, only once a track's audio or a text reaches the conference",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-046"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "hears",
+      "room_id": "r1",
+      "tools": {},
+      "vad": [],
+      "realtime": {
+        "input_sample_rate": 16000
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "says",
+      "room_id": "r2",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "hears",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "hears",
+      "participant_id": "alice",
+      "track_id": "mic-a",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "says",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "hears",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "room_id": "r1"
+            }
+          ],
+          "model": {
+            "connects": []
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "says",
+      "expect": {
+        "result": {
+          "bots": [
+            {
+              "room_id": "r2"
+            }
+          ],
+          "model": {
+            "connects": []
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "hears",
+      "track_id": "mic-a",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "hears",
+      "mix": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "hears",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "room_id": "r1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "says",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "room_id": "r2"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

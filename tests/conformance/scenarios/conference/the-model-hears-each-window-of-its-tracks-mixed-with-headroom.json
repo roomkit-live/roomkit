@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-model-hears-each-window-of-its-tracks-mixed-with-headroom",
+  "title": "The model is sent one stream mixed per window from every subscribed audio track, summed, scaled by the square root of the tracks that spoke in it and clamped, a silent track adding nothing",
+  "rules": [
+    "§12.10.12",
+    "§12.7.5"
+  ],
+  "requirements": [
+    "RK-12.10.12-014"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "Alice's first frame makes the mix connect the model, whose connect holds while both tracks' next frames reach the mix: after it, one window finds a frame of each track, the next one only Alice's, Bob's track silent. 1000 and 2000 mix to 2121 (3000 / sqrt 2), two samples at 30000 to 42426, clamped to 32767; a window only Alice spoke in is not scaled. The windows are read one by one: the scenario takes a mixing window to be one 20 ms frame, the frames it feeds, where the RFC sets no length (§12.7.5), and the mix to keep 40 ms of a track while a send holds.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {},
+      "vad": [],
+      "realtime": {
+        "input_sample_rate": 16000,
+        "connects": [
+          {
+            "gate": "connecting"
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic-a",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "track_id": "mic-b",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic-a",
+      "frames": [
+        "BwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAA=="
+      ]
+    },
+    {
+      "wait_for": "connecting"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic-a",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6AMwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdQ==",
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic-b",
+      "frames": [
+        "0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AfQB9AH0AcwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdTB1MHUwdQ=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "open": "connecting"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf",
+      "mix": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "audio": [
+              {
+                "data": "BwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAAcABwAHAA==",
+                "samples": 320
+              },
+              {
+                "data": "SQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQhJCEkISQj/f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//f/9//3//fw==",
+                "samples": 320
+              },
+              {
+                "data": "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw==",
+                "samples": 320
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

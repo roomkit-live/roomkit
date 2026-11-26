@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-model-delegation-fires-the-hook-and-is-answered-with-the-spoken-fallback",
+  "title": "A full-duplex model's delegation to the integrator fires ON_REALTIME_DELEGATION and is answered with the spoken fallback, since a conference serves no reasoning backend",
+  "rules": [
+    "§12.10.12",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-12.10.12-030",
+    "RK-12.10.12-031"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_realtime_delegation",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {},
+      "realtime": {
+        "full_duplex": true
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "conf",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "delegation_outputs": [
+              {
+                "delegation_id": "d1",
+                "text": {
+                  "$present": true
+                },
+                "spoken": true
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "delegated": [
+        {
+          "room_id": "r1",
+          "delegation": {
+            "delegation_id": "d1",
+            "target": "integrator"
+          }
+        }
+      ]
+    }
+  }
+}

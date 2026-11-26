@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-delivery-waiting-for-idle-waits-for-the-model-s-answer-to-reach-the-bot-track",
+  "title": "A delivery waiting for idle is injected only once the model's answer has ended and its audio has reached the bot track",
+  "rules": [
+    "§12.10.12",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-12.10.12-028"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The answer has ended at the model but its first chunk is still on its way to the bot track: the room is not idle, and the delivery waits until the track has it. The room's idle wait is read with a short bound only where something a gate holds keeps it busy, so no work races the bound.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "publish_audio",
+      "gate": "published"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "conf",
+      "source": "provider",
+      "frames": [
+        "ZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAGQAZABkAA=="
+      ]
+    },
+    {
+      "wait_for": "published"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "conf",
+      "edge": "end"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "content": "Next item.",
+      "strategy": "wait_for_idle",
+      "background": true,
+      "as": "delivery"
+    },
+    {
+      "call": "realtime.wait_idle",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "timeout_ms": 150,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "injections": [
+              {
+                "text": {
+                  "$contains": "Connect the model."
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "open": "published"
+    },
+    {
+      "await": "delivery",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "injections": [
+              {
+                "text": {
+                  "$contains": "Connect the model."
+                }
+              },
+              {
+                "text": "Next item."
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

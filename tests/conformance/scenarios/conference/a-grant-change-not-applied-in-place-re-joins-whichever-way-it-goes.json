@@ -1,0 +1,321 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-grant-change-not-applied-in-place-re-joins-whichever-way-it-goes",
+  "title": "set_bot_grants re-joins, announced, when the backend cannot update the bot's grants in place or fails to, for a widening and a narrowing alike, and the replacement session's new grants are announced",
+  "rules": [
+    "§12.10.4",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.4-206",
+    "RK-12.10.4-211"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "On r1 the backend could update in place but fails: the first set widens the grants (video added), the second narrows them (audio and video withdrawn). On r2 the backend cannot update in place, and the set narrows them. Each change is a leave and a join with the grants asked, announced as the session events they are, then as the replacement session's grant change.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "plain",
+      "room_id": "r2",
+      "bot_grants": {
+        "publish_audio": true,
+        "subscribe": true,
+        "publish_video": true
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "plain",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "update_bot_grants",
+      "fail": "refused"
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": true,
+        "subscribe": true,
+        "publish_video": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "update_bot_grants",
+      "fail": "refused"
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "plain",
+      "grants": {
+        "subscribe": true,
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "first"
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "first"
+              },
+              "grants": {
+                "publish_video": true
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "first"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "second"
+              },
+              "grants": {
+                "publish_video": true
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "second"
+              },
+              "grants": {
+                "publish_audio": false,
+                "publish_video": false
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "second"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "third"
+              },
+              "grants": {
+                "publish_audio": false,
+                "publish_video": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "plain",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "wide"
+              },
+              "grants": {
+                "publish_video": true
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "wide"
+              }
+            },
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "narrow"
+              },
+              "grants": {
+                "publish_audio": false,
+                "publish_video": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "first"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "$unordered": [
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "second"
+              }
+            },
+            {
+              "event": "conference_bot_grants_changed",
+              "bot_session_id": {
+                "$as": "second"
+              },
+              "hidden": false
+            }
+          ]
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "second"
+          }
+        },
+        {
+          "$unordered": [
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "third"
+              }
+            },
+            {
+              "event": "conference_bot_grants_changed",
+              "bot_session_id": {
+                "$as": "third"
+              },
+              "hidden": false
+            }
+          ]
+        }
+      ],
+      "r2": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "wide"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_ended",
+          "bot_session_id": {
+            "$as": "wide"
+          }
+        },
+        {
+          "$unordered": [
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "narrow"
+              }
+            },
+            {
+              "event": "conference_bot_grants_changed",
+              "bot_session_id": {
+                "$as": "narrow"
+              },
+              "hidden": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

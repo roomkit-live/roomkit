@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-that-never-joins-still-admits-and-keeps-the-roster",
+  "title": "A conference channel that never joins still ensures the room, mints credentials and writes the arrival's participant record",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-103"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "token": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "ensure_room",
+        "mint_access",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1"
+            },
+            {
+              "call": "mint_access",
+              "room_id": "r1",
+              "participant_id": "alice"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": [
+        {
+          "id": "alice"
+        },
+        {
+          "id": "bob",
+          "external_id": "bob"
+        }
+      ]
+    }
+  }
+}

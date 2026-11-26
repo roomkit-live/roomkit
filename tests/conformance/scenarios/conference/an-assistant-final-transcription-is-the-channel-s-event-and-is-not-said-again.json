@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-assistant-final-transcription-is-the-channel-s-event-and-is-not-said-again",
+  "title": "The model's final assistant transcription is a room event of the conference channel with no participant, and it is neither injected into the model nor spoken again",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-024",
+    "RK-12.10.12-025"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The final transcription is the conference's own event, which the model is not handed back and the bot track does not carry.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "conf",
+      "text": "It is noon.",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "publish_audio"
+      ],
+      "expect": {
+        "result": {
+          "calls": [],
+          "model": {
+            "injections": [
+              {
+                "text": {
+                  "$contains": "Connect the model."
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Connect the model."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "conf",
+            "participant_id": null
+          },
+          "content": {
+            "body": "It is noon."
+          }
+        }
+      ]
+    }
+  }
+}

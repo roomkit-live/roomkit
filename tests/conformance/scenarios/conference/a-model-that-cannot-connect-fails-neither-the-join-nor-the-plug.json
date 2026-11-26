@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-model-that-cannot-connect-fails-neither-the-join-nor-the-plug",
+  "title": "A model whose connect fails fails neither the join nor the plug: the configuration stands, and each failed connect fires ON_ERROR with its category and its error's type",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-047",
+    "RK-12.10.12-049"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "RK-12.10.12-047 in part: a model connects lazily, on what it hears, so neither the join nor the plug waits on the connect; what is read is that both returned and the configuration stands after the connect failed.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "joined",
+      "room_id": "r1",
+      "tools": {},
+      "vad": [],
+      "realtime": {
+        "connects": [
+          {
+            "fail": "the model is unreachable",
+            "error_type": "ModelUnreachable"
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "plugged",
+      "room_id": "r2",
+      "vad": []
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "joined",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "joined",
+      "participant_id": "alice",
+      "track_id": "mic-a",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "plugged",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "plugged",
+      "participant_id": "bob",
+      "track_id": "mic-b",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "plugged",
+      "kind": "realtime",
+      "realtime": {
+        "connects": [
+          {
+            "fail": "the model is unreachable",
+            "error_type": "ModelUnreachable"
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "joined",
+      "track_id": "mic-a",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "joined",
+      "mix": true
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "plugged",
+      "track_id": "mic-b",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "plugged",
+      "mix": true
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "joined",
+      "expect": {
+        "result": {
+          "info": {
+            "realtime_configured": true,
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "realtime_active": false
+              }
+            }
+          },
+          "model": {
+            "connects": [
+              {
+                "room_id": "r1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "plugged",
+      "expect": {
+        "result": {
+          "info": {
+            "realtime_configured": true,
+            "rooms": {
+              "r2": {
+                "bot_present": true,
+                "realtime_active": false
+              }
+            }
+          },
+          "model": {
+            "connects": [
+              {
+                "room_id": "r2"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "error_category": "realtime_provider",
+              "error_type": "ModelUnreachable",
+              "error": "the model is unreachable"
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "error_category": "realtime_provider",
+              "error_type": "ModelUnreachable",
+              "error": "the model is unreachable"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

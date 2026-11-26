@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-user-transcription-of-the-mix-is-discarded-and-names-no-one",
+  "title": "The model's user-role transcriptions are discarded: no room event, no broadcast hook, and no participant named, even beside an active speaker and a lane's speech",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-019",
+    "RK-12.10.12-020",
+    "RK-12.10.12-021"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "Alice is the active speaker and her lane hears her speak while the model transcribes what it heard: the timeline holds only the text that connected the model, and nothing is broadcast for the transcription. What an implementation may surface of it to observability (RK-12.10.12-022) is not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "broadcast",
+        "trigger": "before_broadcast"
+      },
+      {
+        "name": "sent",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      {
+        "name": "speech",
+        "trigger": "on_speech_start",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {},
+      "vad": [
+        {
+          "type": "speech_start"
+        }
+      ],
+      "capabilities": [
+        "active_speaker"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic-a",
+      "kind": "audio"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.active_speaker",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic-a",
+      "frames": [
+        "6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoA+gD6APoAw=="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "conf",
+      "text": "What did I",
+      "role": "user",
+      "is_final": false
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "conf",
+      "text": "What did I miss?",
+      "role": "user"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Connect the model."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "broadcast": [
+        {
+          "event": {
+            "content": {
+              "body": "Connect the model."
+            }
+          }
+        }
+      ],
+      "sent": [
+        {
+          "event": {
+            "content": {
+              "body": "Connect the model."
+            }
+          }
+        }
+      ],
+      "speech": [
+        {
+          "conference": {
+            "track_id": "mic-a",
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-tool-policy-filters-what-is-declared-to-the-model-by-its-base-rules",
+  "title": "The model is declared only the tools the ToolPolicy's base rules permit, a role override never applying",
+  "rules": [
+    "§12.10.12",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-12.10.12-061"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "lookup": "found",
+        "secret": "hidden"
+      },
+      "tool_policy": {
+        "deny": [
+          "secret"
+        ],
+        "role_overrides": {
+          "owner": {
+            "allow": [
+              "secret"
+            ],
+            "mode": "replace"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "tools": [
+                  "lookup"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

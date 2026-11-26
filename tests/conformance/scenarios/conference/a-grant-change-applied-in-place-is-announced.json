@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-grant-change-applied-in-place-is-announced",
+  "title": "A change of the bot's grants the backend applies in place emits conference_bot_grants_changed for the session",
+  "rules": [
+    "§12.10.4",
+    "§12.10.7"
+  ],
+  "requirements": [
+    "RK-12.10.4-211"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "publish_audio": true,
+        "subscribe": true,
+        "publish_video": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined"
+            },
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "bot"
+              }
+            }
+          ]
+        },
+        {
+          "event": "conference_bot_grants_changed",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "bot_session_id": {
+            "$as": "bot"
+          },
+          "hidden": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-that-hears-and-says-nothing-never-joins",
+  "title": "A conference channel with no recognizer, synthesizer, recording or model joins nothing on its attach's probe, on a mint or on an arrival",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-100"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "occupants": [
+        "carol"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [],
+          "bots": []
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

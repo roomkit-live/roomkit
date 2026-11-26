@@ -1,0 +1,207 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-model-session-ends-with-a-detach-an-unplug-and-a-close",
+  "title": "The model's session is disconnected when the bot session ends by a detach, by the model's unplug and by the channel's close",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-050"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "detached",
+      "room_id": "r1",
+      "tools": {}
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "unplugged",
+      "room_id": "r2",
+      "tools": {}
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "closed",
+      "room_id": "r3",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "detached",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "unplugged",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "closed",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "r2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "r3",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "detached"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "unplugged",
+      "kind": "realtime"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "closed"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "detached",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "session": {
+                  "$as": "one"
+                }
+              }
+            ],
+            "calls": [
+              {
+                "call": "disconnect",
+                "session": {
+                  "$as": "one"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "unplugged",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "session": {
+                  "$as": "two"
+                }
+              }
+            ],
+            "calls": [
+              {
+                "call": "disconnect",
+                "session": {
+                  "$as": "two"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "closed",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "session": {
+                  "$as": "three"
+                }
+              }
+            ],
+            "calls": [
+              {
+                "call": "disconnect",
+                "session": {
+                  "$as": "three"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
