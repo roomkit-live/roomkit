@@ -310,6 +310,27 @@ async def test_a_local_host_predicate_belongs_to_its_serving_node(prefix: str) -
         await elsewhere.close()
 
 
+@pytest.mark.usefixtures("redis_client")
+async def test_an_executor_elsewhere_is_listed_with_the_time_it_last_beat(prefix: str) -> None:
+    """Its last beat is the time it beat, on the in-memory pair as on Redis:
+    the registry's clock is the time of day (RFC §10.6.8)."""
+    hosting, elsewhere = _backend(prefix), _backend(prefix)
+    worker = TurnExecutor(lambda _: None, hosts={"worker"}, executor_id="w", timeouts=TIMEOUTS)
+    try:
+        serving = datetime.now(UTC)
+        await hosting.serve(worker)
+        [peer] = await elsewhere.executors_now()
+        listed = datetime.now(UTC)
+
+        assert peer.last_beat is not None
+        margin = timedelta(seconds=1)
+        assert serving - margin <= peer.last_beat <= listed + margin, (serving, peer.last_beat)
+    finally:
+        await worker.close()
+        await hosting.close()
+        await elsewhere.close()
+
+
 @needs_redis
 async def test_a_closed_backend_refuses_registry_reads_and_presence_claims(
     prefix: str, redis_client: Any

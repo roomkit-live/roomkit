@@ -118,7 +118,6 @@ class InMemoryTurnRegistry(TurnRegistry):
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._started = time.monotonic()
         # Each executor's last beat, and its declaration when it has one.
         self._alive: dict[str, int] = {}
         self._declared: dict[str, str] = {}
@@ -194,9 +193,11 @@ class InMemoryTurnRegistry(TurnRegistry):
             self._presence[key] = online
             return changed
 
-    def _now(self) -> int:
-        """The registry's time, in milliseconds."""
-        return int((time.monotonic() - self._started) * 1000)
+    @staticmethod
+    def _now() -> int:
+        """The registry's time: the time of day, in milliseconds since the
+        Unix epoch, as a server's registry keeps it."""
+        return int(time.time() * 1000)
 
     def _write(self, beat: Beat) -> None:
         with self._lock:

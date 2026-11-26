@@ -11,11 +11,15 @@ else writes to, as a namespace of the test's own on a shared server.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from roomkit.turns.broker import Beat, BrokerMessage, InboxEntry, TurnBroker, TurnRegistry
 
 _BLOCK = 0.02
+# How far a registry's clock may stray from this machine's: a server's
+# clock is another machine's.
+_CLOCK_SKEW_MS = 3_600_000
 
 
 async def check_turn_broker(broker: TurnBroker) -> None:
@@ -35,7 +39,8 @@ async def check_turn_broker(broker: TurnBroker) -> None:
 async def check_turn_registry(registry: TurnRegistry) -> None:
     """Checks that *registry* keeps the contract of
     :class:`~roomkit.turns.broker.TurnRegistry`: a beat is written at the
-    registry's time and viewed until withdrawn or forgotten, a beat older
+    registry's time, the time of day, and viewed until withdrawn or
+    forgotten, a beat older
     than its node's last one changes nothing; a room has one holder until
     forgotten; a presence is claimed once a change.
 
@@ -123,6 +128,11 @@ async def _a_beat_is_viewed_until_withdrawn(registry: TurnRegistry) -> None:
     _same(view.executors.get("n1:b", (None, "none"))[1], None, "an executor that declares nothing")
     if written is None or view.now < written:
         raise AssertionError("a beat is written at the registry's time")
+    if abs(view.now - time.time() * 1000) >= _CLOCK_SKEW_MS:
+        raise AssertionError(
+            "the registry's time is the time of day, in milliseconds since 1970: "
+            f"it reads {view.now}"
+        )
     _same("n1" in view.owners, True, "a room owner that beats")
 
     # A beat older than the node's last one changes nothing.

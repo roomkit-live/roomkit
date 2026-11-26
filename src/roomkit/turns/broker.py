@@ -69,7 +69,8 @@ class RegistryView:
     """The executors and the room owners beating, as the registry keeps them."""
 
     now: int
-    """The registry's time, in milliseconds: the clock of every beat."""
+    """The registry's time, in milliseconds since the Unix epoch: the clock
+    of every beat, which an executor's last beat reads."""
     executors: dict[str, tuple[int, str | None]]
     """Each executor's last beat, and its declaration when it has one."""
     owners: dict[str, int]
