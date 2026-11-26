@@ -10,15 +10,23 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels.video import VideoChannel
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.vision_event import VisionEvent
-from roomkit.video.backends.mock import MockVideoBackend
 from roomkit.video.base import VideoSession
 from roomkit.video.events import BridgeVideoEvent, VideoDetectionEvent
-from roomkit.video.pipeline.config import VideoPipelineConfig
 from roomkit.video.pipeline.filter.mock_face_touch import MockFaceTouchFilter
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import FaceDetection
 from roomkit.video.vision.mock import MockVisionProvider
 from tests.channel_tasks import settled
+from tests.conformance._video_pipeline import (
+    VIDEO_PIPELINE_ARGUMENTS,
+    VIDEO_PIPELINE_CALLS,
+    VIDEO_STAGE_ARGUMENTS,
+    ScriptedVideoTransport,
+    VideoStages,
+    read_stages,
+    video_bridge,
+    video_stages,
+)
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
@@ -28,9 +36,14 @@ if TYPE_CHECKING:
 @dataclass
 class VideoFixture:
     channel: VideoChannel
-    backend: MockVideoBackend
+    backend: ScriptedVideoTransport
     sessions: dict[str, VideoSession] = field(default_factory=dict)
     results: list[dict[str, Any]] = field(default_factory=list)
+    stages: VideoStages = field(default_factory=VideoStages)
+    vision: MockVisionProvider | None = None
+
+    async def settle(self) -> None:
+        await settled(self.channel)
 
     async def vision_result(self, event: FrameworkEvent) -> None:
         if event.data["channel_id"] == self.channel.channel_id:
@@ -39,24 +52,29 @@ class VideoFixture:
 
 async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     channel_id, room_id = spec["channel_id"], spec["room_id"]
-    backend = MockVideoBackend()
-    pipeline = None
+    backend = ScriptedVideoTransport()
+    detections: list[MockFaceTouchFilter] = []
     if "detections" in spec:
         by_frame: dict[int, list[VideoDetectionEvent]] = {}
         for detection in spec["detections"]:
             by_frame.setdefault(detection["frame_sequence"], []).append(
                 VideoDetectionEvent(**detection)
             )
-        pipeline = VideoPipelineConfig(filters=[MockFaceTouchFilter(by_frame)])
+        detections.append(MockFaceTouchFilter(by_frame))
+    stages = video_stages(spec)
+    vision = None
+    if "vision" in spec:
+        labels = {"labels": spec["vision_labels"]} if "vision_labels" in spec else {}
+        vision = MockVisionProvider(spec["vision"], **labels)
     channel = VideoChannel(
         channel_id,
         backend=backend,
-        pipeline=pipeline,
-        bridge=spec.get("bridge", False),
-        vision=MockVisionProvider(spec["vision"]) if "vision" in spec else None,
-        vision_interval_ms=0,
+        pipeline=stages.config(list(detections)),
+        bridge=video_bridge(spec),
+        vision=vision,
+        vision_interval_ms=spec.get("vision_interval_ms", 0),
     )
-    fixture = VideoFixture(channel, backend)
+    fixture = VideoFixture(channel, backend, stages=stages, vision=vision)
     harness.video_fixtures[channel_id] = fixture
     kit.on("video_vision_result")(fixture.vision_result)
     kit.register_channel(channel)
@@ -76,7 +94,7 @@ async def _frame(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Non
         codec="raw_rgb24",
         width=1,
         height=1,
-        keyframe=True,
+        keyframe=spec.get("keyframe", True),
     )
     await fixture.backend.simulate_video_received(fixture.sessions[spec["participant_id"]], frame)
     await settled(fixture.channel)
@@ -100,7 +118,12 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
             for name, session in fixture.sessions.items()
         },
         "vision": fixture.results,
-    }
+    } | read_stages(
+        fixture.stages,
+        fixture.backend,
+        fixture.sessions,
+        fixture.vision.calls if fixture.vision else [],
+    )
 
 
 def video_payload(payload: Any) -> dict[str, Any] | None:
@@ -141,10 +164,13 @@ VIDEO_CALLS = {
     "video.frame": _frame,
     "video.disconnect": _disconnect,
     "video.read": _read,
+    **VIDEO_PIPELINE_CALLS,
 }
 VIDEO_ARGUMENTS = {
-    "video.open": {"channel_id", "room_id", "participants", "bridge", "vision", "detections"},
-    "video.frame": {"channel_id", "participant_id", "sequence", "data"},
+    "video.open": {"channel_id", "room_id", "participants", "bridge", "vision", "detections"}
+    | VIDEO_STAGE_ARGUMENTS,
+    "video.frame": {"channel_id", "participant_id", "sequence", "data", "keyframe"},
     "video.disconnect": {"channel_id", "participant_id"},
     "video.read": {"channel_id"},
+    **VIDEO_PIPELINE_ARGUMENTS,
 }

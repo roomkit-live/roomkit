@@ -61,6 +61,7 @@ from tests.conformance._addressing import ADDRESSING_CALLS
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
+from tests.conformance._av import AV_CALLS
 from tests.conformance._below_kit import BELOW_KIT_CALLS
 from tests.conformance._calls import (
     CALLS,
@@ -1008,6 +1009,7 @@ class Harness:
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS | SOURCE_CALLS
         calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
+        calls |= AV_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)
