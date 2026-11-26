@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-video-bridge-holds-ten-sessions-by-default",
+  "title": "A video bridge left at its defaults bridges ten sessions of a room and refuses an eleventh join",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-005"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "p01",
+        "p02",
+        "p03",
+        "p04",
+        "p05",
+        "p06",
+        "p07",
+        "p08",
+        "p09",
+        "p10"
+      ],
+      "bridge": true
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "p11",
+      "expect": {
+        "error": "bridge_full"
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "p01",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "p01": [],
+            "p02": [
+              "AQID"
+            ],
+            "p03": [
+              "AQID"
+            ],
+            "p04": [
+              "AQID"
+            ],
+            "p05": [
+              "AQID"
+            ],
+            "p06": [
+              "AQID"
+            ],
+            "p07": [
+              "AQID"
+            ],
+            "p08": [
+              "AQID"
+            ],
+            "p09": [
+              "AQID"
+            ],
+            "p10": [
+              "AQID"
+            ],
+            "p11": []
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

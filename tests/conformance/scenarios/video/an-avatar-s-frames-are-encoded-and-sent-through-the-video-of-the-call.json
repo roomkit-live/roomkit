@@ -1,0 +1,56 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/an-avatar-s-frames-are-encoded-and-sent-through-the-video-of-the-call",
+  "title": "The frames an audio/video channel's avatar makes of a reply's speech are encoded and sent through the video backend, to the call",
+  "rules": [
+    "§12.8.8"
+  ],
+  "requirements": [
+    "RK-12.8.8-006"
+  ],
+  "requires_features": [
+    "video",
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "av.open",
+      "room_id": "r1",
+      "channel_id": "phone",
+      "participants": [
+        "alice"
+      ],
+      "video": [
+        "alice"
+      ],
+      "avatar": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hello there"
+    },
+    {
+      "call": "av.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "sent": {
+            "alice": [
+              "BwcH"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

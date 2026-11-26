@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-room-bridges-no-more-sessions-than-max-participants",
+  "title": "With max_participants 2, a third session's join is refused before the session is bound: its camera is not analysed, none of its frames reaches the others, none of theirs reaches it, and it is never reported started",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-005"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "began",
+        "trigger": "on_video_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "max_participants": 2
+      },
+      "vision": [
+        "a view"
+      ]
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "carol",
+      "expect": {
+        "error": "bridge_full"
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "carol",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID"
+            ],
+            "carol": []
+          },
+          "analysed": [
+            "AQID"
+          ],
+          "vision": [
+            {
+              "description": "a view"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "began": {
+        "$unordered": [
+          {
+            "video": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "video": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
