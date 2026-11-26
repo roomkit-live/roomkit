@@ -151,9 +151,10 @@ async def reads_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
             # when it names none (README, ``realtime.reconfigure``).
             session = fixture.session_in(spec["room_id"]) if "room_id" in spec else fixture.session
             tools = spec.get("tools")
-            # Where the reconnect of a provider that reconnects_on_reconfigure
-            # holds (README, ``realtime.reconfigure``).
-            fixture.provider.hold = {"gate": spec["gate"]} if "gate" in spec else {}
+            if "gate" in spec:
+                # Where the reconnect of a provider that reconnects_on_reconfigure
+                # holds (README, ``realtime.reconfigure``); a held start keeps its fail.
+                fixture.provider.hold = {**fixture.provider.hold, "gate": spec["gate"]}
             await fixture.channel.reconfigure_session(
                 session,
                 system_prompt=spec.get("system_prompt"),
