@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-room-whose-write-fails-stops-the-recordings-started-for-it",
+  "title": "When a new room's write fails, the recordings started for it are stopped and none is announced",
+  "rules": [
+    "§12.11",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-12.11-016"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "create_room",
+      "fail": "the disk is full"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "recorders": [
+        "rec"
+      ],
+      "expect": {
+        "error": "store_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "calls": [
+        "on_recording_start",
+        "on_recording_stop"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "rec"
+          },
+          {
+            "call": "on_recording_stop",
+            "recording_id": "rec"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "r1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": []
+    }
+  }
+}

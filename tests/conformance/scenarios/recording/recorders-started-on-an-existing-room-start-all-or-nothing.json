@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/recorders-started-on-an-existing-room-start-all-or-nothing",
+  "title": "Recorders started together on an existing room start all or nothing: when one refuses, the one already started is stopped and none is announced",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-020"
+  ],
+  "notes": "The reads take the recorders as started in the order named, the first before the refusing one. The room lock is shown by recording/a-start-on-an-existing-room-waits-for-the-room-lock.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorders": [
+        "first",
+        {
+          "name": "second",
+          "refuses": "no storage for this room"
+        }
+      ],
+      "expect": {
+        "error": "provider_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "calls": [
+        "on_recording_start",
+        "on_recording_stop"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          },
+          {
+            "call": "on_recording_stop",
+            "recording_id": "first"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": []
+    }
+  }
+}

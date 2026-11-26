@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-close-reports-a-recording-whose-finalization-it-stopped-waiting-for",
+  "title": "A close that gives up on a track's finalization past its budget fails, and says nothing of where that recording went",
+  "rules": [
+    "§12.11",
+    "§12.10.4",
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.11-055"
+  ],
+  "notes": "The channel does not own its recorder (close_providers false), so its close waits for no release: it fails for the finalization it gave up on rather than succeed as if the recording were finalized. What the failure says of the recording is the implementation's text. No ON_RECORDING_STOPPED is read, so neither one without a location that would also report it, nor a location an implementation would guess besides failing, is seen; nor how a detach reports such a recording.",
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "call_gates": {
+          "on_recording_stop": "stopping"
+        }
+      },
+      "close_providers": false
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "channel_id": "conf",
+      "calls": [
+        "on_recording_stop",
+        "close"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_stop",
+            "recording_id": "rec1"
+          }
+        ]
+      }
+    },
+    {
+      "open": "stopping"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ],
+  "expect": {}
+}

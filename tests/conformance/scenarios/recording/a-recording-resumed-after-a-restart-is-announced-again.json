@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-recording-resumed-after-a-restart-is-announced-again",
+  "title": "A recording resumed on a room after its process restarts is announced again, as any start on an existing room",
+  "rules": [
+    "§12.11",
+    "§17.6"
+  ],
+  "requirements": [
+    "RK-12.11-026"
+  ],
+  "notes": "The room's recording runs on process p1; p1 restarts, and its fresh kit starts the room's recording again. The announcement is heard by a room hook of each kit p1 ran: the setup's hooks are the run's own kit's.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "processes": [
+      {
+        "id": "p1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "kit": "p1",
+      "hook": {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "meeting",
+      "kit": "p1"
+    },
+    {
+      "idle": true
+    },
+    {
+      "restart_process": "p1"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "kit": "p1",
+      "hook": {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "meeting",
+      "kit": "p1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [
+        {
+          "recording": {
+            "recording_id": "meeting",
+            "room_id": "r1"
+          }
+        },
+        {
+          "recording": {
+            "recording_id": "meeting",
+            "room_id": "r1"
+          }
+        }
+      ]
+    }
+  }
+}

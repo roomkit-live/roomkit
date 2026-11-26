@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-failed-creation-leaves-the-recordings-of-the-room-holding-its-id-running",
+  "title": "A creation whose write fails, on an id a recording room holds, stops only its own recordings: that room's recorder keeps receiving its feed",
+  "rules": [
+    "§12.11",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-12.11-017"
+  ],
+  "notes": "The write fails by a store fault; the room the id holds records through a declared track. The store's own refusal of an id it holds is not exercised: it has no error name.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "first"
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic"
+    },
+    {
+      "store_fault": "create_room",
+      "fail": "the disk is full"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "recorders": [
+        "second"
+      ],
+      "expect": {
+        "error": "store_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "second",
+      "calls": [
+        "on_recording_start",
+        "on_recording_stop"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "second"
+          },
+          {
+            "call": "on_recording_stop",
+            "recording_id": "second"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "first",
+            "room_id": "r1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          },
+          {
+            "call": "on_track_added",
+            "recording_id": "first",
+            "track": {
+              "track_id": "mic"
+            }
+          },
+          {
+            "call": "on_data",
+            "recording_id": "first",
+            "track_id": "mic",
+            "data": "AQI="
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

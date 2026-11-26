@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-room-whose-recorder-refuses-its-start-is-not-created",
+  "title": "When one of a new room's recorders refuses its start, the recordings already started are stopped and the room is not created",
+  "rules": [
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-12.11-013",
+    "RK-12.11-014",
+    "RK-12.11-015"
+  ],
+  "notes": "The second recorder refuses its start: the first, started already, is stopped, the creation fails with the refusal, and the store holds no room. Nothing announces a recording, and nothing announces the room. The reads take the recorders as started in the order bound, the first before the refusing one; an implementation that starts them in another order starts none before the refusal. That the recorders start before the room is written is shown by recording/a-room-s-recorders-start-before-it-is-written-and-are-announced-once-it-exists.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      },
+      {
+        "name": "created",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "recorders": [
+        "first",
+        {
+          "name": "second",
+          "refuses": "no storage for this room"
+        }
+      ],
+      "expect": {
+        "error": "provider_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "calls": [
+        "on_recording_start",
+        "on_recording_stop"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          },
+          {
+            "call": "on_recording_stop",
+            "recording_id": "first"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "second",
+      "calls": [
+        "on_recording_start",
+        "on_recording_stop"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": null
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "r1",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "r1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [],
+      "created": []
+    }
+  }
+}

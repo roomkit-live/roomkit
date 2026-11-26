@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-gone-room-s-recordings-are-refused-to-another-organization",
+  "title": "Once a recording room's record is gone, a stop naming another organization is refused and stops nothing; its own organization still stops it",
+  "rules": [
+    "§12.11",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-12.11-034"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "acme"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec",
+      "organization_id": "acme"
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic",
+      "organization_id": "acme"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.read",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          "AQI="
+        ]
+      }
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "url": "mock://rec"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

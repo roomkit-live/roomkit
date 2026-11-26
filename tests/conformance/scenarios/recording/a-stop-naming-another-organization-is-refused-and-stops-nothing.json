@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-stop-naming-another-organization-is-refused-and-stops-nothing",
+  "title": "Stopping a room's recordings for another organization is refused as not found, and the recording keeps receiving its feed",
+  "rules": [
+    "§12.11",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-12.11-030",
+    "RK-12.11-032"
+  ],
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "acme"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec",
+      "organization_id": "acme"
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic",
+      "organization_id": "acme"
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.read",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          "AQI="
+        ]
+      }
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "room_id": "r1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "url": "mock://rec"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

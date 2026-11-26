@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recorder-a-call-still-runs-in-past-the-release-wait-is-left-unreleased",
+  "title": "A recorder whose held call outlasts the wait to release it is not closed, and the channel's close fails",
+  "rules": [
+    "§12.11",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.11-057",
+    "RK-12.11-059"
+  ],
+  "notes": "The detach gives the held finalization up on past its budget; the channel's close then waits for it to release the recorder, past that wait too, and fails rather than release a recorder a call still runs in. What the failure says of the retained recorder is the implementation's text.",
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "call_gates": {
+          "on_recording_stop": "stopping"
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "expect": {
+        "error": "conference_close_failed"
+      }
+    },
+    {
+      "call": "recording.calls",
+      "channel_id": "conf",
+      "calls": [
+        "on_recording_stop",
+        "close"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_stop",
+            "recording_id": "rec1"
+          }
+        ]
+      }
+    },
+    {
+      "open": "stopping"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "close",
+      "expect": {
+        "error": "channel_close_failed"
+      }
+    }
+  ],
+  "expect": {}
+}

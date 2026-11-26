@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/listing-or-feeding-a-room-s-recordings-for-another-organization-is-refused",
+  "title": "Listing a room's recordings, or declaring a track to them, for another organization is refused as not found; for its own, both reach them",
+  "rules": [
+    "§12.11",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-12.11-036"
+  ],
+  "notes": "The same rule for a gone room is shown by recording/a-gone-room-s-recordings-are-listed-and-fed-for-their-own-organization-alone.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "acme"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec",
+      "organization_id": "acme"
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "spy",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "room_id": "r1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic",
+      "organization_id": "acme"
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "rec"
+          },
+          {
+            "call": "on_track_added",
+            "recording_id": "rec",
+            "track": {
+              "track_id": "mic"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

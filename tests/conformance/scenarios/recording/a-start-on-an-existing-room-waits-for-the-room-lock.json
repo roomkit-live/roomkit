@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-start-on-an-existing-room-waits-for-the-room-lock",
+  "title": "Recorders started on an existing room start under the room lock: while a message holds it, the start waits and no recorder starts",
+  "rules": [
+    "§12.11",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-12.11-020"
+  ],
+  "notes": "A before_broadcast hook holds the room lock at its gate. All or nothing is shown by recording/recorders-started-on-an-existing-room-start-all-or-nothing.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "message"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec",
+      "background": true,
+      "as": "starting"
+    },
+    {
+      "wait_for_lock": "r1",
+      "waiters": 1
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "message"
+    },
+    {
+      "await": "starting"
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "rec"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.list",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "recording_id": "rec",
+            "room_id": "r1"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": [
+        {
+          "recording": {
+            "recording_id": "rec",
+            "room_id": "r1"
+          }
+        }
+      ]
+    }
+  }
+}

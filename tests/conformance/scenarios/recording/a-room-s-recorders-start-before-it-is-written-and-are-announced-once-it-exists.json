@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-room-s-recorders-start-before-it-is-written-and-are-announced-once-it-exists",
+  "title": "A room's recorders start before the room is written, are each announced once it exists, and receive nothing until a track is added",
+  "rules": [
+    "§12.11",
+    "§17.6"
+  ],
+  "requirements": [
+    "RK-12.11-013",
+    "RK-12.11-018"
+  ],
+  "notes": "The room's write is held in its place: both recorders have started and the store holds no room yet. Each announcement reads the room from the store. All or nothing is shown by a recorder that refuses (recording/a-room-whose-recorder-refuses-its-start-is-not-created).",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "hooks": [
+      {
+        "name": "started",
+        "trigger": "on_recording_started",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.room_exists",
+                "room_id": "r1",
+                "expect": {
+                  "result": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "create_room",
+      "gate": "writing",
+      "in_place": true
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "recorders": [
+        "first",
+        "second"
+      ],
+      "background": true,
+      "as": "creating"
+    },
+    {
+      "wait_for": "writing"
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "second",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "second"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "r1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "open": "writing"
+    },
+    {
+      "await": "creating",
+      "expect": {
+        "result": {
+          "id": "r1"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          }
+        ]
+      }
+    },
+    {
+      "call": "recording.track",
+      "room_id": "r1",
+      "track_id": "mic"
+    },
+    {
+      "call": "recording.feed",
+      "room_id": "r1",
+      "track_id": "mic",
+      "data": "AQI="
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "first",
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_start",
+            "recording_id": "first"
+          },
+          {
+            "call": "on_track_added",
+            "recording_id": "first",
+            "track": {
+              "track_id": "mic"
+            }
+          },
+          {
+            "call": "on_data",
+            "recording_id": "first",
+            "track_id": "mic",
+            "data": "AQI="
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "started": {
+        "$unordered": [
+          {
+            "trigger": "on_recording_started",
+            "room_id": "r1",
+            "context_room": {
+              "id": "r1"
+            },
+            "recording": {
+              "recording_id": "first",
+              "room_id": "r1"
+            }
+          },
+          {
+            "trigger": "on_recording_started",
+            "room_id": "r1",
+            "context_room": {
+              "id": "r1"
+            },
+            "recording": {
+              "recording_id": "second",
+              "room_id": "r1"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
