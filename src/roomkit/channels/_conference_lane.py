@@ -243,8 +243,17 @@ class ConferenceLane:
         who asked could not cut the answer to their question (RFC 12.10.5).
         Each routing waits for the one before it, so a track's transcripts
         enter the room in the order they were spoken.
+
+        A closed lane routes nothing: its close cancelled the routings it
+        found, and one handed on after it — an utterance that was still in
+        ON_TRANSCRIPTION — would reach the room after the track ended.
         """
-        task = asyncio.create_task(_route_after(self._last_routing, deliver))
+        if self._closed:
+            return
+        task = asyncio.create_task(
+            _route_after(self._last_routing, deliver),
+            name=f"conference-lane-route:{self.track_id}",
+        )
         task.add_done_callback(log_task_exception)
         self._routings.add(task)
         task.add_done_callback(self._routings.discard)

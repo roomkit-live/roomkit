@@ -736,6 +736,90 @@ class TestALaneListensWhileItsUtteranceIsRouted:
             await asyncio.gather(speaking, return_exceptions=True)
             await kit.close()
 
+    async def test_a_track_s_transcripts_enter_the_room_in_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Each routing waits for the one before it: the second utterance,
+        recognized while the first is still being delivered, lands after it."""
+        kit, channel, backend = await _kit(stt=MockSTTProvider(transcripts=["first", "second"]))
+        first_held, release_first = asyncio.Event(), asyncio.Event()
+        deliver = kit.process_inbound
+
+        async def _hold_the_first(message: InboundMessage, **kwargs: Any) -> Any:
+            if getattr(message.content, "body", None) == "first":
+                first_held.set()
+                await release_first.wait()
+            return await deliver(message, **kwargs)
+
+        monkeypatch.setattr(kit, "process_inbound", _hold_the_first)
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        lane = channel.active_lanes[track.id]
+        await say(backend, track)
+        await asyncio.wait_for(first_held.wait(), timeout=5.0)
+        await say(backend, track)
+        await _until(lambda: len(lane.routing) == 2)
+        release_first.set()
+        await asyncio.wait_for(lane.drain(), timeout=5.0)
+
+        bodies = [getattr(e.content, "body", None) for e in await kit.store.list_events(ROOM)]
+        await kit.close()
+        assert [b for b in bodies if b in {"first", "second"}] == ["first", "second"]
+
+    async def test_a_closed_lane_routes_nothing_more(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A lane closing while its next utterance is still in ON_TRANSCRIPTION:
+        the close waits for the routing it cancelled, the hook returns
+        meanwhile, and the lane must not hand on a transcription no close
+        would cut — delivered after the track ended.
+        """
+        kit, channel, backend = await _kit(stt=MockSTTProvider(transcripts=["first", "second"]))
+        first_held, first_cancelled, unwind = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        second_heard, release_second = asyncio.Event(), asyncio.Event()
+        deliver = kit.process_inbound
+
+        async def _hold_the_first(message: InboundMessage, **kwargs: Any) -> Any:
+            if getattr(message.content, "body", None) == "first":
+                first_held.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    first_cancelled.set()
+                    await unwind.wait()
+                    raise
+            return await deliver(message, **kwargs)
+
+        monkeypatch.setattr(kit, "process_inbound", _hold_the_first)
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+        async def _hold_the_second(payload: Any, ctx: object) -> HookResult:
+            if payload.text == "second":
+                second_heard.set()
+                await release_second.wait()
+            return HookResult.allow()
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        lane = channel.active_lanes[track.id]
+        await say(backend, track)
+        await asyncio.wait_for(first_held.wait(), timeout=5.0)
+        await say(backend, track)
+        await asyncio.wait_for(second_heard.wait(), timeout=5.0)
+        ending = asyncio.create_task(backend.simulate_track_unpublished(track.id))
+        await asyncio.wait_for(first_cancelled.wait(), timeout=5.0)
+        release_second.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+        unwind.set()
+        await asyncio.wait_for(ending, timeout=5.0)
+        if lane.routing:
+            await asyncio.wait(lane.routing, timeout=5.0)
+
+        bodies = [getattr(e.content, "body", None) for e in await kit.store.list_events(ROOM)]
+        await kit.close()
+        assert "second" not in bodies
+
 
 # ---------------------------------------------------------------------------
 # The attachment moves: a re-attach lands inside a deferred detach
