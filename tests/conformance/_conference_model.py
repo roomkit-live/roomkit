@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import weakref
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -148,6 +149,10 @@ class ConferenceModel(MockRealtimeProvider):
                 {"session": session_id, "data": _b64(data), "samples": len(data) // 2}
                 for session_id, data in self.sent_audio
             ],
+            "heard": {
+                "data": _b64(b"".join(data for _, data in self.sent_audio)),
+                "samples": sum(len(data) for _, data in self.sent_audio) // 2,
+            },
             "injections": [dict(injection) for injection in self.injections],
             "results": [
                 {"session": session_id, "call_id": call_id, "result": result}
@@ -214,7 +219,7 @@ class _CountedSends:
         mixer._send = counted  # ty: ignore[invalid-assignment]
 
 
-_SENDS: dict[int, _CountedSends] = {}
+_SENDS: weakref.WeakKeyDictionary[ConferenceMixer, _CountedSends] = weakref.WeakKeyDictionary()
 
 
 def watch_mix(channel: ConferenceChannel) -> None:
@@ -222,12 +227,12 @@ def watch_mix(channel: ConferenceChannel) -> None:
     ``mix`` waits out. It reads the channel's internals: the Python core
     offers no public wait for its mix."""
     mixer = channel._realtime.mixer
-    _SENDS[id(mixer)] = _CountedSends(mixer)
+    _SENDS[mixer] = _CountedSends(mixer)
 
 
 def _mixing(mixer: ConferenceMixer) -> bool:
     """Whether the mix still holds a full window of a track, or is sending one."""
-    sends = _SENDS.get(id(mixer))
+    sends = _SENDS.get(mixer)
     if sends is not None and sends.in_flight:
         return True
     for room in mixer._rooms.values():
@@ -304,9 +309,12 @@ async def model_call(fixture: ConferenceFixture, spec: Mapping[str, Any]) -> Non
 async def plug_model(
     harness: Harness, fixture: ConferenceFixture, spec: Mapping[str, Any]
 ) -> None:
-    """``conference.plug`` of a scripted model, which ``conference.read`` reads."""
-    model = ConferenceModel(spec["realtime"], harness.gates)
-    await fixture.channel.plug_realtime(ConferenceRealtimeConfig(provider=model))
+    """``conference.plug`` of a realtime model, scripted by its ``realtime``,
+    which ``conference.read`` reads."""
+    script = spec.get("realtime", {})
+    model = ConferenceModel(script, harness.gates)
+    settings = realtime_settings({"realtime": script})
+    await fixture.channel.plug_realtime(ConferenceRealtimeConfig(provider=model, **settings))
     fixture.model = model
 
 

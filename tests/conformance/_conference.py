@@ -182,13 +182,13 @@ async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> No
 
 
 async def _plug(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    """``conference.plug``; a model its ``realtime`` scripts."""
-    if "realtime" not in spec:
-        await SFU_CALLS["conference.plug"](kit, harness, spec)
-    elif spec["kind"] != "realtime":
+    """``conference.plug``; a realtime model is the scripted one ``realtime`` describes."""
+    if spec["kind"] == "realtime":
+        await plug_model(harness, harness.conferences[spec["channel_id"]], spec)
+    elif "realtime" in spec:
         raise ValueError("conference.plug's realtime scripts a realtime model")
     else:
-        await plug_model(harness, harness.conferences[spec["channel_id"]], spec)
+        await SFU_CALLS["conference.plug"](kit, harness, spec)
 
 
 CONFERENCE_CALLS = {
