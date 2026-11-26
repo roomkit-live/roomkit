@@ -1,0 +1,227 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/an-instruction-while-an-instructed-turn-runs-waits-a-turn-of-its-own",
+  "title": "With steer_room_turns, an instruction that comes while the turn another instruction opened runs is not handed to that turn: it opens a turn of its own, which reads it as the application's instruction",
+  "rules": [
+    "§6.4",
+    "§10.1.1 rule 6",
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-6.4-544"
+  ],
+  "notes": "Two instructions have the same author, the application, so the author rule alone would hand the second to the turn the first opened. Steered in, it would read as a message of the room, unmarked, or with its mark read as a copy where the room labels its speakers, and the same turn would answer it (RMK-2146): a delegated task's result that came while the agent told another's read as a participant's words. The first turn holds at its tool while the second instruction comes, then at its answer: steered, the second call would have returned by then; it is still pending, waiting a turn of its own. The first turn's requests hold no second instruction; each turn keeps the instruction it read and answers it, each answer ending its own turn (loop_end_reason completed on both). What history the second turn reads besides its instruction is not this rule's, and is not asserted. Python: core/_room_turns.py steered_message; roomkit-rs: rules::transcript::steered_text.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "tools": [
+          {
+            "name": "read_result",
+            "description": "Read the task's result.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "failed"
+          }
+        ],
+        "model": {
+          "chat_dialect": {},
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_result"
+                }
+              ]
+            },
+            {
+              "gate": "answer",
+              "text": "The first task failed."
+            },
+            {
+              "text": "The second task is done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Report the first task's result."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Report the second task's result."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "wait_for": "answer",
+      "pending": "second"
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "agent"
+          },
+          "visibility": "agent",
+          "content": {
+            "type": "text",
+            "body": "Report the first task's result."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "The first task failed."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "agent"
+          },
+          "visibility": "agent",
+          "content": {
+            "type": "text",
+            "body": "Report the second task's result."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "The second task is done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nReport the first task's result."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nReport the first task's result."
+            },
+            "$any",
+            "$any"
+          ]
+        },
+        {}
+      ]
+    }
+  }
+}
