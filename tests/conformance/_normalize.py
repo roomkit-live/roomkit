@@ -20,6 +20,11 @@ from typing import Any
 
 _INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 _ID_KEYS = frozenset({"id", "event_id", "responds_to", "parent_event_id", "target_event_id"})
+# A recording event's ``id`` is the recording's, which its recorder names
+# (README, "Scripted conference media"), not an event's: kept as written, in
+# the event and in its ``data`` (``expect.media_events``).
+_RECORDING_EVENTS = frozenset({"recording_started", "recording_stopped"})
+_RECORDING_DATA = "recording event data"
 
 
 def is_lifecycle_record(event: dict[str, Any]) -> bool:
@@ -150,6 +155,7 @@ class Normalizer:
 
     def _object(self, value: dict[str, Any], member: str | None) -> dict[str, Any]:
         indexes = self._indexes_of(value)
+        recording = value.get("event") in _RECORDING_EVENTS
         # A participant's or an identity's id is the scenario's own (§5.5,
         # §5.6), as are a voice session's id, an ACP option's id and the id of
         # a voice a TTS catalog lists (§12.2).
@@ -159,6 +165,8 @@ class Normalizer:
             or "identification" in value
             or "channel_addresses" in value
             or (value.get("type") in ("select", "boolean") and "currentValue" in value)
+            or recording
+            or member == _RECORDING_DATA
         )
         result: dict[str, Any] = {}
         for key, item in value.items():
@@ -166,6 +174,8 @@ class Normalizer:
                 result[self._key(key)] = indexes[key](item)
             elif own_id and key == "id":
                 result[key] = item
+            elif recording and key == "data" and isinstance(item, dict):
+                result[key] = self._object(item, _RECORDING_DATA)
             else:
                 result[self._key(key)] = self.value(item, key)
         self._follows_index(value, result)
