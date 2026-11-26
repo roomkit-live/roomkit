@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/without-a-streaming-stt-semantic-speech-is-judged-once-min-speech-ms-passed",
+  "title": "Under SEMANTIC without a streaming STT, speech over the reply is judged only once it lasted min_speech_ms",
+  "rules": [
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.3.13-019"
+  ],
+  "notes": "Without a streaming STT the detector waits for min_speech_ms of sustained speech: 250 ms into the speech it has judged nothing and the reply plays on; by 350 ms the speech is judged on its duration, no words having come, and the reply cut.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        }
+      ],
+      "transcripts": [
+        "Wait"
+      ],
+      "interruption": {
+        "min_speech_ms": 300
+      },
+      "backchannel_decisions": [
+        {
+          "is_backchannel": false
+        }
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 250
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [],
+          "cancel_audio": {
+            "alice": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 100
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [
+            {
+              "transcript": null,
+              "speech_duration_ms": {
+                "$present": true
+              }
+            }
+          ],
+          "cancel_audio": {
+            "alice": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -42,8 +42,8 @@ class VirtualClock:
         self._now = time.monotonic()
         self._timers: list[tuple[float, int, asyncio.Future[None]]] = []
         self._order = itertools.count()
-        # The task behind each pending timer: what ``voice.settle`` and the
-        # idle wait count as waiting on the clock rather than running.
+        # The task behind each pending timer: what ``voice.settle`` counts as
+        # waiting on the clock rather than running.
         self._sleepers: dict[asyncio.Task[Any], asyncio.Future[None]] = {}
 
     def monotonic(self) -> float:

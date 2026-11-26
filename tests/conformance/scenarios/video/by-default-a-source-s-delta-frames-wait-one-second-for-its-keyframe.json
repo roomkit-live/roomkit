@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/by-default-a-source-s-delta-frames-wait-one-second-for-its-keyframe",
+  "title": "With the default bridge configuration, a source's delta frames to a target are dropped for 1 s, then reach it",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-014"
+  ],
+  "notes": "keyframe_interval_s 0: no periodic request. The first delta comes 500 ms after the join: the wait runs from that delta, not from the join. The warning the bridge logs once is not read.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_interval_s": 0
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 500
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID",
+      "keyframe": false
+    },
+    {
+      "call": "clock.advance",
+      "ms": 900
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": []
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 200
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "BwgJ"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

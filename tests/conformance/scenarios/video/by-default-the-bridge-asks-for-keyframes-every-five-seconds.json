@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/by-default-the-bridge-asks-for-keyframes-every-five-seconds",
+  "title": "With the default bridge configuration, a session that sends frames is asked for a keyframe again 5 s apart",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-007"
+  ],
+  "notes": "Only bob sends. Each read names bob's count of requests: unchanged 4.9 s after the first frame, changed by 5.1 s. Whether the first forwarded frame starts the interval with a request the RFC does not say, and the scenario does not read.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {}
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "first"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 4900
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "first"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 200
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "second"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

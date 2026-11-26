@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/with-a-streaming-stt-semantic-waits-past-min-speech-ms-for-the-first-words",
+  "title": "Under SEMANTIC with a streaming STT, speech over the reply waits past min_speech_ms for its first words, which the detector then judges",
+  "rules": [
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.3.13-018"
+  ],
+  "notes": "The recognizer's first words are held at a gate past min_speech_ms (100 ms); 500 ms into the speech nothing is judged yet, and once the words come they are what the detector judges. That the wait ends at max(min_speech_ms, transcript_wait_ms) without words is the next scenario.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "cutting"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Wait",
+                "final": false,
+                "gate": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "interruption": {
+        "strategy": "semantic",
+        "min_speech_ms": 100,
+        "transcript_wait_ms": 1000
+      },
+      "backchannel_decisions": [
+        {
+          "is_backchannel": false
+        }
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "words"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 500,
+      "waiters": 1
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [],
+          "cancel_audio": {
+            "alice": 0
+          }
+        }
+      }
+    },
+    {
+      "open": "words"
+    },
+    {
+      "wait_for": "cutting"
+    },
+    {
+      "open": "cutting"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [
+            {
+              "transcript": "Wait",
+              "is_final": false,
+              "speech_duration_ms": {
+                "$present": true
+              }
+            }
+          ],
+          "cancel_audio": {
+            "alice": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

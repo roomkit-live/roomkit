@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-turn-held-for-speech-that-resumed-is-routed-once-its-wait-ends-in-silence",
+  "title": "A turn judged complete while the user speaks again is held, then routed alone once its wait ends in silence after speech that gave no words",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-016"
+  ],
+  "notes": "As the previous scenario, but the new speech ends 300 ms after the verdict and gives no words: the held turn waits turn_incomplete_wait_ms (500 ms) of silence from the end of that speech, not from the verdict, and is routed then, alone.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "at_end": [
+              {
+                "text": "first"
+              }
+            ]
+          },
+          {}
+        ]
+      },
+      "turn_decisions": [
+        {
+          "is_complete": true,
+          "gate": "judging"
+        },
+        {
+          "is_complete": true
+        }
+      ],
+      "turn_incomplete_wait_ms": 500
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "judging"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "judging"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 0,
+      "waiters": 1
+    },
+    {
+      "call": "clock.advance",
+      "ms": 300
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 400
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "type": "channel_attached"
+          }
+        ]
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 200
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "type": "channel_attached"
+          },
+          {
+            "content": {
+              "body": "first"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "first"
+          }
+        }
+      ]
+    }
+  }
+}

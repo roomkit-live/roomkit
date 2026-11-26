@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/the-bridge-asks-for-keyframes-again-once-per-keyframe-interval",
+  "title": "With keyframe_interval_s set, the bridge asks a session that sends frames for a keyframe again only once the interval passed, once per interval",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-010",
+    "RK-12.8.9-007"
+  ],
+  "notes": "Only bob sends. Each read names bob's count of requests: unchanged inside an interval, changed once it passed. What alice is asked, and whether the first forwarded frame starts the interval with a request, the RFC does not say, and the scenario does not read.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_interval_s": 2
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "first"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 1500
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "first"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 600
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "second"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 4,
+      "data": "CgsM"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "second"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 2100
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 5,
+      "data": "DQ4P"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "bob": {
+              "$as": "third"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

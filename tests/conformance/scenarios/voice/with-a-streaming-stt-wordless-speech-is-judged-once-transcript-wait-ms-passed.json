@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/with-a-streaming-stt-wordless-speech-is-judged-once-transcript-wait-ms-passed",
+  "title": "Under SEMANTIC with a streaming STT, speech over the reply that gives no words is judged on its duration once max(min_speech_ms, transcript_wait_ms) passed",
+  "rules": [
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-12.3.13-018"
+  ],
+  "notes": "No word ever comes: 900 ms into the speech, past min_speech_ms but inside transcript_wait_ms, nothing is judged and the reply plays on; by 1050 ms, past max(min_speech_ms, transcript_wait_ms) but short of their sum, the speech is judged on its duration and the reply cut.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "on_barge_in",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "cutting"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {}
+        ]
+      },
+      "interruption": {
+        "strategy": "semantic",
+        "min_speech_ms": 100,
+        "transcript_wait_ms": 1000
+      },
+      "backchannel_decisions": [
+        {
+          "is_backchannel": false
+        }
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 900,
+      "waiters": 1
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [],
+          "cancel_audio": {
+            "alice": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 150
+    },
+    {
+      "wait_for": "cutting"
+    },
+    {
+      "open": "cutting"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "backchannel_contexts": [
+            {
+              "transcript": null,
+              "speech_duration_ms": {
+                "$present": true
+              }
+            }
+          ],
+          "cancel_audio": {
+            "alice": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "cut": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -8,7 +8,7 @@
   "requirements": [
     "RK-12.3.13-020"
   ],
-  "notes": "The speech never ends and no word comes: the verdict is on its duration alone. That it waited min_speech_ms first is not shown (RK-12.3.13-019 stays a gap).",
+  "notes": "The speech never ends and no word comes: the verdict is on its duration alone. That it waited min_speech_ms first is voice/without-a-streaming-stt-semantic-speech-is-judged-once-min-speech-ms-passed, on the virtual clock.",
   "requires_features": [
     "voice"
   ],

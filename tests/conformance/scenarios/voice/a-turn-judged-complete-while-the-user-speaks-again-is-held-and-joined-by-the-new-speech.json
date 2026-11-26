@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-turn-judged-complete-while-the-user-speaks-again-is-held-and-joined-by-the-new-speech",
+  "title": "A turn judged complete while speech that started after it is under way is not routed: the new speech joins it and the whole is routed once",
+  "rules": [
+    "§12.3.12"
+  ],
+  "requirements": [
+    "RK-12.3.12-016"
+  ],
+  "notes": "The first verdict is held at a gate while new speech starts; once applied, the turn is held: its wait is the clock's only one (clock.advance with waiters 1 and 0 ms), so the new speech ends only after the verdict. The second verdict, on both utterances, routes them as one message.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "at_end": [
+              {
+                "text": "first"
+              }
+            ]
+          },
+          {
+            "at_end": [
+              {
+                "text": "more"
+              }
+            ]
+          }
+        ]
+      },
+      "turn_decisions": [
+        {
+          "is_complete": true,
+          "gate": "judging"
+        },
+        {
+          "is_complete": true
+        }
+      ],
+      "turn_incomplete_wait_ms": 500
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "judging"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "open": "judging"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 0,
+      "waiters": 1
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "first more"
+          }
+        }
+      ]
+    }
+  }
+}
