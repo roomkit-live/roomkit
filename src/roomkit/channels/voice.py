@@ -899,10 +899,12 @@ class VoiceChannel(
     ) -> None:
         """Fire an audio level hook for a bound session, at most every 100 ms.
 
-        The binding is read before the throttle's timestamp is written: audio
-        still flowing for a session unbound since leaves no entry behind.
+        The 100 ms are measured on the media clock (``roomkit._clock``), the
+        real one by default. The binding is read before the throttle's
+        timestamp is written: audio still flowing for a session unbound since
+        leaves no entry behind.
         """
-        now = time.monotonic()
+        now = _clock.monotonic()
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
             if binding_info is None or now - last_fired.get(session.id, 0.0) < 0.1:
