@@ -6,10 +6,14 @@ import asyncio
 
 import pytest
 
+from roomkit import HookExecution, HookTrigger, RoomKit
+from roomkit.channels.video import VideoChannel
 from roomkit.video.backends.mock import MockVideoBackend
 from roomkit.video.base import VideoSession
 from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
 from roomkit.video.video_frame import VideoFrame
+from roomkit.video.vision.mock import MockVisionProvider
+from tests.channel_tasks import settled
 
 
 def _frame(data: bytes = b"\x00" * 100, *, keyframe: bool = True) -> VideoFrame:
@@ -416,3 +420,74 @@ class TestVideoBridge:
         bridge.forward(s1, _frame())
         await asyncio.sleep(0)
         assert len(backend.sent_video) == 1
+
+
+class TestVideoBridgeCapacity:
+    """A video join past ``max_participants`` is refused before its session is
+    bound, and a session the join made is hung up, as a voice join (RFC §12.8.9)."""
+
+    @staticmethod
+    async def _full_room() -> tuple[
+        RoomKit, VideoChannel, MockVideoBackend, MockVisionProvider, list[str]
+    ]:
+        backend = MockVideoBackend()
+        vision = MockVisionProvider(["a view"])
+        video = VideoChannel(
+            "camera",
+            backend=backend,
+            bridge=VideoBridgeConfig(max_participants=2),
+            vision=vision,
+            vision_interval_ms=0,
+        )
+        kit = RoomKit()
+        kit.register_channel(video)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "camera")
+        started: list[str] = []
+
+        @kit.hook(HookTrigger.ON_VIDEO_SESSION_STARTED, execution=HookExecution.ASYNC)
+        async def on_started(event: object, ctx: object) -> None:
+            started.append(event.participant_id)  # type: ignore[attr-defined]
+
+        await kit.join("r1", "camera", participant_id="alice")
+        await kit.join("r1", "camera", participant_id="bob")
+        return kit, video, backend, vision, started
+
+    async def test_a_session_joined_past_max_participants_is_not_bound(self) -> None:
+        kit, video, backend, vision, started = await self._full_room()
+        carol = await backend.connect("r1", "carol", "camera")
+        await settled(video)
+        analysed = len(vision.calls)
+
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "camera", session=carol)
+        await backend.simulate_video_received(carol, _frame(b"\x01\x02\x03"))
+        await backend.simulate_session_ready(carol)
+        await settled(video)
+        await kit.close()
+
+        assert len(vision.calls) == analysed
+        assert sorted(started) == ["alice", "bob"]
+
+    async def test_a_session_the_kit_made_for_a_refused_join_is_hung_up(self) -> None:
+        kit, _, backend, _, _ = await self._full_room()
+
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "camera", participant_id="carol")
+
+        carol = next(s for s in backend.list_sessions("r1") if s.participant_id == "carol")
+        assert carol.state.value == "ended"
+        await kit.close()
+
+    async def test_a_hang_up_that_fails_leaves_the_refusal_to_the_caller(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit, _, backend, _, _ = await self._full_room()
+
+        async def broken_disconnect(session: object) -> None:
+            raise ConnectionError("transport gone")
+
+        monkeypatch.setattr(backend, "disconnect", broken_disconnect)
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "camera", participant_id="carol")
+        await kit.close()

@@ -147,7 +147,7 @@ class VoiceOpsMixin(HelpersMixin):
                 organization's.
             ChannelNotRegisteredError: If the channel is not registered.
             ChannelNotFoundError: If the channel is not attached to the room.
-            RuntimeError: If the voice channel's bridge already holds
+            RuntimeError: If the voice or video channel's bridge already holds
                 ``max_participants`` sessions in the room: the session is
                 left unbound, and one the join made is disconnected.
         """
@@ -309,8 +309,17 @@ class VoiceOpsMixin(HelpersMixin):
                 channel_id,
                 metadata=metadata,
             )
-
-        channel.bind_session(session, room_id, binding)
+        try:
+            channel.bind_session(session, room_id, binding)
+        except Exception:
+            # Refused before it was bound (a full bridge, a refused
+            # recording): a session this join made is hung up (RFC §12.8.9).
+            if created:
+                try:
+                    await channel.backend.disconnect(session)
+                except Exception:
+                    logger.exception("Disconnecting refused video session %s failed", session.id)
+            raise
         await record_reached(
             self._store, self._lock_manager, room_id, session.participant_id, channel_id
         )

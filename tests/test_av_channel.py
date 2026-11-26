@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit import AudioVideoChannel, ChannelType, RoomKit
+from roomkit import AudioVideoChannel, ChannelType, HookExecution, HookTrigger, RoomKit
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelMediaType
 from roomkit.recorder.base import (
@@ -15,12 +17,16 @@ from roomkit.recorder.base import (
     RoomRecorderBinding,
 )
 from roomkit.recorder.mock import MockMediaRecorder
+from roomkit.video.backends.av import AudioVideoBackend, CallVideoBackend
 from roomkit.video.base import VideoSession, VideoSessionState
+from roomkit.video.bridge import VideoBridgeConfig
 from roomkit.video.video_frame import VideoFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
+from tests.channel_tasks import settled
 
 
 def _make_av_backend() -> MagicMock:
@@ -276,3 +282,87 @@ class TestAVRecordingWiring:
         assert len(av._video_media_taps) > 0
         # Backend's add_video_tap should NOT be called
         assert len(backend._video_taps) == 0
+
+
+class _CallVideo(CallVideoBackend):
+    """The video of the calls of :class:`_CallsWithVideo`: it records each
+    frame it is sent."""
+
+    def __init__(self, owner: AudioVideoBackend) -> None:
+        super().__init__(owner)
+        self.sent: list[tuple[str, VideoFrame]] = []
+        self.first_sent = threading.Event()
+
+    async def send_video(self, session: VideoSession, video: Any) -> None:
+        raise AssertionError("the avatar's frames go out one at a time")
+
+    def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
+        self.sent.append((session.id, frame))
+        self.first_sent.set()
+
+
+class _CallsWithVideo(MockVoiceBackend, AudioVideoBackend):
+    """A combined backend written on the contract: each call it connects
+    carries video, live at once, served by its ``video`` facet."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._video = _CallVideo(self)
+
+    @property
+    def video(self) -> _CallVideo:
+        return self._video
+
+    async def connect(
+        self,
+        room_id: str,
+        participant_id: str,
+        channel_id: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> VoiceSession:
+        call = await super().connect(room_id, participant_id, channel_id, metadata=metadata)
+        self._video._started(
+            VideoSession(
+                id=call.id,
+                room_id=room_id,
+                participant_id=participant_id,
+                channel_id=channel_id,
+                state=VideoSessionState.ACTIVE,
+            )
+        )
+        return call
+
+
+class TestAVVideoBridgeCapacity:
+    """RFC §12.8.9: a call whose video the full video bridge has no room for is
+    refused before it is bound, as a voice join past the audio bridge's."""
+
+    async def test_a_call_past_the_video_bridge_s_max_participants_is_not_bound(self) -> None:
+        backend = _CallsWithVideo()
+        av = AudioVideoChannel(
+            "av",
+            backend=backend,
+            tts=MockTTSProvider(),
+            video_bridge=VideoBridgeConfig(max_participants=1),
+        )
+        kit = RoomKit()
+        kit.register_channel(av)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "av")
+        started: list[str] = []
+
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, execution=HookExecution.ASYNC)
+        async def on_started(event: object, ctx: object) -> None:
+            started.append(event.participant_id)  # type: ignore[attr-defined]
+
+        await kit.join("r1", "av", participant_id="alice")
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "av", participant_id="bob")
+        bob = next(s for s in backend.list_sessions("r1") if s.participant_id == "bob")
+        await backend.simulate_session_ready(bob)
+        await settled(av)
+        await kit.close()
+
+        assert started == ["alice"]
+        assert bob.state.value == "ended"

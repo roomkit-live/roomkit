@@ -230,17 +230,23 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         *,
         backend: VoiceBackend | None = None,
     ) -> None:
-        """Bind a voice session and fire video session events."""
-        super().bind_session(session, room_id, binding, backend=backend)
+        """Bind a voice session and fire video session events.
 
+        A call whose video the video bridge has no room left for is refused
+        before anything binds it, as one the audio bridge refuses (RFC §12.8.9).
+        """
         # Look up the video session from the combined backend
         video_session = self._get_video_session(session.id)
+        bridged = self._admit_video(video_session, room_id)
+        try:
+            super().bind_session(session, room_id, binding, backend=backend)
+        except Exception:
+            if bridged and self._video_bridge is not None:
+                self._video_bridge.remove_session(session.id)
+            raise
         if video_session is None:
             return
-
-        # Register video session with video bridge
-        if self._video_bridge is not None and self._video_backend is not None:
-            self._video_bridge.add_session(video_session, room_id, self._video_backend)
+        if bridged and self._video_backend is not None:
             # Enable passthrough so the bridge forwards all frames
             # without blocking on keyframe availability — the remote
             # decoder handles its own recovery via RTCP.
@@ -254,6 +260,14 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             self._session_ready_pending_video.discard(session.id)
         if was_ready_pending:
             self._report_video_started(video_session, room_id)
+
+    def _admit_video(self, video_session: VideoSession | None, room_id: str) -> bool:
+        """Register a call's video with the video bridge; whether it did. The
+        bridge raises when it holds ``max_participants`` sessions of the room."""
+        if video_session is None or self._video_bridge is None or self._video_backend is None:
+            return False
+        self._video_bridge.add_session(video_session, room_id, self._video_backend)
+        return True
 
     def _on_video_session_ready(self, video_session: VideoSession) -> None:
         """The backend reports a call's video live: report it once bound."""

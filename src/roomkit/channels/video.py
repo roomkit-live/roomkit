@@ -216,18 +216,16 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
     ) -> None:
         """Bind a video session to a room for event routing.
 
-        The recording starts first: a recorder that refuses it (a ``storage``
-        with '..', a directory it cannot create) refuses the session before
-        anything is bound to the room.
+        The session is admitted first: a bridge with no room left for it, or
+        a recorder that refuses its recording (a ``storage`` with '..', a
+        directory it cannot create), refuses it before anything is bound to
+        the room (RFC §12.8.9, §12.8.10).
         """
-        self._start_recording(session)
+        self._admit(session, room_id)
         self._session_bindings[session.id] = (room_id, binding)
         # Dual-signal: check if backend already signalled ready
         was_ready_pending = session.id in self._session_ready_pending
         self._session_ready_pending.discard(session.id)
-        # Register session with video bridge
-        if self._bridge is not None:
-            self._bridge.add_session(session, room_id, self._backend)
         # Emit framework event
         if self._framework:
             self._schedule(
@@ -242,6 +240,22 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
                 name=f"video_session_hook:{session.id}",
                 kit_work=True,
             )
+
+    def _admit(self, session: VideoSession, room_id: str) -> None:
+        """Register *session* with the bridge and start its recording, or
+        refuse it with neither: the bridge raises when it holds
+        ``max_participants`` sessions of the room, the recorder when it refuses."""
+        bridge, bridged = self._bridge, False
+        try:
+            if bridge is not None:
+                bridge.add_session(session, room_id, self._backend)
+                bridged = True
+            self._start_recording(session)
+        except Exception:
+            if bridge is not None and bridged:
+                bridge.remove_session(session.id)
+            self._session_ready_pending.discard(session.id)
+            raise
 
     def unbind_session(self, session: VideoSession) -> None:
         """Remove session binding and clean up state."""
