@@ -11,6 +11,7 @@ from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput, ReasoningRequest
+from tests.conformance._conference_model import MODEL_CALLS
 from tests.conformance._realtime_io import (
     IO_ARGUMENTS,
     READ_MEMBERS,
@@ -241,6 +242,9 @@ REALTIME_ARGUMENTS = {
 
 
 async def realtime_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    if spec["call"] in MODEL_CALLS and spec["channel_id"] in harness.conferences:
+        # A conference's model (README, "Scripted conference model").
+        return await io_call(kit, harness, spec)
     fixture = harness.realtime_sessions[spec["channel_id"]]
     provider = fixture.provider
     match spec["call"]:

@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from roomkit import ConferenceChannel, MockConferenceBackend, TrackKind
-from roomkit.voice.base import VoiceSession
-from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 from tests.conformance._conference_faults import (
     FAULT_ARGUMENTS,
@@ -31,6 +27,18 @@ from tests.conformance._conference_media import (
     media_options,
     read_media,
 )
+from tests.conformance._conference_model import (
+    MODEL_OPEN,
+    ConferenceModel,
+    conference_model,
+    model_options,
+    pause,
+    plug_model,
+    read_model,
+    realtime_settings,
+    settle_mix,
+    watch_mix,
+)
 from tests.conformance._conference_options import (
     OPTIONS_ARGUMENTS,
     OPTIONS_CALLS,
@@ -50,43 +58,12 @@ if TYPE_CHECKING:
     from tests.conformance._harness import Harness
 
 
-class _Model(MockRealtimeProvider):
-    """Wake the step issuing a call when the model receives that call's result."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.replies: dict[str, asyncio.Future[str]] = {}
-
-    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        await super().submit_tool_result(session, call_id, result)
-        if (reply := self.replies.get(call_id)) is not None and not reply.done():
-            reply.set_result(result)
-
-    async def call(self, session: VoiceSession, spec: Mapping[str, Any]) -> Any:
-        call_id = spec["call_id"]
-        if call_id in self.replies:
-            raise ValueError(f"conference call {call_id} is already outstanding")
-        reply = asyncio.get_running_loop().create_future()
-        self.replies[call_id] = reply
-        try:
-            await self.simulate_tool_call(
-                session, call_id, spec["name"], spec.get("arguments", {})
-            )
-            wire = await reply
-        finally:
-            del self.replies[call_id]
-        try:
-            return json.loads(wire)
-        except json.JSONDecodeError:
-            return wire
-
-
 @dataclass
 class ConferenceFixture:
     room: str
     channel: ConferenceChannel
     backend: MockConferenceBackend
-    model: _Model | None
+    model: ConferenceModel | None
     media: ConferenceMedia | None = None
     options: ConferenceOptions | None = None
 
@@ -97,13 +74,17 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
     backend.joined_at = bot_joined_at(spec)
     arm_open_faults(backend.held, spec)
     await seat_occupants(backend, spec)
-    model = _Model() if "tools" in spec else None
+    model = conference_model(spec, harness.gates)
     options, media = media_options(
         media_spec(spec), harness, MockSTTProvider() if model is None else None
     )
     kept = channel_options(spec, harness, options, media)
-    realtime = None if model is None else realtime_config(spec, harness, model, kept)
+    options.update(model_options(spec))
+    realtime = None
+    if model is not None:
+        realtime = replace(realtime_config(spec, harness, model, kept), **realtime_settings(spec))
     channel = ConferenceChannel(spec["channel_id"], backend=backend, realtime=realtime, **options)
+    watch_mix(channel)
     kit.register_channel(channel)
     await kit.attach_channel(spec["room_id"], channel.channel_id)
     harness.conferences[channel.channel_id] = ConferenceFixture(
@@ -112,7 +93,11 @@ async def _open(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
 
 
 CONFERENCE_ARGUMENTS = {
-    "conference.open": {"channel_id", "room_id", "tools"} | MEDIA_OPEN | OPTIONS_OPEN | FAULT_OPEN,
+    "conference.open": {"channel_id", "room_id", "tools"}
+    | MEDIA_OPEN
+    | OPTIONS_OPEN
+    | FAULT_OPEN
+    | MODEL_OPEN,
     "conference.join": {"channel_id", "participant_id"} | ARRIVAL,
     "conference.leave": {"channel_id", "participant_id"},
     "conference.publish": {"channel_id", "participant_id", "track_id", "kind"},
@@ -127,6 +112,9 @@ CONFERENCE_ARGUMENTS = {
     **OPTIONS_ARGUMENTS,
     **FAULT_ARGUMENTS,
     "conference.read": SFU_ARGUMENTS["conference.read"] | {"stage_calls"},
+    "conference.feed": MEDIA_ARGUMENTS["conference.feed"] | {"pause_ms"},
+    "conference.settle": MEDIA_ARGUMENTS["conference.settle"] | {"mix"},
+    "conference.plug": SFU_ARGUMENTS["conference.plug"] | {"realtime"},
 }
 
 
@@ -176,7 +164,31 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
         # Only the stage calls named: those a scenario compares, whatever else
         # the lanes' stages received.
         media["stages"] = [call for call in media["stages"] if call["call"] in names]
-    return sfu | media | read_options(harness.conferences[spec["channel_id"]])
+    fixture = harness.conferences[spec["channel_id"]]
+    return sfu | media | read_options(fixture) | read_model(fixture)
+
+
+async def _feed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """``conference.feed``, its track silent for ``pause_ms`` first."""
+    await pause(spec)
+    await MEDIA_CALLS["conference.feed"](kit, harness, spec)
+
+
+async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """``conference.settle``, then, with ``mix``, the mix's sends to the model."""
+    await MEDIA_CALLS["conference.settle"](kit, harness, spec)
+    if spec.get("mix"):
+        await settle_mix(harness.conferences[spec["channel_id"]])
+
+
+async def _plug(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """``conference.plug``; a model its ``realtime`` scripts."""
+    if "realtime" not in spec:
+        await SFU_CALLS["conference.plug"](kit, harness, spec)
+    elif spec["kind"] != "realtime":
+        raise ValueError("conference.plug's realtime scripts a realtime model")
+    else:
+        await plug_model(harness, harness.conferences[spec["channel_id"]], spec)
 
 
 CONFERENCE_CALLS = {
@@ -187,4 +199,7 @@ CONFERENCE_CALLS = {
     **OPTIONS_CALLS,
     **FAULT_CALLS,
     "conference.read": _read,
+    "conference.feed": _feed,
+    "conference.settle": _settle,
+    "conference.plug": _plug,
 }

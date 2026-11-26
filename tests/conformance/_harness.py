@@ -79,6 +79,7 @@ from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
 from tests.conformance._conference_faults import close_work, untaken_faults
 from tests.conformance._conference_media import conference_payload
+from tests.conformance._conference_model import model_work
 from tests.conformance._conference_sfu import conference_work
 from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
 from tests.conformance._delivery import (
@@ -1107,6 +1108,11 @@ class Harness:
         tasks.extend(self._task_runs())
         tasks.extend(conference_work(self.conferences))
         tasks.extend(close_work(self.conferences.values()))
+        speaking, publishing = model_work(self.conferences.values())
+        tasks.extend(speaking)
+        if publishing:
+            busy = True
+            await asyncio.sleep(0.001)
         for fixture in self.realtime_sessions.values():
             # A session's resident audio send worker lives until the session
             # ends: it is busy only while it has audio to send.

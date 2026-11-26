@@ -22,6 +22,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from tests.conformance._conference_model import MODEL_CALLS, model_call
 from tests.conformance._realtime_reads import configuration
 from tests.conformance._voice import _vad
 from tests.conformance._voice_pipeline import (
@@ -186,10 +187,6 @@ IO_ARGUMENTS = {
 }
 
 
-# The calls that may name a conference opened with tools: its realtime model.
-CONFERENCE_MODEL_CALLS = {"realtime.response", "realtime.wait_idle"}
-
-
 async def io_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     if spec["channel_id"] in harness.conferences:
         return await _conference_model_call(harness.conferences[spec["channel_id"]], spec)
@@ -219,15 +216,13 @@ async def io_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
 
 
 async def _conference_model_call(fixture: ConferenceFixture, spec: Mapping[str, Any]) -> Any:
-    """``realtime.response`` or ``realtime.wait_idle`` on a conference's model."""
-    if spec["call"] not in CONFERENCE_MODEL_CALLS or fixture.model is None:
+    """A ``realtime.*`` call naming a conference: its model's (README,
+    "Scripted conference model")."""
+    if spec["call"] not in MODEL_CALLS or fixture.model is None:
         raise ValueError(f"{spec['call']} needs a realtime voice channel or a conference model")
     if spec["call"] == "realtime.wait_idle":
         return await _went_idle(fixture.channel, spec)
-    sessions = fixture.channel.get_room_sessions(fixture.room)
-    if not sessions:
-        raise ValueError("the conference model must be connected first")
-    await _response(fixture.model, sessions[0], spec["edge"])
+    await model_call(fixture, spec)
     return None
 
 
