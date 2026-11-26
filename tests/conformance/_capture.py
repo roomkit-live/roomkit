@@ -100,6 +100,7 @@ class ScriptedSubscriber:
         self._raises = bool(spec.get("raises", False))
         self._during_replay = _frames(spec.get("captures_during_replay", []))
         self._replaying = False
+        self.raised = 0
 
     def subscribe(self, name: str, since: CaptureMark | None) -> None:
         # A replay runs inside subscribe(): what the callback receives before
@@ -122,6 +123,7 @@ class ScriptedSubscriber:
             capture.start()
             capture.join()
         if self._raises:
+            self.raised += 1
             raise RuntimeError("the scripted subscriber raises")
 
     def _capture(self, frames: list[bytes]) -> None:
@@ -141,6 +143,7 @@ class ScriptedSubscriber:
                 }
                 for frame in self.frames
             ],
+            "raised": self.raised,
             "replayed_bytes": subscription.replayed_bytes,
             "truncated": subscription.truncated,
             "active": subscription.active,
