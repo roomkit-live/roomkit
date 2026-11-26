@@ -228,7 +228,7 @@ class TelemetryProvider(ABC):
         """The backend context the fields of :meth:`inject_context` name, for
         :func:`~roomkit.telemetry.context.set_current_span`: a provider whose
         :meth:`start_span` reads it back
-        (:func:`~roomkit.telemetry.context.get_current_telemetry_ctx`)
+        (:func:`~roomkit.telemetry.get_current_telemetry_ctx`)
         starts its spans in the other process's trace. ``None`` by default,
         and when *carrier* names no span.
         """

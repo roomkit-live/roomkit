@@ -9,7 +9,7 @@ from roomkit._lazy import lazy_exports
 from roomkit.telemetry.base import Attr, Span, SpanKind, TelemetryProvider
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.console import ConsoleTelemetryProvider
-from roomkit.telemetry.context import get_current_span
+from roomkit.telemetry.context import get_current_span, get_current_telemetry_ctx
 from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -35,4 +35,5 @@ __all__ = [
     "TelemetryConfig",
     "TelemetryProvider",
     "get_current_span",
+    "get_current_telemetry_ctx",
 ]

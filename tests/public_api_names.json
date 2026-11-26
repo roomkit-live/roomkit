@@ -1254,7 +1254,8 @@
     "SpanKind",
     "TelemetryConfig",
     "TelemetryProvider",
-    "get_current_span"
+    "get_current_span",
+    "get_current_telemetry_ctx"
   ],
   "roomkit.testing": [
     "Delivery",

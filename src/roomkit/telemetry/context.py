@@ -28,7 +28,12 @@ def get_current_span() -> str | None:
 
 
 def get_current_telemetry_ctx() -> Any:
-    """Get the current telemetry backend context (may be None)."""
+    """The current span's context as its provider gave it
+    (:meth:`~roomkit.telemetry.TelemetryProvider.get_span_context`, or
+    :meth:`~roomkit.telemetry.TelemetryProvider.extract_context` for a span
+    of another process): a provider written outside RoomKit starts a span
+    under it, in the current span's trace. ``None`` under no span, or when
+    the provider gives no context."""
     return _parent_telemetry_ctx.get()
 
 

@@ -5663,6 +5663,9 @@
   "roomkit.telemetry.get_current_span": {
     "__call__": ["def"]
   },
+  "roomkit.telemetry.get_current_telemetry_ctx": {
+    "__call__": ["def"]
+  },
   "roomkit.testing.Delivery": {
     "__init__": ["def", "event", "text"]
   },

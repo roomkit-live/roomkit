@@ -39,8 +39,9 @@ from roomkit.telemetry import (
     Span,
     SpanKind,
     TelemetryConfig,
+    get_current_span,
+    get_current_telemetry_ctx,
 )
-from roomkit.telemetry.context import get_current_span, get_current_telemetry_ctx
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
