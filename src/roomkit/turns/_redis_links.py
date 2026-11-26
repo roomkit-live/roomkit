@@ -135,7 +135,7 @@ class RedisTurnLink(TurnLink):
 
     @property
     def taken(self) -> bool:
-        # The executor's process acknowledged the request (RedisTurnBackend.submit).
+        # The executor's process acknowledged the request (DistributedTurnBackend.submit).
         return True
 
     def deliver(self, body: str) -> None:

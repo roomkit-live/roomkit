@@ -11,9 +11,7 @@ REDIS_URL set, across a real Redis where every worker is a process of its own.
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any
-from uuid import uuid4
 
 import pytest
 
@@ -40,11 +38,11 @@ from roomkit.turns import (
     TurnTimeouts,
 )
 from roomkit.turns._redis_routes import REFUSED
-from roomkit.turns.redis import RedisTurnBackend
+from roomkit.turns.distributed import DistributedTurnBackend
 from tests.test_framework import SimpleChannel
+from tests.turn_nodes import ACROSS, Nodes
 
-REDIS = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
-BACKENDS = ["memory", pytest.param("redis", marks=REDIS)]
+BACKENDS = ["memory", *ACROSS]
 # The accept bound is what a lost answer waits for: kept short.
 TIMEOUTS = TurnTimeouts(heartbeat_interval=0.02, heartbeat_timeout=2.0, accept=0.5, cancel=1.0)
 
@@ -86,11 +84,11 @@ class _Reserving(TurnBackend):
 
 class _Pool:
     """An owner kit behind a reserving backend, and workers declaring
-    ``worker``: all on one in-memory backend, or each on a Redis backend of
-    its own, a process of its own."""
+    ``worker``: all on one in-memory backend, or each on a node of its own
+    of the backend across processes, a process of its own."""
 
     def __init__(self, kind: str) -> None:
-        self._prefix = f"roomkit:test:{uuid4().hex[:12]}"
+        self._nodes = Nodes(kind)
         self._memory = InMemoryTurnBackend() if kind == "memory" else None
         self.store = InMemoryStore()
         self.backend = _Reserving(self._node())
@@ -101,9 +99,7 @@ class _Pool:
     def _node(self) -> TurnBackend:
         if self._memory is not None:
             return self._memory
-        return RedisTurnBackend(
-            os.environ["REDIS_URL"], key_prefix=self._prefix, timeouts=TIMEOUTS
-        )
+        return self._nodes.node(TIMEOUTS)
 
     async def open(self) -> None:
         kit = self.kit
@@ -144,7 +140,7 @@ class _Pool:
         host = self.hosts[name]
         return ExecutorInfo(
             executor_id=self.executors[name].executor_id,
-            node=host.node_id if node and isinstance(host, RedisTurnBackend) else None,
+            node=host.node_id if node and isinstance(host, DistributedTurnBackend) else None,
         )
 
     async def say(self, text: str, reserved: ExecutorInfo | None = None) -> Any:
@@ -176,20 +172,11 @@ class _Pool:
         for name in list(self.hosts):
             await self.stop(name)
         if self._memory is None:
-            await _forget(self._prefix)
+            await self._nodes.forget()
 
 
 async def _nothing(event: Any, context: Any) -> None:
     return None
-
-
-async def _forget(prefix: str) -> None:
-    """Delete the keys a pool wrote under *prefix*."""
-    client = pytest.importorskip("redis.asyncio").from_url(os.environ["REDIS_URL"])
-    keys = [key async for key in client.scan_iter(f"{prefix}:*")]
-    if keys:
-        await client.delete(*keys)
-    await client.aclose()
 
 
 @pytest.fixture(params=BACKENDS)
@@ -325,12 +312,12 @@ async def test_a_backend_that_names_no_executor_refuses_the_turn_unhanded() -> N
         await pool.close()
 
 
-@REDIS
-async def test_an_executor_of_the_owner_s_own_process_is_named_as_any_other() -> None:
+@pytest.mark.parametrize("services", ACROSS)
+async def test_an_executor_of_the_owner_s_own_process_is_named_as_any_other(services: str) -> None:
     """A worker served on the owner's own backend, whose turns stay in the
     process: named as the backend lists it or by its id alone it takes the
     turn, the room follows it, and closed it refuses before the hand-over."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("a")
@@ -350,12 +337,12 @@ async def test_an_executor_of_the_owner_s_own_process_is_named_as_any_other() ->
         await pool.close()
 
 
-@REDIS
-async def test_an_executor_id_several_processes_serve_needs_its_node() -> None:
+@pytest.mark.parametrize("services", ACROSS)
+async def test_an_executor_id_several_processes_serve_needs_its_node(services: str) -> None:
     """Two processes serve the id, one replacing the other: named without a
     node it is refused, named with its node it takes the turn, and alone
     again it is named by its id."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("old", executor_id="worker-1")
@@ -373,11 +360,13 @@ async def test_an_executor_id_several_processes_serve_needs_its_node() -> None:
         await pool.close()
 
 
-@REDIS
-async def test_an_executor_id_names_the_one_process_that_would_take_the_turn() -> None:
+@pytest.mark.parametrize("services", ACROSS)
+async def test_an_executor_id_names_the_one_process_that_would_take_the_turn(
+    services: str,
+) -> None:
     """Two processes serve the id and one of them alone declares the channel:
     named by its id, that one takes the turn, as it alone would placed."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("coder", executor_id="worker-1")
@@ -390,21 +379,21 @@ async def test_an_executor_id_names_the_one_process_that_would_take_the_turn() -
         await pool.close()
 
 
-@REDIS
+@pytest.mark.parametrize("services", ACROSS)
 async def test_an_executor_whose_process_refuses_the_hand_over_leaves_the_turn_with_no_other(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, services: str
 ) -> None:
     """The reserved executor's process, closing, refuses the request it is
     handed: ``no_executor``, the request no longer handed, and the turn is
     placed on no other executor, as one placed as usual would be."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("a")
         await pool.say("First.")
         await pool.serve("b")
         host = pool.hosts["b"]
-        assert isinstance(host, RedisTurnBackend)
+        assert isinstance(host, DistributedTurnBackend)
         refuse = host._routes._answer_back
         with monkeypatch.context() as refusing:
             refusing.setitem(
@@ -422,19 +411,19 @@ async def test_an_executor_whose_process_refuses_the_hand_over_leaves_the_turn_w
         await pool.close()
 
 
-@REDIS
+@pytest.mark.parametrize("services", ACROSS)
 async def test_a_turn_taken_whose_holder_cannot_be_recorded_is_released(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, services: str
 ) -> None:
     """The reserved executor took the turn and Redis refuses the record of
     it holding the room: the turn is let go on its executor, not left running
     for a room that would not follow it, and the failure is the caller's."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("b")
         owner = pool.backend.inner
-        assert isinstance(owner, RedisTurnBackend)
+        assert isinstance(owner, DistributedTurnBackend)
 
         async def refused(*args: Any) -> None:
             raise ConnectionError("Redis did not answer")
@@ -450,21 +439,21 @@ async def test_a_turn_taken_whose_holder_cannot_be_recorded_is_released(
         await pool.close()
 
 
-@REDIS
+@pytest.mark.parametrize("services", ACROSS)
 @pytest.mark.wallclock
 async def test_an_executor_whose_answer_to_the_hand_over_is_lost_leaves_the_turn_with_no_other(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, services: str
 ) -> None:
     """The reserved executor's process is handed the request and its answer
     never comes: ``executor_lost`` at the accept bound, the request handed (it
     may have begun), and no other executor given the turn."""
-    pool = _Pool("redis")
+    pool = _Pool(services)
     await pool.open()
     try:
         await pool.serve("a")
         await pool.serve("b")
         host = pool.hosts["b"]
-        assert isinstance(host, RedisTurnBackend)
+        assert isinstance(host, DistributedTurnBackend)
         monkeypatch.setitem(host._routes._routes, "request", lambda envelope: None)
         result = await pool.say("First.", pool.info("b"))
 

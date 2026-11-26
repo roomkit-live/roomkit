@@ -1,9 +1,13 @@
-"""The Redis turn backend against a real Redis (RFC §10.6): set REDIS_URL.
+"""The turn backend across processes (RFC §10.6): placement, liveness, a lost
+executor, the work a turn began reaching its owner.
 
-A room owner and executors in other processes (subprocesses running
-tests/redis_turn_executor.py), or several backends in this process standing
-for several processes: placement, liveness, a lost executor, the work a turn
-began reaching its owner.
+Several backends in this process stand for several processes: such a test
+runs on the in-memory broker and registry, and again on Redis where
+REDIS_URL names a server. A test that needs the server itself (a room owner
+or executors in other processes, subprocesses running
+tests/redis_turn_executor.py; a proxy before the server; the server's keys),
+or the time a message takes to cross it, is marked ``needs_redis`` and runs
+on Redis alone.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Coroutine, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +53,7 @@ from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tools.context import current_tool_room_id
 from roomkit.turns import TurnClient, TurnExecutor, TurnTimeouts, _redis_beat
+from roomkit.turns._memory_ports import InMemoryTurnBroker, InMemoryTurnRegistry
 from roomkit.turns._redis_beat import BeatThread, LiveExecutors
 from roomkit.turns._redis_broker import RedisTurnBroker
 from roomkit.turns._redis_clients import RedisClients, call_bound, read_block, redis_clients
@@ -57,7 +62,8 @@ from roomkit.turns._redis_keys import Keys
 from roomkit.turns._redis_links import RedisExecutorLink
 from roomkit.turns._redis_registry import RedisTurnRegistry
 from roomkit.turns._redis_routes import REFUSED
-from roomkit.turns.broker import Beat
+from roomkit.turns.broker import Beat, BrokerMessage
+from roomkit.turns.distributed import DistributedTurnBackend
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import CommittedEvent, End, HostResult, RoomCall
 from tests import redis_turn_mode
@@ -66,8 +72,6 @@ from tests.redis_silencing import Silencing, redis_address, redis_db
 from tests.test_framework import SimpleChannel
 from tests.test_turns_channel_control import _Agent, _Recording, _turn
 from tests.test_turns_own_executor import _Tagged
-
-pytestmark = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
 
 # This process's bounds: a full collection stops the worker up to about half a
 # second (RMK-1714), and each Redis call gives up after half the silence bound,
@@ -88,12 +92,55 @@ async def _compiled_mark_patterns() -> None:
 
 
 @pytest.fixture
-def prefix() -> str:
-    return f"roomkit:test:{uuid4().hex[:12]}"
+def redis_server() -> str:
+    """The Redis server a test needs itself, where REDIS_URL names one."""
+    url = os.environ.get("REDIS_URL")
+    if not url:
+        pytest.skip("REDIS_URL not set")
+    return url
+
+
+needs_redis = pytest.mark.usefixtures("redis_server")
+"""Marks a test that needs a Redis server itself: other processes, a proxy
+before the server, the server's keys, or a message that takes a round trip
+to cross."""
+
+# The in-memory broker and registry the backends of one test share, by the
+# test's prefix.
+_IN_MEMORY: dict[str, tuple[InMemoryTurnBroker, InMemoryTurnRegistry]] = {}
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """A test's backends run on the in-memory pair and on Redis; those of
+    one that needs the server itself, on Redis alone."""
+    if "prefix" in metafunc.fixturenames:
+        on_redis_alone = "redis_server" in metafunc.fixturenames
+        services = ["redis"] if on_redis_alone else ["memory", "redis"]
+        metafunc.parametrize("prefix", services, indirect=True)
+
+
+@pytest.fixture
+def prefix(request: pytest.FixtureRequest) -> Iterator[str]:
+    """The name the backends of one test meet under: an in-memory pair of
+    the test's own, or a key prefix on the Redis server."""
+    if request.param == "memory":
+        name = f"memory:test:{uuid4().hex[:12]}"
+        _IN_MEMORY[name] = (InMemoryTurnBroker(), InMemoryTurnRegistry())
+        yield name
+        del _IN_MEMORY[name]
+        return
+    if not os.environ.get("REDIS_URL"):
+        pytest.skip("REDIS_URL not set")
+    yield f"roomkit:test:{uuid4().hex[:12]}"
 
 
 @pytest.fixture
 async def redis_client(prefix: str) -> AsyncIterator[Any]:
+    """A client of the Redis server, which deletes the test's keys after
+    it; none for a test on the in-memory pair, which leaves nothing."""
+    if prefix in _IN_MEMORY:
+        yield None
+        return
     redis = pytest.importorskip("redis.asyncio")
     client = redis.from_url(os.environ["REDIS_URL"])
     yield client
@@ -103,7 +150,11 @@ async def redis_client(prefix: str) -> AsyncIterator[Any]:
     await client.aclose()
 
 
-def _backend(prefix: str, timeouts: TurnTimeouts = TIMEOUTS) -> RedisTurnBackend:
+def _backend(prefix: str, timeouts: TurnTimeouts = TIMEOUTS) -> DistributedTurnBackend:
+    """A node of the backend *prefix* names."""
+    if prefix in _IN_MEMORY:
+        broker, registry = _IN_MEMORY[prefix]
+        return DistributedTurnBackend(broker, registry, timeouts=timeouts)
     return RedisTurnBackend(os.environ["REDIS_URL"], key_prefix=prefix, timeouts=timeouts)
 
 
@@ -191,6 +242,7 @@ class _ExecutorProcess:
 # -- An executor in another process -----------------------------------------------
 
 
+@needs_redis
 async def test_a_turn_runs_on_an_executor_in_another_process(
     prefix: str, redis_client: Any, database: Path
 ) -> None:
@@ -206,6 +258,7 @@ async def test_a_turn_runs_on_an_executor_in_another_process(
         await executor.stop()
 
 
+@needs_redis
 async def test_a_turn_whose_cpu_stalls_its_executor_keeps_beating(
     prefix: str, redis_client: Any, database: Path
 ) -> None:
@@ -257,6 +310,7 @@ async def test_a_local_host_predicate_belongs_to_its_serving_node(prefix: str) -
         await elsewhere.close()
 
 
+@needs_redis
 async def test_a_closed_backend_refuses_registry_reads_and_presence_claims(
     prefix: str, redis_client: Any
 ) -> None:
@@ -270,6 +324,7 @@ async def test_a_closed_backend_refuses_registry_reads_and_presence_claims(
     assert not await redis_client.exists(f"{prefix}:presence:room:agent")
 
 
+@needs_redis
 @pytest.mark.wallclock
 async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_timeout(
     prefix: str, redis_client: Any, database: Path
@@ -317,6 +372,7 @@ async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_time
     assert [(p.channel_id, p.online, p.executors) for p in presence] == [("worker", False, [])]
 
 
+@needs_redis
 @pytest.mark.wallclock
 async def test_two_room_owners_publish_an_agent_s_presence_change_once(
     prefix: str, redis_client: Any, database: Path
@@ -360,6 +416,7 @@ async def test_two_room_owners_publish_an_agent_s_presence_change_once(
     assert heard == ["presence_online", "presence_offline"]
 
 
+@needs_redis
 async def test_a_killed_executor_fails_its_turn_and_the_room_goes_on(
     prefix: str, redis_client: Any, database: Path
 ) -> None:
@@ -461,6 +518,7 @@ def _holding_agent(calls: list[asyncio.Task[Any]], cut: list[str | None]) -> Age
     )
 
 
+@needs_redis
 @pytest.mark.wallclock
 async def test_a_turn_whose_owner_s_process_died_is_cut_owner_lost(
     prefix: str, redis_client: Any
@@ -658,7 +716,7 @@ async def _hosted(
     channel: Any,
     name: str = "host-a",
     timeouts: TurnTimeouts = TIMEOUTS,
-) -> tuple[RedisTurnBackend, TurnExecutor]:
+) -> tuple[DistributedTurnBackend, TurnExecutor]:
     backend = _backend(prefix, timeouts)
     executor = TurnExecutor(
         lambda channel_id: channel if channel_id == channel.channel_id else None,
@@ -788,6 +846,7 @@ _ABORTED = '{"error": "Tool call aborted"}'
     ],
     ids=["one-call", "two-calls"],
 )
+@needs_redis  # the cut takes a round trip to reach the executor: the tools answer before it
 async def test_calls_answering_once_their_turn_elsewhere_is_cut_end_as_stored(
     prefix: str, redis_client: Any, names: list[str], ends: list[tuple[str, str, str]]
 ) -> None:
@@ -948,26 +1007,19 @@ async def test_many_rooms_at_once_keep_every_turn_s_order(prefix: str, redis_cli
 
 
 class _SlowWrites:
-    """A Redis client whose pipelines take *delay* to write (2 ms: a cut
-    lands while a frame is being written)."""
+    """A broker whose posts take *delay* to write (2 ms: a cut lands while
+    a frame is being written)."""
 
-    def __init__(self, client: Any, delay: float = 0.002) -> None:
-        self._client = client
+    def __init__(self, broker: Any, delay: float = 0.002) -> None:
+        self._broker = broker
         self._delay = delay
 
-    def pipeline(self, **kwargs: Any) -> Any:
-        pipe = self._client.pipeline(**kwargs)
-        execute = pipe.execute
-
-        async def slow() -> Any:
-            await asyncio.sleep(self._delay)
-            return await execute()
-
-        pipe.execute = slow
-        return pipe
+    async def post(self, node: str, messages: Sequence[BrokerMessage]) -> None:
+        await asyncio.sleep(self._delay)
+        await self._broker.post(node, messages)
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._client, name)
+        return getattr(self._broker, name)
 
 
 async def test_a_cut_while_frames_are_written_leaves_no_hole(
@@ -987,7 +1039,7 @@ async def test_a_cut_while_frames_are_written_leaves_no_hole(
 
     worker = _Worker("worker", _Words(streaming=True))
     host, executor = await _hosted(prefix, store, worker)
-    host._broker._client = _SlowWrites(host._broker._client)
+    host._outbox._broker = _SlowWrites(host._outbox._broker)
     kit = await _owner(prefix, "worker", store=store)
     try:
         for _ in range(10):
@@ -1003,6 +1055,7 @@ async def test_a_cut_while_frames_are_written_leaves_no_hole(
         await executor.close()
 
 
+@needs_redis
 async def test_an_executor_restarted_under_its_id_does_not_hold_the_dead_one_s_turn(
     prefix: str, redis_client: Any, database: Path
 ) -> None:
@@ -1027,6 +1080,7 @@ async def test_an_executor_restarted_under_its_id_does_not_hold_the_dead_one_s_t
             await second.stop()
 
 
+@needs_redis
 async def test_a_declaration_lost_from_redis_is_written_again(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1257,6 +1311,7 @@ class _CutAfterWrite:
         await asyncio.gather(up(), down(), return_exceptions=True)
 
 
+@needs_redis
 async def test_a_request_a_client_writes_twice_runs_its_turn_once(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1299,6 +1354,7 @@ async def test_a_request_a_client_writes_twice_runs_its_turn_once(
         await executor.close()
 
 
+@needs_redis
 async def test_what_every_process_reads_of_the_others_costs_the_same_however_many_turns_run(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1361,6 +1417,7 @@ async def test_an_executor_served_again_under_its_id_takes_the_turns(
         await second.close()
 
 
+@needs_redis
 async def test_loopback_preserves_reserved_channels_after_a_same_id_serve(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1464,7 +1521,7 @@ async def test_a_turn_s_end_still_queued_when_its_executor_s_process_closes_reac
     store = InMemoryStore()
     worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
     host, executor = await _hosted(prefix, store, worker)
-    host._broker._client = _SlowWrites(host._broker._client, delay=0.05)
+    host._outbox._broker = _SlowWrites(host._outbox._broker, delay=0.05)
     ended = asyncio.Event()
     send = RedisExecutorLink.send
 
@@ -1541,6 +1598,7 @@ async def test_a_turn_whose_control_redis_refused_stops_on_its_executor_at_once(
         await executor.close()
 
 
+@needs_redis
 async def test_a_malformed_member_in_redis_does_not_stop_the_turns(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1562,6 +1620,7 @@ async def test_a_malformed_member_in_redis_does_not_stop_the_turns(
         await executor.close()
 
 
+@needs_redis
 async def test_a_closed_process_is_neither_an_owner_nor_an_executor_in_redis(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1583,6 +1642,7 @@ async def test_a_closed_process_is_neither_an_owner_nor_an_executor_in_redis(
     assert await redis_client.zrange(f"{prefix}:alive", 0, -1) == []
 
 
+@needs_redis
 async def test_the_redis_mode_deletes_only_its_own_session_s_keys(redis_client: Any) -> None:
     """Sessions sharing one Redis: one ending leaves the others' keys."""
     other = f"roomkit:test:{uuid4().hex[:12]}:holder:worker:r"
@@ -1598,7 +1658,7 @@ async def test_the_redis_mode_deletes_only_its_own_session_s_keys(redis_client: 
 # -- What the review of 0e328a19 found -----------------------------------------------
 
 
-def _slow_beat_stop(backend: RedisTurnBackend, delay: float) -> None:
+def _slow_beat_stop(backend: DistributedTurnBackend, delay: float) -> None:
     """Widen the window in which *backend* closes but is still a member."""
     stop = backend._beat.stop
 
@@ -1621,6 +1681,7 @@ async def _held_until[T](clock: HeldClock, work: Awaitable[T], what: str) -> T:
     return task.result()
 
 
+@needs_redis
 async def test_a_turn_placed_on_a_closing_process_from_an_older_view_goes_elsewhere(
     prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1723,6 +1784,7 @@ async def test_work_after_a_turn_asking_from_a_closing_process_is_answered_at_on
         await executor.close()
 
 
+@needs_redis
 async def test_a_beat_built_before_an_executor_was_served_again_does_not_withdraw_it(
     prefix: str, redis_client: Any
 ) -> None:
@@ -1858,6 +1920,7 @@ async def test_work_reaching_a_closing_owner_is_refused_at_once(
         await executor.close()
 
 
+@needs_redis
 async def test_a_channel_call_and_an_event_for_a_closing_holder_go_to_another_executor(
     prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1953,10 +2016,10 @@ async def test_a_turn_that_ended_is_not_lost_to_a_stall_before_its_end_is_writte
 
     monkeypatch.setattr(RedisExecutorLink, "send", sending)
 
-    async def serve() -> tuple[RedisTurnBackend, TurnExecutor]:
+    async def serve() -> tuple[DistributedTurnBackend, TurnExecutor]:
         worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
         host, executor = await _hosted(prefix, store, worker)
-        host._broker._client = _SlowWrites(host._broker._client, delay=0.05)
+        host._outbox._broker = _SlowWrites(host._outbox._broker, delay=0.05)
         return host, executor
 
     host, executor = await process.run(serve())
@@ -2216,6 +2279,7 @@ def _beat_thread(url: str, keys: Keys, timeouts: TurnTimeouts) -> BeatThread:
     )
 
 
+@needs_redis
 @pytest.mark.parametrize(
     "timeouts", _HALF_OPEN, ids=lambda t: f"{t.heartbeat_interval}s-of-{t.heartbeat_timeout}s"
 )
@@ -2254,6 +2318,7 @@ async def test_a_half_open_beat_connection_takes_nobody_for_lost(
     assert not seen_lost
 
 
+@needs_redis
 @pytest.mark.parametrize(
     "timeouts", _HALF_OPEN, ids=lambda t: f"{t.heartbeat_interval}s-of-{t.heartbeat_timeout}s"
 )
@@ -2301,6 +2366,7 @@ async def test_a_half_open_inbox_reads_within_the_silence_bound(
     assert handed[0] - written < timeouts.heartbeat_timeout
 
 
+@needs_redis
 async def test_a_read_cut_by_its_connection_counts_from_its_start(
     prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2351,6 +2417,7 @@ async def test_a_read_cut_by_its_connection_counts_from_its_start(
     assert unread
 
 
+@needs_redis
 async def test_a_unix_socket_url_reaches_redis_on_every_connection(prefix: str) -> None:
     """A unix:// connection refuses TCP's options (socket_keepalive): the
     backend's three connections reach Redis through one."""

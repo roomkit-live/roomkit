@@ -1,7 +1,8 @@
 """The reader of a process's inbox for the turn backend (RFC §10.6).
 
-Each process that runs a :class:`~roomkit.turns.redis.RedisTurnBackend` has
-one inbox, which every other process writes to (through its outbox,
+Each process that runs a
+:class:`~roomkit.turns.distributed.DistributedTurnBackend` has one inbox,
+which every other process writes to (through its outbox,
 :mod:`~roomkit.turns._redis_outbox`) and it alone reads, with one blocking
 read for all its turns. An entry carries one message of the turn protocol as
 its JSON (a request, a frame, a control message, a channel control, a
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from roomkit.turns.base import TurnTimeouts
     from roomkit.turns.broker import BrokerMessage, InboxEntry, TurnBroker, TurnInbox
 
 logger = logging.getLogger("roomkit.turns")
@@ -26,6 +28,13 @@ READ_BLOCK_S = 1.0
 """How long the server holds the inbox's blocking read at most, in seconds:
 its connection waits that much longer than any other call (RFC §10.6.8)."""
 _RETRY_DELAY = 1.0
+
+
+def read_block(timeouts: TurnTimeouts) -> float:
+    """How long the broker holds the inbox's blocking read: a second, never
+    over a beat's interval, so the read cut and tried again at once lands
+    inside the silence bound too (RFC §10.6.8)."""
+    return min(READ_BLOCK_S, timeouts.heartbeat_interval)
 
 
 class Inbox:

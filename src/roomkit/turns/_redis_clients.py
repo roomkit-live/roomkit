@@ -16,7 +16,8 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from roomkit._redis import client_options
-from roomkit.turns._redis_inbox import READ_BLOCK_S
+from roomkit.turns._redis_beat import call_bound
+from roomkit.turns._redis_inbox import read_block
 from roomkit.turns.base import TurnTimeouts
 
 _MAX_CONNECTIONS = 32
@@ -68,17 +69,3 @@ def redis_clients(address: str, timeouts: TurnTimeouts, client: Any = None) -> R
         beat=lambda: redis.Redis.from_url(address, **options),
         timeout_errors=(TimeoutError, RedisTimeoutError),
     )
-
-
-def call_bound(timeouts: TurnTimeouts) -> float:
-    """How long one Redis call waits for its peer: half the silence bound
-    (5 s with the default bounds), so the beat or the read tried again at
-    once lands inside the silence bound (RFC §10.6.8)."""
-    return timeouts.heartbeat_timeout / 2
-
-
-def read_block(timeouts: TurnTimeouts) -> float:
-    """How long the server holds the inbox's blocking read: a second, never
-    over a beat's interval, so the read cut and tried again at once lands
-    inside the silence bound too (RFC §10.6.8)."""
-    return min(READ_BLOCK_S, timeouts.heartbeat_interval)

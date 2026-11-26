@@ -11,10 +11,8 @@ placement sends it, and placement across two processes on a real Redis.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Collection
 from typing import Any
-from uuid import uuid4
 
 import pytest
 
@@ -31,11 +29,12 @@ from roomkit.core.exceptions import RoomNotFoundError, TurnLinkError
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.turns import InMemoryTurnBackend, RedisTurnBackend, TurnExecutor, TurnTimeouts
+from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts
 from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns.wire import CommittedEvent, RoomAttached
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
+from tests.turn_nodes import ACROSS, Nodes
 
 
 @pytest.mark.parametrize(
@@ -197,19 +196,18 @@ async def test_a_room_s_attach_and_detach_reach_only_the_executors_of_its_organi
     assert globex.told == ["room_attached:r-globex", "room_detached:r-globex", "channel_released:"]
 
 
-@pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
-async def test_a_room_s_turn_crosses_redis_only_to_an_executor_of_its_organization() -> None:
+@pytest.mark.parametrize("services", ACROSS)
+async def test_a_room_s_turn_crosses_only_to_an_executor_of_its_organization(
+    services: str,
+) -> None:
     """The owner reads what an executor of another process declares from its
     beat, its organizations among it (RFC §10.6.7)."""
     # The default silence bound, and the call bound it gives each Redis call
     # (half of it): a pause of the worker spent a 1 s one's 0.5 s, cutting a
     # call or taking a side for lost (RMK-1714). No loss is under test.
     timeouts = TurnTimeouts(heartbeat_interval=0.2, accept=3.0)
-    prefix = f"roomkit:test:{uuid4().hex[:12]}"
-    owner, elsewhere = (
-        RedisTurnBackend(os.environ["REDIS_URL"], key_prefix=prefix, timeouts=timeouts)
-        for _ in range(2)
-    )
+    nodes = Nodes(services)
+    owner, elsewhere = nodes.node(timeouts), nodes.node(timeouts)
     pool = TurnExecutor(
         lambda channel_id: Agent(channel_id, provider=MockAIProvider(responses=["For acme."])),
         hosts={"support"},
@@ -244,6 +242,7 @@ async def test_a_room_s_turn_crosses_redis_only_to_an_executor_of_its_organizati
         await kit.close()
         await pool.close()
         await elsewhere.close()
+        await nodes.forget()
 
     assert answered == {"r-acme": ["For acme."], "r-globex": []}
     # Refused by placement, never sent to the executor of another organization.

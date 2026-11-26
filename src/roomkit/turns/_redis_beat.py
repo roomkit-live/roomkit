@@ -26,10 +26,18 @@ from roomkit.turns.broker import Beat
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_routes import Routes
+    from roomkit.turns.base import TurnTimeouts
     from roomkit.turns.broker import BeatWriter, TurnRegistry
     from roomkit.turns.executor import TurnExecutor
 
 logger = logging.getLogger("roomkit.turns")
+
+
+def call_bound(timeouts: TurnTimeouts) -> float:
+    """How long one call of a broker or a registry waits for its peer: half
+    the silence bound (5 s with the default bounds), so the beat or the read
+    tried again at once lands inside the silence bound (RFC §10.6.8)."""
+    return timeouts.heartbeat_timeout / 2
 
 
 @dataclass(frozen=True)
