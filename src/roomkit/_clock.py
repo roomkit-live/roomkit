@@ -53,8 +53,7 @@ class _RealClock:
         return await asyncio.wait_for(awaitable, timeout)
 
 
-REAL_CLOCK: Clock = _RealClock()
-_current: Clock = REAL_CLOCK
+_current: Clock = _RealClock()
 
 
 def monotonic() -> float:

@@ -83,7 +83,7 @@ class VoiceTurnHost(Protocol):
         _pending_turns: Accumulated turn entries per session, awaiting turn completion.
         _pending_audio: Accumulated raw audio per session for audio-native turn detectors.
         _turn_speech_state: Per session, whether the user is speaking and the
-            ``time.monotonic()`` of the last speech onset or end, written from VAD
+            ``_clock.monotonic()`` of the last speech onset or end, written from VAD
             events, so a wait for an incomplete turn measures silence, not time.
         _turn_transcripts_due: Per session, how many ended segments' transcripts
             have not reached the turn yet (see :class:`DueTranscript`).

@@ -6,6 +6,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from roomkit import _clock
 from roomkit._text import fence
 from roomkit.models.enums import ChannelType, HookTrigger
 
@@ -203,10 +204,11 @@ class VideoHooksMixin:
             # Reset interval timer AFTER completion so the next interval
             # starts from when the API call finished, not when it started.
             # Use frame timestamp if available (matches the interval check
-            # in _on_video_received), fall back to wall clock.
-            ts = (
-                frame.timestamp_ms if frame.timestamp_ms is not None else time.monotonic() * 1000.0
-            )
+            # in _on_video_received), fall back to the media clock that check
+            # reads.
+            ts = frame.timestamp_ms
+            if ts is None:
+                ts = _clock.monotonic() * 1000.0
             if binding is None or bindings.get(session.id) is binding:
                 self._last_vision_ts[session.id] = ts
         # An unbind (or a new binding for the same id) invalidates this work.

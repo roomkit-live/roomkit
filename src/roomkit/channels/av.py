@@ -7,9 +7,9 @@ import concurrent.futures
 import logging
 import queue as _queue_mod
 import threading
-import time
 from typing import TYPE_CHECKING, Any
 
+from roomkit import _clock
 from roomkit.channels._video_hooks import VideoHooksMixin
 from roomkit.channels._video_resources import _VideoResources
 from roomkit.channels.voice import VoiceChannel
@@ -213,7 +213,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         if frame.timestamp_ms is not None:
             now_ms = frame.timestamp_ms
         else:
-            now_ms = time.monotonic() * 1000.0
+            now_ms = _clock.monotonic() * 1000.0
         last_ts = self._last_vision_ts.get(session.id, -float("inf"))
         if now_ms - last_ts < self._vision_interval_ms:
             return

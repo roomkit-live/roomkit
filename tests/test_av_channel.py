@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit import AudioVideoChannel, ChannelType, HookExecution, HookTrigger, RoomKit
+from roomkit import AudioVideoChannel, ChannelType, HookExecution, HookTrigger, RoomKit, _clock
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelMediaType
 from roomkit.recorder.base import (
@@ -86,7 +86,7 @@ def _make_voice_session(session_id: str = "session-1") -> VoiceSession:
     )
 
 
-def _make_video_frame(timestamp_ms: float = 0.0) -> VideoFrame:
+def _make_video_frame(timestamp_ms: float | None = 0.0) -> VideoFrame:
     return VideoFrame(
         data=b"\x00" * 100,
         codec="h264",
@@ -94,6 +94,21 @@ def _make_video_frame(timestamp_ms: float = 0.0) -> VideoFrame:
         sequence=1,
         keyframe=True,
     )
+
+
+class _SetClock:
+    """A media clock that reads what the test sets (roomkit's ``_clock`` seam)."""
+
+    now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        raise AssertionError("nothing here waits on the clock")
+
+    async def wait_for(self, awaitable: Any, timeout: float | None) -> Any:
+        raise AssertionError("nothing here waits on the clock")
 
 
 class TestAudioVideoChannel:
@@ -166,8 +181,10 @@ class TestAudioVideoChannel:
         assert len(received_frames) == 1
         assert received_frames[0] is frame
 
-    def test_vision_analysis_throttled(self) -> None:
-        """Vision analysis is throttled by vision_interval_ms."""
+    @pytest.mark.parametrize("timed_by", ["frame", "clock"])
+    def test_vision_analysis_throttled(self, timed_by: str) -> None:
+        """Vision analysis is throttled by vision_interval_ms, on the frames'
+        timestamps, or on the media clock for frames that carry none."""
         backend = _make_av_backend()
         mock_vision = MagicMock()
         mock_vision.name = "mock-vision"
@@ -194,12 +211,13 @@ class TestAudioVideoChannel:
         cb = backend._video_received_cb
         assert cb is not None
 
-        # First frame at t=0 — should trigger analysis (schedules task)
-        cb(video_session, _make_video_frame(timestamp_ms=0))
-        # Second frame at t=500ms — within interval, should NOT trigger
-        cb(video_session, _make_video_frame(timestamp_ms=500))
-        # Third frame at t=1100ms — outside interval, should trigger
-        cb(video_session, _make_video_frame(timestamp_ms=1100))
+        clock = _SetClock()
+        with _clock.installed(clock):
+            for at_ms in (0, 500, 1100):
+                # 0: analysed; 500: within the interval, not; 1100: analysed.
+                clock.now = at_ms / 1000
+                stamp = at_ms if timed_by == "frame" else None
+                cb(video_session, _make_video_frame(timestamp_ms=stamp))
 
         # Check last_vision_ts was updated for frames 1 and 3
         assert av._last_vision_ts[video_session.id] == pytest.approx(1100)
