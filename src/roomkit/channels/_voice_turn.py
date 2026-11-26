@@ -7,9 +7,9 @@ import contextlib
 import dataclasses
 import logging
 import threading
-import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit import _clock
 from roomkit.channels._voice_speakers import routed_sender
 from roomkit.channels._voice_unheard import UnheardTurns
 from roomkit.core._authors import People
@@ -339,23 +339,23 @@ class VoiceTurnMixin:
         it continues it. Its evaluation then completes the turn or arms a new
         wait; one that is lost holds it no longer than ``_TRANSCRIPT_WAIT_MAX_S``.
         """
-        silence_since = time.monotonic()
+        silence_since = _clock.monotonic()
         while True:
             with self._state_lock:
                 speaking, changed_at = self._turn_speech_state.get(session_id, (False, 0.0))
                 transcript_due = session_id in self._turn_transcripts_due
             if speaking:
                 # The user is talking: the turn goes on, and silence restarts when they stop.
-                await asyncio.sleep(wait_s)
+                await _clock.sleep(wait_s)
                 continue
             silence_since = max(silence_since, changed_at)
-            overdue = time.monotonic() - (silence_since + wait_s)
+            overdue = _clock.monotonic() - (silence_since + wait_s)
             if overdue < 0:
-                await asyncio.sleep(-overdue)
+                await _clock.sleep(-overdue)
             elif not transcript_due:
                 return
             elif overdue < _TRANSCRIPT_WAIT_MAX_S:
-                await asyncio.sleep(_TRANSCRIPT_POLL_S)
+                await _clock.sleep(_TRANSCRIPT_POLL_S)
             else:
                 logger.warning(
                     "Transcript of %s still due %.0f s after the turn's wait: routing without it",
@@ -395,7 +395,7 @@ class VoiceTurnMixin:
     def _note_turn_speech(self, session_id: str, speaking: bool) -> None:
         """Record a VAD speech onset or end for the turn wait. Safe from the audio thread."""
         with self._state_lock:
-            self._turn_speech_state[session_id] = (speaking, time.monotonic())
+            self._turn_speech_state[session_id] = (speaking, _clock.monotonic())
 
     def _cancel_turn_wait(self, session_id: str) -> None:
         """Drop the session's wait and speech state (session unbound)."""

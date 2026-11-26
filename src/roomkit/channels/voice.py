@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from roomkit import _clock
 from roomkit.channels._room_hooks import RoomHooks
 from roomkit.channels._tts_sentence_budget import checked_budget
 from roomkit.channels._voice_hooks import VoiceHooksMixin
@@ -788,7 +789,7 @@ class VoiceChannel(
                 playback = self._playing_sessions.get(session.id)
                 # Speech onset: the clock the CONFIRMED strategy measures
                 # sustained speech against (RFC §12.6).
-                self._speech_started_at[session.id] = time.monotonic()
+                self._speech_started_at[session.id] = _clock.monotonic()
             # A measured playback with no chunk out yet has said nothing; any
             # other one may be audible, and its echo is guarded as usual.
             nothing_played = playback is None or (
@@ -1694,7 +1695,7 @@ class VoiceChannel(
         self._cancel_barge_in_confirmation(session.id)
         self._schedule(
             self._confirm_barge_in(
-                session, room_id, delay_ms, onset=time.monotonic(), from_vad=from_vad
+                session, room_id, delay_ms, onset=_clock.monotonic(), from_vad=from_vad
             ),
             name=f"barge_in_confirm:{session.id}",
         )
@@ -1764,7 +1765,7 @@ class VoiceChannel(
         done_ev = self._playback_done_events.get(session.id)
         if done_ev is not None and done_ev.is_set():
             return
-        duration_ms = int((time.monotonic() - onset) * 1000) if onset is not None else 0
+        duration_ms = int((_clock.monotonic() - onset) * 1000) if onset is not None else 0
         decision = self._judge_barge_in(
             session.id,
             playback,
@@ -1807,7 +1808,7 @@ class VoiceChannel(
         if stream_state is None or not binding_info or not self._framework:
             self._release_unheard_turn(session.id)
             return
-        duration_ms = int((time.monotonic() - onset) * 1000) if onset is not None else 0
+        duration_ms = int((_clock.monotonic() - onset) * 1000) if onset is not None else 0
         self._schedule(
             self._judge_held_speech(
                 session,
@@ -1890,12 +1891,12 @@ class VoiceChannel(
                 self._confirm_tasks[session.id] = task
         try:
             while True:
-                await asyncio.sleep(max(delay_ms, 0) / 1000.0)
+                await _clock.sleep(max(delay_ms, 0) / 1000.0)
                 playback = self._playback_to_confirm(session.id, from_vad=from_vad)
                 if playback is None:
                     return
                 words, transcript_expected = self._barge_in_words(session.id)
-                speech_duration_ms = int((time.monotonic() - onset) * 1000)
+                speech_duration_ms = int((_clock.monotonic() - onset) * 1000)
                 # The words of speech still under way: its last may be cut.
                 decision = self._judge_barge_in(
                     session.id,
@@ -2119,7 +2120,7 @@ class VoiceChannel(
 
         A *drained* playback went out whole: nothing of it is cut off.
         """
-        self._last_tts_ended_at[session.id] = time.monotonic()
+        self._last_tts_ended_at[session.id] = _clock.monotonic()
         config = self._interruption_handler.config
         # ``flush_partial_tts`` decides what happens to audio already handed to
         # the backend (RFC §12.3.13 step 1). Left true, the buffer is dropped

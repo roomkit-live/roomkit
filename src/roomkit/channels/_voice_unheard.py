@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from dataclasses import dataclass, field
 
+from roomkit import _clock
 from roomkit.models.delivery import DeliveryHandle
 
 
@@ -72,7 +72,7 @@ class UnheardTurns:
                 turn.released = asyncio.Event()
             # Each segment is measured on its own: short sounds and the pauses
             # between them never add up to a continuation.
-            turn.held_since = time.monotonic()
+            turn.held_since = _clock.monotonic()
             turn.resumed_ms = 0.0
             return True
 
@@ -81,7 +81,7 @@ class UnheardTurns:
         with self._lock:
             turn = self._turns.get(session_id)
             if turn is not None and turn.held_since is not None:
-                turn.resumed_ms = (time.monotonic() - turn.held_since) * 1000
+                turn.resumed_ms = (_clock.monotonic() - turn.held_since) * 1000
 
     async def wait_to_play(self, session_id: str) -> bool:
         """Before the response's first audio: wait while it is held, then mark it heard.

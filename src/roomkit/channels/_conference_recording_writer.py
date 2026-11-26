@@ -47,6 +47,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from roomkit import _clock
 from roomkit.channels._conference_backlog import TrackBacklog
 from roomkit.core.task_utils import cancel_and_wait
 
@@ -279,7 +280,7 @@ class TrackWriter:
         """Run the stages of a close, in order. See :meth:`aclose`."""
         await self._settle_announcement(timeout)
         try:
-            await asyncio.wait_for(self._backlog.join(), timeout)
+            await _clock.wait_for(self._backlog.join(), timeout)
         except TimeoutError:
             self._give_up_on_queued(timeout)
         await cancel_and_wait(self._task)
@@ -521,7 +522,7 @@ class TrackWriter:
             )
             return
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(asyncio.shield(announcement), timeout)
+            await _clock.wait_for(asyncio.shield(announcement), timeout)
 
     def _write(self, batch: list[QueuedFrame]) -> None:
         """Hand a batch to the recorder. Runs on a worker thread."""
@@ -567,7 +568,7 @@ class TrackWriter:
         if self._opening is None or self._handle is not None or self._refused:
             return
         try:
-            self._handle = await asyncio.wait_for(asyncio.shield(self._opening), timeout)
+            self._handle = await _clock.wait_for(asyncio.shield(self._opening), timeout)
         except TimeoutError:
             self._abandon_open(timeout)
         except Exception:
@@ -609,7 +610,7 @@ class TrackWriter:
             # Shielded, so the wait does not cancel what it is waiting for —
             # cancelling would return here while the thread carried on writing,
             # which is the overlap this exists to prevent.
-            await asyncio.wait_for(asyncio.shield(self._writing), timeout)
+            await _clock.wait_for(asyncio.shield(self._writing), timeout)
         except TimeoutError:
             # The one overlapping call RFC section 12.11 admits, and the report
             # it obliges: a write past its budget cannot be taken back, and
@@ -660,7 +661,7 @@ class TrackWriter:
             asyncio.ensure_future(asyncio.to_thread(self._finalize_blocking, handle))
         )
         try:
-            return await asyncio.wait_for(asyncio.shield(closing), timeout)
+            return await _clock.wait_for(asyncio.shield(closing), timeout)
         except TimeoutError:
             # Already tracked, and it stays tracked until it returns.
             logger.error(

@@ -14,6 +14,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit import _clock
 from roomkit.channels._room_hooks import RoomHooks
 from roomkit.channels._stream_fanout import StreamBranch, StreamFanOut
 from roomkit.channels._tts_sentence_budget import SentenceBudget, first_sentences
@@ -415,7 +416,7 @@ class VoiceTTSMixin:
             if self._playing_sessions.get(session_id) is not playback:
                 return
             del self._playing_sessions[session_id]
-        self._last_tts_ended_at[session_id] = time.monotonic()
+        self._last_tts_ended_at[session_id] = _clock.monotonic()
         logger.debug(
             "Playback drain complete for session %s (delay=%.1fs)",
             session_id,
@@ -424,7 +425,7 @@ class VoiceTTSMixin:
 
     async def _bypass_aec_after_echo_tail(self, session_id: str) -> None:
         """Bypass the AEC once the echo tail has decayed, unless a new playback started."""
-        await asyncio.sleep(_AEC_ECHO_TAIL_S)
+        await _clock.sleep(_AEC_ECHO_TAIL_S)
         if self._pipeline is None:
             return
         with self._state_lock:
@@ -795,7 +796,7 @@ class VoiceTTSMixin:
             await waits_on.wait()
         if existing is None:
             return
-        self._last_tts_ended_at[session.id] = time.monotonic()
+        self._last_tts_ended_at[session.id] = _clock.monotonic()
         if drained:
             # Sent whole, only its echo is draining: this one takes over
             # without cancelling it or the audio still leaving the speaker.

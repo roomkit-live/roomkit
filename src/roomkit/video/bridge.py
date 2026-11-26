@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
+
+from roomkit import _clock
 
 if TYPE_CHECKING:
     from roomkit.video.backends.base import VideoBackend
@@ -239,7 +240,7 @@ class VideoBridge:
         # every session, stuck senders receive a keyframe request and
         # resume frame delivery.
         if self._config.keyframe_interval_s > 0:
-            now = time.monotonic()
+            now = _clock.monotonic()
             self._request_periodic_keyframes(session.id, now)
 
         # Track stats and buffer keyframes for late joiners
@@ -355,7 +356,7 @@ class VideoBridge:
             return True
 
         pair = (target_id, source_id)
-        now = time.monotonic()
+        now = _clock.monotonic()
         with self._lock:
             delivered = self._keyframe_delivered.setdefault(target_id, set())
             if frame.keyframe:

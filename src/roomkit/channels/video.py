@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
+from roomkit import _clock
 from roomkit.channels._video_hooks import VideoHooksMixin
 from roomkit.channels._video_resources import _VideoResources
 from roomkit.channels.base import Channel, FrameworkAwareChannel
@@ -366,7 +366,7 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         if frame.timestamp_ms is not None:
             now_ms = frame.timestamp_ms
         else:
-            now_ms = time.monotonic() * 1000.0
+            now_ms = _clock.monotonic() * 1000.0
         last_ts = self._last_vision_ts.get(session.id, -float("inf"))
         if now_ms - last_ts < self._vision_interval_ms:
             return

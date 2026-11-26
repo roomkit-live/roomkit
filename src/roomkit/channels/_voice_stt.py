@@ -10,6 +10,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit import _clock
 from roomkit.channels._room_hooks import RoomHooks
 from roomkit.channels._voice_speakers import (
     PipelineSpeakerTally,
@@ -564,7 +565,7 @@ class VoiceSTTMixin:
                 )
                 # Onset of this run of above-threshold frames: what a
                 # duration-based strategy measures against (RFC §12.6).
-                self._speech_started_at.setdefault(session.id, time.monotonic())
+                self._speech_started_at.setdefault(session.id, _clock.monotonic())
             else:
                 self._barge_in_energy_count[session.id] = 0
                 self._speech_started_at.pop(session.id, None)
@@ -586,7 +587,7 @@ class VoiceSTTMixin:
             # and the counter is NOT reset while a strategy is still waiting
             # for the speech to sustain, or it could never reach its minimum.
             speech_duration_ms = (
-                int((time.monotonic() - started_at) * 1000) if started_at is not None else 0
+                int((_clock.monotonic() - started_at) * 1000) if started_at is not None else 0
             )
             # The words the STT heard in this burst decide under SEMANTIC; an
             # acknowledgement is not cut for running long (RFC §12.3.13). An
@@ -678,7 +679,7 @@ class VoiceSTTMixin:
             playing = self._playing_sessions.get(session_id) is playback
             ended_at = self._last_tts_ended_at.get(session_id)
             holds = playing or (
-                ended_at is not None and time.monotonic() - ended_at <= _ECHO_VERDICT_GRACE_S
+                ended_at is not None and _clock.monotonic() - ended_at <= _ECHO_VERDICT_GRACE_S
             )
             if pop or not holds:
                 del self._echo_bursts[session_id]
@@ -977,7 +978,7 @@ class VoiceSTTMixin:
                         continue
 
                     last_tts = self._last_tts_ended_at.get(session.id, 0.0)
-                    since_tts = time.monotonic() - last_tts if last_tts else -1.0
+                    since_tts = _clock.monotonic() - last_tts if last_tts else -1.0
                     logger.info(
                         "Continuous STT stream cycle starting for %s (since_tts=%.1fs)",
                         session.id,
@@ -1035,7 +1036,7 @@ class VoiceSTTMixin:
                             # say nothing about the next one.
                             self._forget_burst_words(session.id)
                             last_tts = self._last_tts_ended_at.get(session.id, 0.0)
-                            since_tts_now = time.monotonic() - last_tts if last_tts else -1.0
+                            since_tts_now = _clock.monotonic() - last_tts if last_tts else -1.0
                             logger.info(
                                 "STT final: %r (playing=%s, barge_in=%s, since_tts=%.1fs)",
                                 result.text,
@@ -1181,7 +1182,7 @@ class VoiceSTTMixin:
                     # A stream's end ends its utterance: no final of it comes.
                     self._forget_burst_words(session.id)
                     last_tts = self._last_tts_ended_at.get(session.id, 0.0)
-                    since_tts_end = time.monotonic() - last_tts if last_tts else -1.0
+                    since_tts_end = _clock.monotonic() - last_tts if last_tts else -1.0
                     logger.info(
                         "STT stream cycle ended for %s, reconnecting (since_tts=%.1fs)",
                         session.id,
@@ -1317,7 +1318,7 @@ class VoiceSTTMixin:
             with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
             last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)
-            since_tts = time.monotonic() - last_tts_end if last_tts_end else -1.0
+            since_tts = _clock.monotonic() - last_tts_end if last_tts_end else -1.0
 
             if playback and not cut_playback:
                 logger.warning(
