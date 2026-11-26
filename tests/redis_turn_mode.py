@@ -25,6 +25,7 @@ try:
 except ImportError:  # this mode only runs with the redis extra
     redis = None  # type: ignore[assignment]
 from roomkit.turns.base import TurnTimeouts
+from roomkit.turns.distributed import DistributedTurnBackend
 from roomkit.turns.redis import RedisTurnBackend
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ async def close_left_open() -> None:
 
 
 async def handled_across(kit: RoomKit) -> bool:
-    """Wait until what *kit*'s backend posted across Redis before now was
+    """Wait until what *kit*'s backend posted across processes before now was
     handled here: work a turn began, which reaches its owner once the turn
     ended (RFC §10.6.3), as an ASYNC hook's ``hook_timeout``. Whether any
     was still being handled.
@@ -80,7 +81,7 @@ async def handled_across(kit: RoomKit) -> bool:
     # it hands to (tests/conformance/_owner_nodes.py): the inbox is that one's.
     while (inner := getattr(backend, "inner", None)) is not None:
         backend = inner
-    if not isinstance(backend, RedisTurnBackend) or not backend._started or backend._closed:
+    if not isinstance(backend, DistributedTurnBackend) or not backend._started or backend._closed:
         # Its inbox is read only once it started: nothing reached it before.
         return False
     ref = uuid4().hex

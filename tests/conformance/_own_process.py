@@ -12,13 +12,11 @@ reactions hold no gate and make no action other than a host verb.
 from __future__ import annotations
 
 import asyncio
-import os
 import threading
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import Any
 
-from roomkit.turns import TurnExecutor, TurnTimeouts
-from roomkit.turns.redis import RedisTurnBackend
+from roomkit.turns import DistributedTurnBackend, TurnExecutor
 
 # What a channel such an executor hosts may hold, and one of its reactions:
 # nothing that waits on the run's loop.
@@ -76,7 +74,7 @@ class Apart:
         loop: asyncio.AbstractEventLoop,
         thread: threading.Thread,
         executor: TurnExecutor,
-        backend: RedisTurnBackend,
+        backend: DistributedTurnBackend,
     ) -> None:
         self._loop = loop
         self._thread = thread
@@ -85,10 +83,10 @@ class Apart:
 
     @classmethod
     async def start(
-        cls, make: Callable[[], TurnExecutor], key_prefix: str, bounds: TurnTimeouts | None
+        cls, make: Callable[[], TurnExecutor], node: Callable[[], DistributedTurnBackend]
     ) -> Apart:
-        """Serves the executor *make* builds there, under *key_prefix*, where
-        the kit's backend meets it."""
+        """Serves the executor *make* builds there, on the node *node* builds
+        there, of the backend across processes the kit's meets."""
         loop = asyncio.new_event_loop()
         # A daemon: a run that fails before its close leaves no thread
         # keeping the test process alive.
@@ -97,11 +95,9 @@ class Apart:
         )
         thread.start()
 
-        async def serve() -> tuple[TurnExecutor, RedisTurnBackend]:
+        async def serve() -> tuple[TurnExecutor, DistributedTurnBackend]:
             executor = make()
-            backend = RedisTurnBackend(
-                os.environ["REDIS_URL"], key_prefix=key_prefix, timeouts=bounds
-            )
+            backend = node()
             await backend.serve(executor)
             return executor, backend
 

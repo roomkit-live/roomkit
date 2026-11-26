@@ -3,7 +3,10 @@
 
 The kit holds a channel the setup marks ``declared`` by its declaration alone,
 and the executors that host it build their own copy, on the turn backend the
-kit is built with: in memory, or across Redis in the suite's Redis mode.
+kit is built with: in memory, or across Redis in the suite's Redis mode. The
+processes of a setup, and an executor in a process of its own, are nodes of
+one backend across processes: on a broker and a registry kept in this
+process, or on Redis in the suite's Redis mode.
 """
 
 from __future__ import annotations
@@ -23,7 +26,15 @@ from roomkit.scoring import MockScorer, ScoringHook
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.mock import MockTelemetryProvider
-from roomkit.turns import ExecutorInfo, InMemoryTurnBackend, TurnExecutor, TurnTimeouts
+from roomkit.turns import (
+    DistributedTurnBackend,
+    ExecutorInfo,
+    InMemoryTurnBackend,
+    InMemoryTurnBroker,
+    InMemoryTurnRegistry,
+    TurnExecutor,
+    TurnTimeouts,
+)
 from roomkit.turns.base import ExecutorLink, TurnBackend
 from tests import redis_turn_mode
 from tests.conformance._calls import Call, UnreadableError, read, scripted_channel
@@ -114,7 +125,13 @@ class Executors:
         }
         self._settings = setup.get("kit", {})
         self._distributed = bool(self._specs and setup.get("processes"))
+        # An executor in a process of its own reaches the kit across processes.
+        self._across = self._distributed or any(
+            spec.get("own_process") for spec in self._specs.values()
+        )
         self._prefix = f"{redis_turn_mode.SESSION_PREFIX}:{uuid4().hex}"
+        # The services the run's nodes share, out of the Redis mode.
+        self._pair = (InMemoryTurnBroker(), InMemoryTurnRegistry())
         self._nodes: dict[str | None, TurnBackend] = {}
         self._process_ids = {p["id"] for p in setup.get("processes", [])}
         if self._distributed and "main" in self._process_ids:
@@ -214,12 +231,11 @@ class Executors:
 
     def _node(self, name: str | None) -> TurnBackend:
         if name not in self._nodes:
-            if self._distributed:
-                from roomkit.turns.redis import RedisTurnBackend
-
-                backend: TurnBackend = RedisTurnBackend(
-                    os.environ["REDIS_URL"], key_prefix=self._prefix, timeouts=self._bounds
-                )
+            # The kit's own node too, out of the Redis mode, when an executor
+            # apart meets it there.
+            backend: TurnBackend
+            if self._distributed or (self._across and not redis_turn_mode.ENABLED):
+                backend = self._node_across()
             else:
                 backend = _backend(self._bounds, self._prefix)
             if self._settings.get("turn_backend_faults"):
@@ -293,17 +309,24 @@ class Executors:
         await node.serve(executor)
         self._running[executor_id] = executor
 
+    def _node_across(self) -> DistributedTurnBackend:
+        """One more node of the run's backend across processes: on its
+        in-memory pair, or on Redis under the run's prefix in the Redis mode."""
+        if redis_turn_mode.ENABLED:
+            from roomkit.turns.redis import RedisTurnBackend
+
+            return RedisTurnBackend(
+                os.environ["REDIS_URL"], key_prefix=self._prefix, timeouts=self._bounds
+            )
+        return DistributedTurnBackend(*self._pair, timeouts=self._bounds)
+
     async def _start_apart(self, executor_id: str, spec: Mapping[str, Any]) -> None:
         """Serves one executor as in a process of its own, over a node of its
-        own of the Redis turn backend the kit's meets under the run's prefix."""
-        if not (redis_turn_mode.ENABLED or self._distributed):
-            raise UnreadableError(
-                f"executor {executor_id!r}: a process of its own needs the Redis turn mode"
-            )
+        own of the backend across processes the kit's meets."""
         if problems := apart_problems(spec, self._channels.values()):
             raise UnreadableError("; ".join(problems))
         make = partial(self._executor, executor_id, spec)
-        self._apart[executor_id] = await Apart.start(make, self._prefix, self._bounds)
+        self._apart[executor_id] = await Apart.start(make, self._node_across)
 
     def _executor(self, executor_id: str, spec: Mapping[str, Any]) -> _ScenarioExecutor:
         """The executor *spec* describes, its hooks registered."""
