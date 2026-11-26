@@ -69,19 +69,23 @@
           }
         },
         {
-          "event": "conference_started",
-          "bot_session_id": {
-            "$as": "second"
-          }
-        },
-        {
-          "event": "conference_bot_grants_changed",
-          "room_id": "r1",
-          "channel_id": "conf",
-          "bot_session_id": {
-            "$as": "second"
-          },
-          "hidden": true
+          "$unordered": [
+            {
+              "event": "conference_started",
+              "bot_session_id": {
+                "$as": "second"
+              }
+            },
+            {
+              "event": "conference_bot_grants_changed",
+              "room_id": "r1",
+              "channel_id": "conf",
+              "bot_session_id": {
+                "$as": "second"
+              },
+              "hidden": true
+            }
+          ]
         }
       ]
     }
