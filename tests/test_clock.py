@@ -8,30 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable
 
 import pytest
 
 from roomkit import _clock
-
-
-class _StoppedClock:
-    """A clock that reads one time and records what is waited on it."""
-
-    def __init__(self, now: float) -> None:
-        self.now = now
-        self.slept: list[float] = []
-        self.waited: list[float | None] = []
-
-    def monotonic(self) -> float:
-        return self.now
-
-    async def sleep(self, seconds: float) -> None:
-        self.slept.append(seconds)
-
-    async def wait_for[T](self, awaitable: Awaitable[T], timeout: float | None) -> T:
-        self.waited.append(timeout)
-        return await awaitable
+from tests.media_clock import SetClock
 
 
 async def _answer() -> str:
@@ -45,7 +26,7 @@ def test_the_real_clock_is_read_by_default() -> None:
 
 
 async def test_an_installed_clock_is_read_and_waited_on_until_its_block_ends() -> None:
-    stopped = _StoppedClock(now=42.0)
+    stopped = SetClock(now=42.0)
     with _clock.installed(stopped):
         assert _clock.monotonic() == 42.0
         await _clock.sleep(5.0)
@@ -56,7 +37,7 @@ async def test_an_installed_clock_is_read_and_waited_on_until_its_block_ends() -
 
 
 def test_the_clock_before_comes_back_when_the_block_fails() -> None:
-    with pytest.raises(RuntimeError), _clock.installed(_StoppedClock(now=42.0)):
+    with pytest.raises(RuntimeError), _clock.installed(SetClock(now=42.0)):
         raise RuntimeError("the test failed")
     assert _clock.monotonic() != 42.0
 

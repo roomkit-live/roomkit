@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
 
+from roomkit import _clock
 from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
 from roomkit.models.enums import ChannelMediaType, ChannelType
 from roomkit.video.video_frame import VideoFrame
+from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.mock import (
     MockRealtimeAudioVideoProvider,
     MockRealtimeTransport,
 )
+from tests.media_clock import SetClock
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -134,6 +138,38 @@ class TestVideoCallbackWiring:
         await provider.simulate_video(session, frame)
 
         assert len(received_frames) == 0
+
+
+class TestVisionThrottle:
+    async def test_frames_without_timestamps_are_throttled_on_the_media_clock(
+        self,
+        provider: MockRealtimeAudioVideoProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """A frame is analysed once vision_interval_ms of the media clock
+        passed since the last analysis: 0 ms and 1100 ms, not 500 ms."""
+        vision = MockVisionProvider()
+        channel = RealtimeAudioVideoChannel(
+            "rtav-1",
+            provider=provider,
+            transport=transport,
+            vision=vision,
+            vision_interval_ms=1000,
+        )
+        await channel.start_session("room-1", "part-1", "fake-ws")
+        (session,) = channel._sessions.values()
+        clock = SetClock()
+        with _clock.installed(clock):
+            for at_ms in (0, 500, 1100):
+                clock.now = at_ms / 1000
+                await provider.simulate_video(session, _make_video_frame(at_ms))
+                analyses = [
+                    t for t in channel._scheduled_tasks if t.get_name() == f"vision:{session.id}"
+                ]
+                await asyncio.gather(*analyses)
+        await channel.end_session(session)
+
+        assert len(vision.calls) == 2
 
 
 class TestSessionLifecycle:

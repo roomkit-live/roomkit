@@ -31,6 +31,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 from tests.channel_tasks import settled
+from tests.media_clock import SetClock
 
 
 def _make_av_backend() -> MagicMock:
@@ -94,21 +95,6 @@ def _make_video_frame(timestamp_ms: float | None = 0.0) -> VideoFrame:
         sequence=1,
         keyframe=True,
     )
-
-
-class _SetClock:
-    """A media clock that reads what the test sets (roomkit's ``_clock`` seam)."""
-
-    now = 0.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    async def sleep(self, seconds: float) -> None:
-        raise AssertionError("nothing here waits on the clock")
-
-    async def wait_for(self, awaitable: Any, timeout: float | None) -> Any:
-        raise AssertionError("nothing here waits on the clock")
 
 
 class TestAudioVideoChannel:
@@ -211,7 +197,7 @@ class TestAudioVideoChannel:
         cb = backend._video_received_cb
         assert cb is not None
 
-        clock = _SetClock()
+        clock = SetClock()
         with _clock.installed(clock):
             for at_ms in (0, 500, 1100):
                 # 0: analysed; 500: within the interval, not; 1100: analysed.
