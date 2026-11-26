@@ -287,8 +287,21 @@
     "vision": ["property"],
     "wait_playback_done": ["async def", "room_id", "timeout=15.0"]
   },
+  "roomkit.Beat": {
+    "__init__": ["def", "node", "generation", "declared=<factory>", "undeclared=<factory>", "gone=<factory>", "running=<factory>", "owner=False"]
+  },
+  "roomkit.BeatWriter": {
+    "beat": ["async def", "beat"],
+    "close": ["async def"]
+  },
+  "roomkit.Beats": {
+    "__init__": ["def", "last", "running"]
+  },
   "roomkit.BotSession": {
     "__init__": ["def", "id", "room_id", "identity", "joined_at=<factory>", "metadata=<factory>"]
+  },
+  "roomkit.BrokerMessage": {
+    "__init__": ["def", "kind", "sender", "body", "target=''", "ref=''"]
   },
   "roomkit.BuzzChannel": {
     "__call__": ["def", "channel_id", "*", "provider=None"]
@@ -890,6 +903,20 @@
   "roomkit.DispatchTurn": {
     "__init__": ["def", "room_id", "event", "recent=()", "speakers=<factory>", "candidates=()", "asked=()"]
   },
+  "roomkit.DistributedTurnBackend": {
+    "__init__": ["def", "broker", "registry", "*", "timeouts=None", "_loop_back=False"],
+    "attend": ["async def", "owner"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
+    "close": ["async def"],
+    "control": ["async def", "message"],
+    "executors": ["async def"],
+    "executors_changed": ["async def"],
+    "executors_now": ["async def"],
+    "serve": ["async def", "executor"],
+    "submit": ["async def", "request"],
+    "submit_to": ["async def", "request", "executor"],
+    "watch_executors": ["def", "listener"]
+  },
   "roomkit.EmailChannel": {
     "__call__": ["def", "channel_id", "*", "provider=None", "from_address=None"]
   },
@@ -1351,6 +1378,26 @@
     "submit_to": ["async def", "request", "executor"],
     "watch_executors": ["def", "listener"]
   },
+  "roomkit.InMemoryTurnBroker": {
+    "__init__": ["def"],
+    "acknowledge": ["async def", "node", "ids"],
+    "inbox": ["async def", "node", "block"],
+    "post": ["async def", "node", "messages"]
+  },
+  "roomkit.InMemoryTurnRegistry": {
+    "__init__": ["def"],
+    "beat": ["async def", "beat"],
+    "beater": ["async def"],
+    "beats": ["async def", "members", "running"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
+    "connect": ["async def"],
+    "connected": ["def"],
+    "forget_holder": ["async def", "channel", "room"],
+    "forget_owner": ["async def", "node"],
+    "hold": ["async def", "channel", "room", "member"],
+    "holder": ["async def", "channel", "room"],
+    "view": ["async def", "forget_after_ms"]
+  },
   "roomkit.InboundMessage": {
     "__init__": ["def", "*", "channel_id", "sender_id", "content", "event_type=<EventType.MESSAGE: 'message'>", "external_id=None", "thread_id=None", "parent_event_id=None", "idempotency_key=None", "raw_payload=<factory>", "provider_message_id=None", "metadata=<factory>", "session=None", "visibility=<Visibility.ALL: 'all'>", "addressed_to=None", "response_visibility=None", "chain_depth=0", "standalone=False", "delivery_key=None"]
   },
@@ -1360,6 +1407,9 @@
   },
   "roomkit.InboundRoomRouter": {
     "route": ["async def", "channel_id", "channel_type", "participant_id=None", "channel_data=None", "*", "organization_id=None", "identity=None"]
+  },
+  "roomkit.InboxEntry": {
+    "__init__": ["def", "id", "message"]
   },
   "roomkit.InjectedEvent": {
     "__init__": ["def", "*", "event", "target_channel_ids=None"]
@@ -1817,6 +1867,9 @@
   },
   "roomkit.ReentrantCallError": {},
   "roomkit.ReentryLoopCapError": {},
+  "roomkit.RegistryView": {
+    "__init__": ["def", "now", "executors", "owners"]
+  },
   "roomkit.RemoteTurnError": {
     "__init__": ["def", "message", "*", "kind", "bases=()"]
   },
@@ -2484,6 +2537,11 @@
     "submit_to": ["async def", "request", "executor"],
     "watch_executors": ["def", "listener"]
   },
+  "roomkit.TurnBroker": {
+    "acknowledge": ["async def", "node", "ids"],
+    "inbox": ["async def", "node", "block"],
+    "post": ["async def", "node", "messages"]
+  },
   "roomkit.TurnClient": {
     "__init__": ["def", "backend", "*", "executor=None", "timeouts=None", "tools=None", "host=None", "events=None", "error_classes=()", "telemetry=None"],
     "close": ["async def"],
@@ -2541,6 +2599,10 @@
     "update_room_metadata": ["async def", "room_id", "metadata", "*", "organization_id=None"],
     "wait_task": ["async def", "task_id", "timeout=None"]
   },
+  "roomkit.TurnInbox": {
+    "close": ["async def"],
+    "read": ["async def", "last"]
+  },
   "roomkit.TurnLink": {
     "beat_heard": ["def"],
     "receive": ["async def"],
@@ -2550,6 +2612,19 @@
   },
   "roomkit.TurnLinkError": {
     "__init__": ["def", "reason", "message=None"]
+  },
+  "roomkit.TurnRegistry": {
+    "beat": ["async def", "beat"],
+    "beater": ["async def"],
+    "beats": ["async def", "members", "running"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
+    "connect": ["async def"],
+    "connected": ["def"],
+    "forget_holder": ["async def", "channel", "room"],
+    "forget_owner": ["async def", "node"],
+    "hold": ["async def", "channel", "room", "member"],
+    "holder": ["async def", "channel", "room"],
+    "view": ["async def", "forget_after_ms"]
   },
   "roomkit.TurnRequest": {
     "__init__": ["def", "*", "turn_id", "room_id", "channel_id", "event", "binding", "context", "strategy_turn=False", "notes=<factory>", "in_place=False", "owner_tools=<factory>", "room_hooks=<factory>", "previous_turn=None", "channel_rows=<factory>", "trace=None"],
@@ -5670,6 +5745,12 @@
     "texts": ["property"],
     "trace_enabled": ["property"],
     "update_binding": ["def", "room_id", "binding"]
+  },
+  "roomkit.testing.check_turn_broker": {
+    "__call__": ["async def", "broker"]
+  },
+  "roomkit.testing.check_turn_registry": {
+    "__call__": ["async def", "registry"]
   },
   "roomkit.tools.ExternalToolHandler": {
     "channel_id": ["property"],
