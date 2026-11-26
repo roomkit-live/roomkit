@@ -28,6 +28,7 @@ from tests.conformance._av import AV_ARGUMENTS
 from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
 from tests.conformance._capture import CAPTURE_ARGUMENTS, CAPTURE_SOURCE
 from tests.conformance._capture import CHANNEL_MEMBERS as CAPTURE_MEMBERS
+from tests.conformance._clock import CLOCK_ARGUMENTS
 from tests.conformance._conference import CONFERENCE_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
@@ -122,6 +123,7 @@ SETUP = {
     "event_handlers",
     "sources",
     "capture_sources",
+    "virtual_clock",
 }
 PROCESS = {"id"}
 EVENT_HANDLER = {"event", "reactions"}
@@ -678,7 +680,7 @@ CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS | BELOW_KIT_ARGUMENTS | VOICE_ARGUMENTS
 CALLS |= CONFERENCE_ARGUMENTS | REALTIME_ARGUMENTS
-CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS | AV_ARGUMENTS
+CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS | AV_ARGUMENTS | CLOCK_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS

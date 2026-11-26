@@ -234,7 +234,7 @@ async def _set_state(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
 
 
 async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    await settle_voice(harness.voice_fixtures[spec["channel_id"]].channel)
+    await settle_voice(harness.voice_fixtures[spec["channel_id"]].channel, harness.clock)
 
 
 async def _say(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:

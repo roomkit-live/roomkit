@@ -12,6 +12,7 @@ import asyncio
 import base64
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from contextlib import ExitStack
 from typing import Any
 
 from pydantic_core import to_jsonable_python
@@ -24,6 +25,7 @@ from roomkit import (
     ThinkingEvent,
     current_turn_host,
 )
+from roomkit._clock import installed
 from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
@@ -77,6 +79,7 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._capture import CAPTURE_CALLS, CaptureSources
+from tests.conformance._clock import CLOCK_CALLS, VirtualClock
 from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
 from tests.conformance._conference_faults import close_work, untaken_faults
@@ -339,6 +342,8 @@ class Harness:
         self.executors = Executors(self)
         # The faults the steps arm on the kit's store (README, "Steps").
         self.store_faults = StoreFaults(self.gates.hold)
+        # The clock the media paths read (README, Setup ``virtual_clock``).
+        self.clock = VirtualClock() if setup.get("virtual_clock") else None
         self.kit = RoomKit(**self._kit_arguments(setup.get("kit", {}), store))
         self._publications = Publications()
         self._publications.watch(self.kit)
@@ -712,7 +717,12 @@ class Harness:
 
     async def run(self) -> list[str]:
         """Runs the scenario; returns every mismatch with its expectations."""
+        # The scenario's virtual clock, until the teardown: closing the kits
+        # waits out its budgets on real time, as a run without one does.
+        clock = ExitStack()
         try:
+            if self.clock is not None:
+                clock.enter_context(installed(self.clock))
             await self._setup()
             self._recording = True
             for position, step in enumerate(self.scenario["steps"]):
@@ -732,6 +742,7 @@ class Harness:
                 name: list(events) for name, events in self.observed.subscribers.items()
             }
         finally:
+            clock.close()
             self._torn_down = True
             for kit in self._open_kits():
                 await kit.close()
@@ -1014,7 +1025,7 @@ class Harness:
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS | SOURCE_CALLS
         calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
-        calls |= AV_CALLS | CAPTURE_CALLS
+        calls |= AV_CALLS | CAPTURE_CALLS | CLOCK_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

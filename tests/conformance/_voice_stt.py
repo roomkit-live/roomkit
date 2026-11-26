@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from roomkit import RoomKit
     from roomkit.models.event import AudioContent
     from roomkit.voice.audio_frame import AudioFrame
+    from tests.conformance._clock import VirtualClock
     from tests.conformance._harness import Harness
     from tests.conformance._script import Gates
 
@@ -192,10 +193,20 @@ def turn_detector(spec: Mapping[str, Any], gates: Gates) -> ScriptedTurnDetector
     return ScriptedTurnDetector(spec["turn_decisions"], gates, asyncio.get_running_loop())
 
 
-def _quiet(channel: VoiceChannel) -> bool:
+def _running(channel: VoiceChannel, clock: VirtualClock | None) -> list[asyncio.Task[Any]]:
+    """The tasks of the channel that still run: not session-long loops, nor
+    work waiting on the virtual clock (README, Setup ``virtual_clock``)."""
+    return [
+        task
+        for task in channel._scheduled_tasks
+        if not task.done() and not _lasts(task) and not (clock is not None and clock.waits(task))
+    ]
+
+
+def _quiet(channel: VoiceChannel, clock: VirtualClock | None) -> bool:
     """No audio waits for a stream, and only session-long loops still run."""
-    return all(state.queue.empty() for state in channel._stt_streams.values()) and not any(
-        not task.done() and not _lasts(task) for task in channel._scheduled_tasks
+    return all(state.queue.empty() for state in channel._stt_streams.values()) and not _running(
+        channel, clock
     )
 
 
@@ -203,18 +214,25 @@ def _lasts(task: asyncio.Task[Any]) -> bool:
     return getattr(task.get_coro(), "__name__", "") == _CONTINUOUS_LOOP
 
 
-async def settle_voice(channel: VoiceChannel) -> None:
+async def settle_voice(channel: VoiceChannel, clock: VirtualClock | None = None) -> None:
     """Until the voice work the steps started has run (README, ``voice.settle``).
 
     A continuous STT loop lasts as long as its session: what it was fed is
     outstanding until its queue is empty and the work it scheduled has run.
+    Work waiting on the virtual clock waits for a ``clock.advance``: it is not
+    outstanding.
     """
     async with asyncio.timeout(5):
         while True:
-            await settled(channel, lasting=(_CONTINUOUS_LOOP,))
-            if _quiet(channel):
+            if clock is None:
+                await settled(channel, lasting=(_CONTINUOUS_LOOP,))
+            else:
+                while running := _running(channel, clock):
+                    # A task that starts waiting on the clock does not end.
+                    await asyncio.wait(running, timeout=0.005)
+            if _quiet(channel, clock):
                 await asyncio.sleep(0)
-                if _quiet(channel):
+                if _quiet(channel, clock):
                     return
             await asyncio.sleep(0.01)
 
