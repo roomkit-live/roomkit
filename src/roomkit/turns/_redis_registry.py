@@ -18,6 +18,7 @@ import json
 from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from roomkit.turns._redis_clients import cut_as_timeout
 from roomkit.turns.broker import Beat, Beats, BeatWriter, RegistryView, TurnRegistry
 
 if TYPE_CHECKING:
@@ -123,6 +124,7 @@ class RedisTurnRegistry(TurnRegistry):
         client = clients.pooled
         self._client = client
         self._connect_beat = clients.beat
+        self._cut = clients.timeout_errors
         self._keys = keys
         self._ttl_ms = ttl_ms
         self._view = client.register_script(_VIEW)
@@ -138,20 +140,23 @@ class RedisTurnRegistry(TurnRegistry):
         return self._connected
 
     async def beat(self, beat: Beat) -> None:
-        await self._beat(keys=self._keys.beat(beat.node), args=[self._ttl_ms, _payload(beat)])
+        with cut_as_timeout(self._cut):
+            await self._beat(keys=self._keys.beat(beat.node), args=[self._ttl_ms, _payload(beat)])
 
     async def beater(self) -> BeatWriter:
-        return _RedisBeatWriter(self._connect_beat, self._keys, self._ttl_ms)
+        return _RedisBeatWriter(self._connect_beat, self._keys, self._ttl_ms, self._cut)
 
     async def view(self, forget_after_ms: int) -> RegistryView:
         keys = self._keys
-        raw = await self._view(
-            keys=[keys.alive, keys.declarations, keys.owners], args=[forget_after_ms]
-        )
+        with cut_as_timeout(self._cut):
+            raw = await self._view(
+                keys=[keys.alive, keys.declarations, keys.owners], args=[forget_after_ms]
+            )
         return _view(raw)
 
     async def forget_owner(self, node: str) -> None:
-        await self._client.zrem(self._keys.owners, node)
+        with cut_as_timeout(self._cut):
+            await self._client.zrem(self._keys.owners, node)
 
     async def beats(
         self, members: Sequence[str], running: Sequence[tuple[str, Sequence[str]]]
@@ -166,7 +171,8 @@ class RedisTurnRegistry(TurnRegistry):
             pipe.zmscore(self._keys.alive, list(members))
         for node, turns in asked:
             pipe.smismember(self._keys.running(node), turns)
-        found = await pipe.execute()
+        with cut_as_timeout(self._cut):
+            found = await pipe.execute()
         scores = found.pop(0) if members else []
         flags = iter(found)
         return Beats(
@@ -177,33 +183,45 @@ class RedisTurnRegistry(TurnRegistry):
         )
 
     async def holder(self, channel: str, room: str) -> str | None:
-        stored = await self._client.get(self._keys.holder(channel, room))
+        with cut_as_timeout(self._cut):
+            stored = await self._client.get(self._keys.holder(channel, room))
         return _text(stored) if stored is not None else None
 
     async def hold(self, channel: str, room: str, member: str) -> None:
-        await self._client.set(self._keys.holder(channel, room), member, ex=_HOLDER_TTL_S)
+        with cut_as_timeout(self._cut):
+            await self._client.set(self._keys.holder(channel, room), member, ex=_HOLDER_TTL_S)
 
     async def forget_holder(self, channel: str, room: str) -> None:
-        await self._client.delete(self._keys.holder(channel, room))
+        with cut_as_timeout(self._cut):
+            await self._client.delete(self._keys.holder(channel, room))
 
     async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
         key = self._keys.agent_presence(channel_id, room_id)
         state = "" if online is None else "online" if online else "offline"
-        return bool(await self._claim(keys=[key], args=[state, _PRESENCE_TTL_MS]))
+        with cut_as_timeout(self._cut):
+            return bool(await self._claim(keys=[key], args=[state, _PRESENCE_TTL_MS]))
 
 
 class _RedisBeatWriter(BeatWriter):
     """Beats on a connection of its own, a synchronous one: the thread that
     beats runs nothing else meanwhile."""
 
-    def __init__(self, connect: Callable[[], Any], keys: Keys, ttl_ms: int) -> None:
+    def __init__(
+        self,
+        connect: Callable[[], Any],
+        keys: Keys,
+        ttl_ms: int,
+        cut: tuple[type[Exception], ...],
+    ) -> None:
         self._client = connect()
         self._script = self._client.register_script(BEAT_SCRIPT)
         self._keys = keys
         self._ttl_ms = ttl_ms
+        self._cut = cut
 
     async def beat(self, beat: Beat) -> None:
-        self._script(keys=self._keys.beat(beat.node), args=[self._ttl_ms, _payload(beat)])
+        with cut_as_timeout(self._cut):
+            self._script(keys=self._keys.beat(beat.node), args=[self._ttl_ms, _payload(beat)])
 
     async def close(self) -> None:
         self._client.close()

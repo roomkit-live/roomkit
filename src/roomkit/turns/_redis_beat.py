@@ -167,8 +167,6 @@ class LiveExecutors:
         interval: How often the view is read again.
         timeout: How long a silent process stays alive (RFC §10.6.8).
         open_turns: The turns this process reads, by the node running each.
-        timeout_errors: What a read that hung raises: this view's own bound's
-            error, and the client's when its connection's bound cut it.
     """
 
     def __init__(
@@ -177,8 +175,6 @@ class LiveExecutors:
         interval: float,
         timeout: float,
         open_turns: Callable[[], dict[str, list[str]]],
-        *,
-        timeout_errors: tuple[type[Exception], ...] = (TimeoutError,),
     ) -> None:
         self._registry = registry
         self.interval = interval
@@ -186,7 +182,6 @@ class LiveExecutors:
         self._timeout = timeout
         self._timeout_ms = int(timeout * 1000)
         self._open_turns = open_turns
-        self._timeout_errors = timeout_errors
         self._view = View()
         self._running: dict[str, frozenset[str]] = {}
         # The reads failing in a row: how many, from the first one's failure
@@ -281,7 +276,8 @@ class LiveExecutors:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                self._failed(started, hung=isinstance(exc, self._timeout_errors))
+                # A read that hung, or that its connection's bound cut.
+                self._failed(started, hung=isinstance(exc, TimeoutError))
                 logger.warning("Reading the turn processes alive failed", exc_info=True)
             await asyncio.sleep(self.interval)
 
@@ -321,8 +317,8 @@ class BeatThread:
             writer.
         interval: How often it beats.
         payload: Builds what each beat writes.
-        bound: How long one call of the writer waits for its peer.
-        timeout_errors: What a call that bound cut raises: tried again at once.
+        bound: How long one call of the writer waits for its peer: one that
+            bound cut raises ``TimeoutError``, and is tried again at once.
     """
 
     def __init__(
@@ -332,13 +328,11 @@ class BeatThread:
         payload: Callable[[], Beat],
         *,
         bound: float,
-        timeout_errors: tuple[type[Exception], ...],
     ) -> None:
         self._registry = registry
         self._interval = interval
         self._payload = payload
         self._bound = bound
-        self._timeout_errors = timeout_errors
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # The thread's loop and what wakes its wait between two beats.
@@ -397,5 +391,5 @@ class BeatThread:
             await self._writer.beat(self._payload())
         except Exception as exc:
             logger.warning("A turn process beat failed", exc_info=True)
-            return not isinstance(exc, self._timeout_errors)
+            return not isinstance(exc, TimeoutError)
         return True

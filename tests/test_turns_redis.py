@@ -2296,7 +2296,6 @@ def _beat_thread(url: str, keys: Keys, timeouts: TurnTimeouts) -> BeatThread:
         timeouts.heartbeat_interval,
         lambda: _BEAT,
         bound=call_bound(timeouts),
-        timeout_errors=clients.timeout_errors,
     )
 
 
@@ -2367,7 +2366,6 @@ async def test_a_half_open_inbox_reads_within_the_silence_bound(
         "n",
         lambda envelope: handed.append(time.monotonic()),
         block=read_block(timeouts),
-        timeout_errors=clients.timeout_errors,
     )
     inbox.start()
     await asyncio.sleep(2 * timeouts.heartbeat_interval)
@@ -2404,7 +2402,6 @@ async def test_a_read_cut_by_its_connection_counts_from_its_start(
         timeouts.heartbeat_interval,
         timeouts.heartbeat_timeout,
         dict,
-        timeout_errors=clients.timeout_errors,
     )
     beat.start()
     async with asyncio.timeout(5):  # the beat thread's first beat

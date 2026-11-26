@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from roomkit.turns._redis_clients import cut_as_timeout
 from roomkit.turns.broker import BrokerMessage, InboxEntry, TurnBroker, TurnInbox
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ class RedisTurnBroker(TurnBroker):
     def __init__(self, clients: RedisClients, keys: Keys, ttl_ms: int) -> None:
         self._client = clients.pooled
         self._inbox = clients.inbox
+        self._cut = clients.timeout_errors
         self._keys = keys
         self._ttl_ms = ttl_ms
 
@@ -45,13 +47,15 @@ class RedisTurnBroker(TurnBroker):
         for message in messages:
             pipe.xadd(key, _fields(message))
         pipe.pexpire(key, self._ttl_ms)
-        await pipe.execute()
+        with cut_as_timeout(self._cut):
+            await pipe.execute()
 
     async def inbox(self, node: str, block: float) -> TurnInbox:
-        return _RedisInbox(self._inbox, self._keys.inbox(node), block)
+        return _RedisInbox(self._inbox, self._keys.inbox(node), block, self._cut)
 
     async def acknowledge(self, node: str, ids: Sequence[str]) -> None:
-        await self._inbox.xdel(self._keys.inbox(node), *ids)
+        with cut_as_timeout(self._cut):
+            await self._inbox.xdel(self._keys.inbox(node), *ids)
 
     async def close(self) -> None:
         """Close the inbox's connection: the broker's own, whatever pool
@@ -62,16 +66,20 @@ class RedisTurnBroker(TurnBroker):
 class _RedisInbox(TurnInbox):
     """One stream read from the server, *block* seconds a read at most."""
 
-    def __init__(self, client: Any, key: str, block: float) -> None:
+    def __init__(
+        self, client: Any, key: str, block: float, cut: tuple[type[Exception], ...]
+    ) -> None:
         self._client = client
         self._key = key
+        self._cut = cut
         # Redis reads a block of 0 as forever.
         self._block_ms = max(1, round(block * 1000))
 
     async def read(self, last: str) -> list[InboxEntry]:
-        answer = await self._client.xread(
-            {self._key: last or "0-0"}, count=_READ_COUNT, block=self._block_ms
-        )
+        with cut_as_timeout(self._cut):
+            answer = await self._client.xread(
+                {self._key: last or "0-0"}, count=_READ_COUNT, block=self._block_ms
+            )
         return [
             InboxEntry(_text(entry_id), _message(fields))
             for _stream, entries in answer or ()

@@ -12,7 +12,8 @@ bound of its own; 8.0 and later bound every call at 5 s.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Generator
 from typing import Any, NamedTuple
 
 from roomkit._redis import client_options
@@ -30,7 +31,7 @@ _POOL_WAIT = 20.0
 
 class RedisClients(NamedTuple):
     """The backend's connections: its pool, its inbox's, its beat's factory,
-    and what a call its bound cut raises."""
+    and what a call its bound cut raises there."""
 
     pooled: Any
     inbox: Any
@@ -69,3 +70,16 @@ def redis_clients(address: str, timeouts: TurnTimeouts, client: Any = None) -> R
         beat=lambda: redis.Redis.from_url(address, **options),
         timeout_errors=(TimeoutError, RedisTimeoutError),
     )
+
+
+@contextlib.contextmanager
+def cut_as_timeout(errors: tuple[type[Exception], ...]) -> Generator[None]:
+    """A Redis call its connection's bound cut raises ``TimeoutError``, as a
+    call of a broker or a registry does (redis-py's is not one): the backend
+    tries it again at once (RFC §10.6.8)."""
+    try:
+        yield
+    except TimeoutError:
+        raise
+    except errors as exc:
+        raise TimeoutError(str(exc)) from exc

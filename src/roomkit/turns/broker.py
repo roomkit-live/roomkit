@@ -1,7 +1,14 @@
 """What a turn backend across processes asks of the services that carry its
 messages between processes and keep what they share (RFC §10.6.7, §10.6.8):
 a broker for the messages, a registry for the rest. One service may give
-both. The backend reaches them through these classes alone.
+both, as Redis or NATS; a message broker, as Kafka or RabbitMQ, gives the
+first and takes its registry elsewhere. The backend reaches them through
+these classes alone.
+
+A call of either that its own bound cut (a connection gone half-open) raises
+``TimeoutError``: the backend tries an inbox read or a beat again at once,
+once, so that the try lands inside the silence bound. Any other failure is
+tried again after a delay.
 """
 
 from __future__ import annotations

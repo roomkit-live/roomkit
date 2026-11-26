@@ -46,7 +46,6 @@ class Inbox:
         handle: Called with each message read, in order, on the reader's
             task; it must not wait.
         block: How long each read waits at most, in seconds.
-        timeout_errors: What a read its bound cut raises: read again at once.
     """
 
     def __init__(
@@ -56,13 +55,11 @@ class Inbox:
         handle: Callable[[BrokerMessage], None],
         *,
         block: float = READ_BLOCK_S,
-        timeout_errors: tuple[type[Exception], ...] = (TimeoutError,),
     ) -> None:
         self._broker = broker
         self._node = node
         self._handle = handle
         self._block = block
-        self._timeout_errors = timeout_errors
         self._inbox: TurnInbox | None = None
         self._reader: asyncio.Task[None] | None = None
 
@@ -112,7 +109,7 @@ class Inbox:
                 logger.warning(
                     "Reading the turn inbox %s failed; retrying", self._node, exc_info=True
                 )
-                if again and isinstance(exc, self._timeout_errors):
+                if again and isinstance(exc, TimeoutError):
                     again = False
                     continue
                 again = True

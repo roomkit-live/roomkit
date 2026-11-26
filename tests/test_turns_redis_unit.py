@@ -9,7 +9,7 @@ import contextvars
 import json
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -37,14 +37,16 @@ from roomkit.turns._hosting import Hosted
 from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._owner_turn import OwnerTurn
 from roomkit.turns._redis_beat import LiveExecutors
-from roomkit.turns._redis_clients import redis_clients
+from roomkit.turns._redis_broker import RedisTurnBroker
+from roomkit.turns._redis_clients import RedisClients, redis_clients
 from roomkit.turns._redis_keys import Keys
 from roomkit.turns._redis_links import RedisExecutorLink
 from roomkit.turns._redis_outbox import Outbox
 from roomkit.turns._redis_placement import Placement
 from roomkit.turns._redis_presence import Declaration, member_of
+from roomkit.turns._redis_registry import RedisTurnRegistry
 from roomkit.turns._redis_routes import REFUSED, TAKEN, Routes
-from roomkit.turns.broker import BrokerMessage, RegistryView
+from roomkit.turns.broker import Beat, BrokerMessage, RegistryView
 from roomkit.turns.owner import registry_turn_client, turn_request
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import (
@@ -942,7 +944,8 @@ class _ClientTimeoutError(Exception):
 
 class _CutThenRefuses(_Registry):
     """Redis freezes: the read in flight is cut by its connection's bound,
-    half the heartbeat timeout; then every connection is refused."""
+    half the heartbeat timeout, which a registry raises as TimeoutError; then
+    every connection is refused."""
 
     def __init__(self, bound: float) -> None:
         super().__init__()
@@ -954,7 +957,7 @@ class _CutThenRefuses(_Registry):
         if self.frozen and not self.cut:
             self.cut += 1
             await asyncio.sleep(self.bound)
-            raise _ClientTimeoutError("Timeout reading from redis")
+            raise TimeoutError("Timeout reading from redis")
         if self.frozen:
             raise ConnectionError("Connection refused")
         return await super().view(forget_after_ms)
@@ -968,13 +971,7 @@ async def test_a_read_its_connection_cut_counts_from_its_start(
     froze, not that plus the bound."""
     clock = _held_clock(monkeypatch, _redis_beat)
     registry = _CutThenRefuses(bound=0.5)
-    live = LiveExecutors(
-        registry,  # type: ignore[arg-type]
-        0.1,
-        1.0,
-        dict,
-        timeout_errors=(TimeoutError, _ClientTimeoutError),
-    )
+    live = LiveExecutors(registry, 0.1, 1.0, dict)  # type: ignore[arg-type]
     live.start()
     try:
         await _read_once(live)
@@ -983,6 +980,73 @@ async def test_a_read_its_connection_cut_counts_from_its_start(
     finally:
         await live.close()
         clock.release()
+
+
+class _CutClient:
+    """A Redis client whose every call its connection's bound cuts."""
+
+    def register_script(self, script: str) -> Callable[..., Any]:
+        return self._cut
+
+    def _cut(self, *args: Any, **kwargs: Any) -> Any:
+        raise _ClientTimeoutError("Timeout reading from redis")
+
+    async def xread(self, *args: Any, **kwargs: Any) -> Any:
+        self._cut()
+
+    def close(self) -> None:
+        return None
+
+
+class _CutScript:
+    """An async client's script, cut as the client's calls are."""
+
+    def __init__(self, client: _CutClient) -> None:
+        self._client = client
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self._client._cut()
+
+
+class _CutAsyncClient(_CutClient):
+    def register_script(self, script: str) -> Callable[..., Any]:
+        return _CutScript(self)
+
+
+def _cut_clients() -> RedisClients:
+    return RedisClients(
+        pooled=_CutAsyncClient(),
+        inbox=_CutAsyncClient(),
+        beat=_CutClient,
+        timeout_errors=(TimeoutError, _ClientTimeoutError),
+    )
+
+
+async def _read(clients: RedisClients) -> None:
+    inbox = await RedisTurnBroker(clients, Keys("p"), 60_000).inbox("n", 0.01)
+    await inbox.read("")
+
+
+async def _beat(clients: RedisClients) -> None:
+    writer = await RedisTurnRegistry(clients, Keys("p"), 60_000).beater()
+    await writer.beat(Beat(node="n", generation=1))
+
+
+async def _view(clients: RedisClients) -> None:
+    await RedisTurnRegistry(clients, Keys("p"), 60_000).view(60_000)
+
+
+@pytest.mark.parametrize("call", [_read, _beat, _view], ids=["inbox read", "beat", "view"])
+async def test_a_redis_call_its_connection_cut_raises_timeout_error(
+    call: Callable[[RedisClients], Awaitable[None]],
+) -> None:
+    """RMK-859: a call of a broker or a registry its bound cut raises
+    TimeoutError, which the backend tries again at once; redis-py's error for
+    it is not one."""
+    with pytest.raises(TimeoutError) as cut:
+        await call(_cut_clients())
+
+    assert isinstance(cut.value.__cause__, _ClientTimeoutError)
 
 
 async def test_a_stall_just_over_the_timeout_with_a_read_in_flight_is_not_silence(

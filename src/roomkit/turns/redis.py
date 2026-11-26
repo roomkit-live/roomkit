@@ -77,7 +77,6 @@ class RedisTurnBackend(DistributedTurnBackend):
             RedisTurnRegistry(clients, keys, ttl_ms),
             timeouts=timeouts,
             _loop_back=_loop_back,
-            _timeout_errors=clients.timeout_errors,
         )
 
     async def _shut(self, until: float | None) -> set[asyncio.Task[Any]]:

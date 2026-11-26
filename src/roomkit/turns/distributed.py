@@ -87,7 +87,6 @@ class DistributedTurnBackend(TurnBackend):
         *,
         timeouts: TurnTimeouts | None = None,
         _loop_back: bool = False,
-        _timeout_errors: tuple[type[Exception], ...] = (TimeoutError,),
     ) -> None:
         self._timeouts = timeouts or TurnTimeouts()
         self.timeouts = self._timeouts
@@ -103,21 +102,18 @@ class DistributedTurnBackend(TurnBackend):
             self.node_id,
             self._route,
             block=read_block(self._timeouts),
-            timeout_errors=_timeout_errors,
         )
         self._live = LiveExecutors(
             self._registry,
             self._timeouts.heartbeat_interval,
             self._timeouts.heartbeat_timeout,
             lambda: self._routes.open_turns(),
-            timeout_errors=_timeout_errors,
         )
         self._beat = BeatThread(
             self._registry,
             self._timeouts.heartbeat_interval,
             lambda: self._payload(),
             bound=call_bound(self._timeouts),
-            timeout_errors=_timeout_errors,
         )
         # Turns on executors of this process are carried in it (RFC §10.6.7);
         # the tests' loop back sends them across the broker too.
