@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-subscriber-that-leaves-takes-no-frame-from-the-others",
+  "title": "A subscriber that unsubscribes and subscribes again takes nothing from another subscriber's audio",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-013"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "A wake-word detector detaches while a session listens, then attaches again: the session's subscription receives every frame throughout, the detector only those of its own subscriptions.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "detector"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "session"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "capture.unsubscribe",
+      "subscriber": "detector"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AgACAA=="
+      ]
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "detector-again"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AwADAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": true,
+          "subscribers": {
+            "detector": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                }
+              ],
+              "active": false
+            },
+            "session": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                },
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "active": true
+            },
+            "detector-again": {
+              "frames": [
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "active": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

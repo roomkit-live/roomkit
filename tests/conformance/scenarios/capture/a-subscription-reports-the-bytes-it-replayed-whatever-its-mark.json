@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-subscription-reports-the-bytes-it-replayed-whatever-its-mark",
+  "title": "Every subscription reports how many bytes it replayed: none without a mark or with nothing behind it, the backlog's bytes from a kept or a stale mark",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-029"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The backlog holds 12 bytes, three frames. Live frames never count: the subscriber without a mark received four and replayed none.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic",
+        "max_backlog_bytes": 12
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "live"
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "start"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA==",
+        "AgACAA=="
+      ]
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "middle"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AwADAA==",
+        "BAAEAA=="
+      ]
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "end"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "from-end",
+      "since": "end"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "from-middle",
+      "since": "middle"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "from-start",
+      "since": "start"
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "live": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                },
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 0
+            },
+            "from-end": {
+              "frames": [],
+              "replayed_bytes": 0,
+              "truncated": false
+            },
+            "from-middle": {
+              "frames": [
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 8,
+              "truncated": false
+            },
+            "from-start": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 12,
+              "truncated": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

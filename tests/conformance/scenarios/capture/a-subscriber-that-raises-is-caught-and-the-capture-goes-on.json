@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-subscriber-that-raises-is-caught-and-the-capture-goes-on",
+  "title": "A subscriber that raises on every frame breaks neither the capture nor another subscriber, live or replaying",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-021",
+    "RK-12.12-022"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The raising subscribers record each frame, then raise, on every frame they receive. Capturing does not fail; each subscriber, the raising ones included, receives every frame, and a raising subscriber's replay goes on past its first frame. The log line the catch writes is not read.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "start"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "raising",
+      "raises": true
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "quiet"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA==",
+        "AgACAA=="
+      ]
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "raising-replay",
+      "since": "start",
+      "raises": true
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AwADAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": true,
+          "subscribers": {
+            "raising": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                },
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "raised": 3,
+              "active": true
+            },
+            "quiet": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                },
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "raised": 0,
+              "active": true
+            },
+            "raising-replay": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                },
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "replayed_bytes": 8,
+              "raised": 3,
+              "active": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

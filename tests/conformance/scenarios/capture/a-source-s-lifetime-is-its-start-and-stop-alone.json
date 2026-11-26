@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-source-s-lifetime-is-its-start-and-stop-alone",
+  "title": "Subscribers coming and going neither stop nor start a capture source: with none, it still captures; one arriving at a stopped source finds it stopped",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-011",
+    "RK-12.12-012",
+    "RK-12.12-013"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The setup starts the source. Its last subscriber leaving stops nothing: the frame captured while nobody listens is in its backlog, which a later subscriber replays. Once that one left too and stop() stopped the source, a subscriber arriving, the count going from none to one, does not start it; only start() does. Only start() and stop() change the source's state: what a source acquires or releases of a real device, which the scripted source has none of, is left to each source's own tests.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": true,
+          "start_count": 1
+        }
+      }
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "first"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "capture.unsubscribe",
+      "subscriber": "first"
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "alone"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AgACAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": true,
+          "start_count": 1
+        }
+      }
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "later",
+      "since": "alone"
+    },
+    {
+      "call": "capture.unsubscribe",
+      "subscriber": "later"
+    },
+    {
+      "call": "capture.stop",
+      "source_id": "mic"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "while-stopped"
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": false,
+          "start_count": 1,
+          "subscribers": {
+            "first": {
+              "frames": [
+                {
+                  "data": "AQABAA=="
+                }
+              ],
+              "active": false
+            },
+            "later": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                }
+              ],
+              "replayed_bytes": 4,
+              "active": false
+            },
+            "while-stopped": {
+              "frames": [],
+              "active": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "capture.start",
+      "source_id": "mic"
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "started": true,
+          "start_count": 2
+        }
+      }
+    }
+  ]
+}

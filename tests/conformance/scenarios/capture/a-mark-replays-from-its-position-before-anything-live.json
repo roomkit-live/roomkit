@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-mark-replays-from-its-position-before-anything-live",
+  "title": "A subscriber from a mark receives the frames captured since the mark, before any frame captured once it subscribed",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-024"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The frame before the mark is not replayed; the two after it are, by the time subscribe() returns; the next frame comes live, after them.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "wake"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AgACAA==",
+        "AwADAA=="
+      ]
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "session",
+      "since": "wake"
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "session": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                }
+              ],
+              "replayed_bytes": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "BAAEAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "session": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 8
+            }
+          }
+        }
+      }
+    }
+  ]
+}

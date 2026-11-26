@@ -1,0 +1,1110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/input-levels-fire-at-most-ten-a-second-per-session",
+  "title": "Frames a session sends over one second fire at most ten input levels, 100 ms apart, each session its own",
+  "rules": [
+    "§12.5",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.5-030"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "notes": "Each of two sessions sends a frame every 21 ms of the virtual clock, 48 frames in 987 ms: unthrottled, 48 levels each. The 100 ms interval falls between two frames (105 ms, then 84 ms), never on one, where two clock readings would be compared to the edge: levels at 0, 105, 210 ... 945 ms, ten per session, whatever the other session sent.",
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "input",
+        "trigger": "on_input_audio_level",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice",
+        "bob"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "clock.advance",
+      "ms": 21
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "bob",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "input": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/a-stale-mark-replays-what-remains-and-reports-it-truncated",
+  "title": "A mark whose position was evicted replays what the backlog still holds, marked truncated, and goes live",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-027",
+    "RK-12.12-028"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "The backlog holds 8 bytes, two frames. The first mark's position, the first frame, was evicted: its subscription replays the two frames left, reports truncated, and receives the next frame live. The second mark's position is still held: its replay is whole. The log line the source writes is not read.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic",
+        "max_backlog_bytes": 8
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "old"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA=="
+      ]
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "mic",
+      "mark": "kept"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AgACAA==",
+        "AwADAA=="
+      ]
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "stale",
+      "since": "old"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "whole",
+      "since": "kept"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "BAAEAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "stale": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 8,
+              "truncated": true,
+              "active": true
+            },
+            "whole": {
+              "frames": [
+                {
+                  "data": "AgACAA=="
+                },
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                }
+              ],
+              "replayed_bytes": 8,
+              "truncated": false,
+              "active": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

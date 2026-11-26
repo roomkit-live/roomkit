@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/each-subscriber-receives-the-frames-raw-in-the-source-s-one-format",
+  "title": "Each subscriber receives every frame the source captured, its bytes as captured, in the source's one format",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-014",
+    "RK-12.12-017"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "An 8 kHz stereo source. Both subscribers receive each captured frame, in order, byte for byte, each in the source's format: the source converts nothing. What a real source emits compared with what its device gave it is each source's own, and so is the resampling a subscriber that needs another format does.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "mic",
+        "sample_rate": 8000,
+        "channels": 2
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "first"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "mic",
+      "subscriber": "second"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "mic",
+      "frames": [
+        "AQABAA==",
+        "AgACAA==",
+        "AwADAA=="
+      ]
+    },
+    {
+      "call": "capture.read",
+      "source_id": "mic",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "first": {
+              "frames": [
+                {
+                  "data": "AQABAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                },
+                {
+                  "data": "AgACAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                },
+                {
+                  "data": "AwADAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                }
+              ]
+            },
+            "second": {
+              "frames": [
+                {
+                  "data": "AQABAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                },
+                {
+                  "data": "AgACAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                },
+                {
+                  "data": "AwADAA==",
+                  "sample_rate": 8000,
+                  "channels": 2,
+                  "sample_width": 2
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

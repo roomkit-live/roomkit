@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/output-levels-fire-at-most-once-per-100-ms",
+  "title": "The chunks a session plays fire one output level per 100 ms, however many they are",
+  "rules": [
+    "§12.5",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.5-030"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "notes": "Three replies of a chunk per word, played at once each: the first at 0 ms on the virtual clock, the second at 60 ms, the third at 120 ms. Unthrottled, eight levels. The first reply's chunks fire one; the second's none, within 100 ms of it; the third's one, past them: a 50 ms interval would fire three, a 200 ms one a single level. The pipeline's canceller ends each playback as soon as it was sent.",
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "output",
+        "trigger": "on_output_audio_level",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "aec": {}
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "One two three."
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Four five six."
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Seven eight."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "output": [
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "capture/the-backlog-keeps-the-newest-frames-within-its-byte-and-duration-bounds",
+  "title": "A source's backlog keeps the newest frames its byte bound or its duration bound allows, evicting the oldest first",
+  "rules": [
+    "§12.12"
+  ],
+  "requirements": [
+    "RK-12.12-023"
+  ],
+  "requires_features": [
+    "realtime",
+    "capture_source"
+  ],
+  "notes": "Six 4-byte frames on each source. bytes keeps 8 bytes (max_backlog_bytes), its 10 s default bound far larger; seconds keeps 1 ms of 8 kHz mono 16-bit audio, 16 bytes (backlog_seconds). A replay from a mark taken before the first frame shows what each kept: the newest frames, the oldest evicted.",
+  "setup": {
+    "capture_sources": [
+      {
+        "id": "bytes",
+        "max_backlog_bytes": 8
+      },
+      {
+        "id": "seconds",
+        "sample_rate": 8000,
+        "backlog_seconds": 0.001
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "capture.mark",
+      "source_id": "bytes",
+      "mark": "start"
+    },
+    {
+      "call": "capture.mark",
+      "source_id": "seconds",
+      "mark": "start-seconds"
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "bytes",
+      "frames": [
+        "AQABAA==",
+        "AgACAA==",
+        "AwADAA==",
+        "BAAEAA==",
+        "BQAFAA==",
+        "BgAGAA=="
+      ]
+    },
+    {
+      "call": "capture.feed",
+      "source_id": "seconds",
+      "frames": [
+        "AQABAA==",
+        "AgACAA==",
+        "AwADAA==",
+        "BAAEAA==",
+        "BQAFAA==",
+        "BgAGAA=="
+      ]
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "bytes",
+      "subscriber": "from-bytes",
+      "since": "start"
+    },
+    {
+      "call": "capture.subscribe",
+      "source_id": "seconds",
+      "subscriber": "from-seconds",
+      "since": "start-seconds"
+    },
+    {
+      "call": "capture.read",
+      "source_id": "bytes",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "from-bytes": {
+              "frames": [
+                {
+                  "data": "BQAFAA=="
+                },
+                {
+                  "data": "BgAGAA=="
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "capture.read",
+      "source_id": "seconds",
+      "expect": {
+        "result": {
+          "subscribers": {
+            "from-seconds": {
+              "frames": [
+                {
+                  "data": "AwADAA=="
+                },
+                {
+                  "data": "BAAEAA=="
+                },
+                {
+                  "data": "BQAFAA=="
+                },
+                {
+                  "data": "BgAGAA=="
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
