@@ -26,6 +26,7 @@ from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.bridge import AudioBridgeConfig
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
@@ -289,28 +290,47 @@ class TestAVRecordingWiring:
 
 class _CallVideo(CallVideoBackend):
     """The video of the calls of :class:`_CallsWithVideo`: it records each
-    frame it is sent."""
+    frame it is sent with the thread that sent it."""
 
     def __init__(self, owner: AudioVideoBackend) -> None:
         super().__init__(owner)
         self.sent: list[tuple[str, VideoFrame]] = []
+        self.threads: list[int] = []
         self.first_sent = threading.Event()
+
+    def _record(self, session_id: str, frame: VideoFrame) -> None:
+        self.sent.append((session_id, frame))
+        self.threads.append(threading.get_ident())
+        self.first_sent.set()
 
     async def send_video(self, session: VideoSession, video: Any) -> None:
         raise AssertionError("the avatar's frames go out one at a time")
 
     def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
-        self.sent.append((session.id, frame))
-        self.first_sent.set()
+        self._record(session.id, frame)
+
+
+class _AsyncOnlyCallVideo(_CallVideo):
+    """A facet that keeps VideoBackend's own ``send_video_sync``, which hands
+    the frame's bytes to ``send_video`` on the running loop."""
+
+    async def send_video(self, session: VideoSession, video: Any) -> None:
+        self._record(session.id, VideoFrame(data=video))
+
+    send_video_sync = CallVideoBackend.send_video_sync
 
 
 class _CallsWithVideo(MockVoiceBackend, AudioVideoBackend):
     """A combined backend written on the contract: each call it connects
-    carries video, live at once, served by its ``video`` facet."""
+    carries video, live at once, served by its ``video`` facet, but those of
+    *without_video*."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, video: type[_CallVideo] = _CallVideo, without_video: frozenset[str] = frozenset()
+    ) -> None:
         super().__init__()
-        self._video = _CallVideo(self)
+        self._video = video(self)
+        self._without_video = without_video
 
     @property
     def video(self) -> _CallVideo:
@@ -325,15 +345,16 @@ class _CallsWithVideo(MockVoiceBackend, AudioVideoBackend):
         metadata: dict[str, Any] | None = None,
     ) -> VoiceSession:
         call = await super().connect(room_id, participant_id, channel_id, metadata=metadata)
-        self._video._started(
-            VideoSession(
-                id=call.id,
-                room_id=room_id,
-                participant_id=participant_id,
-                channel_id=channel_id,
-                state=VideoSessionState.ACTIVE,
+        if participant_id not in self._without_video:
+            self._video._started(
+                VideoSession(
+                    id=call.id,
+                    room_id=room_id,
+                    participant_id=participant_id,
+                    channel_id=channel_id,
+                    state=VideoSessionState.ACTIVE,
+                )
             )
-        )
         return call
 
 
@@ -358,6 +379,25 @@ class TestAvatarVideoGoesThroughTheCallsVideo:
     """RFC §12.8.8: the avatar's encoded frames are sent through the video
     backend, the call's ``video`` facet, whatever transport serves it."""
 
+    @staticmethod
+    async def _room(
+        backend: _CallsWithVideo, nals: list[bytes]
+    ) -> tuple[RoomKit, AudioVideoChannel]:
+        avatar = MockAvatarProvider(idle_color=None)
+        await avatar.start(b"", width=1, height=1)
+        av = AudioVideoChannel(
+            "av",
+            backend=backend,
+            tts=MockTTSProvider(),
+            avatar=avatar,
+            avatar_encoder=_NalEncoder(nals),
+        )
+        kit = RoomKit()
+        kit.register_channel(av)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "av")
+        return kit, av
+
     @pytest.mark.parametrize(
         ("nals", "sent", "keyframe"),
         [
@@ -374,19 +414,7 @@ class TestAvatarVideoGoesThroughTheCallsVideo:
         self, nals: list[bytes], sent: bytes, keyframe: bool
     ) -> None:
         backend = _CallsWithVideo()
-        avatar = MockAvatarProvider(idle_color=None)
-        await avatar.start(b"", width=1, height=1)
-        av = AudioVideoChannel(
-            "av",
-            backend=backend,
-            tts=MockTTSProvider(),
-            avatar=avatar,
-            avatar_encoder=_NalEncoder(nals),
-        )
-        kit = RoomKit()
-        kit.register_channel(av)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "av")
+        kit, av = await self._room(backend, nals)
         session = await kit.join("r1", "av", participant_id="alice")
 
         await av.say(session, "Hello there")
@@ -396,6 +424,40 @@ class TestAvatarVideoGoesThroughTheCallsVideo:
         session_id, frame = backend.video.sent[0]
         assert session_id == session.id
         assert (frame.data, frame.keyframe) == (sent, keyframe)
+
+    @pytest.mark.parametrize(
+        "facet", [_CallVideo, _AsyncOnlyCallVideo], ids=["its own sync send", "the default one"]
+    )
+    async def test_an_avatar_frame_is_sent_on_the_event_loop(
+        self, facet: type[_CallVideo]
+    ) -> None:
+        backend = _CallsWithVideo(facet)
+        kit, av = await self._room(backend, [b"\x41\x9a"])
+        session = await kit.join("r1", "av", participant_id="alice")
+
+        await av.say(session, "Hello there")
+        assert await asyncio.to_thread(backend.video.first_sent.wait, 2.0)
+        await kit.close()
+
+        assert backend.video.sent[0][1].data == b"\x41\x9a"
+        assert backend.video.threads[0] == threading.get_ident()
+
+    async def test_each_call_s_avatar_frames_run_on_a_clock_of_its_own(self) -> None:
+        backend = _CallsWithVideo()
+        kit, av = await self._room(backend, [b"\x41\x9a"])
+        alice = await kit.join("r1", "av", participant_id="alice")
+        bob = await kit.join("r1", "av", participant_id="bob")
+
+        await av.say(alice, "Hello there")
+        assert await asyncio.to_thread(backend.video.first_sent.wait, 2.0)
+        backend.video.first_sent.clear()
+        await av.say(bob, "Hello there")
+        assert await asyncio.to_thread(backend.video.first_sent.wait, 2.0)
+        await kit.close()
+
+        first = {sid: frame for sid, frame in reversed(backend.video.sent)}
+        step = 1000.0 / MockAvatarProvider().fps
+        assert first[alice.id].timestamp_ms == first[bob.id].timestamp_ms == step
 
 
 class TestAVVideoBridgeCapacity:
@@ -429,4 +491,28 @@ class TestAVVideoBridgeCapacity:
         await kit.close()
 
         assert started == ["alice"]
-        assert bob.state.value == "ended"
+        assert bob.state == VoiceSessionState.ENDED
+
+    async def test_a_call_the_audio_bridge_refuses_leaves_its_video_bridge_seat_free(
+        self,
+    ) -> None:
+        backend = _CallsWithVideo(without_video=frozenset({"bob"}))
+        av = AudioVideoChannel(
+            "av",
+            backend=backend,
+            tts=MockTTSProvider(),
+            bridge=AudioBridgeConfig(max_participants=2),
+            video_bridge=VideoBridgeConfig(max_participants=2),
+        )
+        kit = RoomKit()
+        kit.register_channel(av)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "av")
+        await kit.join("r1", "av", participant_id="alice")
+        bob = await kit.join("r1", "av", participant_id="bob")
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "av", participant_id="carol")
+        await kit.leave(bob)
+
+        await kit.join("r1", "av", participant_id="dave")
+        await kit.close()

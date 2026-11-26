@@ -13,7 +13,7 @@ from roomkit import (
     RoomKit,
     VideoChannel,
 )
-from roomkit.video import MockVideoBackend, VideoFrame, VideoSession
+from roomkit.video import MockVideoBackend, VideoFrame, VideoSession, VideoSessionState
 from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.recorder import (
     MockVideoRecorder,
@@ -499,6 +499,23 @@ class TestVideoChannelRecordingFailures:
         assert len(tapped) == 1
         assert "disk full" in caplog.text
         assert [p.suffix for p in tmp_path.iterdir()] == [".enc"]
+
+    async def test_a_session_the_kit_made_for_a_refused_recording_is_hung_up(self) -> None:
+        """A join whose recording the recorder refuses hangs up the session it
+        made, as a join the full bridge refuses (RFC §12.8.9, §12.8.10)."""
+
+        class _Refusing(MockVideoRecorder):
+            def start(self, session: VideoSession, config: VideoRecordingConfig) -> Any:
+                raise ValueError("storage refused")
+
+        kit, backend, _ = await self._kit_recording(_Refusing(), VideoRecordingConfig())
+
+        with pytest.raises(ValueError, match="storage refused"):
+            await kit.join("r1", "video-1", participant_id="u1")
+
+        made = next(s for s in backend.list_sessions("r1") if s.participant_id == "u1")
+        assert made.state == VideoSessionState.ENDED
+        await kit.close()
 
     @pytest.mark.parametrize(
         ("storage", "fmt", "refusal"),

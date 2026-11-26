@@ -487,3 +487,16 @@ class TestSIPVideoBackendSendsWholeFrames:
         video_cs.send_frame.assert_called_once_with(
             [b"\x67\x42", b"\x68\xce", b"\x65\x88"], 0, True
         )
+
+    async def test_a_frame_time_past_the_32_bit_clock_wraps(
+        self, backend, mock_video_bridge, av_offer
+    ):
+        await backend._handle_invite(_FakeCall(sdp_offer=av_offer))
+        video_session = backend.video.get_session("session-1")
+        video_cs = mock_video_bridge.VideoCallSession.return_value
+
+        late = VideoFrame(data=b"\x41\x9a", timestamp_ms=(2**32 + 900) / 90)
+        backend.video.send_video_sync(video_session, late)
+        await asyncio.sleep(0)
+
+        video_cs.send_frame.assert_called_once_with([b"\x41\x9a"], 900, False)

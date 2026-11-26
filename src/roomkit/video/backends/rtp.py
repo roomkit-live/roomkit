@@ -230,7 +230,7 @@ class _RTPVideo(CallVideoBackend):
         video_rtp = self._owner._video_rtp_sessions.get(session.id)
         if video_rtp is None:
             return
-        ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
+        ts = int((frame.timestamp_ms or 0) * 90) & 0xFFFFFFFF  # ms → 90kHz RTP clock
         data = nal_units(frame.data)
         is_key = frame.keyframe
         try:

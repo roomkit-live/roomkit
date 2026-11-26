@@ -326,6 +326,17 @@ class TestRTPVideoBackendSendsWholeFrames:
 
         video_rtp.send_frame.assert_called_once_with([b"\x41\x9a", b"\x41\x9b"], 2970, False)
 
+    async def test_a_frame_time_past_the_32_bit_clock_wraps(self, backend, mock_aiortp):
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        video_session = backend.video.get_session(session.id)
+        video_rtp = mock_aiortp.VideoRTPSession.create.return_value
+
+        late = VideoFrame(data=b"\x41\x9a", timestamp_ms=(2**32 + 900) / 90)
+        backend.video.send_video_sync(video_session, late)
+        await asyncio.sleep(0)
+
+        video_rtp.send_frame.assert_called_once_with([b"\x41\x9a"], 900, False)
+
 
 class TestRTPVideoBackendTTSStreamFailure:
     """The video backend inherits the audio rule: the TTS's failure is the caller's (RMK-448)."""

@@ -254,7 +254,6 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         except Exception:
             if bridge is not None and bridged:
                 bridge.remove_session(session.id)
-            self._session_ready_pending.discard(session.id)
             raise
 
     def unbind_session(self, session: VideoSession) -> None:

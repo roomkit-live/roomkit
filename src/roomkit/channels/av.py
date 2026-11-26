@@ -122,7 +122,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._avatar_queues: dict[str, Any] = {}
         # Lock to serialize H.264 encoding (x264 is not thread-safe)
         self._encoder_lock = threading.Lock()
-        self._avatar_frame_count = 0
+        # Per call, the avatar frames sent: their clock (RFC §12.8.8)
+        self._avatar_frame_counts: dict[str, int] = {}
 
         # Video bridge for session-to-session forwarding
         if video_bridge is True:
@@ -325,6 +326,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     def unbind_session(self, session: VoiceSession) -> None:
         """Clean up video state before unbinding the voice session."""
         self._stop_avatar_idle_loop(session.id)
+        self._avatar_frame_counts.pop(session.id, None)
         # Signal avatar worker to stop
         q = self._avatar_queues.pop(session.id, None)
         if q is not None:
@@ -383,6 +385,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             return
         if session.id in self._avatar_idle_tasks:
             return
+        self._note_event_loop()
         task = asyncio.get_running_loop().create_task(
             self._avatar_idle_loop(session),
             name=f"avatar_idle:{session.id}",
@@ -436,6 +439,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             return
         if self._avatar_encoder is None:
             return
+        self._note_event_loop()
 
         q = self._avatar_queues.get(session.id)
         if q is None:
@@ -524,15 +528,16 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
         """Encode one avatar frame and send it to the call through the call's
         video, the backend's ``video`` facet, whatever transport serves it (RFC
-        §12.8.8); a call without video shows no avatar. Synchronous and
-        thread-safe."""
+        §12.8.8); a call without video shows no avatar. Thread-safe: the send
+        itself runs on the event loop, where the video bridge sends too."""
         video_session = self._get_video_session(session.id)
-        if video_session is None or self._video_backend is None:
+        loop = self._event_loop
+        if video_session is None or loop is None or not loop.is_running():
             return
         with self._encoder_lock:
             nals = self._avatar_encoder.encode(frame)  # ty: ignore[unresolved-attribute]
-            self._avatar_frame_count += 1
-            count = self._avatar_frame_count
+            count = self._avatar_frame_counts.get(session.id, 0) + 1
+            self._avatar_frame_counts[session.id] = count
         if not nals:
             return
         fps = self._avatar.fps if self._avatar is not None else 30
@@ -544,10 +549,23 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             keyframe=any((nal[0] & 0x1F) == 5 for nal in nals if nal),
             sequence=count,
         )
+        loop.call_soon_threadsafe(self._send_to_call_video, video_session, encoded)
+
+    def _send_to_call_video(self, video_session: VideoSession, frame: VideoFrame) -> None:
+        """Send an encoded avatar frame through the call's video (on the loop)."""
+        if self._video_backend is None:
+            return
         try:
-            self._video_backend.send_video_sync(video_session, encoded)
+            self._video_backend.send_video_sync(video_session, frame)
         except Exception:
             logger.debug("Avatar frame send failed", exc_info=True)
+
+    def _note_event_loop(self) -> None:
+        """Remember the event loop the channel runs on, for the avatar's sends."""
+        try:
+            self._event_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
 
     # -- Video bridge helpers --------------------------------------------------
 

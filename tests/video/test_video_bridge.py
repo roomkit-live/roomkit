@@ -9,8 +9,10 @@ import pytest
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.video import VideoChannel
 from roomkit.video.backends.mock import MockVideoBackend
-from roomkit.video.base import VideoSession
+from roomkit.video.base import VideoSession, VideoSessionState
 from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
+from roomkit.video.pipeline import VideoPipelineConfig
+from roomkit.video.recorder import MockVideoRecorder, VideoRecordingConfig
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.mock import MockVisionProvider
 from tests.channel_tasks import settled
@@ -476,7 +478,7 @@ class TestVideoBridgeCapacity:
             await kit.join("r1", "camera", participant_id="carol")
 
         carol = next(s for s in backend.list_sessions("r1") if s.participant_id == "carol")
-        assert carol.state.value == "ended"
+        assert carol.state == VideoSessionState.ENDED
         await kit.close()
 
     async def test_a_hang_up_that_fails_leaves_the_refusal_to_the_caller(
@@ -490,4 +492,49 @@ class TestVideoBridgeCapacity:
         monkeypatch.setattr(backend, "disconnect", broken_disconnect)
         with pytest.raises(RuntimeError, match="max bridge participants"):
             await kit.join("r1", "camera", participant_id="carol")
+        await kit.close()
+
+    async def test_a_session_refused_once_is_reported_started_when_a_later_join_binds_it(
+        self,
+    ) -> None:
+        kit, video, backend, _, started = await self._full_room()
+        carol = await backend.connect("r1", "carol", "camera")
+        with pytest.raises(RuntimeError, match="max bridge participants"):
+            await kit.join("r1", "camera", session=carol)
+        alice = next(s for s in backend.list_sessions("r1") if s.participant_id == "alice")
+        await kit.leave(alice)
+
+        await kit.join("r1", "camera", session=carol)
+        await settled(video)
+        await kit.close()
+
+        assert sorted(started) == ["alice", "bob", "carol"]
+
+    async def test_a_session_whose_recording_is_refused_leaves_its_bridge_seat_free(
+        self,
+    ) -> None:
+        class _RefusingBob(MockVideoRecorder):
+            def start(self, session: VideoSession, config: VideoRecordingConfig) -> object:
+                if session.participant_id == "bob":
+                    raise ValueError("bob's recording refused")
+                return super().start(session, config)
+
+        backend = MockVideoBackend()
+        video = VideoChannel(
+            "camera",
+            backend=backend,
+            bridge=VideoBridgeConfig(max_participants=2),
+            pipeline=VideoPipelineConfig(
+                recorder=_RefusingBob(), recording_config=VideoRecordingConfig()
+            ),
+        )
+        kit = RoomKit()
+        kit.register_channel(video)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "camera")
+        await kit.join("r1", "camera", participant_id="alice")
+        with pytest.raises(ValueError, match="refused"):
+            await kit.join("r1", "camera", participant_id="bob")
+
+        await kit.join("r1", "camera", participant_id="carol")
         await kit.close()
