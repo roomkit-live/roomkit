@@ -12,6 +12,7 @@ from roomkit import (
     VideoChannel,
     VoiceChannel,
 )
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import RoomStatus
 from roomkit.models.room import Room
 from roomkit.recorder._room_recorder_manager import RoomRecorderManager
@@ -29,6 +30,7 @@ from roomkit.video.backends.mock import MockVideoBackend
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
 
 async def _until(ready: Callable[[], object]) -> None:
@@ -451,6 +453,40 @@ class TestVoiceRoomRecording:
 # ---------------------------------------------------------------------------
 # Integration test: room close stops recorders
 # ---------------------------------------------------------------------------
+
+
+class TestRecordedTrackParticipant:
+    """A session's recorded track names who publishes it (RFC §12.11): the
+    recorder's only source for "who said what"."""
+
+    @pytest.mark.parametrize("kind", ["voice", "realtime"])
+    async def test_a_session_s_track_names_its_participant(self, kind: str) -> None:
+        recorder = MockMediaRecorder()
+        kit = RoomKit()
+        if kind == "voice":
+            channel: VoiceChannel | RealtimeVoiceChannel = VoiceChannel(
+                "media", backend=MockVoiceBackend(), pipeline=AudioPipelineConfig()
+            )
+        else:
+            channel = RealtimeVoiceChannel(
+                "media",
+                provider=MockRealtimeProvider(),
+                transport=MockRealtimeTransport(),
+                recording=ChannelRecordingConfig(audio=True),
+            )
+        kit.register_channel(channel)
+        room = await kit.create_room(
+            recorders=[RoomRecorderBinding(recorder=recorder, config=MediaRecordingConfig())]
+        )
+        await kit.attach_channel(room.id, "media")
+
+        if isinstance(channel, RealtimeVoiceChannel):
+            await channel.start_session(room.id, "alice", "ws")
+        else:
+            await kit.connect_voice(room.id, "alice", "media")
+
+        assert [track.participant_id for track in recorder.tracks] == ["alice"]
+        await kit.close()
 
 
 class TestRoomCloseStopsRecording:

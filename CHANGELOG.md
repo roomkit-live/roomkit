@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A realtime voice channel's recorded room track names the participant whose session it is (RFC §12.11, RMK-2142), where it carried no `participant_id`, so a recording of a realtime call could not say who spoke; a voice channel's track already named it.
+
 - A conference plug or unplug that changes a connected bot session's grants emits `conference_bot_grants_changed` (RFC §12.10.4, §12.10.7, RMK-2138), where only `set_bot_grants` did: plugging a voice into a running conference, on a backend that updates the grants in place or by the announced re-join, and unplugging it where the backend narrows them in place, now tell the room which session holds the new grants. A narrowing the backend cannot apply changes nothing and emits nothing, as before.
 
 - A conference participant who asked a question can cut off the bot's answer to it (RFC §12.10.5, RMK-2137): a track's lane routed its transcription on its own task, so it heard nothing more of the track until the turn the transcription started was over, the answer's delivery included. The routing now runs on a task of its own, each behind the one before it, and the track keeps being heard: its next utterance's speech, barge-in and transcription hooks run while the previous utterance's turn is still in flight.
