@@ -126,6 +126,7 @@ CONFERENCE_ARGUMENTS = {
     **MEDIA_ARGUMENTS,
     **OPTIONS_ARGUMENTS,
     **FAULT_ARGUMENTS,
+    "conference.read": SFU_ARGUMENTS["conference.read"] | {"stage_calls"},
 }
 
 
@@ -171,6 +172,10 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict
     conference's own settings scripted."""
     sfu = await SFU_CALLS["conference.read"](kit, harness, spec)
     media = await read_media(kit, harness, spec)
+    if (names := spec.get("stage_calls")) is not None:
+        # Only the stage calls named: those a scenario compares, whatever else
+        # the lanes' stages received.
+        media["stages"] = [call for call in media["stages"] if call["call"] in names]
     return sfu | media | read_options(harness.conferences[spec["channel_id"]])
 
 
