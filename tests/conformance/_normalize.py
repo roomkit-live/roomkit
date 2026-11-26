@@ -155,7 +155,8 @@ class Normalizer:
 
     def _object(self, value: dict[str, Any], member: str | None) -> dict[str, Any]:
         indexes = self._indexes_of(value)
-        recording = value.get("event") in _RECORDING_EVENTS
+        named = value.get("event")
+        recording = isinstance(named, str) and named in _RECORDING_EVENTS
         # A participant's or an identity's id is the scenario's own (§5.5,
         # §5.6), as are a voice session's id, an ACP option's id and the id of
         # a voice a TTS catalog lists (§12.2).

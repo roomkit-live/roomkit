@@ -141,7 +141,8 @@ def _call(backend: ScriptedSFU, record: MockConferenceCall) -> dict[str, Any]:
         elif isinstance(value, ConferenceGrants):
             read[name] = _grants(value)
         elif isinstance(value, Mapping):
-            read[name] = dict(value)
+            # A mint's attributes: an empty map reads as none passed.
+            read[name] = dict(value) or None
         else:
             read[name] = value
     if record.method == "join_as_bot":

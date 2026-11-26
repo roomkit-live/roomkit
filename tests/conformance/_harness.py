@@ -186,6 +186,7 @@ MEDIA_EVENTS = (
     "voice_session_started",
     "voice_session_ended",
     "voice_session_ready",
+    "stt_error",
     "recording_started",
     "recording_stopped",
     "video_session_started",
