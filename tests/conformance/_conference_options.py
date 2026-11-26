@@ -57,7 +57,6 @@ OPTIONS_OPEN = {
     "identity_address_keys",
     "identity_trusts_unasserted_metadata",
     "recorder",
-    "tool_handler",
     "tool_policy",
     "tool_timeout_seconds",
     "tool_timeouts",
@@ -109,7 +108,7 @@ def _interruption(spec: Mapping[str, Any]) -> ConferenceInterruptionConfig:
     if "scope" in spec:
         members["scope"] = ConferenceInterruptionScope(spec["scope"])
     if "allowlist" in spec:
-        members["allowlist"] = set(spec["allowlist"])
+        members["allowlist"] = list(spec["allowlist"])
     return ConferenceInterruptionConfig(**members)
 
 
@@ -132,7 +131,10 @@ def channel_options(
     if "tts" in spec:
         kept.tts = _closing(scripted_tts(spec["tts"], harness.gates), "tts", kept.closed)
         options["tts"] = kept.tts
-    options["speak_text_events"] = spec.get("speak_text_events", True)
+    # Absent, the channel speaks every text event (README, conference.open);
+    # null leaves the field at the implementation's default.
+    if spec.get("speak_text_events", True) is not None:
+        options["speak_text_events"] = spec.get("speak_text_events", True)
     if "interruption" in spec:
         options["interruption"] = _interruption(spec["interruption"])
     if "bot_grants" in spec:
@@ -167,7 +169,7 @@ def realtime_config(
     spec: Mapping[str, Any], harness: Harness, model: MockRealtimeProvider, kept: ConferenceOptions
 ) -> ConferenceRealtimeConfig:
     """The model ``conference.open``'s ``tools`` declares, each tool served by
-    its scripted handler, with the handler, policy and bounds it names."""
+    its scripted handler, with the policy and bounds it names."""
     tools: Mapping[str, Any] = spec["tools"]
 
     async def answer(room_id: str, name: str, arguments: dict[str, Any]) -> str:
@@ -185,7 +187,7 @@ def realtime_config(
         tools=[
             {"name": name, "description": name, "parameters": {"type": "object"}} for name in tools
         ],
-        tool_handler=None if spec.get("tool_handler") is False else answer,
+        tool_handler=answer,
         **members,
     )
 
