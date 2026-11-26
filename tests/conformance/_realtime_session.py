@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-from roomkit.voice.base import VoiceSession
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput, ReasoningRequest
+from tests.conformance._capture import CAPTURE_SINCE
 from tests.conformance._conference_model import MODEL_CALLS
 from tests.conformance._realtime_io import (
     IO_ARGUMENTS,
@@ -44,6 +45,9 @@ if TYPE_CHECKING:
     from tests.conformance._harness import Harness
     from tests.conformance._script import Gates
 
+# The members of a channel's ``realtime`` spec this module reads.
+STATE_MEMBERS = {"reconnects_on_reconfigure"}
+
 
 class _Provider(IOProvider):
     """Expose the provider's outbound wire and its connection-scoped call ids."""
@@ -74,7 +78,12 @@ class _Provider(IOProvider):
 
     async def reconfigure(self, session: VoiceSession, **kwargs: Any) -> None:
         self.reconfigures.append(configuration(session, kwargs))
-        if kwargs.get("tools") is not None:
+        if self._spec.get("reconnects_on_reconfigure"):
+            # The provider interface's default: disconnect, renegotiate and
+            # connect again, the connect recording what it declares (README,
+            # ``reconnects_on_reconfigure``).
+            await super().reconfigure(session, **kwargs)
+        elif kwargs.get("tools") is not None:
             self.declared.append(declared_names(kwargs["tools"]))
         orphaned = sorted(self.outstanding)
         self.outstanding.clear()
@@ -113,7 +122,11 @@ class ScriptedRealtimeSession:
         self.backend = BackendRecord()
         options = dict(options) | channel_options(spec, self.trace) | prompt_and_voice(spec)
         self.usage_reports = on_usage(self.provider, spec, gates)
-        self.transport = RecordingTransport()
+        source_id = spec.get("capture_source")
+        self.transport = (
+            RecordingTransport() if source_id is None else harness.capture.transport(source_id)
+        )
+        self._capture = harness.capture
         if "reasoning" in spec:
             options["reasoning_backend"] = reasoning_backend(
                 spec["reasoning"], harness, kit, self.backend
@@ -128,6 +141,8 @@ class ScriptedRealtimeSession:
             tool_handler=None if spec.get("tool_handler") is False else self._handle,
             **options,
         )
+        if source_id is not None:
+            harness.capture.attach(source_id, self.channel)
 
     @property
     def session(self) -> VoiceSession:
@@ -147,6 +162,9 @@ class ScriptedRealtimeSession:
         metadata = prompt_and_voice(spec)
         if (tools := spec.get("tools")) is not None:
             metadata["tools"] = [self.declare(name) for name in tools]
+        if "capture_since" in spec:
+            # The caller's mark, which the transport subscribes with (RFC §12.12).
+            metadata[CAPTURE_SINCE] = self._capture.mark(spec["capture_since"])
         organization = {k: spec[k] for k in ("organization_id",) if k in spec}
         session = await self.channel.start_session(
             spec["room_id"],
@@ -203,8 +221,14 @@ class ScriptedRealtimeSession:
         self.handlers.append({"name": name, "outcome": "returned"})
         return tool["result"]
 
+    def state(self) -> str | None:
+        """The state of the session the steps address, null before any start."""
+        session = self._session or self.provider.connecting
+        return None if session is None else session.state.value
+
     def read(self, spec: Mapping[str, Any]) -> dict[str, Any]:
         return {
+            "state": self.state(),
             "injections": list(self.provider.injections),
             "results": [
                 {"call_id": key, "result": result} for _, key, result in self.provider.tool_results
@@ -225,7 +249,7 @@ class ScriptedRealtimeSession:
 
 
 REALTIME_ARGUMENTS = {
-    "realtime.start": {"channel_id", "room_id", "participant_id", "tools"}
+    "realtime.start": {"channel_id", "room_id", "participant_id", "tools", "capture_since"}
     | START_MEMBERS
     | set(CONFIGURATION),
     "realtime.end": {"channel_id"},
@@ -236,6 +260,7 @@ REALTIME_ARGUMENTS = {
     "realtime.delegate": {"channel_id", "delegation_id", "target"},
     "realtime.error": {"channel_id", "code", "message"},
     "realtime.configure": {"channel_id", "tools", "system_prompt", "voice"},
+    "realtime.set_state": {"channel_id", "state"},
     **IO_ARGUMENTS,
     **READS_ARGUMENTS,
 }
@@ -274,6 +299,9 @@ async def realtime_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
             await provider.simulate_error(fixture.session, spec["code"], spec["message"])
         case "realtime.configure":
             fixture.configure(spec)
+        case "realtime.set_state":
+            # As the integrator sets it: on the session itself (RFC §12.2).
+            fixture.session.state = VoiceSessionState[spec["state"].upper()]
         case _:
             raise ValueError(f"Unknown realtime call {spec['call']}")
     return None

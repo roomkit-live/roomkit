@@ -29,6 +29,7 @@ SCENARIOS = HERE / "scenarios"
 
 PROVIDED_FEATURES = {
     "call_recovery",
+    "capture_source",
     "source_provider",
     "executor_media",
     "conference",

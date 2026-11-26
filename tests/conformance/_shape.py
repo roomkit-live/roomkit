@@ -26,6 +26,8 @@ from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._addressing import ADDRESSING_ARGUMENTS
 from tests.conformance._av import AV_ARGUMENTS
 from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
+from tests.conformance._capture import CAPTURE_ARGUMENTS, CAPTURE_SOURCE
+from tests.conformance._capture import CHANNEL_MEMBERS as CAPTURE_MEMBERS
 from tests.conformance._conference import CONFERENCE_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
@@ -55,7 +57,7 @@ from tests.conformance._realtime_io import (
 )
 from tests.conformance._realtime_reads import CHANNEL_MEMBERS as READS_MEMBERS
 from tests.conformance._realtime_reads import ON_USAGE_MEMBERS
-from tests.conformance._realtime_session import REALTIME_ARGUMENTS
+from tests.conformance._realtime_session import REALTIME_ARGUMENTS, STATE_MEMBERS
 from tests.conformance._realtime_tools import (
     BACKEND_ACTION,
     REALTIME,
@@ -119,6 +121,7 @@ SETUP = {
     "executors",
     "event_handlers",
     "sources",
+    "capture_sources",
 }
 PROCESS = {"id"}
 EVENT_HANDLER = {"event", "reactions"}
@@ -679,7 +682,7 @@ CALLS |= VIDEO_ARGUMENTS | RECORDING_ARGUMENTS | AV_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
-CALLS |= SOURCE_ARGUMENTS
+CALLS |= SOURCE_ARGUMENTS | CAPTURE_ARGUMENTS
 STEPS = {
     "await": {"await", "expect"},
     "concurrent": {"concurrent"},
@@ -720,6 +723,8 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     _executors(setup, found)
     _event_handlers(setup, found)
     _sources(setup, found)
+    for position, source in enumerate(setup.get("capture_sources", [])):
+        _members(source, CAPTURE_SOURCE, f"setup.capture_sources[{position}]", found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -997,7 +1002,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
 def _realtime(realtime: Mapping[str, Any], path: str, found: list[str]) -> None:
     """A realtime channel's members, its tools', its policy's, its backend's,
     its injection result's and its pipeline's."""
-    _members(realtime, REALTIME | SESSION_MEMBERS | READS_MEMBERS, path, found)
+    known = REALTIME | SESSION_MEMBERS | READS_MEMBERS | CAPTURE_MEMBERS | STATE_MEMBERS
+    _members(realtime, known, path, found)
     if "on_usage" in realtime:
         _members(realtime["on_usage"], ON_USAGE_MEMBERS, f"{path}.on_usage", found)
     for name, tool in realtime.get("tools", {}).items():

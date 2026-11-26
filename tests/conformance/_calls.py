@@ -41,6 +41,7 @@ from roomkit.core.exceptions import (
     TransitionRefusedError,
     TurnLinkError,
     VerificationRefusedError,
+    VoiceSessionEndedError,
 )
 from roomkit.models.delivery import DeliveryOutcome, DeliveryStatus, InboundMessage, InboundResult
 from roomkit.models.enums import (
@@ -135,6 +136,9 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (RoomNotAttachedError, "room_not_attached"),
     (ScriptedBackendError, "backend_failed"),
     (ConferenceCloseError, "conference_close_failed"),
+    # A state set on a session that ended, which only its renegotiation
+    # leaves (RFC §12.2).
+    (VoiceSessionEndedError, "session_ended"),
 )
 
 

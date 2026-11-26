@@ -76,6 +76,7 @@ from tests.conformance._calls import (
     register_hook,
     result_event_id,
 )
+from tests.conformance._capture import CAPTURE_CALLS, CaptureSources
 from tests.conformance._compare import Check, compare
 from tests.conformance._conference import CONFERENCE_CALLS, ConferenceFixture
 from tests.conformance._conference_faults import close_work, untaken_faults
@@ -295,6 +296,9 @@ class Harness:
         self._lock_manager = lock_manager
         self._open_process = open_process
         self.gates = Gates()
+        # The setup's capture sources, made before the channels whose
+        # transports capture from them (README, "Scripted capture sources").
+        self.capture = CaptureSources(scenario.get("setup", {}).get("capture_sources", []))
         self.conferences: dict[str, ConferenceFixture] = {}
         self.video_fixtures: dict[str, VideoFixture] = {}
         self.media_recorders: dict[str, MockMediaRecorder] = {}
@@ -739,6 +743,7 @@ class Harness:
                 await handler.close()
             await self.mcp.close()
             self.auditors.close()
+            self.capture.close()
         return self._problems + compare(
             self.scenario.get("expect", {}), self.observed, self._checks
         )
@@ -1009,7 +1014,7 @@ class Harness:
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS | SOURCE_CALLS
         calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
-        calls |= AV_CALLS
+        calls |= AV_CALLS | CAPTURE_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

@@ -11,7 +11,7 @@ from roomkit import VoiceChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
-from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSession
+from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSession, VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.backchannel.mock import MockBackchannelDetector
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
@@ -227,6 +227,12 @@ async def _feed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
             await transport.simulate_audio_received(session, feed_frame(spec, encoded))
 
 
+async def _set_state(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    # As the integrator sets it: on the session itself (RFC §12.2).
+    session = harness.voice_fixtures[spec["channel_id"]].sessions[spec["participant_id"]]
+    session.state = VoiceSessionState[spec["state"].upper()]
+
+
 async def _settle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     await settle_voice(harness.voice_fixtures[spec["channel_id"]].channel)
 
@@ -325,6 +331,7 @@ VOICE_CALLS = {
     "voice.barge_in": _barge_in,
     "voice.settle": _settle,
     "voice.read": _read,
+    "voice.set_state": _set_state,
     **TRANSPORT_CALLS,
     **STT_CALLS,
     **BRIDGE_CALLS,
@@ -360,6 +367,7 @@ VOICE_ARGUMENTS = {
     "voice.barge_in": {"channel_id", "participant_id"},
     "voice.settle": {"channel_id"},
     "voice.read": {"channel_id", *READ_ARGUMENTS},
+    "voice.set_state": {"channel_id", "participant_id", "state"},
     **TRANSPORT_ARGUMENTS,
     **STT_ARGUMENTS,
     **BRIDGE_ARGUMENTS,
