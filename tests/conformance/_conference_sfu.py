@@ -269,13 +269,16 @@ async def _echo(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None
 def conference_work(fixtures: Mapping[str, ConferenceFixture]) -> list[asyncio.Task[Any]]:
     """The conference channels' background work an ``idle`` step waits for:
     each room's tasks (a join a trigger started, a re-join waiting out its
-    backoff) and the detaches' teardowns."""
+    backoff), the detaches' teardowns, and the lanes' transcriptions still
+    being routed."""
     tasks: list[asyncio.Task[Any]] = []
     for fixture in fixtures.values():
         channel = fixture.channel
         for room in list(channel._rooms.values()):
             tasks.extend(task for task in room.tasks if not task.done())
         tasks.extend(task for task in channel._teardowns if not task.done())
+        for lane in list(channel.active_lanes.values()):
+            tasks.extend(lane.routing)
     return tasks
 
 

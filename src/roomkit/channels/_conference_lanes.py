@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from roomkit.channels._conference_realtime import ConferenceRealtime
     from roomkit.channels._conference_recording import ConferenceRecording, TrackRecording
     from roomkit.channels._conference_recording_events import ConferenceRecordingEvents
+    from roomkit.channels._conference_room_state import ConferenceRoomState
     from roomkit.channels._conference_voice import ConferenceVoice
     from roomkit.core.framework import RoomKit
     from roomkit.voice.base import AudioChunk
@@ -343,12 +344,21 @@ class ConferenceLanesMixin:
             text = await self._run_transcription_hook(lane, text, timing)
         if not text:
             return
-        # Read once more, and outside the block: delivery takes the room lock,
-        # which a detach holds while it runs its own hooks, so it cannot be part
-        # of what a teardown drains without the two waiting on each other. Which
-        # leaves the room free to have gone during the hook — and a transcript
-        # delivered then would arrive after the end announcement.
-        if not room.may_collect():
+        # Off the lane's task: delivery returns only once the turn it starts
+        # is over, and the track must be heard meanwhile (RFC 12.10.5).
+        lane.route(lambda: self._route_transcription(lane, room, text))
+
+    async def _route_transcription(
+        self, lane: ConferenceLane, room: ConferenceRoomState, text: str
+    ) -> None:
+        """Deliver a lane's transcription into its room, attributed to its speaker."""
+        # Read once more, and outside the activity block: delivery takes the
+        # room lock, which a detach holds while it runs its own hooks, so it
+        # cannot be part of what a teardown drains without the two waiting on
+        # each other. Which leaves the room free to have gone during the hook
+        # — and a transcript delivered then would arrive after the end
+        # announcement.
+        if self._framework is None or not room.may_collect():
             return
         await self._framework.process_inbound(
             InboundMessage(

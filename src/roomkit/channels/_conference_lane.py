@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from roomkit.channels import _conference_activity
 from roomkit.channels._conference_backlog import TrackBacklog
-from roomkit.core.task_utils import acting_tasks
+from roomkit.core.task_utils import acting_tasks, log_task_exception
 from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
@@ -192,6 +192,10 @@ class ConferenceLane:
         # When the current utterance opened. Read at SPEECH_END, where the
         # counters are reset before the transcription round trip begins.
         self._speech_started_at = 0.0
+        # The transcriptions being routed into the room, each on a task of
+        # its own behind the one before it: see :meth:`route`.
+        self._routings: set[asyncio.Task[None]] = set()
+        self._last_routing: asyncio.Task[None] | None = None
 
     @property
     def running(self) -> bool:
@@ -230,9 +234,33 @@ class ConferenceLane:
             self.participant_id,
         )
 
+    def route(self, deliver: Callable[[], Awaitable[None]]) -> None:
+        """Route a transcription into the room off the lane's own task.
+
+        Delivery returns only once the turn it starts is over — the room's
+        hooks, an agent's answer, the conference speaking that answer — and
+        awaited here it would leave the track unheard for as long: the person
+        who asked could not cut the answer to their question (RFC 12.10.5).
+        Each routing waits for the one before it, so a track's transcripts
+        enter the room in the order they were spoken.
+        """
+        task = asyncio.create_task(_route_after(self._last_routing, deliver))
+        task.add_done_callback(log_task_exception)
+        self._routings.add(task)
+        task.add_done_callback(self._routings.discard)
+        self._last_routing = task
+
+    @property
+    def routing(self) -> list[asyncio.Task[None]]:
+        """The routings of this lane's transcriptions still running."""
+        return [task for task in self._routings if not task.done()]
+
     async def drain(self) -> None:
-        """Wait until every queued frame has been processed."""
+        """Wait until every queued frame has been processed, and every
+        transcription it produced routed."""
         await self._backlog.join()
+        while pending := self.routing:
+            await asyncio.wait(pending)
 
     async def aclose(self) -> bool:
         """Stop the lane and release the stage state its stream held.
@@ -266,6 +294,7 @@ class ConferenceLane:
             ends, which is what holds their close off.
         """
         self._closed = True
+        await self._stop_routing()
         if self._released.is_set():
             return False
         task, self._task = self._task, None
@@ -288,6 +317,21 @@ class ConferenceLane:
         task.add_done_callback(_ABANDONED_TASKS.discard)
         task.add_done_callback(self._release_when_the_task_ends)
         return True
+
+    async def _stop_routing(self) -> None:
+        """Cancel the transcriptions still being routed, as closing the lane
+        did when they ran on its task — but not one this close runs inside: a
+        hook of that routing detaching the channel is its own caller.
+
+        Bounded like the lane's own task: a routing that swallows its
+        cancellation is left to end on its own, holding nothing of the lane's.
+        """
+        acting = acting_tasks()
+        pending = [task for task in self.routing if task not in acting]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.wait(pending, timeout=_conference_activity.CANCEL_GRACE_S)
 
     def _release_stream(self) -> None:
         """Release stage state once and open the provider-safety barrier."""
@@ -381,3 +425,12 @@ def _frame_duration_ms(frame: AudioFrame) -> float:
     """
     bytes_per_sample = frame.sample_width * frame.channels
     return (len(frame.data) / bytes_per_sample) / frame.sample_rate * 1000.0
+
+
+async def _route_after(
+    previous: asyncio.Task[None] | None, deliver: Callable[[], Awaitable[None]]
+) -> None:
+    """Run *deliver* once *previous*, the lane's routing before it, has ended."""
+    if previous is not None:
+        await asyncio.wait({previous})
+    await deliver()

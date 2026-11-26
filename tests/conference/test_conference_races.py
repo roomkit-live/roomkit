@@ -696,6 +696,47 @@ class TestDetachFromInsideALane:
         assert backend.bots == []
 
 
+class TestALaneListensWhileItsUtteranceIsRouted:
+    """A transcription's routing can take as long as the turn it starts: the
+    room's hooks, an agent's answer, the conference speaking that answer. The
+    track it came from keeps being heard meanwhile, or the person who asked
+    could not cut the answer to their question (RFC 12.10.5).
+    """
+
+    async def test_the_asker_cuts_the_bot_while_their_question_is_routed(self) -> None:
+        kit, channel, backend = await _kit(
+            stt=MockSTTProvider(transcripts=["what time is it"]),
+            tts=_ChunkedTTS(40),
+            interruption=ConferenceInterruptionConfig(strategy=InterruptionStrategy.IMMEDIATE),
+        )
+        routed, release = asyncio.Event(), asyncio.Event()
+        cuts: list[str] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def _hold_the_question(event: object, ctx: object) -> HookResult:
+            routed.set()
+            await release.wait()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.ON_BARGE_IN, execution=HookExecution.ASYNC)
+        async def _cut(payload: Any, ctx: object) -> None:
+            cuts.append(payload.participant_id)
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await say(backend, track)
+        await asyncio.wait_for(routed.wait(), timeout=5.0)
+        speaking = asyncio.create_task(channel._voice.speak(ROOM, "it is noon"))
+        await _until(lambda: len(backend.published_audio) >= 1)
+        await say(backend, track, silence=0)
+        try:
+            await _until(lambda: cuts == ["p-alice"], timeout=1.0)
+        finally:
+            release.set()
+            await asyncio.gather(speaking, return_exceptions=True)
+            await kit.close()
+
+
 # ---------------------------------------------------------------------------
 # The attachment moves: a re-attach lands inside a deferred detach
 # ---------------------------------------------------------------------------
