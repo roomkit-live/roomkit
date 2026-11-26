@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-unplug-narrows-the-grants-in-place",
+  "title": "An unplug that narrows what the bot needs narrows its grants in place on a backend that updates grants",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-197"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tts": {},
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": true
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false,
+                "subscribe": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

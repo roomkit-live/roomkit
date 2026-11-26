@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-passes-no-context-to-its-tts",
+  "title": "A conference's synthesizer receives no context, even one that declares a context level",
+  "rules": [
+    "§12.2.2"
+  ],
+  "requirements": [
+    "RK-12.2.2-008"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tts": {
+        "context_level": "text"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "First answer"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Second answer"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "First answer",
+            "Second answer"
+          ],
+          "tts_contexts": [
+            null,
+            null
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/explicit-grants-alone-make-no-need-to-join",
+  "title": "Explicit bot grants on a channel with nothing to consume or say make no need: an arrival joins no bot",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-102"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "bot_grants": {
+        "subscribe": true,
+        "publish_audio": true
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

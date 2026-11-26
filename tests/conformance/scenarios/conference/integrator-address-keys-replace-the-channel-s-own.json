@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/integrator-address-keys-replace-the-channel-s-own",
+  "title": "Address keys an integrator configures are read in place of the channel's own, the backend's included",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-035"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Partial: the unit's MUST, documenting the keys an implementation reads, is by review; this observes its SHOULD, the integrator's override replacing the channel's keys.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-99",
+                "display_name": "Mallory"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "address_keys": [
+        "sfu_caller_number"
+      ],
+      "identity_address_keys": [
+        "badge_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "badge_number": "+15550101",
+        "sfu_caller_number": "+15550199"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-2",
+      "metadata": {
+        "sfu_caller_number": "+15550199"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      }
+    ],
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identity_id": "user-42"
+        },
+        {
+          "id": "dial-in-2",
+          "identification": "unknown",
+          "identity_id": null
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-unplugged-provider-is-closed-only-when-the-channel-owns-it",
+  "title": "An unplugged recognizer is closed when the channel owns its providers, and left open when it does not",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-190"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "owner",
+      "room_id": "r1",
+      "stt": {
+        "streams": []
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "borrower",
+      "room_id": "r2",
+      "stt": {
+        "streams": []
+      },
+      "close_providers": false
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "owner",
+      "kind": "stt"
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "borrower",
+      "kind": "stt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "owner",
+      "expect": {
+        "result": {
+          "closed": [
+            "stt"
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "borrower",
+      "expect": {
+        "result": {
+          "closed": []
+        }
+      }
+    }
+  ]
+}

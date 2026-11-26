@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-backend-s-own-address-key-is-read-and-another-provider-s-is-not",
+  "title": "Unconfigured, a channel resolves an arrival on the key its backend declares, and never on a key only another provider would name",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-058"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Partial: which generic keys follow the backend's is the implementation's own list (RK-12.10.2-035).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-99",
+                "display_name": "Mallory"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "address_keys": [
+        "sfu_caller_number"
+      ]
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-1",
+      "metadata": {
+        "sfu_caller_number": "+15550101"
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "dial-in-2",
+      "metadata": {
+        "other_sfu.caller_number": "+15550199"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      }
+    ],
+    "participants": {
+      "r1": [
+        {
+          "id": "dial-in-1",
+          "identity_id": "user-42"
+        },
+        {
+          "id": "dial-in-2",
+          "identification": "unknown",
+          "identity_id": null
+        }
+      ]
+    }
+  }
+}

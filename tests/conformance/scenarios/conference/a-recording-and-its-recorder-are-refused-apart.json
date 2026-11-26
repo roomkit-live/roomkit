@@ -1,0 +1,52 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recording-and-its-recorder-are-refused-apart",
+  "title": "A conference channel built with a recording and no recorder, or a recorder and no recording, is refused",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-001"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "Partial: the record's shape and defaults are pinned by the public API.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "unwritten",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {},
+      "recorder": null,
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "unfed",
+      "room_id": "r2",
+      "stt": null,
+      "recorder": "rec",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    }
+  ]
+}

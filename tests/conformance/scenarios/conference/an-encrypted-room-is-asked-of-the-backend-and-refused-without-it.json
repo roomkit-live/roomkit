@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-encrypted-room-is-asked-of-the-backend-and-refused-without-it",
+  "title": "A conference's e2ee is passed to ensure_room() on a backend with the E2EE capability, and refused as a configuration error on one without it",
+  "rules": [
+    "§12.10.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.2-056",
+    "RK-12.10.4-001"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The configuration error comes from the backend's ensure_room(), which the channel passes on (§12.10.3). RK-12.10.4-001 partial: the record's shape and defaults are pinned by the public API.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "sealed",
+      "room_id": "r1",
+      "stt": null,
+      "e2ee": true,
+      "capabilities": [
+        "e2ee"
+      ]
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "sealed",
+      "calls": [
+        "ensure_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1",
+              "e2ee": true
+            }
+          ],
+          "info": {
+            "e2ee": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "plain",
+      "room_id": "r2",
+      "stt": null,
+      "e2ee": true,
+      "expect": {
+        "error": {
+          "name": "capability_missing"
+        }
+      }
+    }
+  ]
+}

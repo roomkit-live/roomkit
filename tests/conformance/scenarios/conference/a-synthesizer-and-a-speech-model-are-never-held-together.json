@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-synthesizer-and-a-speech-model-are-never-held-together",
+  "title": "A conference channel built with both a synthesizer and a speech-to-speech model is refused, and so is a plug of either onto a channel holding the other",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-006"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      },
+      {
+        "id": "r3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "both",
+      "room_id": "r1",
+      "tts": {},
+      "tools": {},
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "voiced",
+      "room_id": "r2",
+      "tts": {}
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "voiced",
+      "kind": "realtime",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "model",
+      "room_id": "r3",
+      "tools": {}
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "model",
+      "kind": "tts",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    }
+  ]
+}

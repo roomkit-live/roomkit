@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/explicit-grants-are-not-rewritten-by-a-plug",
+  "title": "Explicit bot grants set at construction are neither updated nor re-joined when a synthesizer is plugged, nor when it is unplugged",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-199"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ],
+      "bot_grants": {
+        "subscribe": true,
+        "publish_audio": false
+      }
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false
+              }
+            }
+          ],
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false
+              }
+            }
+          ],
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false,
+                "subscribe": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

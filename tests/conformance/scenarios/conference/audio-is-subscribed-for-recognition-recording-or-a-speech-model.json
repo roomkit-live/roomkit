@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/audio-is-subscribed-for-recognition-recording-or-a-speech-model",
+  "title": "A published audio track is subscribed when recognition, recording or a speech-to-speech model is configured",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-163"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      },
+      {
+        "id": "r3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "heard",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "kept",
+      "room_id": "r2",
+      "stt": null,
+      "recording": {}
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "answered",
+      "room_id": "r3",
+      "tools": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "heard",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "heard",
+      "participant_id": "alice",
+      "track_id": "mic-1",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "kept",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "kept",
+      "participant_id": "bob",
+      "track_id": "mic-2",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "answered",
+      "participant_id": "carol"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "answered",
+      "participant_id": "carol",
+      "track_id": "mic-3",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "heard",
+      "calls": [
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "mic-1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "kept",
+      "calls": [
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "mic-2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "answered",
+      "calls": [
+        "subscribe_track"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "subscribe_track",
+              "track_id": "mic-3"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

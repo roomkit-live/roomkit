@@ -1,0 +1,36 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-refuses-a-diarizing-recognizer",
+  "title": "A conference channel built with a recognizer that labels speakers is refused: it attributes speech by participant track",
+  "rules": [
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-12.2.3-020"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": {
+        "supports_diarization": true
+      },
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    }
+  ]
+}

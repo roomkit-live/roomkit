@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-model-s-tool-policy-refuses-a-denied-tool",
+  "title": "A conference model's tool policy refuses a call to a tool it denies, and the model reads the refusal; an allowed tool is served",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-013"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "Partial: the record's tool_policy field takes effect (§21.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "lookup": "found",
+        "erase": "erased"
+      },
+      "tool_policy": {
+        "deny": [
+          "erase"
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c1",
+      "name": "erase",
+      "expect": {
+        "result": {
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c2",
+      "name": "lookup",
+      "expect": {
+        "result": "found"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reports": {
+        "$unordered": [
+          {
+            "tool_call": {
+              "tool_call_id": "c1",
+              "name": "erase",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c2",
+              "name": "lookup",
+              "refused": false
+            }
+          }
+        ]
+      }
+    }
+  }
+}

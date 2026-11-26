@@ -1,0 +1,34 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recognizer-with-no-vad-is-refused",
+  "title": "A conference given a recognizer and lanes with no VAD is refused rather than recognizing frame by frame",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-151"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": null,
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    }
+  ]
+}

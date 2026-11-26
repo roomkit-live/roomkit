@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/close-room-on-detach-closes-the-room-with-or-without-a-bot",
+  "title": "A detach calls close_room() when close_room_on_detach is set, whether or not a bot ever joined",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-115"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "joined",
+      "room_id": "r1",
+      "close_room_on_detach": true
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "empty",
+      "room_id": "r2",
+      "close_room_on_detach": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "joined",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "joined"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "empty"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "joined",
+      "calls": [
+        "join_as_bot",
+        "close_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1"
+            },
+            {
+              "call": "close_room",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "empty",
+      "calls": [
+        "join_as_bot",
+        "close_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "close_room",
+              "room_id": "r2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

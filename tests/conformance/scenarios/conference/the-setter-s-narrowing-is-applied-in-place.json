@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-setter-s-narrowing-is-applied-in-place",
+  "title": "Explicit grants narrower than the live session's are applied in full, in place, on a backend that updates grants",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-205"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tts": {},
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "subscribe": true,
+                "publish_audio": false,
+                "publish_video": false,
+                "publish_screen_share": false,
+                "publish_screen_share_audio": false,
+                "moderate": false,
+                "hidden": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

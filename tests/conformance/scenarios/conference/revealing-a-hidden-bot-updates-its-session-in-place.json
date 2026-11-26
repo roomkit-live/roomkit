@@ -1,0 +1,91 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/revealing-a-hidden-bot-updates-its-session-in-place",
+  "title": "Revealing a hidden bot updates its live session in place, with no re-join, on a backend that updates grants",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-209"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ],
+      "bot_grants": {
+        "subscribe": true,
+        "hidden": true
+      }
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "hidden": false
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "hidden": true
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "hidden": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

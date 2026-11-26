@@ -1,0 +1,67 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-encrypted-conference-refuses-a-plugged-recognizer-or-recording",
+  "title": "A recognizer or a recording plugged into an end-to-end encrypted conference is refused as at construction",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-181"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "notes": "The RFC lets an implementation offering E2EE either admit the bot as a key holder or refuse framework media intelligence; this observes the refusal, the option an implementation without a key-holder contract takes.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "e2ee": true,
+      "capabilities": [
+        "e2ee"
+      ]
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "stt",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "recording",
+      "recorder": "rec",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": false,
+            "recording_configured": false
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-integrator-may-trust-a-client-s-own-attributes",
+  "title": "An integrator who widens the default resolves an arrival on the address its own client supplied",
+  "rules": [
+    "§12.10.2"
+  ],
+  "requirements": [
+    "RK-12.10.2-041"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550101"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-42",
+                "display_name": "Alice"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550199"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "user-99",
+                "display_name": "Mallory"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "address_keys": [
+        "caller_number"
+      ],
+      "identity_trusts_unasserted_metadata": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "guest",
+      "metadata": {},
+      "client_metadata": {
+        "caller_number": "+15550101"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "r1",
+        "channel_id": "conf",
+        "sender_id": "+15550101"
+      }
+    ],
+    "participants": {
+      "r1": [
+        {
+          "id": "guest",
+          "identity_id": "user-42"
+        }
+      ]
+    }
+  }
+}

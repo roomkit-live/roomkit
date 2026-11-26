@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-disclosure-surface-says-whether-grants-update-in-place",
+  "title": "A conference's disclosure surface answers whether its explicit grants reach a live session in place",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-208"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "able",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "unable",
+      "room_id": "r2"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "able",
+      "expect": {
+        "result": {
+          "info": {
+            "bot_grant_update_in_place": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "unable",
+      "expect": {
+        "result": {
+          "info": {
+            "bot_grant_update_in_place": false
+          }
+        }
+      }
+    }
+  ]
+}

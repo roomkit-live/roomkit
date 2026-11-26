@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-delivery-is-synthesized-once-between-the-tts-hooks",
+  "title": "A broadcast text reaching the conference is synthesized once, and BEFORE_TTS and AFTER_TTS each see it once",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-214"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tts",
+        "execution": "sync"
+      },
+      {
+        "name": "after",
+        "trigger": "after_tts",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tts": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Hello there"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Hello there"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "before": [
+        {
+          "voice": {
+            "text": "Hello there"
+          }
+        }
+      ],
+      "after": [
+        {
+          "voice": {
+            "text": "Hello there"
+          }
+        }
+      ]
+    }
+  }
+}

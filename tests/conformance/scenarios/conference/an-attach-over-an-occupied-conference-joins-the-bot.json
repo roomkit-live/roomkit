@@ -1,0 +1,63 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-attach-over-an-occupied-conference-joins-the-bot",
+  "title": "An attach over a conference that already holds participants, which no callback announced, asks for its occupancy and joins the bot",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-088"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "occupants": [
+        "alice"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "list_participants",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "list_participants",
+              "room_id": "r1"
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r1"
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

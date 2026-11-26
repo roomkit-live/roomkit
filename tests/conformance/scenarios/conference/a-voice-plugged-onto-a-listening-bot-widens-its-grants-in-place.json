@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-voice-plugged-onto-a-listening-bot-widens-its-grants-in-place",
+  "title": "A synthesizer plugged onto a listening bot brings the live session's grants in line in place before the plug returns, on a backend that updates grants",
+  "rules": [
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-12.10.4-195"
+  ],
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "capabilities": [
+        "bot_grant_update"
+      ]
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.plug",
+      "channel_id": "conf",
+      "kind": "tts"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot",
+        "update_bot_grants",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": false
+              }
+            },
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": true,
+                "subscribe": true
+              }
+            }
+          ],
+          "bots": [
+            {
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "publish_audio": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

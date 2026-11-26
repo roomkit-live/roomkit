@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-tool-handler-is-cut-at-its-bound",
+  "title": "A conference model's tool handler that outlives its bound is cut, per tool name or for every tool, and the model reads a failure",
+  "rules": [
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-12.10.12-013"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "Partial: tool_timeout_seconds and tool_timeouts bound a handler; their defaults (10 s, null for unbounded, no per-tool bound) and the human-input handler's precedence are not observed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "per-tool",
+      "room_id": "r1",
+      "tools": {
+        "slow": {
+          "gate": "never-a",
+          "result": "late"
+        },
+        "quick": "done"
+      },
+      "tool_timeouts": {
+        "slow": 0.05
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "every-tool",
+      "room_id": "r2",
+      "tools": {
+        "slow": {
+          "gate": "never-b",
+          "result": "late"
+        }
+      },
+      "tool_timeout_seconds": 0.05
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "per-tool",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "every-tool",
+      "participant_id": "bob"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the models."
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "r2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "per-tool",
+      "call_id": "c1",
+      "name": "slow",
+      "expect": {
+        "result": {
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "per-tool",
+      "call_id": "c2",
+      "name": "quick",
+      "expect": {
+        "result": "done"
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "every-tool",
+      "call_id": "c3",
+      "name": "slow",
+      "expect": {
+        "result": {
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "per-tool",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "slow",
+              "outcome": "interrupted"
+            },
+            {
+              "name": "quick",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "every-tool",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "slow",
+              "outcome": "interrupted"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
