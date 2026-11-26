@@ -246,6 +246,7 @@ KIT_CALLS = frozenset(
     {
         "process_inbound",
         "create_room",
+        "recording.start",
         "attach_channel",
         "add_room_hook",
         "subscribe_room",

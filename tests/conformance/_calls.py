@@ -68,6 +68,7 @@ from tests.conformance._extra_tools import replace as replace_extra_tool
 from tests.conformance._realtime_io import ScriptedProviderError
 from tests.conformance._realtime_session import ScriptedRealtimeSession
 from tests.conformance._realtime_tools import channel_options
+from tests.conformance._recording_room import room_bindings
 from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
@@ -391,7 +392,12 @@ async def _delete_event(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
 
 
 async def _create_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    return await create_room(kit, spec["room"], room_orchestration(spec, harness))
+    extra = room_orchestration(spec, harness)
+    if "recorders" in spec:
+        # The recorders bound at its creation (README, "Video sessions and
+        # room recording").
+        extra["recorders"] = room_bindings(spec, harness)
+    return await create_room(kit, spec["room"], extra)
 
 
 async def create_room(

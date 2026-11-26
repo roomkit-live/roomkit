@@ -39,6 +39,7 @@ from roomkit.recorder import (
 )
 from roomkit.voice.pipeline import AudioPipelineConfig, RecordingEncryption
 from tests.conformance._conference_sfu import ScriptedSFU, conference_work
+from tests.conformance._recording_room import data_call, only_named, recorded_track, track_call
 from tests.conformance._voice import _vad
 from tests.conformance._voice_pipeline import Trace, TracedVAD, add_pipeline_stages
 from tests.conformance._voice_stt import ScriptedSTT
@@ -53,6 +54,10 @@ if TYPE_CHECKING:
 # The longest a recorder write waits at its gate: a gate no step opens must not
 # keep the writer's thread, and with it the run's end, waiting for ever.
 _WRITE_GATE_BOUND_S = 10.0
+# The longest a gated recorder call (``call_gates``) waits: past the budgets a
+# teardown and a release give it, two steps' worth, which a scenario that holds
+# a call through both waits out before it opens the gate.
+_CALL_GATE_BOUND_S = 30.0
 
 # The conference.open members this module reads.
 MEDIA_OPEN = {"vad", "stt", "agc", "denoiser", "recording", "max_queued_frames", "address_keys"}
@@ -97,20 +102,29 @@ class _Recording:
 
 
 class ConferenceRecorder(MediaRecorder):
-    """Records each recording it opens, in order, and holds a track's writes at
-    that track's gate until a step opens it.
+    """Records each recording it opens, in order, holds a track's writes at
+    that track's gate, and a call of ``call_gates`` at that call's, until a
+    step opens it; it notes each call it receives, for ``recording.calls``.
 
     The writes come on the channel's own thread, never the event loop's: a
     write there waits for the gate on the loop, bounded. A recording takes no
     frame once finalized, as a container closed over its streams takes none.
     """
 
-    def __init__(self, gates: Gates, write_gates: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        gates: Gates,
+        write_gates: Mapping[str, str],
+        call_gates: Mapping[str, str] | None = None,
+    ) -> None:
         self._gates = gates
         self._write_gates = dict(write_gates)
+        self._call_gates = dict(call_gates or {})
         self._loop = asyncio.get_running_loop()
         self._loop_thread = threading.get_ident()
         self.recordings: dict[str, _Recording] = {}
+        # Appended on the recorder's threads, read on the loop's.
+        self.calls: list[dict[str, Any]] = []
 
     @property
     def name(self) -> str:
@@ -123,13 +137,16 @@ class ConferenceRecorder(MediaRecorder):
             started_at=datetime.now(UTC),
         )
         self.recordings[handle.id] = _Recording(config)
+        self.calls.append({"call": "on_recording_start", "recording_id": handle.id})
         return handle
 
     def on_track_added(self, handle: MediaRecordingHandle, track: RecordingTrack) -> None:
+        self.calls.append(track_call("on_track_added", handle, track))
         self.recordings[handle.id].tracks.append(track)
 
     def on_track_removed(self, handle: MediaRecordingHandle, track: RecordingTrack) -> None:
-        return None
+        self.calls.append(track_call("on_track_removed", handle, track))
+        self._held("on_track_removed")
 
     def on_data(
         self,
@@ -138,25 +155,33 @@ class ConferenceRecorder(MediaRecorder):
         data: bytes,
         timestamp_ms: float | None,
     ) -> None:
+        self.calls.append(data_call(handle, track, data))
         if (gate := self._write_gates.get(track.id)) is not None:
-            self._hold(gate)
+            self._hold(gate, _WRITE_GATE_BOUND_S)
         recording = self.recordings[handle.id]
         if not recording.stopped:
             recording.chunks.append(bytes(data))
 
-    def _hold(self, gate: str) -> None:
-        # On the loop's own thread the write cannot wait for a step to open
+    def _held(self, call: str) -> None:
+        """Holds a call of ``call_gates`` at its gate."""
+        if (gate := self._call_gates.get(call)) is not None:
+            self._hold(gate, _CALL_GATE_BOUND_S)
+
+    def _hold(self, gate: str, bound_s: float) -> None:
+        # On the loop's own thread the call cannot wait for a step to open
         # the gate: it says it reached it and goes on.
         if threading.get_ident() == self._loop_thread:
             self._loop.call_soon(self._gates.reach, gate)
             return
         waiting = asyncio.run_coroutine_threadsafe(self._gates.hold(gate), self._loop)
         try:
-            waiting.result(timeout=_WRITE_GATE_BOUND_S)
+            waiting.result(timeout=bound_s)
         except TimeoutError:
             waiting.cancel()
 
     def on_recording_stop(self, handle: MediaRecordingHandle) -> MediaRecordingResult:
+        self.calls.append({"call": "on_recording_stop", "recording_id": handle.id})
+        self._held("on_recording_stop")
         recording = self.recordings[handle.id]
         recording.stopped = True
         return MediaRecordingResult(
@@ -167,28 +192,20 @@ class ConferenceRecorder(MediaRecorder):
             size_bytes=sum(len(chunk) for chunk in recording.chunks),
         )
 
+    def close(self) -> None:
+        self.calls.append({"call": "close"})
+        self._held("close")
+
     def read(self) -> list[dict[str, Any]]:
         return [
             {
-                "tracks": [_track(track) for track in recording.tracks],
+                "tracks": [recorded_track(track) for track in recording.tracks],
                 "config": _config(recording.config),
                 "chunks": [base64.b64encode(chunk).decode("ascii") for chunk in recording.chunks],
                 "stopped": recording.stopped,
             }
             for recording in list(self.recordings.values())
         ]
-
-
-def _track(track: RecordingTrack) -> dict[str, Any]:
-    return {
-        "track_id": track.id,
-        "kind": track.kind,
-        "channel_id": track.channel_id,
-        "participant_id": track.participant_id,
-        "codec": track.codec,
-        "sample_rate": track.sample_rate,
-        "channels": track.channels,
-    }
 
 
 def _config(config: MediaRecordingConfig) -> dict[str, Any]:
@@ -238,7 +255,9 @@ def media_options(
     if "recording" in spec:
         options["recording"] = _recording_config(spec["recording"])
         media.recorder = ConferenceRecorder(
-            harness.gates, spec["recording"].get("write_gates", {})
+            harness.gates,
+            spec["recording"].get("write_gates", {}),
+            spec["recording"].get("call_gates", {}),
         )
         options["recorder"] = media.recorder
     if "max_queued_frames" in spec:
@@ -318,6 +337,16 @@ async def read_media(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
         "stages": list(media.trace) if media is not None else [],
         "stt_streams": recognizer.read() if recognizer is not None else [],
     }
+
+
+def conference_recorder_calls(harness: Harness, spec: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """``recording.calls`` of a conference: the calls its scripted recorder
+    received, in order, only the named ones when ``calls`` names some."""
+    fixture = harness.conferences[spec["channel_id"]]
+    recorder = fixture.media.recorder if fixture.media is not None else None
+    if recorder is None:
+        raise ValueError(f"conference {spec['channel_id']} was opened without a recording")
+    return only_named(recorder.calls, spec)
 
 
 def read_recordings(harness: Harness, channel_id: str) -> dict[str, Any]:

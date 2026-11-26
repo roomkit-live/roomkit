@@ -589,7 +589,7 @@ CALLS: dict[str, set[str]] = {
     "commit_event": {"room_id", "event"},
     "update_event": {"room_id", "event_id", "content", "source", "metadata"},
     "delete_event": {"room_id", "event_id", "cascade_replies"},
-    "create_room": {"room", "orchestration"},
+    "create_room": {"room", "orchestration", "recorders"},
     "attach_channel": {
         "room_id",
         "channel_id",

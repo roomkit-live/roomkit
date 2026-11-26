@@ -6,39 +6,23 @@ import base64
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit.recorder.base import (
-    MediaRecordingConfig,
-    MediaRecordingHandle,
-    RecordingTrack,
-    RoomRecorderBinding,
+from roomkit.recorder.base import RecordingTrack
+from tests.conformance._conference_media import conference_recorder_calls, read_recordings
+from tests.conformance._recording_room import (
+    list_recordings,
+    organization,
+    recorder_calls,
+    room_bindings,
 )
-from roomkit.recorder.mock import MockMediaRecorder
-from tests.conformance._conference_media import read_recordings
 
 if TYPE_CHECKING:
     from roomkit import RoomKit
     from tests.conformance._harness import Harness
 
 
-class _NamedRecorder(MockMediaRecorder):
-    """The recorder chooses its handle id, a known one so its stop URL is observable."""
-
-    def __init__(self, recording_id: str) -> None:
-        super().__init__()
-        self.recording_id = recording_id
-
-    def on_recording_start(self, config: MediaRecordingConfig) -> MediaRecordingHandle:
-        handle = super().on_recording_start(config)
-        handle.id = self.recording_id
-        return handle
-
-
 async def _start(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
-    name = spec["recorder"]
-    recorder = _NamedRecorder(name)
-    harness.media_recorders[name] = recorder
     await kit.start_room_recording(
-        spec["room_id"], [RoomRecorderBinding(recorder=recorder, config=MediaRecordingConfig())]
+        spec["room_id"], room_bindings(spec, harness), **organization(spec)
     )
 
 
@@ -50,7 +34,7 @@ async def _track(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Non
         codec="pcm_s16le",
         sample_rate=48000,
     )
-    feed = await kit.add_room_recording_track(spec["room_id"], track)
+    feed = await kit.add_room_recording_track(spec["room_id"], track, **organization(spec))
     assert feed is not None
     harness.recording_feeds[spec["room_id"], track.id] = feed
 
@@ -70,8 +54,14 @@ async def _read(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
 
 
 async def _stop(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> list[dict[str, str]]:
-    results = await kit.stop_room_recording(spec["room_id"])
+    results = await kit.stop_room_recording(spec["room_id"], **organization(spec))
     return [{"recording_id": r.id, "url": r.url} for r in results]
+
+
+async def _calls(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    if "channel_id" in spec:
+        return conference_recorder_calls(harness, spec)
+    return recorder_calls(harness, spec)
 
 
 RECORDING_CALLS = {
@@ -80,11 +70,15 @@ RECORDING_CALLS = {
     "recording.feed": _feed,
     "recording.read": _read,
     "recording.stop": _stop,
+    "recording.list": list_recordings,
+    "recording.calls": _calls,
 }
 RECORDING_ARGUMENTS = {
-    "recording.start": {"room_id", "recorder"},
+    "recording.start": {"room_id", "recorder", "recorders"},
     "recording.track": {"room_id", "track_id"},
     "recording.feed": {"room_id", "track_id", "data"},
     "recording.read": {"recorder", "channel_id"},
     "recording.stop": {"room_id"},
+    "recording.list": {"room_id"},
+    "recording.calls": {"recorder", "channel_id", "calls"},
 }
