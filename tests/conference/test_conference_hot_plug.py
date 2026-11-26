@@ -216,22 +216,36 @@ class TestGrantsFollowTheConfiguration:
         assert len(backend.bots) == 1
 
     @pytest.mark.parametrize(
-        ("capabilities", "tts_at_start", "announced"),
+        ("capabilities", "tts_at_start", "failing", "announced"),
         [
-            (ConferenceCapability.BOT_GRANT_UPDATE, False, "the same session"),
-            (ConferenceCapability.NONE, False, "the replacement"),
-            (ConferenceCapability.BOT_GRANT_UPDATE, True, "the same session"),
-            (ConferenceCapability.NONE, True, None),
+            (ConferenceCapability.BOT_GRANT_UPDATE, False, None, "the same session"),
+            (ConferenceCapability.NONE, False, None, "the replacement"),
+            (ConferenceCapability.BOT_GRANT_UPDATE, False, "update_bot_grants", "the replacement"),
+            (ConferenceCapability.NONE, False, "join_as_bot", None),
+            (ConferenceCapability.BOT_GRANT_UPDATE, True, None, "the same session"),
+            (ConferenceCapability.NONE, True, None, None),
         ],
-        ids=["plug-in-place", "plug-by-rejoin", "unplug-in-place", "unplug-left-standing"],
+        ids=[
+            "plug-in-place",
+            "plug-by-rejoin",
+            "plug-by-rejoin-after-a-failed-update",
+            "plug-whose-rejoin-seats-no-session",
+            "unplug-in-place",
+            "unplug-left-standing",
+        ],
     )
     async def test_a_plug_s_change_of_grants_is_announced(
-        self, capabilities: ConferenceCapability, tts_at_start: bool, announced: str | None
+        self,
+        capabilities: ConferenceCapability,
+        tts_at_start: bool,
+        failing: str | None,
+        announced: str | None,
     ) -> None:
         """A connected session's effective grants changed, by a plug or an
         unplug as by the setter: conference_bot_grants_changed names the
         session that holds them, in place or the re-join's replacement (RFC
-        §12.10.4, §12.10.7). A narrowing left standing changed nothing.
+        §12.10.4, §12.10.7). A narrowing left standing changed nothing, and a
+        re-join that seated no replacement leaves no session to name.
         """
         backend = MockConferenceBackend(capabilities=capabilities)
         voice = {"tts": MockTTSProvider()} if tts_at_start else {}
@@ -244,6 +258,8 @@ class TestGrantsFollowTheConfiguration:
         async def _changed(event) -> None:  # noqa: ANN001
             observed.append(event.data)
 
+        if failing is not None:
+            backend.fail(failing, RuntimeError("SFU refused"), times=1)
         if tts_at_start:
             await channel.unplug_tts()
         else:
