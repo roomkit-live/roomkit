@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-call-s-video-live-before-its-join-is-reported-once-bound-and-ended-once",
+  "title": "A call whose video path is live before the join reports its video started once it is bound, and ended once, after, when the call ends; an audio-only call reports no video",
+  "rules": [
+    "§12.8.3"
+  ],
+  "requirements": [
+    "RK-12.8.3-014"
+  ],
+  "requires_features": [
+    "video",
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "call",
+        "trigger": "on_session_started",
+        "execution": "async"
+      },
+      {
+        "name": "video",
+        "trigger": "on_video_session_started",
+        "execution": "async"
+      },
+      {
+        "name": "video_ended",
+        "trigger": "on_video_session_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "av.open",
+      "room_id": "r1",
+      "channel_id": "phone",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "video": [
+        "alice"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.client_disconnected",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.client_disconnected",
+      "channel_id": "phone",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "video",
+      "video_ended"
+    ],
+    "hooks": {
+      "call": {
+        "$unordered": [
+          {
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      },
+      "video": [
+        {
+          "video": {
+            "participant_id": "alice"
+          }
+        }
+      ],
+      "video_ended": [
+        {
+          "video": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

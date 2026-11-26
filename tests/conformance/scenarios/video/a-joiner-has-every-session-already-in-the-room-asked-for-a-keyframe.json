@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-joiner-has-every-session-already-in-the-room-asked-for-a-keyframe",
+  "title": "When a session joins, the bridge asks every session already in the room for a keyframe, and replays none it forwarded before to the joiner",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-009"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_interval_s": 0
+      }
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "alice": 1,
+            "bob": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "carol"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "alice": 2,
+            "bob": 1,
+            "carol": 0
+          },
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID"
+            ],
+            "carol": []
+          }
+        }
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID",
+              "BAUG"
+            ],
+            "carol": [
+              "BAUG"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

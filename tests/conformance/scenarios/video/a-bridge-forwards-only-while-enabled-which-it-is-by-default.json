@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-bridge-forwards-only-while-enabled-which-it-is-by-default",
+  "title": "A video bridge whose configuration disables it forwards nothing; one whose configuration leaves `enabled` out forwards",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-004"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "enabled": false
+      }
+    },
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "screen",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {}
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "screen",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": []
+          }
+        }
+      }
+    },
+    {
+      "call": "video.read",
+      "channel_id": "screen",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

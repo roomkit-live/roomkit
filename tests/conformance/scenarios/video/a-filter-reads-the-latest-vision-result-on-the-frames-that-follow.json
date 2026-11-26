@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-filter-reads-the-latest-vision-result-on-the-frames-that-follow",
+  "title": "A filter's context holds the latest vision result and its labels from the frame after that result on: none on the first frame, then each new one",
+  "rules": [
+    "§12.8.4",
+    "§12.8.5"
+  ],
+  "requirements": [
+    "RK-12.8.4-007",
+    "RK-12.8.4-011",
+    "RK-12.8.5-013"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "a cat on a mat",
+        "a dog"
+      ],
+      "vision_labels": [
+        [
+          "mat",
+          "cat"
+        ],
+        [
+          "dog"
+        ]
+      ],
+      "filters": [
+        {
+          "name": "watch"
+        }
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "filters": {
+            "watch": [
+              {
+                "sequence": 1,
+                "data": "AQID",
+                "vision": null,
+                "labels": []
+              },
+              {
+                "sequence": 2,
+                "data": "BAUG",
+                "vision": "a cat on a mat",
+                "labels": [
+                  "cat",
+                  "mat"
+                ]
+              },
+              {
+                "sequence": 3,
+                "data": "BwgJ",
+                "vision": "a dog",
+                "labels": [
+                  "dog"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

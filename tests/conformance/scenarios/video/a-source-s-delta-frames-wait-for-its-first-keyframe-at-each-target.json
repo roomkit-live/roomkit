@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-source-s-delta-frames-wait-for-its-first-keyframe-at-each-target",
+  "title": "Each target receives a source's delta frames only once that source's first keyframe reached it: a joiner waits for the next keyframe, the others do not",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-011",
+    "RK-12.8.9-014"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_wait_s": 60
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": []
+          }
+        }
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ",
+      "keyframe": false
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "carol"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 4,
+      "data": "CgsM",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "BAUG",
+              "BwgJ",
+              "CgsM"
+            ],
+            "carol": []
+          }
+        }
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 5,
+      "data": "DQ4P"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 6,
+      "data": "EBES",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "BAUG",
+              "BwgJ",
+              "CgsM",
+              "DQ4P",
+              "EBES"
+            ],
+            "carol": [
+              "DQ4P",
+              "EBES"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

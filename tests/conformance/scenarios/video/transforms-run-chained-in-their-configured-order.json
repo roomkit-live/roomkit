@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/transforms-run-chained-in-their-configured-order",
+  "title": "Two transforms run chained in their configured order: the second is handed the first's frame, and the bridge forwards the second's",
+  "rules": [
+    "§12.8.4",
+    "§12.8.5"
+  ],
+  "requirements": [
+    "RK-12.8.5-010"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": true,
+      "transforms": [
+        {
+          "name": "first",
+          "data": "AAAA"
+        },
+        {
+          "name": "second",
+          "data": "////"
+        }
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "transforms": {
+            "first": [
+              "AQID"
+            ],
+            "second": [
+              "AAAA"
+            ]
+          },
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "////"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

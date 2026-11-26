@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/an-audio-video-channel-feeds-its-avatar-the-speech-it-sends",
+  "title": "In an audio/video channel the avatar taps the outbound audio: the speech of a reply the call is sent is what the avatar is fed",
+  "rules": [
+    "§12.8.8"
+  ],
+  "requirements": [
+    "RK-12.8.8-005"
+  ],
+  "requires_features": [
+    "video",
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "av.open",
+      "room_id": "r1",
+      "channel_id": "phone",
+      "participants": [
+        "alice"
+      ],
+      "video": [
+        "alice"
+      ],
+      "avatar": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hello there"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "audio": {
+            "alice": [
+              {
+                "$as": "speech"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "av.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "avatar_audio": {
+            "$as": "speech"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

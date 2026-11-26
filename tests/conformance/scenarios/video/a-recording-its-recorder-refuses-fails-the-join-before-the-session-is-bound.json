@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-recording-its-recorder-refuses-fails-the-join-before-the-session-is-bound",
+  "title": "A session whose recording the recorder refuses to start fails its join, before it is bound: it is never reported started, its frames reach no one and none reach it",
+  "rules": [
+    "§12.8.10"
+  ],
+  "requirements": [
+    "RK-12.8.10-010"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "began",
+        "trigger": "on_video_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "bridge": true,
+      "recorder": {
+        "refuses": [
+          "bob"
+        ]
+      }
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "expect": {
+        "error": "provider_failed"
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": []
+          },
+          "recorded": {
+            "alice": [
+              "BAUG"
+            ],
+            "bob": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "began": [
+        {
+          "video": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

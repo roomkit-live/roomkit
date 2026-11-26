@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/every-frame-of-a-recorded-session-reaches-its-recorder",
+  "title": "While a session is recorded, each of its frames is tapped to the recorder, each session's to its own recording",
+  "rules": [
+    "§12.8.4",
+    "§12.8.10"
+  ],
+  "requirements": [
+    "RK-12.8.4-014"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "recorder": {}
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "recorded": {
+            "alice": [
+              "AQID",
+              "BwgJ"
+            ],
+            "bob": [
+              "BAUG"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

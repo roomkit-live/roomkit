@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-frame-inside-the-vision-interval-is-not-analysed",
+  "title": "With a vision interval, the frames that follow an analysed one inside it are not analysed",
+  "rules": [
+    "§12.8.4"
+  ],
+  "requirements": [
+    "RK-12.8.4-005"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "the first view",
+        "a second view"
+      ],
+      "vision_interval_ms": 3600000
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "analysed": [
+            "AQID"
+          ],
+          "vision": [
+            {
+              "description": "the first view"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

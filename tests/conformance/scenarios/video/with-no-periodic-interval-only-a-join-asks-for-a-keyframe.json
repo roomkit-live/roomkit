@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/with-no-periodic-interval-only-a-join-asks-for-a-keyframe",
+  "title": "With keyframe_interval_s 0 the bridge requests no keyframe periodically, however many frames it forwards; the request a join makes stays",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-007"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_interval_s": 0
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 2,
+      "data": "BAUG"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 3,
+      "data": "BwgJ"
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "bob",
+      "sequence": 4,
+      "data": "CgsM"
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "keyframe_requests": {
+            "alice": 1,
+            "bob": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

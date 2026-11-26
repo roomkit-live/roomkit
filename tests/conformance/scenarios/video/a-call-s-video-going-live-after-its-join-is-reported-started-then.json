@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-call-s-video-going-live-after-its-join-is-reported-started-then",
+  "title": "A call whose video path goes live after the join binds it reports its video started then, once however often it goes live; one that ends before its video is live reports no video, and an audio-only call none",
+  "rules": [
+    "§12.8.3"
+  ],
+  "requirements": [
+    "RK-12.8.3-014"
+  ],
+  "requires_features": [
+    "video",
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "call",
+        "trigger": "on_session_started",
+        "execution": "async"
+      },
+      {
+        "name": "video",
+        "trigger": "on_video_session_started",
+        "execution": "async"
+      },
+      {
+        "name": "video_ended",
+        "trigger": "on_video_session_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "av.open",
+      "room_id": "r1",
+      "channel_id": "phone",
+      "participants": [
+        "carol"
+      ],
+      "video": [
+        "carol",
+        "dave"
+      ],
+      "video_later": [
+        "carol",
+        "dave"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "av.video_live",
+      "channel_id": "phone",
+      "participant_id": "carol"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "av.video_live",
+      "channel_id": "phone",
+      "participant_id": "carol"
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "dave"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.client_disconnected",
+      "channel_id": "phone",
+      "participant_id": "dave"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "call",
+      "call",
+      "video",
+      "call"
+    ],
+    "hooks": {
+      "call": [
+        {
+          "voice": {
+            "participant_id": "carol"
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "bob"
+          }
+        },
+        {
+          "voice": {
+            "participant_id": "dave"
+          }
+        }
+      ],
+      "video": [
+        {
+          "video": {
+            "participant_id": "carol"
+          }
+        }
+      ],
+      "video_ended": []
+    }
+  }
+}

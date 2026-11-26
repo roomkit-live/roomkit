@@ -1,0 +1,58 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/with-no-keyframe-wait-a-delta-frame-is-forwarded-at-once",
+  "title": "With keyframe_wait_s 0 there is no gate: a source's first delta frame reaches the other session before any keyframe",
+  "rules": [
+    "§12.8.9"
+  ],
+  "requirements": [
+    "RK-12.8.9-014"
+  ],
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice",
+        "bob"
+      ],
+      "bridge": {
+        "keyframe_wait_s": 0
+      }
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID",
+      "keyframe": false
+    },
+    {
+      "call": "video.read",
+      "channel_id": "camera",
+      "expect": {
+        "result": {
+          "forwarded": {
+            "alice": [],
+            "bob": [
+              "AQID"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

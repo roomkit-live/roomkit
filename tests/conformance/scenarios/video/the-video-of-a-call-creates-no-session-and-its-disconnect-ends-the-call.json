@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/the-video-of-a-call-creates-no-session-and-its-disconnect-ends-the-call",
+  "title": "The video facet of a combined transport refuses to create a session, and disconnecting a call's video ends the call",
+  "rules": [
+    "§12.8.3"
+  ],
+  "requirements": [
+    "RK-12.8.3-013"
+  ],
+  "requires_features": [
+    "video",
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "av.open",
+      "room_id": "r1",
+      "channel_id": "phone",
+      "participants": [
+        "alice"
+      ],
+      "video": [
+        "alice"
+      ]
+    },
+    {
+      "call": "av.video_connect",
+      "channel_id": "phone",
+      "participant_id": "dave",
+      "expect": {
+        "error": "not_supported"
+      }
+    },
+    {
+      "call": "av.video_disconnect",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "transports": {
+            "primary": [
+              {
+                "call": "connect",
+                "participant_id": "alice"
+              },
+              {
+                "call": "start_listening",
+                "participant_id": "alice"
+              },
+              {
+                "call": "disconnect",
+                "participant_id": "alice"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
