@@ -544,18 +544,7 @@ class ConferencePlugMixin:
                 await self._apply_collection_state(room_id)
                 for track in list(room.subscribed.values()):
                     self._open_lane(room_id, track)
-        bot = room.bot
-        if bot is None:
-            # The re-join could not bring a replacement in, or a detach landed
-            # mid-change: the ended announcement already told the story, and
-            # there is no connected session whose grants changed.
-            return
-        await self._emit_framework_event(
-            "conference_bot_grants_changed",
-            room_id,
-            bot_session_id=bot.id,
-            hidden=wanted.hidden,
-        )
+        await self._announce_grants(room_id, wanted)
 
     # -------------------------------------------------------------------------
     # What a change sets in motion, room by room
@@ -692,7 +681,8 @@ class ConferencePlugMixin:
         it cannot and the change widens what the session must do. A narrowing
         the backend cannot apply is left standing: an unused privilege
         against a cut in the event bridge is the trade RFC 12.10.4 settles
-        for continuity. An explicit ``bot_grants`` is never rewritten.
+        for continuity. An explicit ``bot_grants`` is never rewritten. A
+        change that lands is announced as the setter's is (RFC 12.10.7).
         """
         room = self._room(room_id)
         bot = room.bot
@@ -704,12 +694,15 @@ class ConferencePlugMixin:
             return
         if ConferenceCapability.BOT_GRANT_UPDATE in self._backend.capabilities:
             if await self._update_grants_in_place(room_id, bot, wanted):
+                await self._announce_grants(room_id, wanted)
                 return
             if self._widens(held, wanted):
                 await self._rejoin_for_grants(room_id)
+                await self._announce_grants(room_id, wanted)
             return
         if self._widens(held, wanted):
             await self._rejoin_for_grants(room_id)
+            await self._announce_grants(room_id, wanted)
         else:
             logger.debug(
                 "Conference channel %r leaves its bot's wider grants standing in room %s: "
@@ -719,6 +712,28 @@ class ConferencePlugMixin:
                 room_id,
                 self._backend.name,
             )
+
+    async def _announce_grants(self, room_id: str, grants: ConferenceGrants) -> None:
+        """Announce the grants a connected session now holds (RFC 12.10.7).
+
+        Whatever changed them, the setter's instruction or a plug's or an
+        unplug's alignment, in place or carried by a re-join's replacement:
+        with an in-place update nothing else says anything happened, and the
+        code that asked for the change and the code that renders the room are
+        rarely the same component.
+        """
+        bot = self._room(room_id).bot
+        if bot is None:
+            # The re-join could not bring a replacement in, or a detach landed
+            # mid-change: the ended announcement already told the story, and
+            # there is no connected session whose grants changed.
+            return
+        await self._emit_framework_event(
+            "conference_bot_grants_changed",
+            room_id,
+            bot_session_id=bot.id,
+            hidden=grants.hidden,
+        )
 
     async def _update_grants_in_place(
         self, room_id: str, bot: BotSession, wanted: ConferenceGrants

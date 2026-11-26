@@ -215,6 +215,47 @@ class TestGrantsFollowTheConfiguration:
         assert not _calls(backend, "leave")
         assert len(backend.bots) == 1
 
+    @pytest.mark.parametrize(
+        ("capabilities", "tts_at_start", "announced"),
+        [
+            (ConferenceCapability.BOT_GRANT_UPDATE, False, "the same session"),
+            (ConferenceCapability.NONE, False, "the replacement"),
+            (ConferenceCapability.BOT_GRANT_UPDATE, True, "the same session"),
+            (ConferenceCapability.NONE, True, None),
+        ],
+        ids=["plug-in-place", "plug-by-rejoin", "unplug-in-place", "unplug-left-standing"],
+    )
+    async def test_a_plug_s_change_of_grants_is_announced(
+        self, capabilities: ConferenceCapability, tts_at_start: bool, announced: str | None
+    ) -> None:
+        """A connected session's effective grants changed, by a plug or an
+        unplug as by the setter: conference_bot_grants_changed names the
+        session that holds them, in place or the re-join's replacement (RFC
+        §12.10.4, §12.10.7). A narrowing left standing changed nothing.
+        """
+        backend = MockConferenceBackend(capabilities=capabilities)
+        voice = {"tts": MockTTSProvider()} if tts_at_start else {}
+        kit, channel = await _channel(backend, stt=MockSTTProvider(), **voice)
+        await _occupied(backend, channel)
+        first = backend.bots[0]
+        observed: list[dict] = []
+
+        @kit.on("conference_bot_grants_changed")
+        async def _changed(event) -> None:  # noqa: ANN001
+            observed.append(event.data)
+
+        if tts_at_start:
+            await channel.unplug_tts()
+        else:
+            await channel.plug_tts(MockTTSProvider())
+
+        if announced is None:
+            assert observed == []
+            return
+        held = backend.bots[0]
+        assert (held.id == first.id) is (announced == "the same session")
+        assert observed == [{"bot_session_id": held.id, "hidden": False}]
+
     async def test_explicit_grants_are_never_rewritten(self) -> None:
         """The caller who set ``bot_grants`` took coverage on themselves, and
         that holds at the plug exactly as at construction (RFC §12.10.4).

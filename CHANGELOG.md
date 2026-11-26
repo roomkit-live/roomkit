@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A conference plug or unplug that changes a connected bot session's grants emits `conference_bot_grants_changed` (RFC §12.10.4, §12.10.7, RMK-2138), where only `set_bot_grants` did: plugging a voice into a running conference, on a backend that updates the grants in place or by the announced re-join, and unplugging it where the backend narrows them in place, now tell the room which session holds the new grants. A narrowing the backend cannot apply changes nothing and emits nothing, as before.
+
 - A voice join past the bridge's `max_participants` binds nothing (RFC §12.7.2, RMK-2121), where `join` raised but left the session bound to the room, its speech transcribed into the timeline. The `RuntimeError` is raised before the session is bound, and a session the join made itself is disconnected.
 
 - A voice channel judges a final transcript as it is when its backchannel detector answers `pending` for it (RFC §12.3.13, RMK-2122), where the verdict held the speech for words that never came and the user's utterance was discarded without a turn or a cut: a final is never pending, and a pending verdict on it reads as its `is_backchannel`.
