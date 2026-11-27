@@ -1,0 +1,385 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/each-session-of-a-channel-fires-its-own-audio-levels-once-per-100-ms",
+  "title": "Two sessions of one realtime channel, fed at the same instants, each fire their own input and output levels, at most one per 100 ms",
+  "rules": [
+    "§12.5",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-12.5-030"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "What the voice scenarios of RK-12.5-030 leave out: the limit per session on a realtime voice channel. Two sessions of the one channel, in two rooms, are each handed two caller frames and two chunks of the model's audio at 0, 60, 120, 180 and 240 ms of the virtual clock, at the same instants: unthrottled, ten levels a session and a direction. Each session fires its own, at 0, 120 and 240 ms, whatever the other sent: a throttle the channel's sessions share leaves the second session none, a 50 ms interval fires five, a 200 ms one two. The voice scenarios pin the interval itself; the idle wait after each instant lets the model's audio reach the transport at that instant's reading.",
+  "setup": {
+    "virtual_clock": true,
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "input",
+        "trigger": "on_input_audio_level",
+        "execution": "async"
+      },
+      {
+        "name": "output",
+        "trigger": "on_output_audio_level",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "transport",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "call": "realtime.audio",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "source": "provider",
+      "frames": [
+        "ABAAEAAQABA=",
+        "ABAAEAAQABA="
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "input": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      },
+      "output": {
+        "$unordered": [
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r1",
+            "voice": {
+              "participant_id": "alice"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          },
+          {
+            "room_id": "r2",
+            "voice": {
+              "participant_id": "bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
