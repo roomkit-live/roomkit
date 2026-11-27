@@ -83,6 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A message `WebhookMeta.to_inbound` builds keeps the provider's id as its `provider_message_id` and the webhook's payload, unmodified, as its `raw_payload` (RFC §5.2, §8.1, RMK-2190): `process_webhook` stored the message with neither, its source's `raw_payload` empty and the provider's id only in `external_id` and the idempotency key, which keep it. The same in roomkit-rs.
 
+- `RoomKit.update_room_metadata` merges its keys through the store's `patch_room_metadata` (RFC §14.3, RMK-2188), where it rewrote the whole room it had read under the room's lock: a key another writer patched meanwhile without that lock, a channel's state or a conversation state, was lost.
+
 - Each session of a realtime voice channel fires its own audio levels, at most one per 100 ms in each direction (RFC §12.5, RMK-2159), where the channel's sessions shared one throttle: it fired at most ten `ON_INPUT_AUDIO_LEVEL` and ten `ON_OUTPUT_AUDIO_LEVEL` a second across all of them, so each session's level meter got a share, and none when another session's audio always came first. A voice channel already throttled each session on its own.
 
 - With `steer_room_turns`, an instruction that comes while the turn another instruction opened runs waits a turn of its own (RFC §6.4, §10.1.1 rule 6, RMK-2146), where it was handed to that turn as a message of the room: the same author, the application, opened both. Steered in, it read unmarked, or under a speaker's label with its mark read as a copy, so a delegated task's result that came while the agent told another's read as a participant's words.

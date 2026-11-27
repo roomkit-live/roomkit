@@ -806,6 +806,47 @@ class TestConcurrentLocking:
         assert "a" in room.metadata
         assert "b" in room.metadata
 
+    async def test_a_metadata_update_keeps_a_key_another_writer_patched_meanwhile(
+        self,
+    ) -> None:
+        """RFC §14.3 (RK-14.3-020): a change of the room's metadata alone
+        goes through ``patch_room_metadata``, so a key the framework's own
+        writers patch without the room's lock (a channel's state, a
+        conversation state) while the update runs stands. A whole-record
+        write from the room read before it undid that key."""
+        store = _AnotherWriterFirst()
+        kit = RoomKit(store=store)
+        await kit.create_room(room_id="r1", metadata={"topic": "billing"})
+        store.armed = True
+
+        updated = await kit.update_room_metadata("r1", {"stage": "callback"})
+
+        expected = {"topic": "billing", "channel": "kept", "stage": "callback"}
+        assert [updated.metadata, (await kit.get_room("r1")).metadata] == [expected] * 2
+        await kit.close()
+
+
+class _AnotherWriterFirst(InMemoryStore):
+    """Once armed, lets another writer patch the room's metadata just before
+    the next write of the room lands, whichever operation makes it."""
+
+    armed = False
+
+    async def _another_writer(self, room_id: str) -> None:
+        if self.armed:
+            self.armed = False
+            await InMemoryStore.patch_room_metadata(self, room_id, {"channel": "kept"})
+
+    async def update_room(self, room: Room) -> Room:
+        await self._another_writer(room.id)
+        return await super().update_room(room)
+
+    async def patch_room_metadata(
+        self, room_id: str, patch: dict[str, Any], *, unset: Any = ()
+    ) -> Room | None:
+        await self._another_writer(room_id)
+        return await super().patch_room_metadata(room_id, patch, unset=unset)
+
 
 class TestLifecycleGuards:
     async def test_registering_a_duplicate_channel_id_is_refused(self, kit: RoomKit) -> None:

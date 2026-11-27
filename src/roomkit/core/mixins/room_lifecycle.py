@@ -555,14 +555,18 @@ class RoomLifecycleMixin(HelpersMixin):
         ``_discussion``, ``_speak_queue``, RFC §19.7.5 rule 16). So a
         read-modify-write (``{**room.metadata, ...}``) writes its own keys and
         leaves the framework's as they are.
+
+        The keys are merged by ``patch_room_metadata``, which writes nothing
+        else of the room (RFC §14.3): a key another writer patches meanwhile,
+        a channel's state or a conversation state, stands.
         """
         metadata = without_framework_keys(metadata, room_id=room_id, writer="update_room_metadata")
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id, organization_id=organization_id)
-            room = room.model_copy(
-                update={"metadata": {**room.metadata, **metadata}, "updated_at": datetime.now(UTC)}
-            )
-            return await self._store.update_room(room)
+            await self.get_room(room_id, organization_id=organization_id)
+            room = await self._store.patch_room_metadata(room_id, metadata)
+            if room is None:
+                raise RoomNotFoundError(f"Room {room_id} not found")
+            return room
 
     async def ensure_participant(
         self,
