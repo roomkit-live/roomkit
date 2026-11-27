@@ -624,6 +624,33 @@ class TestRecordTimestamps:
 
 
 @pytest.mark.parametrize(
+    ("record", "nulls"),
+    [
+        (Room(id="r1"), {"closed_at", "paused_at", "latest_index"}),
+        (
+            RoomEvent(
+                room_id="r1",
+                source=EventSource(channel_id="sms", channel_type=ChannelType.SMS),
+                content=TextContent(body="Bonjour"),
+            ),
+            {"blocked_by", "parent_event_id", "correlation_id"},
+        ),
+        (TextContent(body="Bonjour"), {"language"}),
+        (Participant(id="p1", room_id="r1", channel_id="sms"), {"external_id", "resolved_at"}),
+        (Identity(id="i1"), {"email", "phone"}),
+    ],
+    ids=["room", "event", "content", "participant", "identity"],
+)
+def test_a_record_is_written_whole_its_null_fields_as_null(
+    record: Room | RoomEvent | TextContent | Participant | Identity, nulls: set[str]
+) -> None:
+    """A writer writes every field of a record, a null one as null (RFC §1.4)."""
+    written = record.model_dump(mode="json")
+    assert set(written) == set(type(record).model_fields)
+    assert {name: written[name] for name in nulls} == dict.fromkeys(nulls)
+
+
+@pytest.mark.parametrize(
     ("model", "values"),
     [
         (LocationContent, {"latitude": -91.0, "longitude": 0.0}),
