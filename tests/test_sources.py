@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -647,6 +648,64 @@ class TestSourceFrameworkEvents:
             await until(lambda: len(events) == 3)
             connected = ("source_connected", "ch1", {"source_name": "gated"})
             assert events[1:] == [connected, connected]
+
+            # Detached, the source is no news of this kit's.
+            await kit.detach_source("ch1")
+            source.reconnect()
+            await asyncio.sleep(0)
+            assert len(events) == 3
+        finally:
+            await kit.close()
+
+    async def test_source_connected_waits_for_the_attachment_s_handlers(self) -> None:
+        # The source connects while a source_attached handler is suspended:
+        # its connection reaches the handlers once the attachment has.
+        kit = RoomKit()
+        source = _GatedSource()
+        source.gate.set()
+        handler_may_end = asyncio.Event()
+        events: list[str] = []
+
+        @kit.on("source_attached")
+        async def attached(event) -> None:
+            events.append("attached: begin")
+            await handler_may_end.wait()
+            events.append("attached: end")
+
+        @kit.on("source_connected")
+        async def connected(event) -> None:
+            events.append("connected")
+
+        try:
+            attaching = asyncio.create_task(kit.attach_source("ch1", source))
+            await until(lambda: source.status is SourceStatus.CONNECTED)
+            await asyncio.sleep(0)
+            assert events == ["attached: begin"]
+            handler_may_end.set()
+            await attaching
+            await until(lambda: len(events) == 3)
+            assert events == ["attached: begin", "attached: end", "connected"]
+        finally:
+            await kit.close()
+
+    async def test_a_connection_told_from_another_thread_is_announced_on_the_kit_s_loop(
+        self,
+    ) -> None:
+        kit = RoomKit()
+        source = _GatedSource()
+        source.gate.set()
+        threads: list[int] = []
+
+        @kit.on("source_connected")
+        async def connected(event) -> None:
+            threads.append(threading.get_ident())
+
+        try:
+            await kit.attach_source("ch1", source)
+            await until(lambda: len(threads) == 1)
+            await asyncio.to_thread(source.reconnect)
+            await until(lambda: len(threads) == 2)
+            assert threads == [threading.get_ident()] * 2
         finally:
             await kit.close()
 

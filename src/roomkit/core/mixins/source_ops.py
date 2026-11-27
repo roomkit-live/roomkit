@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -129,7 +130,7 @@ class SourceOpsMixin(HelpersMixin):
                 return await self.process_inbound(msg)
 
         self._sources[channel_id] = source
-        self._announce_connections(channel_id, source)
+        announcer = self._announce_connections(channel_id, source)
         self._source_tasks[channel_id] = asyncio.create_task(
             self._run_source(
                 channel_id,
@@ -145,33 +146,40 @@ class SourceOpsMixin(HelpersMixin):
         )
 
         # ``source_connected`` follows once the source connects
-        # (:meth:`_announce_connections`), not at its attachment.
-        await self._emit_framework_event(
-            "source_attached",
-            channel_id=channel_id,
-            data={"source_name": source.name},
-        )
+        # (:class:`_ConnectionAnnouncer`), never before this has reached
+        # every handler.
+        try:
+            await self._emit_framework_event(
+                "source_attached",
+                channel_id=channel_id,
+                data={"source_name": source.name},
+            )
+        finally:
+            if announcer is not None:
+                announcer.attached.set()
 
-    def _announce_connections(self, channel_id: str, source: SourceProvider) -> None:
+    def _announce_connections(
+        self, channel_id: str, source: SourceProvider
+    ) -> _ConnectionAnnouncer | None:
         """Emit ``source_connected`` each time *source* becomes CONNECTED
         while attached to *channel_id* (RFC §8.2): a
         :class:`~roomkit.sources.base.BaseSourceProvider` tells its changes of
         status through ``_set_status``. A source on the bare interface tells
         none, and is never announced connected."""
         if not isinstance(source, BaseSourceProvider):
+            return None
+        announcer = _ConnectionAnnouncer(self, channel_id, source)
+        source._watch_status(announcer)
+        return announcer
+
+    def _stop_announcing(self, source: SourceProvider) -> None:
+        """Stop listening to *source*, which left this kit, unless a kit it
+        was attached to since listens to it now."""
+        if not isinstance(source, BaseSourceProvider):
             return
-
-        def on_status(status: SourceStatus) -> None:
-            if status is SourceStatus.CONNECTED and self._sources.get(channel_id) is source:
-                self._emit_framework_event_soon(
-                    "source_connected",
-                    channel_id=channel_id,
-                    data={"source_name": source.name},
-                )
-
-        # Once the source is detached, the check above keeps it quiet; a kit
-        # it is attached to next replaces this listener.
-        source._watch_status(on_status)
+        listener = source._status_listener
+        if isinstance(listener, _ConnectionAnnouncer) and listener.kit is self:
+            source._watch_status(None)
 
     async def detach_source(self, channel_id: str) -> None:
         """Detach and stop an event-driven source.
@@ -191,6 +199,7 @@ class SourceOpsMixin(HelpersMixin):
         task = self._source_tasks.pop(channel_id, None)
         if source is None:
             raise SourceNotFoundError(f"No source attached to channel {channel_id}")
+        self._stop_announcing(source)
 
         # The source stops first, then its runner task. A cut (the kit's
         # close once its grace ran out, RFC §12.10.4) stops waiting for
@@ -248,6 +257,7 @@ class SourceOpsMixin(HelpersMixin):
                 logger.info("Source %s stopped cleanly", source.name)
                 self._sources.pop(channel_id, None)
                 self._source_tasks.pop(channel_id, None)
+                self._stop_announcing(source)
                 break
             except asyncio.CancelledError:
                 logger.debug("Source %s cancelled", source.name)
@@ -322,3 +332,53 @@ class SourceOpsMixin(HelpersMixin):
             Dict mapping channel_id to current SourceStatus.
         """
         return {cid: source.status for cid, source in self._sources.items()}
+
+
+class _ConnectionAnnouncer:
+    """Announces each connection of one source a kit attached (RFC §8.2): the
+    listener of its changes of status, which emits ``source_connected`` on
+    the kit's loop each time the source becomes CONNECTED, once the
+    attachment's ``source_attached`` has reached every handler."""
+
+    def __init__(self, kit: SourceOpsMixin, channel_id: str, source: SourceProvider) -> None:
+        self.kit = kit
+        self.attached = asyncio.Event()
+        """Set once ``source_attached`` was emitted: a connection waits for it."""
+        self._channel_id = channel_id
+        self._source = source
+        self._loop = asyncio.get_running_loop()
+
+    def __call__(self, status: SourceStatus) -> None:
+        """The source's status became *status*. A source may tell it from
+        a thread of its own: the announcement goes back to the kit's loop."""
+        if status is not SourceStatus.CONNECTED:
+            return
+        try:
+            on_loop = asyncio.get_running_loop() is self._loop
+        except RuntimeError:
+            on_loop = False
+        if on_loop:
+            self._schedule()
+            return
+        with contextlib.suppress(RuntimeError):  # the kit's loop has closed
+            self._loop.call_soon_threadsafe(self._schedule)
+
+    def _schedule(self) -> None:
+        """Start this connection's announcement, held as the kit's running
+        work, which its close waits for or cuts (RFC §12.10.4)."""
+        task = self._loop.create_task(
+            self._announce(), name=f"roomkit-source-connected-{self._channel_id}"
+        )
+        task.add_done_callback(self.kit._pending_hook_tasks.discard)
+        self.kit._pending_hook_tasks.add(task)
+
+    async def _announce(self) -> None:
+        await self.attached.wait()
+        kit = self.kit
+        if kit._closed or kit._sources.get(self._channel_id) is not self._source:
+            return  # the source left, or the kit closes: no news of it
+        await kit._emit_framework_event(
+            "source_connected",
+            channel_id=self._channel_id,
+            data={"source_name": self._source.name},
+        )
