@@ -308,13 +308,12 @@ class TrackWriter:
         moment the next call enters it. So it is re-read after every wait, until
         there is nothing left or the budget is gone.
         """
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
+        deadline = _clock.monotonic() + timeout
         while True:
             pending = [call for call in self._in_recorder if not call.done()]
             if not pending:
                 return True
-            remaining = deadline - loop.time()
+            remaining = deadline - _clock.monotonic()
             if remaining <= 0:
                 logger.error(
                     "%d call(s) to the recorder for track %s have not returned %.1fs after "
@@ -326,7 +325,10 @@ class TrackWriter:
                     timeout,
                 )
                 return False
-            await asyncio.wait(pending, timeout=remaining)
+            # On the media clock, as the recording's own budgets: running out
+            # of it ends this wait only, never the calls it waits for.
+            with contextlib.suppress(TimeoutError):
+                await _clock.wait_for(asyncio.wait(pending), remaining)
 
     # -------------------------------------------------------------------------
     # The writer's own task

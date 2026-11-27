@@ -844,18 +844,19 @@ class VoiceSTTMixin:
         pacing period, the time the stream is behind is filled: the audio
         buffered so far, then silence. Only a pause is filled, never the
         middle of speech. The stream ends on the queue's sentinel or when the
-        session's STT is cancelled.
+        session's STT is cancelled. The stream is kept level with the media
+        clock (``roomkit._clock``), the real one unless a test installs another.
         """
         from .voice import _KEPT_STREAM_PACE_S
 
-        opened = time.monotonic()
+        opened = _clock.monotonic()
         sent = _duration(first_chunk)
         yield first_chunk
         while not state.cancelled:
             try:
-                chunk = await asyncio.wait_for(queue.get(), timeout=_KEPT_STREAM_PACE_S)
+                chunk = await _clock.wait_for(queue.get(), _KEPT_STREAM_PACE_S)
             except TimeoutError:
-                behind = time.monotonic() - opened - sent
+                behind = _clock.monotonic() - opened - sent
                 if behind >= _KEPT_STREAM_PACE_S:
                     for pad in self._padding(state, behind):
                         sent += _duration(pad)

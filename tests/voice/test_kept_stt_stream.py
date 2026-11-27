@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from roomkit import HookResult, HookTrigger, RoomKit, VoiceChannel
+from roomkit import HookResult, HookTrigger, RoomKit, VoiceChannel, _clock
 from roomkit.models.enums import EventType
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
@@ -65,16 +65,21 @@ class _TurnsSTT(STTProvider):
 
 
 class _Clock:
-    """``time`` as the voice STT module reads it, with time that can pass at once."""
+    """A media clock (``roomkit._clock``) on real time, with time that can pass at once."""
 
     def __init__(self) -> None:
         self.offset = 0.0
+        self.waited: list[float | None] = []
 
     def monotonic(self) -> float:
         return time.monotonic() + self.offset
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(time, name)
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    async def wait_for[T](self, awaitable: Awaitable[T], timeout: float | None) -> T:
+        self.waited.append(timeout)
+        return await asyncio.wait_for(awaitable, timeout)
 
 
 def _audio_seconds(stt: _TurnsSTT) -> float:
@@ -200,24 +205,25 @@ class TestVoiceChannelKeepsTheStream:
     ) -> None:
         # A muted mic during playback sends nothing; the model's turn
         # detection runs on audio time, so the pause is sent as silence.
-        # The pause passes on the stream's clock at once, checked every 10 ms.
+        # The pause passes on the media clock at once, checked every 10 ms.
         clock = _Clock()
-        monkeypatch.setattr("roomkit.channels._voice_stt.time", clock)
         monkeypatch.setattr("roomkit.channels.voice._KEPT_STREAM_PACE_S", 0.01)
         stt = _TurnsSTT(["First.", "Second."])
         room = _Room(stt)
-        await room.start()
+        with _clock.installed(clock):
+            await room.start()
 
-        opened = clock.monotonic()
-        await room.speak()
-        await _eventually(lambda: len(room.transcripts) == 1)
-        clock.offset += 0.6
-        await _eventually(lambda: _audio_seconds(stt) >= 0.6)
-        await room.speak()
-        await _eventually(lambda: len(room.transcripts) == 2)
-        elapsed = clock.monotonic() - opened
-        await room.channel.close()
+            opened = clock.monotonic()
+            await room.speak()
+            await _eventually(lambda: len(room.transcripts) == 1)
+            clock.offset += 0.6
+            await _eventually(lambda: _audio_seconds(stt) >= 0.6)
+            await room.speak()
+            await _eventually(lambda: len(room.transcripts) == 2)
+            elapsed = clock.monotonic() - opened
+            await room.kit.close()
 
+        assert 0.01 in clock.waited  # the pacing period is waited on the media clock
         assert stt.streams == 1
         assert any(not any(c.data) for c in stt.chunks)
         assert _audio_seconds(stt) >= elapsed - 0.2

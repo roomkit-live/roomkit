@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from roomkit import _clock
 from roomkit.channels import _conference_activity as activity_module
 from roomkit.channels._conference_recording_writer import TrackWriter
 from roomkit.core.exceptions import ConferenceCloseError
@@ -41,6 +42,7 @@ from tests.conference.lane_audio import (
     speech_frame,
 )
 from tests.conference.test_conference_recording import ROOM, _recording_conference
+from tests.conformance._clock import VirtualClock
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1134,4 +1136,43 @@ class TestSettlingIsQuiescenceNotASnapshot:
             await asyncio.wait_for(asyncio.gather(ending, closing), timeout=10.0)
         finally:
             opening.set()
+            stopping.set()
+
+
+class TestTheReleaseWaitRunsOnTheMediaClock:
+    """The wait for the calls a close gave up on, before the recorder is
+    released, is measured on the media clock (``roomkit._clock``), as the
+    recording's own budgets are: it holds until its budget is spent on that
+    clock, and only then reports the recorder unreleased (RFC section 12.11)."""
+
+    async def test_the_wait_holds_until_its_budget_is_spent_on_the_media_clock(self) -> None:
+        opening = threading.Event()
+        stopping = threading.Event()
+        opening.set()
+        recorder = _StageBlockingRecorder(opening=opening, stopping=stopping)
+        writer = TrackWriter(
+            recorder=recorder,
+            config=MediaRecordingConfig(storage="", format="wav"),
+            track=RecordingTrack(id="tr-1", kind="audio", channel_id="conf"),
+            room_id=ROOM,
+            max_queued_frames=4,
+        )
+        clock = VirtualClock()
+        try:
+            with _clock.installed(clock):
+                writer.start()
+                # The close gives the held finalization up once its budget passed.
+                closing = asyncio.ensure_future(writer.aclose(timeout=5.0))
+                await _until(recorder.entered_stop.is_set)
+                await _until(lambda: clock.pending() == 1)
+                await clock.advance(5000)
+                await asyncio.wait_for(closing, timeout=1.0)
+
+                settling = asyncio.ensure_future(writer.settle(timeout=5.0))
+                await _until(lambda: clock.pending() == 1)
+                await clock.advance(4900)
+                assert not settling.done(), "the wait ended before its budget was spent"
+                await clock.advance(100)
+                assert await asyncio.wait_for(settling, timeout=1.0) is False
+        finally:
             stopping.set()
