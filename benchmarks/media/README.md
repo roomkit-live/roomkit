@@ -49,3 +49,67 @@ of a core. Quantiles are nearest rank over the passes' samples.
 ## Results
 
 Compare runs from one machine only.
+
+### 2026-11-27, i7-13700KF, Python 3.13.3
+
+Commit b70b004a3, one performance core (`taskset -c 2`), Linux 7.0, three
+passes each; other load on the core under 10 % of it in every pass, none run
+again. A first run of `taps` and `resample` took twice the time per frame
+with no other load counted on the core: its hyperthread sibling (CPU 3), which
+the record does not read, was busy. Both were run again; their second run is
+the one given.
+
+**`close`**: pass.
+
+| Case | n | p50 (s) | p99 (s) | max (s) | Bound (s) |
+|---|---:|---:|---:|---:|---:|
+| hook-honours | 60 | 0.050 | 0.053 | 0.053 | 3.05 |
+| hook-ignores | 12 | 2.052 | 2.054 | 2.054 | 3.05 |
+| tool-honours | 60 | 0.001 | 0.001 | 0.001 | 8.05 |
+| tool-ignores | 6 | 7.057 | 7.060 | 7.060 | 8.05 |
+
+Work that honours its cut ends with the grace (a model turn is cut at once),
+spending no unwind; a hook that ignores it holds the close for the grace and
+the two unwinds; a tool that ignores it, for the grace, two unwinds and the
+agent's 5 s close. roomkit-rs, on the same cases (its `benchmarks/`), takes as
+long where the work honours its cut, but does not wait for a hook that blocks
+its thread (0.052 s), and waits one unwind more for a tool that does
+(8.056 s, 6 ms of it the close's own work): each within the bound and the
+50 ms of the close's own work. Aligning the two is carded (RMK-2162).
+
+**`turn`**: pass, 2.471 ms at most against 200 ms.
+
+| Case | n | p50 (ms) | p99 (ms) | max (ms) |
+|---|---:|---:|---:|---:|
+| with the detector | 600 | 0.293 | 1.130 | 2.471 |
+| without | 600 | 0.187 | 0.609 | 24.144 |
+
+The detector adds 0.106 ms at the median.
+
+**`taps`**: no figure. Per frame, written on the disk.
+
+| Rate (Hz) | Taps | n | p50 (µs) | p99 (µs) | max (µs) |
+|---|---|---:|---:|---:|---:|
+| 8000 | every stage | 45000 | 12.0 | 17.6 | 264.6 |
+| 8000 | none | 45000 | 1.2 | 1.5 | 22.9 |
+| 16000 | every stage | 45000 | 12.1 | 18.4 | 185.5 |
+| 16000 | none | 45000 | 1.2 | 1.5 | 38.2 |
+
+The taps add about 11 µs per frame at the median, four stage writes on the
+pipeline's path.
+
+**`resample`**: no figure, no threshold. The quality figures are the same for
+both resamplers (one algorithm) and in every pass.
+
+| Pair (Hz) | THD+N (dB) | Alias (dB) | Image (dB) | NumPy p50 (µs/frame) | Pure Python p50 (µs/frame) |
+|---|---:|---:|---:|---:|---:|
+| 8000 → 16000 | -18.6 | | -31.2 | 10.4 | 65.2 |
+| 16000 → 8000 | -18.7 | -3.0 | | 10.4 | 40.2 |
+| 24000 → 16000 | -28.4 | -3.8 | | 10.9 | 79.4 |
+| 48000 → 16000 | -22.4 | -2.1 | | 11.9 | 100.1 |
+| 16000 → 48000 | -22.4 | | -41.4 | 12.8 | 197.1 |
+| 44100 → 16000 | -22.8 | -2.3 | | 12.1 | 96.5 |
+
+Each 20 ms frame is converted on its own, and nothing is filtered before a
+downsampling: a tone above the target's Nyquist frequency comes out 2 to 4 dB
+below its input level, as an alias inside the band.
