@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A message whose `process_timeout` passed while step 2 created its room starts no session (RFC §10.1 step 2, §13.6, RMK-2175), where on the in-memory store it fired `session_started` and the `ON_SESSION_STARTED` hooks before it was refused `process_timeout`: the deadline fell only at the call's next suspension, which a store that does not suspend reached after the session started. The room is still completed, as the room's state; the message is refused at once, as it already was on SQLite and PostgreSQL.
+
 - A steering `Cancel` aborts a generation whose provider has not handed its next event yet (RFC §21.3, RMK-1764), where the turn waited for that event: a Stop pressed while a model was still reasoning before its first word, or while a provider was slow to answer, held `process_inbound` until the provider spoke, then threw its answer away. The wait is cut at once, a retry's backoff and the router's choice of another provider included, and the turn ends `cancelled`, nothing more of its answer stored; a cancellation of anything else (`cancel_delivery()`, the caller's) still reaches its caller.
 
 - `TelegramChannel` declares the buttons its provider sends, `capabilities().supports_buttons` (RFC §6.3, RMK-2190), where it declared none: `TelegramBotProvider` writes a rich message's buttons as an inline keyboard, but an agent in a Telegram room read `supports_buttons: False` in its target channels' capabilities, as did code that reads the flag. A binding stored before keeps the capabilities it was stored with until the channel is attached to its room again.

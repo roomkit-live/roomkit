@@ -365,6 +365,42 @@ class TestOneDeadlineFromTheCallsStart:
         assert await kit.store.get_binding("r1", "sms2") is None
         await kit.close()
 
+    async def test_a_room_created_past_the_deadline_starts_no_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A room step 2 creates is completed whatever the deadline; a
+        deadline that passed while its creation hooks ran refuses the message
+        before its session starts, whatever the store (RFC §10.1 step 2,
+        §13.6, RMK-2175): no ``session_started``, no ON_SESSION_STARTED."""
+        kit = RoomKit(process_timeout=FAST)
+        kit.register_channel(SimpleChannel("sms1"))
+        expired = _timeouts(kit)
+        started: list[str | None] = []
+        clock = HeldClock(monkeypatch)
+
+        @kit.on("session_started")
+        async def on_started(event: FrameworkEvent) -> None:
+            started.append(event.room_id)
+
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, execution=HookExecution.ASYNC)
+        async def session(event: object, ctx: RoomContext) -> None:
+            started.append("hook")
+
+        @kit.hook(HookTrigger.ON_ROOM_CREATED, execution=HookExecution.ASYNC)
+        async def creating(event: object, ctx: RoomContext) -> None:
+            await clock.past(FAST)
+
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_msg(), room_id="new"))
+        await clock.first(call)
+        clock.release()
+
+        assert (call.result().blocked, call.result().reason) == (True, "process_timeout")
+        assert [e.room_id for e in expired] == ["new"]
+        assert await kit.store.get_binding("new", "sms1") is not None
+        await kit.close()
+        assert started == []
+
     async def test_the_scope_read_before_a_room_s_own_message_draws_is_bounded(self) -> None:
         """A message the room's work sends into it for an organization has
         the room read before it draws its pass (RFC §17.2, §9.5.1), within

@@ -668,7 +668,15 @@ class InboundMixin(HelpersMixin):
         (RFC §13.6). A code reply's attempt at step 5b is the exception: a
         write, done with what its completion runs whatever the deadline
         (§11.7.4), whose own timeout is raised as its failure.
+
+        A deadline already past here (a room step 2 created, whose creation
+        hooks no deadline bounds, ran past it) refuses the call at once:
+        ``timeout_at`` would only cut it at its first suspension, which a
+        store that does not suspend reaches after the session started
+        (RFC §10.1 step 2: an expired message starts no session).
         """
+        if asyncio.get_running_loop().time() >= deadline:
+            return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
         try:
             async with asyncio.timeout_at(deadline):
                 prepared = await self._prepare_event_inner(
