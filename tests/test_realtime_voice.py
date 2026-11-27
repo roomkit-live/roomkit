@@ -355,13 +355,17 @@ class TestAudioLevels:
         self,
         kit: RoomKit,
         channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
     ) -> None:
         session = await channel.start_session(room_id, "alice", "fake-ws")
         await transport.simulate_client_audio(session, self._FRAME)
-        await settled(channel)
+        await provider.simulate_audio(session, self._FRAME)
+        await _until(lambda: len(transport.sent_audio) == 1)
+        await settled(channel, lasting=("rt_send_audio:",))
         assert session.id in channel._last_input_level_at
+        assert session.id in channel._last_output_level_at
         await channel.end_session(session)
 
         # A transport's playback thread can still report audio played for the
