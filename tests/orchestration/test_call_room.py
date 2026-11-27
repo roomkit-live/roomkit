@@ -22,6 +22,7 @@ from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import TextContent
+from roomkit.orchestration import ConversationRouter, HandoffHandler, setup_handoff
 from roomkit.orchestration.state import get_conversation_state
 from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.orchestration.strategies.swarm import Swarm
@@ -230,4 +231,26 @@ async def test_a_supervisor_tool_called_outside_a_tool_call_is_not_served(
         await supervisor._channel_tool_handler(tool, {"task": "x"})
 
     assert await _children(kit) == {}
+    await kit.close()
+
+
+async def test_a_handoff_tool_called_outside_a_tool_call_refuses_without_a_room() -> None:
+    """A call made outside a tool call has no room to act on, and the handoff
+    tool, set up for every room the agent serves, refuses it rather than guess
+    (RFC §19.6): no room hands anything off."""
+    triage = Agent("triage", provider=_answering("hi", streaming=False), tool_search=False)
+    billing = Agent("billing", provider=_answering("billing here", streaming=False))
+    kit = RoomKit()
+    kit.register_channel(triage)
+    kit.register_channel(billing)
+    setup_handoff(triage, HandoffHandler(kit, ConversationRouter(default_agent_id="triage")))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "triage", category=ChannelCategory.INTELLIGENCE)
+
+    # Given r1's tools, as a turn of r1 is, outside any of its tool calls.
+    arguments = {"target": "billing", "reason": "billing question", "summary": "invoice"}
+    with owner_tools_in(kit, "triage", "r1"), pytest.raises(UnservedToolCallError):
+        await triage._channel_tool_handler("handoff_conversation", arguments)
+
+    assert get_conversation_state(await kit.get_room("r1")).active_agent_id is None
     await kit.close()
