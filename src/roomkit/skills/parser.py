@@ -274,19 +274,36 @@ def _parse_yaml_or_fallback(fm_text: str) -> dict[str, FrontmatterValue]:
     read as YAML at all."""
     try:
         mapping = _load_bounded_yaml(fm_text)
-        _refuse_nested_lists(mapping)
+        _refuse_unreadable_gates(mapping)
         return _as_strings(mapping)
     except _FrontmatterNotReadError:
         logger.debug("YAML parse failed, falling back to regex parser")
         return parse_lines(fm_text)
 
 
-def _refuse_nested_lists(mapping: dict[Any, Any]) -> None:
+def _refuse_unreadable_gates(mapping: dict[Any, Any]) -> None:
     """Refuse an ``allowed_tools`` or ``requires`` that is neither a text nor
-    a list of texts (RFC §24.1): turned into one text, it would gate nothing."""
-    key = unreadable_gating_key(mapping)
+    a list of texts (RFC §24.1). Turned into one text, a collection would
+    gate nothing, and a scalar YAML typed would gate the text written for its
+    value: ``on`` gates ``True`` and ``010`` gates ``8``, leaving open, before
+    any activation, the tool the skill named."""
+    key = unreadable_gating_key(mapping) or _typed_gating_key(mapping)
     if key is not None:
         raise SkillParseError(f"the frontmatter's {key} is neither a text nor a list of texts")
+
+
+def _typed_gating_key(mapping: Mapping[Any, Any]) -> str | None:
+    """The first of ``allowed_tools`` and ``requires`` in a loaded YAML
+    *mapping* holding a scalar YAML read as other than a text (a number, a
+    boolean, a date), or ``None``. An empty item is no value and stays left
+    out. A served entry's JSON writes each type as it means it; only YAML
+    reads an unquoted name as another type."""
+    for key in GATING_KEYS:
+        value = mapping.get(key)
+        items = value if isinstance(value, list) else [value]
+        if any(item is not None and not isinstance(item, str) for item in items):
+            return key
+    return None
 
 
 def unreadable_gating_key(mapping: Mapping[Any, Any]) -> str | None:

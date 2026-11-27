@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import re
 
+from yaml.nodes import ScalarNode
+from yaml.resolver import Resolver
+
 from roomkit.skills.errors import SkillParseError
 from roomkit.skills.models import parse_tool_names
 
@@ -27,6 +30,10 @@ _NOT_A_PLAIN_TEXT = re.compile(r"^(?:[\[\]{}|>&!%@`,]|[-?:](?:\s|$))")
 collection, a block scalar, an anchor, a tag, a reserved indicator, or a
 nested item, key or entry. A leading ``*`` stays text: no line defines an
 anchor for it to name, and ``*`` or ``*_admin`` is a glob a skill gates."""
+_RESOLVER = Resolver()
+"""How the YAML reader types an unquoted scalar: the safe loaders' own."""
+_TYPED = frozenset(f"tag:yaml.org,2002:{name}" for name in ("bool", "int", "float", "timestamp"))
+"""The types YAML gives an unquoted scalar it does not keep as a text."""
 
 
 def parse_lines(fm_text: str) -> dict[str, str | list[str]]:
@@ -115,7 +122,7 @@ def _list_value(key: str, text: str) -> str | list[str]:
         return []
     if text.startswith("[") and text.endswith("]") and not any(c in text[1:-1] for c in "[]{}"):
         return [item for part in text[1:-1].split(",") for item in _list_item(key, part)]
-    if _NOT_A_PLAIN_TEXT.match(text):
+    if _NOT_A_PLAIN_TEXT.match(text) or _typed_by_yaml(text):
         raise _unread(key)
     return _unquoted(text)
 
@@ -135,13 +142,24 @@ def _list_item(key: str, text: str | None) -> list[str]:
 
     Raises:
         SkillParseError: An item of ``allowed_tools`` or ``requires`` is YAML
-            a line cannot hold (a collection, an anchor, a tag, a nested item).
+            a line cannot hold (a collection, an anchor, a tag, a nested item),
+            or a scalar YAML reads as other than a text.
     """
     item = _entry_text(key, text or "")
-    if key in GATING_KEYS and _NOT_A_PLAIN_TEXT.match(item):
+    if key in GATING_KEYS and (_NOT_A_PLAIN_TEXT.match(item) or _typed_by_yaml(item)):
         raise _unread(key)
     item = "" if item in _NULLS else _unquoted(item)
     return [item] if item else []
+
+
+def _typed_by_yaml(text: str) -> bool:
+    """Whether YAML reads the unquoted *text* as other than a text or no
+    value: ``on`` as a boolean, ``010`` as a number, a date. Read so, it gates
+    another name than the one written, and the YAML reader refuses it; a
+    quoted text stays the text it quotes."""
+    if text[:1] in ("'", '"'):
+        return False
+    return _RESOLVER.resolve(ScalarNode, text, (True, False)) in _TYPED
 
 
 def _unquoted(text: str) -> str:

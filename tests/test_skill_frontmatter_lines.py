@@ -108,6 +108,9 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "allowed_tools: {issue_refund: true}",
         "allowed_tools:\n  - &money issue_refund",
         "requires:\n  - !tool lookup_order",
+        "allowed_tools: 3",
+        "allowed_tools: [on, 010, 1_000, yes, 0x1A]",
+        "requires:\n  - lookup_order\n  - off",
     ],
     ids=[
         "flow over lines",
@@ -119,6 +122,9 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "mapping",
         "anchor",
         "tag",
+        "number",
+        "names YAML retypes",
+        "item YAML retypes",
     ],
 )
 def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, lines: str) -> None:
@@ -135,8 +141,17 @@ def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, line
         ("allowed_tools: [issue_refund, void_*]  # money", ["issue_refund", "void_*"]),
         ("allowed_tools: issue_refund, void_*", "issue_refund, void_*"),
         ('allowed_tools: "issue_refund, void_*"', "issue_refund, void_*"),
+        ("allowed_tools: [\"on\", '010', 3d_render, v1.2]", ["on", "010", "3d_render", "v1.2"]),
     ],
-    ids=["block", "block with comment", "flow", "flow with comment", "text", "quoted text"],
+    ids=[
+        "block",
+        "block with comment",
+        "flow",
+        "flow with comment",
+        "text",
+        "quoted text",
+        "quoted names YAML would retype",
+    ],
 )
 def test_each_form_reads_as_yaml_reads_it(lines: str, expected: object) -> None:
     text = "---\nname: refunds\ndescription: d\n" + lines + "\n---\n"
@@ -200,11 +215,33 @@ def test_a_bracketed_description_stays_whole() -> None:
 
 @pytest.mark.parametrize(
     "lines",
-    ["allowed_tools: {issue_refund: true}", "allowed_tools:\n  - [a, b]", "requires: [a, [b]]"],
-    ids=["mapping", "nested list", "nested flow"],
+    [
+        "allowed_tools: {issue_refund: true}",
+        "allowed_tools:\n  - [a, b]",
+        "requires: [a, [b]]",
+        "allowed_tools: 3",
+        "allowed_tools: true",
+        "allowed_tools: 2026-11-27",
+        "requires: [1, 2]",
+        "allowed_tools: [on, 010, 1_000, yes, 0x1A]",
+        "requires:\n  - lookup_order\n  - off",
+    ],
+    ids=[
+        "mapping",
+        "nested list",
+        "nested flow",
+        "number",
+        "boolean",
+        "date",
+        "list of numbers",
+        "names YAML retypes",
+        "item YAML retypes",
+    ],
 )
 def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, lines: str) -> None:
-    # As one text, it would gate nothing (RFC §24.1).
+    # As one text, it would gate nothing; as the text YAML retypes it into
+    # (`on` read as True, `010` as 8), it would gate another name and leave
+    # the one written open before any activation (RFC §24.1).
     _write_skill(tmp_path, "---\nname: refunds\ndescription: d\n" + lines + "\n---\n")
     with pytest.raises(
         SkillParseError, match="Parsing failed for refunds: .*neither a text nor a list of texts"
@@ -241,6 +278,7 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         'allowed_tools: ["issue\\u005frefund"]\n',
         "requires: '\"[ab]'\n",
         "requires:\n - lookup_order\n  - refund_x\n",
+        "allowed_tools: [on, 010]\n",
     ],
     ids=[
         "nested empty key",
@@ -269,6 +307,7 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         "escaped flow item",
         "quote in a quoted text",
         "item YAML folds into the one before",
+        "names YAML retypes",
     ],
 )
 def test_the_line_reader_never_gates_less_than_yaml(lines: str) -> None:
