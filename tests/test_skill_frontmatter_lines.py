@@ -120,6 +120,8 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "allowed_tools:\n  - issue_refund:",
         "requires: [lookup_order:, issue_refund]",
         "allowed_tools: [lookup, 0b_]",
+        "allowed_tools: [lookup, ?admin]",
+        "requires: [?lookup_order]",
     ],
     ids=[
         "flow over lines",
@@ -143,6 +145,8 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "item ending in a colon",
         "flow item ending in a colon",
         "binary prefix YAML types",
+        "flow item YAML reads as a key",
+        "requires flow item YAML reads as a key",
     ],
 )
 def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, lines: str) -> None:
@@ -163,6 +167,7 @@ def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, line
         ('allowed_tools:\n  - "issue_refund: money"', ["issue_refund: money"]),
         ("allowed_tools: 'issue_refund: money'", "issue_refund: money"),
         ("allowed_tools: [issue_refund:money, 'void: *']", ["issue_refund:money", "void: *"]),
+        ("allowed_tools:\n  - ?admin", ["?admin"]),
         (
             "allowed_tools: [yEs, 08, 1e5, 0:30, 10-20, 2026-1-5]",
             ["yEs", "08", "1e5", "0:30", "10-20", "2026-1-5"],
@@ -179,6 +184,7 @@ def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, line
         "quoted item holding a colon",
         "quoted text holding a colon",
         "colons YAML keeps in a name",
+        "block item starting with a question mark",
         "names YAML keeps as texts",
     ],
 )
@@ -256,6 +262,7 @@ def test_a_bracketed_description_stays_whole() -> None:
         "requires:\n  - lookup_order\n  - off",
         "allowed_tools:\n  - issue_refund: money",
         "allowed_tools: [lookup_order, issue_refund: money]",
+        "allowed_tools: [lookup, ?admin]",
     ],
     ids=[
         "mapping",
@@ -269,6 +276,7 @@ def test_a_bracketed_description_stays_whole() -> None:
         "item YAML retypes",
         "item holding a key",
         "flow item holding a key",
+        "flow item YAML reads as a key",
     ],
 )
 def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, lines: str) -> None:
@@ -317,7 +325,9 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         "requires:\n  - lookup_order: first\n",
         "allowed_tools:\n  - issue_refund:\n",
         "allowed_tools:\n  - issue_refund:\tmoney\n",
+        # libyaml does not read [a:]; the pure-Python loader reads a mapping.
         "allowed_tools: [issue_refund:]\n",
+        "allowed_tools: [lookup, ?admin]\n",
     ],
     ids=[
         "nested empty key",
@@ -353,6 +363,7 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         "item ending in a colon",
         "item holding a key after a tab",
         "flow item ending in a colon",
+        "flow item YAML reads as a key",
     ],
 )
 def test_the_line_reader_never_gates_less_than_yaml(lines: str) -> None:

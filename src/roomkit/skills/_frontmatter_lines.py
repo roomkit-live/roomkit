@@ -124,10 +124,24 @@ def _list_value(key: str, text: str) -> str | list[str]:
     if text in _NULLS:
         return []
     if text.startswith("[") and text.endswith("]") and not any(c in text[1:-1] for c in "[]{}"):
-        return [item for part in text[1:-1].split(",") for item in _list_item(key, part)]
+        return [item for part in text[1:-1].split(",") for item in _flow_item(key, part)]
     if _not_read_as_written(text):
         raise _unread(key)
     return _unquoted(text)
+
+
+def _flow_item(key: str, part: str) -> list[str]:
+    """An entry of a ``[a, b]`` list, read as :func:`_list_item` reads an
+    item.
+
+    Raises:
+        SkillParseError: The entry starts with ``?``, which YAML reads in a
+            flow list as an explicit key (``[lookup, ?admin]`` holds a
+            mapping); a block item ``- ?admin`` stays the text it is.
+    """
+    if part.strip().startswith("?"):
+        raise _unread(key)
+    return _list_item(key, part)
 
 
 def _append_item(data: dict[str, str | list[str]], key: str, text: str | None) -> None:
