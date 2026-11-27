@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-recorder-s-release-waits-on-a-budget-of-its-own-once-the-bot-has-left",
+  "title": "The wait to release a recorder a call still runs in is not the teardown's: the bot leaves once the teardown's budget is spent, and the channel's close then waits for the call on a budget the teardown did not spend, releasing the recorder once it returns",
+  "rules": [
+    "§12.11",
+    "§12.10.4",
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-12.11-058"
+  ],
+  "notes": "On the virtual clock. The recorder's on_recording_stop holds at its gate on the recorder's thread. The detach's teardown gives the held finalization up once its budget passed on the clock (the advance of a minute covers it, assuming its waits add up to a minute at most), and the bot leaves while the call still runs. That no wait for the call holds the bot first is not shown apart: the advance spends every wait of the teardown, one for the call included (conference/a-held-finalization-lets-the-bot-leave-and-the-recorder-is-released-once-it-returns bounds it on the real clock only). The channel's close then waits on the clock for the call before it releases the recorder: a wait that shared the teardown's budget, spent by then, would end at once and leave the recorder unreleased, the close failing (conference/a-recorder-a-call-still-runs-in-past-the-release-wait-is-left-unreleased shows that end). The clock does not move during the close: how long the release wait lasts is the implementation's, and not read.",
+  "requires_features": [
+    "conference",
+    "recording"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "stt": null,
+      "recording": {
+        "call_gates": {
+          "on_recording_stop": "stopping"
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "conf",
+      "background": true,
+      "as": "detaching"
+    },
+    {
+      "wait_for": "stopping"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 60000,
+      "waiters": 1
+    },
+    {
+      "await": "detaching"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.close",
+      "channel_id": "conf",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "clock.advance",
+      "ms": 0,
+      "waiters": 1
+    },
+    {
+      "call": "recording.calls",
+      "channel_id": "conf",
+      "calls": [
+        "on_recording_stop",
+        "close"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_stop",
+            "recording_id": "rec1"
+          }
+        ]
+      }
+    },
+    {
+      "open": "stopping"
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "recording.calls",
+      "channel_id": "conf",
+      "calls": [
+        "on_recording_stop",
+        "close"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_recording_stop",
+            "recording_id": "rec1"
+          },
+          {
+            "call": "close"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

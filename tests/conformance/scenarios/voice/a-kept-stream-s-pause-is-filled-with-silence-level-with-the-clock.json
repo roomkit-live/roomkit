@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-kept-stream-s-pause-is-filled-with-silence-level-with-the-clock",
+  "title": "A stream kept across turns that receives nothing for a while is sent silence, so that its audio stays level with the clock",
+  "rules": [
+    "§12.2.3",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-12.2.3-022"
+  ],
+  "notes": "On the virtual clock. The stream opens on 100 ms of speech, then nothing is fed for ten seconds, as from a microphone muted during playback: the stream has received ten seconds of audio by then, the speech and 9.9 s of silence. The channel checks the stream against the clock at intervals of its own, and a check fills the stream up to the clock; the read falls 1 ms past ten seconds after the stream opened, so a check at ten seconds falls in the advance with any interval of more than 1 ms that divides ten seconds. A stream fed short of the clock with no long pause (packets lost over a call) is filled the same way in its pauses, which no scenario shows apart.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "virtual_clock": true,
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "stt": {
+        "keeps_stream_across_turns": true,
+        "streams": [
+          {
+            "results": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAA=="
+      ],
+      "repeat": 5
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "language": null,
+              "sound_ms": 100,
+              "silence_ms": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "clock.advance",
+      "ms": 10001,
+      "waiters": 1
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "stt_streams": [
+            {
+              "language": null,
+              "sound_ms": 100,
+              "silence_ms": 9900
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
