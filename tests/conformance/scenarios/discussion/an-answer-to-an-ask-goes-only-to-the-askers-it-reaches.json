@@ -1,0 +1,257 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-answer-to-an-ask-goes-only-to-the-askers-it-reaches",
+  "title": "A person's answer naming nobody goes only to the agents that asked them that it reaches: one its visibility leaves out and one whose access cannot read it take no turn",
+  "rules": [
+    "§19.7.5 rule 8",
+    "§19.7.5 rule 10",
+    "§7.5"
+  ],
+  "requirements": [
+    "RK-19.7.5-071"
+  ],
+  "notes": "Agents a, c and e each ask the person. The ops binding is then set to let its messages reach a and e only, and e's binding write_only: the person's answer queues a alone, as the queue read while a answers shows; c, which does not see it, and e, which cannot read it, take no turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which region?"
+            },
+            {
+              "text": "a: rolling back eu-west",
+              "gate": "a-held"
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which build?"
+            },
+            {
+              "text": "c: noted"
+            }
+          ]
+        }
+      },
+      {
+        "id": "e",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which cluster?"
+            },
+            {
+              "text": "e: noted"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "c",
+            "e"
+          ],
+          "people": [
+            "ops"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a @c @e deploy failed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "asked": [
+            [
+              "a",
+              "@ops"
+            ],
+            [
+              "c",
+              "@ops"
+            ],
+            [
+              "e",
+              "@ops"
+            ]
+          ],
+          "waiting": true
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "r1",
+      "channel_id": "ops",
+      "visibility": "a,e"
+    },
+    {
+      "call": "set_access",
+      "room_id": "r1",
+      "channel_id": "e",
+      "access": "write_only"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "eu-west"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "a-held"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": []
+        }
+      }
+    },
+    {
+      "open": "a-held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a @c @e deploy failed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@ops which region?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "body": "@ops which build?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "e"
+          },
+          "content": {
+            "body": "@ops which cluster?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "eu-west"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: rolling back eu-west"
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {},
+        {}
+      ],
+      "c": [
+        {}
+      ],
+      "e": [
+        {}
+      ]
+    }
+  }
+}

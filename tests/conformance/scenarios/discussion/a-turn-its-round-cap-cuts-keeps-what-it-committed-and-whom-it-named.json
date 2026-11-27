@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-turn-its-round-cap-cuts-keeps-what-it-committed-and-whom-it-named",
+  "title": "A turn its round cap cuts short keeps the segment it committed, which queues whom it names, and its agent is not asked again",
+  "rules": [
+    "§19.7.5 rule 6"
+  ],
+  "requirements": [
+    "RK-19.7.5-056"
+  ],
+  "notes": "Agent a may run one round of calls. It writes a segment naming b and calls a tool, then calls again: the cap ends its turn. Its two generations are its one turn; b answers its segment.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Looks a fact up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "text": "@b please check the logs",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "logs are clean"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a investigate"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a investigate"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b please check the logs"
+          },
+          "type": "message",
+          "addressed_to": [
+            "b"
+          ]
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "logs are clean"
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {},
+        {}
+      ],
+      "b": [
+        {}
+      ]
+    }
+  }
+}

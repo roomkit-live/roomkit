@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-host-s-rules-name-another-agent-s-handle-and-the-silence-token",
+  "title": "The host's rules take the default's place in a turn's notes, {handle} written as another agent's @handle and {silent} as the discussion's silence token",
+  "rules": [
+    "§19.7.5 rule 14"
+  ],
+  "requirements": [
+    "RK-19.7.5-118"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_rules.py test_the_hosts_rules_take_the_defaults_place.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "rules": "Hand over with {handle}. Nothing to add: {silent}.",
+          "silent_token": "[nothing]"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "@a hi",
+                  "Hand over with @b. Nothing to add: [nothing]."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-delivery-is-no-person-s-answer-and-asks-no-agent",
+  "title": "A delivery through the room's transport is no person's message: it answers no agent's question, and naming nobody it asks no agent",
+  "rules": [
+    "§19.7.5 rule 2",
+    "§19.7.5 rule 8",
+    "§19.7.5 rule 10",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-19.7.5-030",
+    "RK-19.7.5-075"
+  ],
+  "notes": "Agent a asks the person, and the room waits for them. A delivery through ops follows, naming nobody: a person's message would go to a, the agent that asked; the delivery gives a no turn, b none either, and what a asked still waits. Python: tests/orchestration/test_discussion_edges.py test_a_delivery_is_not_a_persons_answer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which region?"
+            },
+            {
+              "text": "thanks"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "people": [
+            "ops"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a deploy failed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "asked": [
+            [
+              "a",
+              "@ops"
+            ]
+          ],
+          "waiting": true
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "background job finished",
+      "channel_id": "ops",
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "asked": [
+            [
+              "a",
+              "@ops"
+            ]
+          ],
+          "waiting": true,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a deploy failed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@ops which region?"
+          }
+        },
+        {
+          "content": {
+            "body": "background job finished"
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {}
+      ],
+      "b": []
+    }
+  }
+}

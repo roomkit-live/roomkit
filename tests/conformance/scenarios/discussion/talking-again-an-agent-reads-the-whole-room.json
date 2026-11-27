@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/talking-again-an-agent-reads-the-whole-room",
+  "title": "An agent that talks again reads, at its next turn, the whole room, what was said while it only listened included",
+  "rules": [
+    "§19.7.5 rule 12",
+    "§19.7.5 rule 9"
+  ],
+  "requirements": [
+    "RK-19.7.5-107"
+  ],
+  "notes": "b listens only while the person and a talk; once b talks again, the person names it and its model reads every message of the room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: the error rate is 2%"
+            },
+            {
+              "text": "a: since ten"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b: summary"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "b"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a what is the error rate?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a since when?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "talk_again",
+      "room_id": "r1",
+      "channel_ids": [
+        "b"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@b sum it up"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "b": [
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "@a what is the error rate?"
+              }
+            },
+            {
+              "text": {
+                "$contains": "a: the error rate is 2%"
+              }
+            },
+            {
+              "text": {
+                "$contains": "@a since when?"
+              }
+            },
+            {
+              "text": {
+                "$contains": "a: since ten"
+              }
+            },
+            {
+              "text": {
+                "$contains": "@b sum it up"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

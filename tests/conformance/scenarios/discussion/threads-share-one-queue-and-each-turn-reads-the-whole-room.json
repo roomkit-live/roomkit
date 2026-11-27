@@ -1,0 +1,263 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/threads-share-one-queue-and-each-turn-reads-the-whole-room",
+  "title": "An answer stays in the thread of the message it answers, but two threads share the room's one queue and each turn reads the whole room",
+  "rules": [
+    "§19.7.5",
+    "§5.2"
+  ],
+  "requirements": [
+    "RK-19.7.5-195"
+  ],
+  "notes": "Two threads start from two messages that ask nobody. While a answers in the first, a message in the second names b: b waits in the room's one queue, answers in its thread, and reads the first thread's messages too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: one is fine",
+              "gate": "a-held"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b: two is fine"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "thread one"
+        },
+        "addressed_to": []
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "thread two"
+        },
+        "addressed_to": []
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a how is one?"
+        },
+        "parent_event_id": "r1#0"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "a-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@b how is two?"
+        },
+        "parent_event_id": "r1#1"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "open": "a-held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "thread one"
+          },
+          "parent_event_id": null
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "thread two"
+          },
+          "parent_event_id": null
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a how is one?"
+          },
+          "parent_event_id": "r1#0"
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@b how is two?"
+          },
+          "parent_event_id": "r1#1"
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: one is fine"
+          },
+          "parent_event_id": "r1#0"
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b: two is fine"
+          },
+          "parent_event_id": "r1#1"
+        }
+      ]
+    },
+    "models": {
+      "b": [
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "thread one"
+              }
+            },
+            {
+              "text": {
+                "$contains": "thread two"
+              }
+            },
+            {
+              "text": {
+                "$contains": "@a how is one?"
+              }
+            },
+            {
+              "text": {
+                "$contains": "@b how is two?"
+              }
+            },
+            {
+              "text": {
+                "$contains": "a: one is fine"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

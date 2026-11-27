@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-room-with-an-agent-that-thinks-while-it-listens-is-refused",
+  "title": "An install whose agent thinks while it listens is refused, and the room holds no discussion",
+  "rules": [
+    "§19.7.5 rule 1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-021"
+  ],
+  "notes": "The agent carries a thinker, which needs its speak policy. Python: tests/orchestration/test_discussion_refusals.py test_an_agent_that_thinks_while_it_listens_is_refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak"
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They want the error rate."
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "ops": {
+          "category": "transport"
+        },
+        "a": {
+          "$absent": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/with-no-candidate-the-policy-is-not-asked",
+  "title": "A person's message naming nobody, which reaches no agent that may take it, is not handed to the dispatch policy, and no agent is asked",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "requirements": [
+    "RK-19.7.5-156"
+  ],
+  "notes": "The ops binding lets its messages reach a alone, and a only listens: the message has no candidate.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops",
+            "visibility": "a"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "a"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "a"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        }
+      ]
+    },
+    "dispatch_turns": {
+      "d": []
+    },
+    "hooks": {
+      "decisions": []
+    },
+    "models": {
+      "a": [],
+      "b": []
+    }
+  }
+}

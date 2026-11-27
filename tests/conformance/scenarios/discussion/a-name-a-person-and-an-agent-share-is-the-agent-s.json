@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-name-a-person-and-an-agent-share-is-the-agent-s",
+  "title": "Where a person's name and an agent's handle read alike, an agent's @name asks the agent, and no question is recorded for the person",
+  "rules": [
+    "§19.7.5 rule 4"
+  ],
+  "requirements": [
+    "RK-19.7.5-052"
+  ],
+  "notes": "The room's participant is named dev, the handle of agent dev. Python: tests/test_discussion_names.py test_people_are_named_too_and_an_agent_wins_a_shared_name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport",
+        "sender_is_participant": true
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@dev please check the logs"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "logs are clean"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ],
+        "participants": [
+          {
+            "id": "m",
+            "channel_id": "ops",
+            "display_name": "dev"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "dev"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "m",
+        "content": {
+          "type": "text",
+          "body": "@a investigate"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "asked": [],
+          "waiting": false,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a investigate"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@dev please check the logs"
+          },
+          "addressed_to": [
+            "dev"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "body": "logs are clean"
+          }
+        }
+      ]
+    },
+    "models": {
+      "dev": [
+        {}
+      ]
+    }
+  }
+}

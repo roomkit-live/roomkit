@@ -1,0 +1,253 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-same-agents-hold-a-queue-of-their-own-in-each-room",
+  "title": "One discussion installed in two rooms keeps a speak queue and who only listens per room: a turn held in one room holds nothing in the other",
+  "rules": [
+    "§19.7.5 rule 17",
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-19.7.5-189"
+  ],
+  "notes": "a's turn in r1 holds with b queued behind it; b only listens in r2. In r2, a takes a turn of its own while its r1 turn still holds. r2's listening is read once r2 routed a message of its own: a read right after listen_only may show the state before it (RMK-2178).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a in r1",
+              "gate": "r1-held"
+            },
+            {
+              "text": "a in r2",
+              "gate": "r2-held"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b in r1"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "d"
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r2",
+      "channel_ids": [
+        "b"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a @b go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "r1-held"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "b"
+          ],
+          "listening": []
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r2",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "r2-held"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "b"
+          ],
+          "listening": []
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r2",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [],
+          "listening": [
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "open": "r2-held"
+    },
+    {
+      "open": "r1-held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a @b go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a in r1"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b in r1"
+          }
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hi"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a in r2"
+          }
+        }
+      ]
+    },
+    "models": {
+      "b": [
+        {}
+      ]
+    }
+  }
+}

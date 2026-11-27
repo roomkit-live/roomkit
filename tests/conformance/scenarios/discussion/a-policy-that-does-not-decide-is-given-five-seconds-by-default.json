@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-policy-that-does-not-decide-is-given-five-seconds-by-default",
+  "title": "A dispatch policy that does not decide is waited for five seconds by default, then every candidate is asked, reported as the fallback after that bound",
+  "rules": [
+    "§19.7.5",
+    "§19.7.5 rule 18"
+  ],
+  "requirements": [
+    "RK-19.7.5-016"
+  ],
+  "notes": "The discussion sets no dispatch_timeout, so the bound is the default; the policy holds at a gate no step opens. The scenario waits those five seconds in real time: the dispatch bound follows no virtual clock. Python: tests/orchestration/test_discussion_dispatch.py test_a_policy_past_its_bound_asks_every_candidate, here at the default.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "sre"
+              ]
+            ],
+            "gate": "never-decides"
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "body": "dev here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "trigger": "on_dispatch_decision",
+          "room_id": "r1",
+          "dispatch_decision": {
+            "decision": {
+              "reason": "fallback"
+            },
+            "duration_ms": 5000
+          }
+        }
+      ]
+    }
+  }
+}

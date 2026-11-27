@@ -1,0 +1,298 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-turn-a-spent-budget-asks-for-has-a-budget-of-its-own",
+  "title": "A message the room's work sends once its cascade spent its reentry budget still gets its agent's answer: the discussion's turn draws on a budget of its own",
+  "rules": [
+    "§19.7.5 rule 11",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-19.7.5-096"
+  ],
+  "notes": "The kit's max_chain_depth is 1, so the person's message's cascade has 10 passes. Its delivery to loop posts nine notices that name nobody, then one addressed to a: the ten calls draw its ten passes. a's turn answers, and the delivery of its answer to loop posts once more, a call of the turn's work that draws a pass of the turn's cascade: drawn on the spent budget it would be stored BLOCKED reentry_loop_cap; the discussion's turn has a budget of its own (its max_depth is 5), and the post is stored. Not observed: a regeneration's turn, and the size of a turn's budget.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "loop",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                }
+              },
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "your turn"
+                },
+                "addressed_to": [
+                  "a"
+                ]
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "a answers"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "noted"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a answers"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "loop"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ],
+          "max_depth": 5
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "go"
+        },
+        "addressed_to": []
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "your turn"
+          },
+          "status": "delivered",
+          "addressed_to": [
+            "a"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a answers"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "noted"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {}
+      ]
+    }
+  }
+}

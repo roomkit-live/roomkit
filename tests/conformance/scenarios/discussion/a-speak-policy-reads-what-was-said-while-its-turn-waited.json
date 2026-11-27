@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-speak-policy-reads-what-was-said-while-its-turn-waited",
+  "title": "A queued turn's speak policy reads in recent what came before the message it answers and what was said while it waited",
+  "rules": [
+    "§19.7.5 rule 9",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-082"
+  ],
+  "notes": "A note the person sent addressed to no agent comes first; then the person names a and b. b's turn waits for a's, whose answer is committed before b's turn starts: b's policy reads the note and a's answer, the message it answers excluded.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: found it"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "b: agreed"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "context: the deploy ran at ten"
+        },
+        "addressed_to": []
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a @b look into it"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "b": [
+        {
+          "channel_id": "b",
+          "event": {
+            "content": {
+              "body": "@a @b look into it"
+            }
+          },
+          "recent": [
+            {
+              "source": {
+                "channel_id": "ops"
+              },
+              "content": {
+                "body": "context: the deploy ran at ten"
+              }
+            },
+            {
+              "source": {
+                "channel_id": "a"
+              },
+              "content": {
+                "body": "a: found it"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "context: the deploy ran at ten"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a @b look into it"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: found it"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b: agreed"
+          }
+        }
+      ]
+    }
+  }
+}

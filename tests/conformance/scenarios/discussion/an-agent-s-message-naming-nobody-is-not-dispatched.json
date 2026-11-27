@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-s-message-naming-nobody-is-not-dispatched",
+  "title": "With a dispatch policy, an agent's answer that names nobody is not handed to the policy and asks no agent",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "requirements": [
+    "RK-19.7.5-194"
+  ],
+  "notes": "The person names a, whose answer names nobody; the policy, which would pick b, is never asked.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: all good"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "b"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a check"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a check"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: all good"
+          }
+        }
+      ]
+    },
+    "dispatch_turns": {
+      "d": []
+    },
+    "hooks": {
+      "decisions": []
+    },
+    "models": {
+      "b": []
+    }
+  }
+}

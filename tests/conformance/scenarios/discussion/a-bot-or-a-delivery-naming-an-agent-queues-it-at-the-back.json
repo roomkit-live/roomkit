@@ -1,0 +1,348 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-bot-or-a-delivery-naming-an-agent-queues-it-at-the-back",
+  "title": "A bot's message and a delivery queue the agents they name at the back, where a person's message would put them first, and a bot's message naming nobody asks no agent",
+  "rules": [
+    "§19.7.5 rule 2",
+    "§19.7.5 rule 8",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-19.7.5-030",
+    "RK-19.7.5-075"
+  ],
+  "notes": "While a's turn holds, the room's bot participant names c; the delivery then names b, queued behind c, where a person's message naming b would put it before c; the bot then names d, queued behind b, where a front request would put it before b. The turns run a, c, b, d. Then the bot writes naming nobody, and no agent is asked. Not exercised: a webhook's event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport",
+        "sender_is_participant": true
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a done",
+              "gate": "a-held"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "c done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "d",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "d done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ],
+        "participants": [
+          {
+            "id": "oncall",
+            "channel_id": "ops",
+            "display_name": "oncall"
+          },
+          {
+            "id": "helper",
+            "channel_id": "ops",
+            "display_name": "helper",
+            "role": "bot"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "a-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "helper",
+        "content": {
+          "type": "text",
+          "body": "@c the build is red"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "the nightly job finished",
+      "channel_id": "ops",
+      "addressed_to": [
+        "b"
+      ],
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "c",
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "helper",
+        "content": {
+          "type": "text",
+          "body": "@d check the cache"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "queue": [
+            "c",
+            "b",
+            "d"
+          ]
+        }
+      }
+    },
+    {
+      "open": "a-held"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "helper",
+        "content": {
+          "type": "text",
+          "body": "all green"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@c the build is red"
+          },
+          "addressed_to": [
+            "c"
+          ]
+        },
+        {
+          "content": {
+            "body": "the nightly job finished"
+          },
+          "addressed_to": [
+            "b"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@d check the cache"
+          },
+          "addressed_to": [
+            "d"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a done"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "body": "c done"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b done"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "d"
+          },
+          "content": {
+            "body": "d done"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "all green"
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {}
+      ],
+      "b": [
+        {}
+      ],
+      "c": [
+        {}
+      ],
+      "d": [
+        {}
+      ]
+    }
+  }
+}

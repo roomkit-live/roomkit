@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-hook-asking-again-after-each-answer-stops-at-the-depth-limit",
+  "title": "An ASYNC hook that posts to the agent after each of its answers posts one deeper each time, and the depth limit ends the loop",
+  "rules": [
+    "§19.7.5 rule 11",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-19.7.5-097"
+  ],
+  "notes": "The kit's max_chain_depth is 6, the discussion's limit. Each answer of a fires the hook, whose post, addressed to a, stands one deeper than the answer: posts at 2, 4 and 6, answers at 1, 3 and 5, and the turn the last post asks for, at 7, is stopped and recorded once. Python: tests/test_reentrance.py test_a_judge_posting_back_after_each_answer_stops_at_the_depth_limit (discussion). Not observed: a message or a regeneration the hook's body makes, and a process other than the run's own giving the turns.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 6
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "answer one"
+            },
+            {
+              "text": "answer two"
+            },
+            {
+              "text": "answer three"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "judge",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "answer one"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                },
+                "addressed_to": [
+                  "a"
+                ]
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "answer two"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                },
+                "addressed_to": [
+                  "a"
+                ]
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "answer three"
+            },
+            "do": [
+              {
+                "call": "post",
+                "room_id": "$room",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                },
+                "addressed_to": [
+                  "a"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hello"
+          },
+          "chain_depth": 0
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "answer one"
+          },
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "body": "again"
+          },
+          "addressed_to": [
+            "a"
+          ],
+          "chain_depth": 2
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "answer two"
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "again"
+          },
+          "addressed_to": [
+            "a"
+          ],
+          "chain_depth": 4
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "answer three"
+          },
+          "chain_depth": 5
+        },
+        {
+          "content": {
+            "body": "again"
+          },
+          "addressed_to": [
+            "a"
+          ],
+          "chain_depth": 6
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {},
+        {},
+        {}
+      ]
+    }
+  }
+}
