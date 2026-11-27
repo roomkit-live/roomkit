@@ -466,10 +466,14 @@ class TurnDriver:
             logger.exception("Turn of %s in room %s failed", turn.entry.agent, room.room_id)
         finally:
             watch.cancel()
-            await asyncio.wait([watch])
-            retire_mark(turn.mark)
-            self._turn = None
-            await self._ended(turn)
+            try:
+                await asyncio.wait([watch])
+            finally:
+                # A stop while the watch unwinds still ends the turn (rule 6):
+                # a Cancel cuts a turn at once, so the cut's stop meets its end.
+                retire_mark(turn.mark)
+                self._turn = None
+                await self._ended(turn)
 
     async def _post(self, turn: _Turn) -> None:
         """A posted result's turn (rule 19): the task's result committed as
@@ -602,14 +606,19 @@ class TurnDriver:
         return None
 
     async def _ended(self, turn: _Turn) -> None:
-        """The turn has ended (rule 6): announced, once its end is recorded,
-        unless the discussion is being forgotten and its queue goes (rule 1)."""
+        """The turn has ended (rule 6): announced once its end is recorded, or
+        its record cut by a stop, unless the discussion is being forgotten and
+        its queue goes, when nothing is recorded (rules 1 and 17)."""
         room = self._room
         agent = turn.entry.agent
-        # Its queue is about to go: recording the end would wait on the room
-        # lock an uninstalling host may hold, for nothing.
-        queued = [] if room.forgotten else await self._record_end(turn)
-        room.fire(SpeakQueueChange.TURN_ENDED, [agent])
+        queued: list[str] = []
+        try:
+            # Its queue is about to go: recording the end would wait on the
+            # room lock an uninstalling host may hold, for nothing.
+            queued = [] if room.forgotten else await self._record_end(turn)
+        finally:
+            # Announced once, a stop during the record included.
+            room.fire(SpeakQueueChange.TURN_ENDED, [agent])
         if queued:
             room.fire(SpeakQueueChange.QUEUED, list(dict.fromkeys(queued)))
 

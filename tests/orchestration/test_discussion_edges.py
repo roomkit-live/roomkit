@@ -944,6 +944,52 @@ async def test_a_stop_during_the_write_ends_the_turn_it_gave() -> None:
     assert a.calls == []
 
 
+@pytest.mark.parametrize("stops_at", ["the_watch", "the_end"])
+async def test_a_stop_as_a_turn_ends_still_announces_its_end_once(
+    stops_at: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn whose generation ended as its driver stops (the discussion
+    uninstalled while the driver lets the turn's watch unwind, or records
+    the turn's end) announces that end once all the same (RFC §19.7.5 rule
+    6). A Cancel cuts a turn at once, so an uninstall that cuts it meets its
+    end there (RMK-2191)."""
+    a = _provider("a")
+    kit = RoomKit()
+    await _room(kit, {"a": a})
+    told = _follow(kit)
+    holding, released = asyncio.Event(), asyncio.Event()
+
+    async def held() -> None:
+        holding.set()
+        await asyncio.shield(released.wait())
+
+    async def slow_watch(self: Any, turn: Any) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await held()
+            raise
+
+    record_end = _driver.TurnDriver._record_end
+
+    async def slow_record(self: Any, turn: Any) -> list[str]:
+        await held()
+        return await record_end(self, turn)
+
+    if stops_at == "the_watch":
+        monkeypatch.setattr(_driver.TurnDriver, "_watch", slow_watch)
+    else:
+        monkeypatch.setattr(_driver.TurnDriver, "_record_end", slow_record)
+    await _say(kit, "@a hello")
+    await asyncio.wait_for(holding.wait(), 5)
+    await kit.uninstall_strategy("r1")
+    released.set()
+    await _seen(told, (SpeakQueueChange.TURN_ENDED, ("a",)))
+    await kit.close()
+
+    assert [change for change, _ in told].count(SpeakQueueChange.TURN_ENDED) == 1
+
+
 async def test_the_end_of_a_turn_not_stored_tells_no_one_queued() -> None:
     a, b = _provider("@b your turn"), _provider("b")
     kit = RoomKit()

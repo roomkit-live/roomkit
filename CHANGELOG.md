@@ -73,6 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A discussion turn that ends as its driver stops still announces `TURN_ENDED`, once (RFC §19.7.5 rules 6 and 17, RMK-2191), where the announcement was lost when the stop (the discussion uninstalled, here or in another process, or the kit closing) landed while the driver let the turn's watch unwind or recorded the turn's end: a hook following `ON_SPEAK_QUEUE` never saw the turn end. Since a steering `Cancel` cuts a generation at once, an uninstall that cuts a turn meets its end there more often.
+
 - A message whose `process_timeout` passed while step 2 created its room starts no session (RFC §10.1 step 2, §13.6, RMK-2175), where on the in-memory store it fired `session_started` and the `ON_SESSION_STARTED` hooks before it was refused `process_timeout`: the deadline fell only at the call's next suspension, which a store that does not suspend reached after the session started. The room is still completed, as the room's state; the message is refused at once, as it already was on SQLite and PostgreSQL.
 
 - A steering `Cancel` aborts a generation whose provider has not handed its next event yet (RFC §21.3, RMK-1764), where the turn waited for that event: a Stop pressed while a model was still reasoning before its first word, or while a provider was slow to answer, held `process_inbound` until the provider spoke, then threw its answer away. The wait is cut at once, a retry's backoff and the router's choice of another provider included, and the turn ends `cancelled`, nothing more of its answer stored; a cancellation of anything else (`cancel_delivery()`, the caller's) still reaches its caller.
