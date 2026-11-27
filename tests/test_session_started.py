@@ -16,8 +16,9 @@ from roomkit import (
 )
 from roomkit.channels import SMSChannel
 from roomkit.channels._mark_copies import compile_mark_patterns
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import Access, EventType
+from roomkit.models.enums import Access, ChannelType, EventType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
@@ -541,6 +542,59 @@ class TestAutoGreet:
         greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
         # Only one greeting despite two ready signals
         assert len(greeting_events) == 1
+
+    async def test_a_text_agent_s_greeted_rooms_keep_10_000_and_drop_the_oldest_tenth(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The rooms an agent remembers greeting on text channels are bounded
+        (RFC §19.1): the reference keeps 10 000 and drops the oldest tenth
+        when full, so a room of that tenth is greeted again, a newer one not."""
+        kit = RoomKit()
+        kit.register_channel(
+            Agent(
+                "agent-1",
+                provider=MockAIProvider(responses=["Hello!"]),
+                greeting="Welcome!",
+                auto_greet=True,
+            )
+        )
+        (greet,) = [
+            hook.fn
+            for hook in kit._hook_engine._global_hooks
+            if hook.name == "_agent_auto_greet:agent-1"
+        ]
+        greeted: list[str] = []
+
+        async def send_greeting(room_id: str, **kwargs: object) -> None:
+            greeted.append(room_id)
+
+        async def list_bindings(room_id: str) -> list[ChannelBinding]:
+            return [
+                ChannelBinding(channel_id="agent-1", room_id=room_id, channel_type=ChannelType.AI)
+            ]
+
+        # Every room binds the agent and a greeting costs nothing: the bound
+        # is the hook's own, read without 10 001 rooms in the store.
+        monkeypatch.setattr(kit, "send_greeting", send_greeting)
+        monkeypatch.setattr(kit._store, "list_bindings", list_bindings)
+
+        async def start(room_id: str) -> None:
+            event = SessionStartedEvent(
+                room_id=room_id,
+                channel_id="sms-1",
+                channel_type=ChannelType.SMS,
+                participant_id="u1",
+            )
+            await greet(event, None)
+
+        for index in range(10_001):
+            await start(f"room-{index}")
+        assert len(greeted) == 10_001
+        for room_id in ("room-0", "room-999", "room-1000", "room-10000"):
+            await start(room_id)
+
+        assert greeted[10_001:] == ["room-0", "room-999"]
+        await kit.close()
 
     async def test_connect_voice_auto_greet_deprecated(self) -> None:
         """connect_voice(auto_greet=True) emits DeprecationWarning."""
