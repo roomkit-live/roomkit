@@ -112,10 +112,6 @@ class MCPPeer:
         observed = {"method": method}
         if "params" in message:
             observed["params"] = message["params"]
-        elif method == "tools/list" and self.discovery:
-            # SDK discovery may omit the empty first-page parameters. Host
-            # requests retain their exact presence and value.
-            observed["params"] = {}
         if (method == "tools/list" and self.discovery) or (
             method == "tools/call" and self.tool_call
         ):
@@ -132,7 +128,11 @@ class MCPPeer:
             return response | {"error": {"code": -32603, "message": "fixture exhausted"}}
         scripted = replies[self._position]
         self._position += 1
-        expected = {"method": scripted["method"], "params": scripted.get("params", {})}
+        # A script without params is a request without them: an empty set
+        # goes out as no params member (RK-21.2-046).
+        expected = {"method": scripted["method"]}
+        if "params" in scripted:
+            expected["params"] = scripted["params"]
         if observed != expected:
             self.problems.append(f"MCP request {observed} differs from {expected}")
             return response | {"error": {"code": -32603, "message": "fixture request mismatch"}}

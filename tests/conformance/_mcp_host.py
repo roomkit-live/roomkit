@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from roomkit.tools import MCPToolProvider
@@ -45,10 +45,8 @@ async def _operation(provider: MCPToolProvider, operation: Mapping[str, Any]) ->
         params = {"params": operation["params"]} if "params" in operation else {}
         return await provider.request(operation["name"], **params, **options)
     if method == "read_resource":
-        result = await provider.read_resource(operation["uri"], **options)
-        # Keep sent fields, including explicit nulls and extensions, while
-        # allowing the public model to perform its normal parsing.
-        return result.model_dump(by_alias=True, mode="json", exclude_unset=True)
+        # The result as the server sent it, explicit nulls and extensions kept.
+        return await provider.read_resource(operation["uri"], **options)
     if method == "call_tool":
         return await provider.call_tool(
             operation["name"], operation.get("arguments", {}), **options
@@ -59,7 +57,7 @@ async def _operation(provider: MCPToolProvider, operation: Mapping[str, Any]) ->
 async def _observed(provider: MCPToolProvider, operation: Mapping[str, Any]) -> dict[str, Any]:
     try:
         value = await _operation(provider, operation)
-    except McpError as error:
+    except MCPError as error:
         return {"error": "mcp_error", "message": str(error)}
     except TimeoutError:
         return {"error": "timeout"}

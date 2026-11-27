@@ -1,4 +1,4 @@
-"""MCPToolProvider against real MCP servers: stdio, streamable HTTP and SSE (FastMCP)."""
+"""MCPToolProvider against real MCP servers: stdio, streamable HTTP and SSE (MCPServer)."""
 
 from __future__ import annotations
 
@@ -15,15 +15,16 @@ import pytest
 from roomkit.core.exceptions import ToolFailedError, UnservedToolCallError
 from roomkit.tools.mcp import MCPToolProvider
 
-pytest.importorskip("mcp.server.fastmcp")
-McpError = pytest.importorskip("mcp.shared.exceptions").McpError
+pytest.importorskip("mcp.server.mcpserver")
+MCPError = pytest.importorskip("mcp.shared.exceptions").MCPError
 
 _SERVER = textwrap.dedent(
     """\
     import os
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
 
-    server = FastMCP("roomkit-test")
+    server = MCPServer("roomkit-test")
 
     @server.tool()
     def add(a: int, b: int) -> int:
@@ -33,7 +34,7 @@ _SERVER = textwrap.dedent(
     @server.tool()
     def refuse() -> str:
         \"\"\"Always refuses.\"\"\"
-        raise ValueError("not allowed today")
+        raise ToolError("not allowed today")
 
     @server.tool()
     def read_env(name: str) -> str:
@@ -122,7 +123,7 @@ async def test_exiting_stops_the_server_process(server_script: str) -> None:
 async def test_a_server_that_dies_at_startup_leaves_the_provider_closed() -> None:
     provider = MCPToolProvider.from_command(sys.executable, ["-c", "import sys; sys.exit(3)"])
 
-    with pytest.raises(McpError, match="Connection closed"):
+    with pytest.raises(MCPError, match="Connection closed"):
         await asyncio.wait_for(provider.__aenter__(), timeout=10)
 
     assert provider._stack is None
@@ -283,11 +284,11 @@ async def test_an_http_server_that_never_answers_is_left_at_the_connect_bound() 
 _HTTP_SERVER = textwrap.dedent(
     """\
     import sys
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
 
-    server = FastMCP("roomkit-http-test", port=int(sys.argv[1]))
+    server = MCPServer("roomkit-http-test")
 
     @server.tool()
     def add(a: int, b: int) -> int:
@@ -299,7 +300,7 @@ _HTTP_SERVER = textwrap.dedent(
         \"\"\"A header of the HTTP request that called this tool.\"\"\"
         return ctx.request_context.request.headers.get(name, "<missing>")
 
-    server.run(transport=sys.argv[2])
+    server.run(transport=sys.argv[2], port=int(sys.argv[1]))
     """
 )
 

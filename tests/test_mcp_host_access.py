@@ -3,7 +3,7 @@
 An MCP App renders a tool's result in a frame: the host reads the tool's
 ``_meta.ui`` from the listing, the app's HTML as a resource, and relays the
 frame's own calls, an app-only tool hidden from the model among them, with the
-server's raw result. Against a real FastMCP server over stdio.
+server's raw result. Against a real MCPServer over stdio.
 """
 
 from __future__ import annotations
@@ -16,14 +16,15 @@ import pytest
 
 from roomkit.tools.mcp import MCPToolProvider
 
-pytest.importorskip("mcp.server.fastmcp")
-McpError = pytest.importorskip("mcp.shared.exceptions").McpError
+pytest.importorskip("mcp.server.mcpserver")
+MCPError = pytest.importorskip("mcp.shared.exceptions").MCPError
 
 _SERVER = textwrap.dedent(
     """\
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
 
-    server = FastMCP("roomkit-apps")
+    server = MCPServer("roomkit-apps")
 
     @server.tool(meta={"ui": {"resourceUri": "ui://board/view.html", "csp": "self"}})
     def show_board(name: str) -> str:
@@ -43,7 +44,7 @@ _SERVER = textwrap.dedent(
     @server.tool()
     def refuse() -> str:
         \"\"\"Always refuses.\"\"\"
-        raise ValueError("not allowed")
+        raise ToolError("not allowed")
 
     @server.resource("ui://board/view.html", mime_type="text/html")
     def view() -> str:
@@ -82,10 +83,10 @@ async def test_the_tool_meta_comes_from_the_listing_made_at_connection(server_sc
 async def test_a_resource_is_read_as_the_server_returns_it(server_script: str) -> None:
     async with _provider(server_script) as mcp:
         result = await mcp.read_resource("ui://board/view.html")
-        with pytest.raises(McpError):
+        with pytest.raises(MCPError):
             await mcp.read_resource("ui://board/missing.html")
 
-    assert result.contents[0].text == "<html>board</html>"
+    assert result["contents"][0]["text"] == "<html>board</html>"
 
 
 async def test_the_raw_result_reaches_a_tool_the_filter_hid_from_the_model(
@@ -96,9 +97,9 @@ async def test_the_raw_result_reaches_a_tool_the_filter_hid_from_the_model(
         saved = await mcp.call_tool_result("app_only_save", {"state": "s1"})
         refused = await mcp.call_tool_result("refuse", {})
 
-    assert saved.isError is False
+    assert saved.is_error is False
     assert saved.content[0].text == "saved s1"
-    assert refused.isError is True  # a refusal is the result's, not an exception
+    assert refused.is_error is True  # a refusal is the result's, not an exception
 
 
 async def test_the_meta_handed_out_is_a_copy(server_script: str) -> None:

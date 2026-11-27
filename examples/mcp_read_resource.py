@@ -40,8 +40,8 @@ async def main() -> None:
         logger.info("Tools listed: %d", len(mcp.get_tools()))  # 0: nothing was listed
 
         about = await mcp.read_resource("notes://about")
-        for content in about.contents:
-            logger.info("notes://about says: %s", content.text)
+        for content in about["contents"]:
+            logger.info("notes://about says: %s", content["text"])
 
         logger.info("add_note: %s", await mcp.call_tool("add_note", {"text": "Buy coffee."}))
 

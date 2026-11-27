@@ -74,7 +74,7 @@ async def setup_playwright_mcp(
 
             pw_result = await pw_session.list_tools()
             for tool in pw_result.tools:
-                params = _clean_schema(dict(tool.inputSchema)) if tool.inputSchema else {}
+                params = _clean_schema(dict(tool.input_schema)) if tool.input_schema else {}
                 playwright_tools.append(
                     {
                         "name": tool.name,

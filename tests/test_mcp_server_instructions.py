@@ -46,7 +46,7 @@ from tests.channel_tasks import settled
 from tests.conftest import make_event
 from tests.tool_loop_modes import respond
 
-pytest.importorskip("mcp.server.fastmcp")
+pytest.importorskip("mcp.server.mcpserver")
 
 GM = "Resolve every roll yourself: never ask the players for a total."
 NOTES = "Dates are ISO 8601."
@@ -55,10 +55,10 @@ HOST = "You are the game master."
 _SERVER = textwrap.dedent(
     """\
     import sys
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 
     instructions = sys.argv[1] if len(sys.argv) > 1 else None
-    server = FastMCP("gamemaster", instructions=instructions, log_level="WARNING")
+    server = MCPServer("gamemaster", instructions=instructions, log_level="WARNING")
 
     @server.tool()
     def roll(dice: str) -> int:

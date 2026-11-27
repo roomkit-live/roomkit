@@ -33,9 +33,7 @@ async def invoke(provider: MCPToolProvider, kind: str, name: str, timeout: float
     if kind == "tool":
         return await provider.call_tool(name, {}, timeout=timeout)
     if kind == "resource":
-        return (await provider.read_resource(f"file:///{name}", timeout=timeout)).model_dump(
-            mode="json", exclude_none=True
-        )
+        return await provider.read_resource(f"file:///{name}", timeout=timeout)
     return await provider.request("host/read", {"name": name}, timeout=timeout)
 
 
@@ -97,7 +95,7 @@ async def test_abandoned_request_waiting_for_the_legacy_writer_is_not_posted(
 
 
 @pytest.mark.parametrize("kind", ["tool", "host", "resource"])
-async def test_expired_request_already_posted_does_not_add_a_cancellation_notification(
+async def test_expired_request_already_posted_sends_a_cancellation_notification(
     kind: str,
 ) -> None:
     peer = LegacySSEPeer(
@@ -117,10 +115,12 @@ async def test_expired_request_already_posted_does_not_add_a_cancellation_notifi
             )
         await asyncio.wait_for(peer.get_closed.wait(), 1)
         method = message(kind, "sent")["method"]
+        # The SDK tells the server a request it gave up on is cancelled.
         assert [item["method"] for item in peer.messages] == [
             "initialize",
             "notifications/initialized",
             method,
+            "notifications/cancelled",
             method,
         ]
         assert peer.requests == [

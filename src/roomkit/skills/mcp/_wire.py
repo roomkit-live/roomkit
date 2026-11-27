@@ -84,7 +84,7 @@ async def get_skill(server: MCPSkillServer, uri: str) -> SkillEntry:
     Raises:
         SkillValidationError: The entry is one the extension does not allow,
             or names another skill.
-        McpError: The server refused (``-32602`` for a skill it does not serve).
+        MCPError: The server refused (``-32602`` for a skill it does not serve).
     """
     result = await server.request("skills/get", {"uri": uri})
     entry = parse_entry(result.get("skill"))

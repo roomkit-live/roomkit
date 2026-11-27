@@ -13,6 +13,7 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock
 
+import mcp.types as types
 import pytest
 
 from roomkit.models.event import ToolCallContent
@@ -22,24 +23,21 @@ from roomkit.tools import ToolCallContext, tool_turn_context
 from roomkit.tools.mcp import MCPToolProvider
 
 
-class _TextContent:
-    def __init__(self, text: str) -> None:
-        self.text = text
+def _text(text: str) -> types.TextContent:
+    return types.TextContent(type="text", text=text)
 
 
-class _CallToolResult:
-    def __init__(
-        self,
-        content: list[_TextContent],
-        is_error: bool = False,
-        structured_content: Any = None,
-    ) -> None:
-        self.content = content
-        self.isError = is_error
-        self.structuredContent = structured_content
+def _result(
+    content: list[types.TextContent], is_error: bool = False, structured_content: Any = None
+) -> types.CallToolResult:
+    """The SDK's ``CallToolResult``, built unvalidated so a test can hand it a
+    ``structuredContent`` that is no object, as a broken server would."""
+    return types.CallToolResult.model_construct(
+        content=content, is_error=is_error, structured_content=structured_content
+    )
 
 
-def _provider(result: _CallToolResult) -> MCPToolProvider:
+def _provider(result: types.CallToolResult) -> MCPToolProvider:
     provider = MCPToolProvider("http://fake:8000/mcp")
     session = AsyncMock()
     session.send_request = AsyncMock(return_value=result)
@@ -63,7 +61,7 @@ async def _call_with_ctx(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("menu", [{}, {"menu": {"items": [{"id": "1", "name": "Espresso"}]}}])
 async def test_structured_content_published_to_tool_call_context(menu: dict[str, Any]) -> None:
-    provider = _provider(_CallToolResult([_TextContent('{"menu": ...}')], structured_content=menu))
+    provider = _provider(_result([_text('{"menu": ...}')], structured_content=menu))
 
     text, ctx = await _call_with_ctx(provider)
 
@@ -73,21 +71,19 @@ async def test_structured_content_published_to_tool_call_context(menu: dict[str,
 
 @pytest.mark.asyncio
 async def test_no_context_and_no_structured_content_are_harmless() -> None:
-    provider = _provider(_CallToolResult([_TextContent("ok")], structured_content=None))
+    provider = _provider(_result([_text("ok")], structured_content=None))
     text, ctx = await _call_with_ctx(provider)
     assert text == "ok"
     assert ctx.structured_content is None
 
     # Without an active context the call still works (plain handler usage).
-    provider2 = _provider(_CallToolResult([_TextContent("ok")], structured_content={"a": 1}))
+    provider2 = _provider(_result([_text("ok")], structured_content={"a": 1}))
     assert await provider2.call_tool("get-menu", {}) == "ok"
 
 
 @pytest.mark.asyncio
 async def test_error_results_never_publish_structured_content() -> None:
-    provider = _provider(
-        _CallToolResult([_TextContent("boom")], is_error=True, structured_content={"a": 1})
-    )
+    provider = _provider(_result([_text("boom")], is_error=True, structured_content={"a": 1}))
     text, ctx = await _call_with_ctx(provider)
     assert "boom" in text
     assert ctx.structured_content is None
@@ -102,7 +98,7 @@ async def test_structured_content_obeys_the_serialized_size_bound(
     payload_size = 512 * 1024 + extra - len(json.dumps({"blob": ""}))
     repetitions, tail = divmod(payload_size, len(json.dumps(character)) - 2)
     copy = {"blob": character * repetitions + "x" * tail}
-    provider = _provider(_CallToolResult([_TextContent("ok")], structured_content=copy))
+    provider = _provider(_result([_text("ok")], structured_content=copy))
 
     _, ctx = await _call_with_ctx(provider)
 
@@ -121,9 +117,7 @@ async def test_structured_content_obeys_the_serialized_size_bound(
 )
 async def test_a_non_publication_keeps_the_existing_call_copy(copy: Any, is_error: bool) -> None:
     initial = {"page": 7}
-    provider = _provider(
-        _CallToolResult([_TextContent("ok")], is_error=is_error, structured_content=copy)
-    )
+    provider = _provider(_result([_text("ok")], is_error=is_error, structured_content=copy))
 
     _, ctx = await _call_with_ctx(provider, initial=initial)
 
@@ -132,7 +126,7 @@ async def test_a_non_publication_keeps_the_existing_call_copy(copy: Any, is_erro
 
 @pytest.mark.asyncio
 async def test_non_dict_structured_content_is_ignored() -> None:
-    provider = _provider(_CallToolResult([_TextContent("ok")], structured_content=[1, 2, 3]))
+    provider = _provider(_result([_text("ok")], structured_content=[1, 2, 3]))
     _, ctx = await _call_with_ctx(provider)
     assert ctx.structured_content is None
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from tests.conformance._mcp_peer import MCPPeer
@@ -101,3 +102,12 @@ class LegacySSEPeer(MCPPeer):
         endpoints = self.spec.get("endpoint_on_connections")
         if endpoints is not None and len(endpoints) != self.connections:
             self.problems.append("legacy SSE peer has unconsumed endpoint announcements")
+
+
+def logged(record: logging.LogRecord, kind: type[BaseException]) -> bool:
+    """Whether *record* logs a *kind*, alone or in the group the SDK's post
+    writer raises it in."""
+    error = record.exc_info[1] if record.exc_info else None
+    if isinstance(error, BaseExceptionGroup):
+        return error.subgroup(kind) is not None
+    return isinstance(error, kind)

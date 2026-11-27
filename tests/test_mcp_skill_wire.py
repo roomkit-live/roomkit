@@ -241,7 +241,7 @@ class TestAgainstARealServer:
             verify_skill_resource(entry.resource(entry.uri), content)  # type: ignore[arg-type]
 
     async def test_an_unknown_skill_is_the_servers_error(self, server_script: str) -> None:
-        mcp_error = pytest.importorskip("mcp.shared.exceptions").McpError
+        mcp_error = pytest.importorskip("mcp.shared.exceptions").MCPError
         provider = MCPToolProvider.from_command(
             sys.executable, [server_script, "declare"], discover=False
         )

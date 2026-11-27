@@ -7,22 +7,32 @@ import copy
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+import warnings
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel
-
 from roomkit._text import bounded_text, is_label
 from roomkit.core.exceptions import ToolFailedError, UnservedToolCallError
 from roomkit.providers.ai.base import AITool, some_vendor_accepts_tool_name
+from roomkit.tools._mcp_capture import WireCapture
 from roomkit.tools._mcp_result import (
     check_structured_content,
     error_text,
     handler_result,
     text_body,
+)
+from roomkit.tools._mcp_wire import (
+    RAW_RESULT,
+    compatible_handshake,
+    host_params,
+    host_result,
+    resource_result,
+    resource_uri,
+    server_extensions,
+    server_info,
 )
 from roomkit.tools.compose import ToolHandler, ToolResult
 from roomkit.tools.context import turn_admits_alias
@@ -61,7 +71,7 @@ def _definition(tool: Any, target: str) -> AITool | None:
             target,
         )
         return None
-    parameters = tool.inputSchema if tool.inputSchema else {}
+    parameters = tool.input_schema if tool.input_schema else {}
     schema = json.dumps(parameters, ensure_ascii=False, separators=(",", ":"))
     if len(schema.encode()) > _SCHEMA_LIMIT:
         logger.warning(
@@ -101,8 +111,16 @@ _MAX_LIST_PAGES = 1000
 ends, far above any real catalogue."""
 
 
-async def _list_tools(session: Any, target: str) -> list[Any]:
+async def _list_tools(
+    read_page: Callable[[Any], Awaitable[dict[str, Any]]], target: str
+) -> list[Any]:
     """Every tool the server lists, following its cursor across pages (RFC §21.2).
+
+    *read_page* reads one page, given its parameters, as the server sent it;
+    the SDK's model of a listing checks it, no stricter than RoomKit's
+    reading. The SDK's session would check a page against the negotiated
+    revision's schema, where a tool whose ``inputSchema`` names no ``type``
+    fails the whole listing.
 
     The reading stops where it stands, with a warning naming *target*, when the
     server pages on without bringing anything new (an empty page that still
@@ -110,15 +128,15 @@ async def _list_tools(session: Any, target: str) -> list[Any]:
     :data:`_MAX_LIST_PAGES`: a server that pages forever must not hold the
     connection open forever.
     """
-    from mcp.types import PaginatedRequestParams
+    from mcp.types import ListToolsResult, PaginatedRequestParams
 
     tools: list[Any] = []
     seen: set[str] = set()
     params: Any = None
     for _ in range(_MAX_LIST_PAGES):
-        page = await session.list_tools(params=params)
+        page = ListToolsResult.model_validate(await read_page(params))
         tools.extend(page.tools)
-        cursor = getattr(page, "nextCursor", None)
+        cursor = page.next_cursor
         if not isinstance(cursor, str) or not cursor:
             return tools
         if not page.tools or cursor in seen:
@@ -131,28 +149,6 @@ async def _list_tools(session: Any, target: str) -> list[Any]:
         len(tools),
     )
     return tools
-
-
-class _RawRequest(BaseModel):
-    """A request the SDK does not model, in the shape its session sends one."""
-
-    method: str
-    params: dict[str, Any]
-
-
-def _declared_extensions(init: Any) -> dict[str, dict[str, Any]]:
-    """The extensions a server declared in its ``initialize`` result (RFC §21.2).
-
-    Read from the capabilities' wire form, so an SDK that does not model the
-    field (``mcp`` 1.x keeps it as an extra) gives it all the same.
-    """
-    capabilities = getattr(init, "capabilities", None)
-    if not isinstance(capabilities, BaseModel):
-        return {}
-    declared = capabilities.model_dump(by_alias=True, exclude_none=True).get("extensions")
-    if not isinstance(declared, dict):
-        return {}
-    return {str(key): dict(value) for key, value in declared.items() if isinstance(value, dict)}
 
 
 _DEFAULT_CALL_TIMEOUT = 30.0
@@ -197,6 +193,22 @@ _MAX_HEADER_VALUE_BYTES = 8192
 _STRUCTURED_CONTENT_MAX_BYTES = 512 * 1024
 
 
+def _empty_listing(_result: dict[str, Any]) -> dict[str, Any]:
+    """What the SDK reads in place of a ``tools/list`` page."""
+    return {"tools": []}
+
+
+def _empty_read(_result: dict[str, Any]) -> dict[str, Any]:
+    """What the SDK reads in place of a ``resources/read`` result."""
+    return {"contents": []}
+
+
+_MESSAGE_LIMIT = 4 * 1024 * 1024
+"""The largest event a Streamable HTTP response's SSE stream may carry, in
+bytes: a larger one fails the connection. roomkit-rs's bound on any MCP
+message. The SDK's default would be 1 MiB."""
+
+
 def _publish_structured_content(result: Any) -> None:
     """Expose ``CallToolResult.structuredContent`` to the tool-call context.
 
@@ -205,7 +217,7 @@ def _publish_structured_content(result: Any) -> None:
     (MCP Apps widgets) need the structured payload verbatim, so it travels
     out-of-band on the ToolCallContext when one is active.
     """
-    structured = getattr(result, "structuredContent", None)
+    structured = result.structured_content
     if not isinstance(structured, dict):
         return
     from roomkit.tools.context import _current_tool_call
@@ -341,6 +353,12 @@ class MCPToolProvider:
                 raise ValueError(f"command, args, env and cwd are for stdio, not {transport}")
             _check_endpoint(url)
             _check_headers(headers or {})
+        if transport == "sse":
+            warnings.warn(
+                "MCP's HTTP+SSE transport is deprecated since MCP 2026-07-28: use streamable_http",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._url = url
         self._transport = transport
         self._tool_filter = tool_filter
@@ -355,6 +373,7 @@ class MCPToolProvider:
         self._discover = discover
         self._label = label
         self._session: Any = None
+        self._capture: WireCapture | None = None
         self._stack: AsyncExitStack | None = None
         self._tools: list[AITool] = []
         self._tool_set: set[str] = set()
@@ -497,13 +516,18 @@ class MCPToolProvider:
         bound = asyncio.timeout(self._connect_timeout)
         try:
             async with bound:
-                read_stream, write_stream = await self._open_transport(stack)
+                capture = WireCapture()
+                read_stream, write_stream = capture.streams(*await self._open_transport(stack))
                 session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-                init = await session.initialize()
+                # The SDK runs its own handshake on a copy it can parse; the
+                # provider keeps the server's result as it sent it.
+                with capture.ticket(compatible_handshake) as handshake:
+                    await session.initialize()
+                init = handshake.result or {}
                 # Inside the try: a listing the catalogue cannot read releases
                 # what was opened, the stdio server included (RFC §21.2).
                 if self._discover:
-                    await self._discover_tools(session)
+                    await self._discover_tools(session, capture)
         except BaseException as exc:
             await stack.aclose()
             if isinstance(exc, TimeoutError) and bound.expired():
@@ -514,6 +538,7 @@ class MCPToolProvider:
 
         self._stack = stack
         self._session = session
+        self._capture = capture
         self._keep_handshake(init)
         self._connected = True
         logger.info(
@@ -524,31 +549,35 @@ class MCPToolProvider:
         )
         return self
 
-    def _keep_handshake(self, init: Any) -> None:
-        """Keep what the server's ``initialize`` result says of it (RFC §21.2)."""
-        self._server_extensions = _declared_extensions(init)
-        instructions = getattr(init, "instructions", None)
+    def _keep_handshake(self, init: dict[str, Any]) -> None:
+        """Keep what the server's ``initialize`` result says of it, as it sent
+        it (RFC §21.2)."""
+        self._server_extensions = server_extensions(init)
+        instructions = init.get("instructions")
         self._instructions = instructions if isinstance(instructions, str) else None
-        info = getattr(init, "serverInfo", None)
-        self._server_info = (
-            info.model_dump(by_alias=True, mode="json", exclude_none=True)
-            if isinstance(info, BaseModel)
-            else {}
-        )
+        self._server_info = server_info(init)
 
-    async def _discover_tools(self, session: Any) -> None:
-        """Read the server's whole tool listing into this provider.
+    async def _discover_tools(self, session: Any, capture: WireCapture) -> None:
+        """Read the server's whole tool listing into this provider, each page
+        off the wire (:func:`_list_tools`)."""
 
-        The catalogue keeps what the filter admits; the output schemas cover
-        every listed tool, as a host calls tools the model never saw (an MCP
-        App's app-only tool) and their results are checked all the same.
-        """
-        listed = await _list_tools(session, self._target)
+        async def read_page(params: Any) -> dict[str, Any]:
+            with capture.ticket(_empty_listing) as ticket:
+                await session.list_tools(params=params)
+            return ticket.result or {}
+
+        self._keep_listing(await _list_tools(read_page, self._target))
+
+    def _keep_listing(self, listed: Sequence[Any]) -> None:
+        """Keep a listing: the catalogue keeps what the filter admits; the
+        output schemas cover every listed tool, as a host calls tools the
+        model never saw (an MCP App's app-only tool) and their results are
+        checked all the same."""
         self._catalogue(listed)
         self._output_schemas = {}
         for tool in listed:
             # A name listed twice keeps its first definition, schema included.
-            if isinstance(schema := getattr(tool, "outputSchema", None), dict):
+            if isinstance(schema := tool.output_schema, dict):
                 self._output_schemas.setdefault(tool.name, schema)
 
     def _catalogue(self, listed: Sequence[Any]) -> None:
@@ -609,8 +638,10 @@ class MCPToolProvider:
 
         # The SDK leaves a client it is handed open: the stack closes it.
         http = await stack.enter_async_context(create_mcp_http_client(headers=self._headers))
-        client = streamable_http_client(self._url or "", http_client=http)
-        read, write, _session_id = await stack.enter_async_context(client)
+        client = streamable_http_client(
+            self._url or "", http_client=http, max_sse_event_size=_MESSAGE_LIMIT
+        )
+        read, write = await stack.enter_async_context(client)
         return read, write
 
     async def __aexit__(
@@ -621,6 +652,7 @@ class MCPToolProvider:
     ) -> None:
         self._connected = False
         self._session = None
+        self._capture = None
         stack, self._stack = self._stack, None
         if stack is not None:
             await stack.__aexit__(exc_type, exc_val, exc_tb)
@@ -635,6 +667,13 @@ class MCPToolProvider:
             raise RuntimeError(
                 "MCPToolProvider is not connected. Use 'async with' to connect first."
             )
+
+    def _wire(self) -> WireCapture:
+        """The capture of the live connection's streams."""
+        self._ensure_connected()
+        if self._capture is None:
+            raise RuntimeError("MCPToolProvider has no transport: connect it with 'async with'")
+        return self._capture
 
     def get_tools(self) -> list[AITool]:
         """Return discovered tools as RoomKit AITool instances."""
@@ -663,15 +702,32 @@ class MCPToolProvider:
         self._ensure_connected()
         return copy.deepcopy(self._tool_meta)
 
-    async def read_resource(self, uri: str, *, timeout: float = _DEFAULT_CALL_TIMEOUT) -> Any:
-        """The server's ``ReadResourceResult`` for *uri* (an MCP App's HTML, say).
+    async def read_resource(
+        self, uri: str, *, timeout: float = _DEFAULT_CALL_TIMEOUT
+    ) -> dict[str, Any]:
+        """The server's ``resources/read`` result for *uri* (an MCP App's HTML,
+        say), as it sent it: its ``contents`` in order, each with its ``uri``
+        and its ``text`` or ``blob``, extension fields and explicit nulls
+        included (RFC §21.2). *uri*, and each content's, is normalized
+        (``https://EXAMPLE.com/a b`` reads ``https://example.com/a%20b``).
 
         Raises:
-            McpError: The server refused the read (an unknown resource).
+            pydantic.ValidationError: *uri* is not an absolute URI, or the
+                result is not a resource read's.
+            MCPError: The server refused the read (an unknown resource).
             TimeoutError: No answer within *timeout* seconds.
         """
-        self._ensure_connected()
-        return await asyncio.wait_for(self._session.read_resource(uri), timeout=timeout)
+        capture = self._wire()
+        sent = resource_uri(uri)
+
+        async def read() -> dict[str, Any]:
+            # The SDK reads an empty read in place of the server's result,
+            # which RoomKit checks itself (roomkit-rs gives rmcp the same).
+            with capture.ticket(_empty_read) as ticket:
+                await self._session.read_resource(sent)
+            return resource_result(ticket.result or {})
+
+        return await asyncio.wait_for(read(), timeout=timeout)
 
     @property
     def server_extensions(self) -> dict[str, dict[str, Any]]:
@@ -713,20 +769,33 @@ class MCPToolProvider:
         timeout: float = _DEFAULT_CALL_TIMEOUT,
     ) -> dict[str, Any]:
         """Send *method*, a request the SDK does not model (``skills/list``,
-        say), and return its result as the server sent it (RFC §21.2).
+        say), with *params* as written, and return its result as the server
+        sent it, but for its members sent as ``null`` (RFC §21.2).
+
+        No parameters, or an empty set, go out as no ``params`` member; an
+        empty or ``None`` ``_meta`` as none (RK-21.2-046).
 
         Raises:
-            McpError: The server answered with an error.
+            pydantic.ValidationError: The ``_meta`` of *params*, or of the
+                result, is not an object.
+            MCPError: The server answered with an error.
             TimeoutError: No answer within *timeout* seconds.
         """
-        self._ensure_connected()
-        from mcp.types import Result
+        capture = self._wire()
+        from mcp.types import Request
 
-        request = _RawRequest(method=method, params=dict(params or {}))
-        result = await asyncio.wait_for(
-            self._session.send_request(request, Result), timeout=timeout
-        )
-        return result.model_dump(by_alias=True, mode="json", exclude_none=True)
+        # The SDK's own request type: its session reads the class for the
+        # headers a method needs, and a method it does not model needs none.
+        request = Request[dict[str, Any], str](method=method, params=host_params(params))
+
+        async def send() -> dict[str, Any]:
+            # Read off the wire: the SDK's ``Result`` keeps only the fields it
+            # models, and trims a later revision's from a method it knows.
+            with capture.ticket(copy.deepcopy) as ticket:
+                await self._session.send_request(request, RAW_RESULT)
+            return host_result(ticket.result or {})
+
+        return await asyncio.wait_for(send(), timeout=timeout)
 
     async def call_tool_result(
         self,
@@ -761,7 +830,7 @@ class MCPToolProvider:
         request = CallToolRequest(params=CallToolRequestParams(name=name, arguments=arguments))
         sent = self._session.send_request(request, CallToolResult)
         result = await asyncio.wait_for(sent, timeout=timeout)
-        if not result.isError:
+        if not result.is_error:
             if (schema := self._output_schemas.get(name)) is not None:
                 check_structured_content(name, schema, result)
             _publish_structured_content(result)
@@ -794,7 +863,7 @@ class MCPToolProvider:
         not have to be recognised in the body.
         """
         result = await self.call_tool_result(name, arguments, timeout=timeout)
-        if result.isError:
+        if result.is_error:
             return json.dumps({"error": error_text(result)})
         return text_body(result)
 
@@ -871,7 +940,7 @@ class MCPToolProvider:
             if server is None and self._label is not None and not self._admitted_here(lookup):
                 raise UnservedToolCallError(f"tool {name!r} is refused on this server")
             result = await self.call_tool_result(lookup, arguments, timeout=_DEFAULT_CALL_TIMEOUT)
-            if result.isError:
+            if result.is_error:
                 # The tool ran and failed (MCP ``isError``); say so instead of
                 # returning a body the loop would have to recognise, and keep
                 # the server's words: they are what the model is meant to read.

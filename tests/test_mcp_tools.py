@@ -2,50 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
-
-from roomkit.providers.ai.base import AITool
-from tests.private_module import load_private_copy
-
-
-def _build_mock_mcp() -> MagicMock:
-    """Build a mock mcp module with required submodules."""
-    mock_tool = SimpleNamespace(
-        name="test_tool",
-        description="A test tool",
-        inputSchema={"type": "object", "properties": {"q": {"type": "string"}}},
-    )
-
-    mock_session = AsyncMock()
-    mock_session.initialize = AsyncMock()
-    mock_session.list_tools = AsyncMock(return_value=SimpleNamespace(tools=[mock_tool]))
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=None)
-
-    mock_mcp = MagicMock()
-    mock_mcp.ClientSession = MagicMock(return_value=mock_session)
-
-    # streamable_http client
-    mock_streams = (AsyncMock(), AsyncMock(), "session-id")
-    mock_client_cm = AsyncMock()
-    mock_client_cm.__aenter__ = AsyncMock(return_value=mock_streams)
-    mock_client_cm.__aexit__ = AsyncMock(return_value=None)
-
-    mock_http_cm = AsyncMock()
-    mock_http_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-    mock_http_cm.__aexit__ = AsyncMock(return_value=None)
-
-    mock_streamable = MagicMock()
-    mock_streamable.create_mcp_http_client = MagicMock(return_value=mock_http_cm)
-    mock_streamable.streamable_http_client = MagicMock(return_value=mock_client_cm)
-
-    mock_sse = MagicMock()
-
-    return mock_mcp, mock_streamable, mock_sse
 
 
 class TestMCPToolProvider:
@@ -74,43 +31,3 @@ class TestMCPToolProvider:
         provider = MCPToolProvider("http://localhost:8000/mcp")
         with pytest.raises(RuntimeError, match="not connected"):
             provider.get_tools()
-
-    async def test_context_manager_discovers_tools(self) -> None:
-        mock_mcp, mock_streamable, mock_sse = _build_mock_mcp()
-        fakes = {
-            "mcp": mock_mcp,
-            "mcp.client": MagicMock(),
-            "mcp.client.streamable_http": mock_streamable,
-            "mcp.client.sse": mock_sse,
-            "mcp.types": MagicMock(),
-        }
-        with patch.dict(sys.modules, fakes):
-            mod = load_private_copy("roomkit.tools.mcp", fakes)
-
-            provider = mod.MCPToolProvider("http://localhost:8000/mcp")
-            async with provider as p:
-                tools = p.get_tools()
-                assert len(tools) == 1
-                assert isinstance(tools[0], AITool)
-                assert tools[0].name == "test_tool"
-
-    async def test_tool_filter(self) -> None:
-        mock_mcp, mock_streamable, mock_sse = _build_mock_mcp()
-        fakes = {
-            "mcp": mock_mcp,
-            "mcp.client": MagicMock(),
-            "mcp.client.streamable_http": mock_streamable,
-            "mcp.client.sse": mock_sse,
-            "mcp.types": MagicMock(),
-        }
-        with patch.dict(sys.modules, fakes):
-            mod = load_private_copy("roomkit.tools.mcp", fakes)
-
-            # Filter excludes all tools
-            provider = mod.MCPToolProvider(
-                "http://localhost:8000/mcp",
-                tool_filter=lambda n: n.startswith("xxx"),
-            )
-            async with provider as p:
-                tools = p.get_tools()
-                assert len(tools) == 0

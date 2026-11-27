@@ -26,17 +26,24 @@ from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.tools._mcp_result import check_structured_content
 from roomkit.tools.mcp import _MAX_LIST_PAGES, MCPToolProvider, _definition, _list_tools
 
-pytest.importorskip("mcp.server.fastmcp")
+pytest.importorskip("mcp.server.mcpserver")
 
 _SERVER = textwrap.dedent(
     """\
     import sys
     from pydantic import BaseModel
     from starlette.responses import PlainTextResponse
-    from mcp.server.fastmcp import FastMCP
-    from mcp.types import CallToolResult, ListToolsRequest, ListToolsResult, TextContent
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
+    from mcp.types import (
+        CallToolRequestParams,
+        CallToolResult,
+        ListToolsResult,
+        PaginatedRequestParams,
+        TextContent,
+    )
 
-    server = FastMCP("roomkit-listing-test", port=int(sys.argv[1]), log_level="WARNING")
+    server = MCPServer("roomkit-listing-test", log_level="WARNING")
     listings = 0
     PAGE = 2
     HIDDEN = {"unlisted"}
@@ -73,7 +80,7 @@ _SERVER = textwrap.dedent(
     @server.tool()
     def failed_count() -> Count:
         \"\"\"A count that fails: an error result carries no structured content.\"\"\"
-        raise ValueError("no count")
+        raise ToolError("no count")
 
 
     @server.tool()
@@ -82,21 +89,19 @@ _SERVER = textwrap.dedent(
         return "served"
 
 
-    async def list_page(req: ListToolsRequest) -> ListToolsResult:
+    async def list_page(_ctx, params: PaginatedRequestParams) -> ListToolsResult:
         global listings
         tools = [t for t in await server.list_tools() if t.name not in HIDDEN]
         tools.sort(key=lambda t: t.name)
-        if req is None:  # the server refreshing its own cache, not a client
-            return ListToolsResult(tools=tools)
         listings += 1
-        start = int(req.params.cursor) if req.params and req.params.cursor else 0
+        start = int(params.cursor) if params.cursor else 0
         end = start + PAGE
         return ListToolsResult(
             tools=tools[start:end], nextCursor=str(end) if end < len(tools) else None
         )
 
 
-    # FastMCP checks a tool's result against its own model before it leaves:
+    # MCPServer checks a tool's result against its own model before it leaves:
     # these two answers go out as raw results, as a server that does not check.
     RAW = {
         "bad_count": CallToolResult(
@@ -106,14 +111,15 @@ _SERVER = textwrap.dedent(
     }
 
 
-    async def call(name, arguments):
-        if name in RAW:
-            return RAW[name]
-        return await server.call_tool(name, arguments)
+    async def call(ctx, params: CallToolRequestParams) -> CallToolResult:
+        if params.name in RAW:
+            return RAW[params.name]
+        # The server's own handling: a raised ToolError is an error result.
+        return await server._handle_call_tool(ctx, params)
 
 
-    server._mcp_server.list_tools()(list_page)
-    server._mcp_server.call_tool(validate_input=False)(call)
+    server._lowlevel_server.add_request_handler("tools/list", PaginatedRequestParams, list_page)
+    server._lowlevel_server.add_request_handler("tools/call", CallToolRequestParams, call)
 
 
     @server.custom_route("/listings", methods=["GET"])
@@ -121,7 +127,7 @@ _SERVER = textwrap.dedent(
         return PlainTextResponse(str(listings))
 
 
-    server.run(transport="streamable-http")
+    server.run(transport="streamable-http", port=int(sys.argv[1]))
     """
 )
 
@@ -183,7 +189,7 @@ async def test_calls_never_list_again_listed_or_not(server_port: int) -> None:
         for _ in range(3):
             assert await mcp.call_tool("add", {"a": 1, "b": 2}) == "3"
             assert await mcp.call_tool("unlisted", {}) == "served"
-            assert (await mcp.call_tool_result("good_count", {})).structuredContent == {"n": 1}
+            assert (await mcp.call_tool_result("good_count", {})).structured_content == {"n": 1}
             assert await handler("unlisted", {}) == "served"
         assert await _listings(server_port) == before
 
@@ -205,7 +211,7 @@ async def test_the_handler_fails_on_a_broken_result_too(server_port: int) -> Non
 async def test_an_error_result_is_not_validated(server_port: int) -> None:
     async with _provider(server_port) as mcp:
         result = await mcp.call_tool_result("failed_count", {})
-    assert result.isError
+    assert result.is_error
 
 
 async def test_a_tool_the_filter_hides_is_still_validated(server_port: int) -> None:
@@ -225,7 +231,7 @@ async def test_without_discovery_the_connection_lists_nothing(server_port: int) 
         assert mcp.tool_meta() == {}
         assert await mcp.call_tool("add", {"a": 2, "b": 2}) == "4"
         # Nothing was listed, so nothing is validated: the broken result passes.
-        assert (await mcp.call_tool_result("bad_count", {})).structuredContent == {"n": "many"}
+        assert (await mcp.call_tool_result("bad_count", {})).structured_content == {"n": "many"}
     assert await _listings(server_port) == before
 
 
@@ -237,9 +243,9 @@ async def test_without_discovery_the_gated_handler_serves_no_name(server_port: i
 
 _STDIO_SERVER = textwrap.dedent(
     """\
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 
-    server = FastMCP("roomkit-stdio-listing-test", log_level="WARNING")
+    server = MCPServer("roomkit-stdio-listing-test", log_level="WARNING")
 
     @server.tool()
     def echo(text: str) -> str:
@@ -271,23 +277,24 @@ def test_a_remote_ref_is_refused_without_being_fetched(monkeypatch: pytest.Monke
     monkeypatch.setattr(urllib.request, "urlopen", offline)
     schema = {"$ref": "https://schemas.invalid/count.json"}
     with pytest.raises(RuntimeError, match="Invalid schema for tool count"):
-        check_structured_content("count", schema, SimpleNamespace(structuredContent={"n": 1}))
+        check_structured_content("count", schema, SimpleNamespace(structured_content={"n": 1}))
     assert fetched == []
 
 
-class _PagingSession:
+class _Pages:
     """A server whose listing pages as *cursors* says, one tool a page while
-    *tools_until* allows, then empty pages."""
+    *tools_until* allows, then empty pages: each page as it sends it."""
 
     def __init__(self, cursors: Callable[[int], str], tools_until: int) -> None:
         self.pages = 0
         self._cursors = cursors
         self._tools_until = tools_until
 
-    async def list_tools(self, *, params: Any = None) -> Any:
+    async def __call__(self, params: Any) -> dict[str, Any]:
         self.pages += 1
-        tools = [SimpleNamespace(name=f"t{self.pages}")] if self.pages <= self._tools_until else []
-        return SimpleNamespace(tools=tools, nextCursor=self._cursors(self.pages))
+        tool = {"name": f"t{self.pages}", "inputSchema": _OBJECT}
+        tools = [tool] if self.pages <= self._tools_until else []
+        return {"tools": tools, "nextCursor": self._cursors(self.pages)}
 
 
 @pytest.mark.parametrize(
@@ -305,9 +312,9 @@ async def test_a_listing_that_pages_without_end_stops(
     pages: int,
     kept: int,
 ) -> None:
-    session = _PagingSession(cursors, tools_until)
-    tools = await _list_tools(session, "http://looping.invalid/mcp")
-    assert session.pages == pages
+    read_page = _Pages(cursors, tools_until)
+    tools = await _list_tools(read_page, "http://looping.invalid/mcp")
+    assert read_page.pages == pages
     assert len(tools) == kept
     assert "http://looping.invalid/mcp pages tools/list without end" in caplog.text
 
@@ -329,7 +336,7 @@ def test_a_tag_a_server_wrote_badly_costs_it_no_tool(meta: Any, tags: list[str])
     """A server's optional metadata: what is no list of texts is left out, and
     the tool stays, as roomkit-rs reads it (HITL e0bb4999)."""
     listed = SimpleNamespace(
-        name="search", description="Search", inputSchema={"type": "object"}, meta=meta
+        name="search", description="Search", input_schema={"type": "object"}, meta=meta
     )
     definition = _definition(listed, "server")
     assert definition is not None
@@ -341,31 +348,27 @@ async def test_a_name_listed_twice_keeps_its_first_output_schema() -> None:
     with it: a result is checked against the schema the kept tool was listed
     with (RFC §21.2, RMK-1001)."""
 
-    def count(required: str) -> SimpleNamespace:
+    def count(required: str) -> mt.Tool:
         schema = {"type": "object", "properties": {required: {"type": "integer"}}}
-        return SimpleNamespace(
+        return mt.Tool(
             name="count",
             description="",
             inputSchema=_OBJECT,
-            meta=None,
             outputSchema={**schema, "required": [required]},
         )
 
     class _Session:
-        async def list_tools(self, params: Any = None) -> Any:
-            return SimpleNamespace(tools=[count("n"), count("m")], nextCursor=None)
-
         async def send_request(self, request: Any, result_type: Any) -> Any:
             return mt.CallToolResult(content=[], structuredContent={"n": 1}, isError=False)
 
     provider = MCPToolProvider("http://tools.invalid/mcp")
     provider._connected = True
     provider._session = _Session()
-    await provider._discover_tools(provider._session)
+    provider._keep_listing([count("n"), count("m")])
 
     result = await provider.call_tool_result("count", {})
 
-    assert result.structuredContent == {"n": 1}
+    assert result.structured_content == {"n": 1}
 
 
 _LONG = " ".join(["lookup"] * 700)
@@ -390,7 +393,7 @@ def test_a_listed_tool_is_bounded(
     bounded (RFC §21.2, RMK-1001): a name past 128 characters or a schema past
     32 KiB leaves the tool out, a description past 4,096 characters is cut at a
     word, as roomkit-rs bounds them."""
-    listed = SimpleNamespace(name=name, description=description, inputSchema=schema, meta=None)
+    listed = SimpleNamespace(name=name, description=description, input_schema=schema, meta=None)
 
     definition = _definition(listed, "server")
 
@@ -418,7 +421,7 @@ def test_a_listing_keeps_512_tools_each_name_once(
 
     provider._catalogue(
         [
-            SimpleNamespace(name=name, description=text, inputSchema=_OBJECT, meta=None)
+            SimpleNamespace(name=name, description=text, input_schema=_OBJECT, meta=None)
             for name, text in listed
         ]
     )

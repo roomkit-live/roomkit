@@ -19,30 +19,32 @@ from mcp.server.stdio import stdio_server
 
 
 def _server(spec: dict[str, Any]) -> Server:
-    server: Server = Server(spec.get("label") or "scripted")
     tools = spec["tools"]
 
-    @server.list_tools()
-    async def _list() -> list[types.Tool]:
+    async def _list(
+        _ctx: Any, _params: types.PaginatedRequestParams | None
+    ) -> types.ListToolsResult:
         # As the spec writes them, a name listed twice included.
-        return [
-            types.Tool(
-                name=tool["name"],
-                description=tool.get("description"),
-                inputSchema=tool.get("input_schema", {"type": "object"}),
-            )
-            for tool in tools
-        ]
+        return types.ListToolsResult(
+            tools=[
+                types.Tool(
+                    name=tool["name"],
+                    description=tool.get("description"),
+                    inputSchema=tool.get("input_schema", {"type": "object"}),
+                )
+                for tool in tools
+            ]
+        )
 
-    @server.call_tool(validate_input=False)
-    async def _call(name: str, arguments: dict[str, Any]) -> types.CallToolResult:
-        tool = next(tool for tool in tools if tool["name"] == name)
+    async def _call(_ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
+        # The low-level server applies no input schema: any arguments reach here.
+        tool = next(tool for tool in tools if tool["name"] == params.name)
         return types.CallToolResult(
             content=[types.TextContent(type="text", text=tool["returns"])],
             isError=tool.get("is_error", False),
         )
 
-    return server
+    return Server(spec.get("label") or "scripted", on_list_tools=_list, on_call_tool=_call)
 
 
 async def _serve(spec: dict[str, Any]) -> None:

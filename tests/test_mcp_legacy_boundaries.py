@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit.tools import MCPToolProvider
@@ -69,14 +69,13 @@ async def test_legacy_sse_does_not_forward_a_redirect_outside_its_origin_or_chan
             provider = MCPToolProvider(
                 peer.url, transport="sse", discover=False, connect_timeout=0.05
             )
-            with pytest.raises(ExceptionGroup if verb == "GET" else TimeoutError) as raised:
+            with pytest.raises(
+                httpx2.HTTPStatusError if verb == "GET" else TimeoutError
+            ) as raised:
                 await provider.__aenter__()
             if verb == "GET":
-                assert isinstance(raised.value, ExceptionGroup)
-                assert len(raised.value.exceptions) == 1
-                error = raised.value.exceptions[0]
-                assert isinstance(error, httpx.HTTPStatusError)
-                assert error.response.status_code == status
+                assert isinstance(raised.value, httpx2.HTTPStatusError)
+                assert raised.value.response.status_code == status
             assert not provider.connected
             assert peer.targets[0] == ("GET", "/mcp")
             if verb == "POST":

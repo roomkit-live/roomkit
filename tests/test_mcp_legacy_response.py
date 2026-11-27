@@ -10,7 +10,7 @@ from roomkit.tools import MCPToolProvider
 from tests.mcp_legacy_peer import LegacySSEPeer
 
 pytest.importorskip("mcp.client.sse")
-from httpx_sse import SSEError
+from httpx2 import SSEError
 
 
 class ResponsePeer(LegacySSEPeer):
@@ -41,8 +41,10 @@ class ResponsePeer(LegacySSEPeer):
     [
         ("text/event-stream", True),
         ("text/event-stream; charset=utf-8", True),
-        ("prefix-text/event-stream-suffix", True),
-        ("Text/Event-Stream", False),
+        # Read as a media type, as the SDK reads it: the part before ";",
+        # trimmed and lowercased, is text/event-stream (RMK-2203).
+        ("prefix-text/event-stream-suffix", False),
+        ("Text/Event-Stream", True),
         ("text/plain; text/event-stream", False),
         (None, False),
     ],

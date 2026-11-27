@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 STORE = sys.argv[1] if len(sys.argv) > 1 else "records"
-server = FastMCP(STORE, log_level="WARNING")  # logs to our stderr
+server = MCPServer(STORE, log_level="WARNING")  # logs to our stderr
 
 
 @server.tool()

@@ -9,11 +9,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from roomkit.tools import MCPToolProvider
-from tests.mcp_legacy_peer import LegacySSEPeer
+from tests.mcp_legacy_peer import LegacySSEPeer, logged
 
 sse = pytest.importorskip("mcp.client.sse")
 
@@ -53,19 +53,17 @@ async def test_legacy_default_connect_timeout_includes_the_tls_handshake() -> No
     async with stalled_tls() as (url, started):
         provider = MCPToolProvider(url, transport="sse", discover=False, connect_timeout=30)
         before = time.monotonic()
-        with pytest.raises(ExceptionGroup) as raised:
+        with pytest.raises(httpx2.ConnectTimeout):
             await asyncio.wait_for(provider.__aenter__(), 8)
         elapsed = time.monotonic() - before
         assert started.is_set()
         assert 4.5 <= elapsed < 8
-        assert len(raised.value.exceptions) == 1
-        assert isinstance(raised.value.exceptions[0], httpx.ConnectTimeout)
         assert not provider.connected
 
 
 @pytest.fixture
 def short_read(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, float | None]]:
-    original = httpx.Timeout
+    original = httpx2.Timeout
     observed: list[dict[str, float | None]] = []
 
     class ReadBudget(original):
@@ -79,7 +77,7 @@ def short_read(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, float | None]]
     signature = inspect.signature(sse.sse_client)
     assert signature.parameters["timeout"].default == 5
     assert signature.parameters["sse_read_timeout"].default == 300
-    monkeypatch.setattr(httpx, "Timeout", ReadBudget)
+    monkeypatch.setattr(httpx2, "Timeout", ReadBudget)
     return observed
 
 
@@ -110,15 +108,12 @@ async def test_legacy_read_timeout_at_opening_preserves_its_error_path_and_reent
 ) -> None:
     async with ReadPeer(stage) as peer:
         provider = MCPToolProvider(peer.url, transport="sse", discover=False, connect_timeout=0.8)
-        expected = ExceptionGroup if stage == "headers" else TimeoutError
-        with pytest.raises(expected) as raised:
+        expected = httpx2.ReadTimeout if stage == "headers" else TimeoutError
+        with pytest.raises(expected):
             await provider.__aenter__()
-        if stage == "headers":
-            assert len(raised.value.exceptions) == 1
-            assert isinstance(raised.value.exceptions[0], httpx.ReadTimeout)
-        else:
+        if stage == "endpoint":
             assert any(
-                record.exc_info and isinstance(record.exc_info[1], httpx.ReadTimeout)
+                record.exc_info and isinstance(record.exc_info[1], httpx2.ReadTimeout)
                 for record in caplog.records
             )
         assert not provider.connected
@@ -165,9 +160,7 @@ async def test_legacy_post_read_timeout_stops_the_writer_under_the_opening_bound
         assert peer.post_held.is_set()
         assert not provider.connected
         assert any(
-            record.message == "Error in post_writer"
-            and record.exc_info
-            and isinstance(record.exc_info[1], httpx.ReadTimeout)
+            record.message == "Error in post_writer" and logged(record, httpx2.ReadTimeout)
             for record in caplog.records
         )
         await asyncio.wait_for(peer.get_closed.wait(), 1)
@@ -234,7 +227,7 @@ async def test_read_budget_restarts_after_each_fragment_of_response_headers(
     short_read: list[dict[str, float | None]],
 ) -> None:
     async with PacedHeadersPeer(
-        {"replies": [{"method": "host/read", "params": {}, "result": {"ok": True}}]}
+        {"replies": [{"method": "host/read", "result": {"ok": True}}]}
     ) as peer:
         async with MCPToolProvider(
             peer.url, transport="sse", discover=False, connect_timeout=1
@@ -249,23 +242,23 @@ async def test_read_budget_restarts_after_each_fragment_of_response_headers(
 async def test_idle_connected_get_read_timeout_fails_a_pending_request_and_allows_reentry(
     short_read: list[dict[str, float | None]], caplog: pytest.LogCaptureFixture
 ) -> None:
-    from mcp.shared.exceptions import McpError
+    from mcp.shared.exceptions import MCPError
 
     peer = LegacySSEPeer(
         {
             "replies": [
-                {"method": "host/held", "params": {}, "hold": True},
-                {"method": "host/read", "params": {}, "result": {"ok": True}},
+                {"method": "host/held", "hold": True},
+                {"method": "host/read", "result": {"ok": True}},
             ]
         }
     )
     async with peer:
         provider = MCPToolProvider(peer.url, transport="sse", discover=False)
         async with provider:
-            with pytest.raises(McpError, match="Connection closed"):
+            with pytest.raises(MCPError, match="Connection closed"):
                 await provider.request("host/held", {}, timeout=1)
             assert any(
-                record.exc_info and isinstance(record.exc_info[1], httpx.ReadTimeout)
+                record.exc_info and isinstance(record.exc_info[1], httpx2.ReadTimeout)
                 for record in caplog.records
             )
         await asyncio.wait_for(peer.get_closed.wait(), 1)
@@ -300,9 +293,7 @@ class PacedBodyPeer(LegacySSEPeer):
 async def test_read_budget_restarts_between_sse_chunks_before_the_endpoint(
     short_read: list[dict[str, float | None]],
 ) -> None:
-    peer = PacedBodyPeer(
-        {"replies": [{"method": "host/read", "params": {}, "result": {"ok": True}}]}
-    )
+    peer = PacedBodyPeer({"replies": [{"method": "host/read", "result": {"ok": True}}]})
     async with peer:
         async with MCPToolProvider(
             peer.url, transport="sse", discover=False, connect_timeout=1

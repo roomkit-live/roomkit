@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import textwrap
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -122,9 +123,9 @@ _STDIO_SERVER = textwrap.dedent(
     import json
     import os
     import sys
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
 
-    server = FastMCP("constructor-test")
+    server = MCPServer("constructor-test")
 
     @server.tool()
     def probe() -> str:
@@ -151,7 +152,7 @@ _STDIO_SERVER = textwrap.dedent(
 async def test_direct_stdio_copies_arguments_and_reads_the_retained_environment_on_entry(
     tmp_path: Path, discover: bool
 ) -> None:
-    pytest.importorskip("mcp.server.fastmcp")
+    pytest.importorskip("mcp.server.mcpserver")
     script = tmp_path / "server.py"
     script.write_text(_STDIO_SERVER)
     args = [str(script), "original"]
@@ -186,7 +187,7 @@ async def test_direct_stdio_copies_arguments_and_reads_the_retained_environment_
 async def test_an_empty_environment_key_reaches_the_started_process(
     tmp_path: Path, direct: bool
 ) -> None:
-    pytest.importorskip("mcp.server.fastmcp")
+    pytest.importorskip("mcp.server.mcpserver")
     script = tmp_path / "server.py"
     script.write_text(_STDIO_SERVER)
     options = {"args": [str(script)], "env": {"": "kept"}, "connect_timeout": 5}
@@ -198,3 +199,13 @@ async def test_an_empty_environment_key_reaches_the_started_process(
     async with provider:
         assert await provider.call_tool("empty_env", {}) == "kept"
     assert not provider.connected
+
+
+def test_the_legacy_sse_transport_warns_it_is_deprecated() -> None:
+    """MCP 2026-07-28 deprecates HTTP+SSE: a provider built on it says so;
+    one on Streamable HTTP does not."""
+    with pytest.warns(DeprecationWarning, match=r"HTTP\+SSE transport is deprecated"):
+        MCPToolProvider("http://localhost:1/mcp", transport="sse")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        MCPToolProvider("http://localhost:1/mcp")

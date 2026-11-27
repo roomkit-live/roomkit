@@ -40,7 +40,7 @@ def _text_of(content: Any) -> str:
     if hasattr(content, "text"):
         return content.text
     kind = getattr(content, "type", None)
-    mime = getattr(content, "mimeType", None)
+    mime = getattr(content, "mime_type", None)
     if kind == "image":
         return _note("image", mime, "image/png").text
     if kind == "audio":
@@ -49,7 +49,7 @@ def _text_of(content: Any) -> str:
         resource = getattr(content, "resource", None)
         if hasattr(resource, "text"):
             return resource.text
-        return _note("resource", getattr(resource, "mimeType", None), "binary").text
+        return _note("resource", getattr(resource, "mime_type", None), "binary").text
     if kind == "resource_link":
         return _note("resource_link", mime).text
     return _note("other", None).text
@@ -80,7 +80,7 @@ def _model_part(content: Any) -> AITextPart | AIImagePart:
     image would fail the request.
     """
     if not hasattr(content, "text") and getattr(content, "type", None) == "image":
-        mime = getattr(content, "mimeType", None) or "image/png"
+        mime = getattr(content, "mime_type", None) or "image/png"
         url = f"data:{mime};base64,{getattr(content, 'data', '')}"
         if mime in _MODEL_IMAGE_TYPES and _decodes(url):
             return AIImagePart(url=url, mime_type=mime)
@@ -170,12 +170,12 @@ def check_structured_content(name: str, schema: dict[str, Any], result: Any) -> 
     from referencing import Registry
     from referencing.exceptions import Unresolvable
 
-    if result.structuredContent is None:
+    if result.structured_content is None:
         raise RuntimeError(
             f"Tool {name} has an output schema but did not return structured content"
         )
     try:
-        validate(result.structuredContent, schema, registry=Registry())
+        validate(result.structured_content, schema, registry=Registry())
     except ValidationError as e:
         raise RuntimeError(f"Invalid structured content returned by tool {name}: {e}") from e
     except (SchemaError, Unresolvable) as e:

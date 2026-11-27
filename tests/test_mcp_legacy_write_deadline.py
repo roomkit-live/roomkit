@@ -6,12 +6,12 @@ import asyncio
 import socket
 from typing import Any
 
-import anyio
-import httpx
+import httpx2
 import pytest
+from mcp.shared.exceptions import MCPError
 
 from roomkit.tools import MCPToolProvider
-from tests.mcp_legacy_peer import LegacySSEPeer
+from tests.mcp_legacy_peer import LegacySSEPeer, logged
 
 pytest.importorskip("mcp.client.sse")
 
@@ -42,7 +42,7 @@ class BlockedUpload(LegacySSEPeer):
 async def test_a_stalled_upload_reaches_the_sdk_write_deadline_then_closes_its_writer(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, early_response: bool
 ) -> None:
-    original = httpx.Timeout
+    original = httpx2.Timeout
     observed: list[dict[str, float | None]] = []
 
     class WriteBudget(original):
@@ -53,19 +53,18 @@ async def test_a_stalled_upload_reaches_the_sdk_write_deadline_then_closes_its_w
             assert self.read == 300
             self.write = 0.04
 
-    monkeypatch.setattr(httpx, "Timeout", WriteBudget)
+    monkeypatch.setattr(httpx2, "Timeout", WriteBudget)
     async with BlockedUpload(early_response) as peer:
         async with MCPToolProvider(peer.url, transport="sse", discover=False) as provider:
             with pytest.raises(TimeoutError):
                 await provider.call_tool("upload", {"body": "x" * (8 * 1024 * 1024)}, timeout=0.3)
             assert peer.upload_started.is_set()
             assert any(
-                record.message == "Error in post_writer"
-                and record.exc_info
-                and isinstance(record.exc_info[1], httpx.WriteTimeout)
+                record.message == "Error in post_writer" and logged(record, httpx2.WriteTimeout)
                 for record in caplog.records
             )
-            with pytest.raises(anyio.ClosedResourceError):
+            # The SDK reports the writer it lost as a closed connection.
+            with pytest.raises(MCPError, match="Connection closed"):
                 await provider.request("after/failed-write", {}, timeout=1)
         await asyncio.wait_for(peer.get_closed.wait(), 1)
         assert peer.targets == [
@@ -83,7 +82,7 @@ async def test_concurrent_callers_wait_before_http_pool_acquisition() -> None:
 
     from tests.test_mcp_legacy_writer import HeldPostPeer
 
-    limits = inspect.signature(httpx.AsyncClient).parameters["limits"].default
+    limits = inspect.signature(httpx2.AsyncClient).parameters["limits"].default
     assert limits.max_connections == 100
     async with HeldPostPeer("host") as peer:
         async with MCPToolProvider(peer.url, transport="sse", discover=False) as provider:
