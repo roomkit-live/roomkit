@@ -119,7 +119,7 @@ class WebhookMeta:
         body: Message text content.
         external_id: Provider's unique message identifier.
         timestamp: When the message was received (if available).
-        raw: Original webhook payload for debugging.
+        raw: Original webhook payload, the message's ``raw_payload`` as received.
         media_urls: List of media attachments with url and mime_type.
         direction: Message direction ("inbound" or "outbound").
         event_type: Webhook event type (e.g., "message.received").
@@ -232,6 +232,10 @@ class WebhookMeta:
             content=build_inbound_content(self.body, self.media_urls),
             external_id=self.external_id,
             idempotency_key=self.external_id,
+            # RFC §8.1: the provider's own id; RFC §5.2: the webhook's
+            # payload, the audit trail, unmodified.
+            provider_message_id=self.external_id,
+            raw_payload=self.raw,
             metadata={
                 "provider": self.provider,
                 "recipient": self.recipient,

@@ -464,6 +464,9 @@ class TestWebhookMetaDataclass:
         assert inbound.content.body == "Hello from user"
         assert inbound.external_id == "SM123"
         assert inbound.idempotency_key == "SM123"
+        # RFC §8.1: the provider's own id; RFC §5.2: its payload, unmodified.
+        assert inbound.provider_message_id == "SM123"
+        assert inbound.raw_payload == {"key": "value"}
         assert inbound.metadata["provider"] == "twilio"
         assert inbound.metadata["recipient"] == "+15145552222"
         assert inbound.metadata["timestamp"] == "2026-01-28T12:00:00+00:00"
