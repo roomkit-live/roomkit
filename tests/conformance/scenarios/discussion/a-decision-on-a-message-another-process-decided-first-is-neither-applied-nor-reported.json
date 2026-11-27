@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-decision-on-a-message-another-process-decided-first-is-neither-applied-nor-reported",
+  "title": "A decision on a message another process decided first, having taken the lease over meanwhile, is neither applied nor reported",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§19.7.5 rule 16"
+  ],
+  "requirements": [
+    "RK-19.7.5-168"
+  ],
+  "notes": "Python: test_discussion_dispatch.py test_a_decision_another_process_took_first_is_neither_applied_nor_reported; _dispatching.py, a decision applied only to a message still waiting. While the kit's policy holds its decision at its gate, the stored queue is written as a process that took the lease over and decided the message leaves it: the message no longer waits, the lease is that process's until 2100. Once the gate opens, the kit's decision (sre) queues no one and fires no ON_DISPATCH_DECISION: each message reported once is observed as a stale decision not reported a second time, the first decision being the staged write's, which reports nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "sre"
+              ]
+            ],
+            "gate": "deciding"
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decided",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "deciding"
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "r1",
+      "patch": {
+        "_speak_queue": {
+          "entries": [],
+          "dispatching": [],
+          "lease_holder": "other",
+          "lease_expires": 4102444800.0
+        }
+      }
+    },
+    {
+      "open": "deciding"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "event": {
+            "content": {
+              "body": "anyone?"
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decided": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sre": []
+    }
+  }
+}

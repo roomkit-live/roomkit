@@ -1,0 +1,823 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/past-sixteen-messages-waiting-for-a-decision-the-oldest-asks-with-no-policy",
+  "title": "At most 16 messages wait for a decision: past them, the oldest asks what it asks with no policy, undecided, so a room with no holder alive keeps a bounded queue",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§19.7.5 rule 16"
+  ],
+  "requirements": [
+    "RK-19.7.5-164"
+  ],
+  "notes": "Python: _queue.py KEPT_PENDING = 16, wait_for_decision; test_discussion_dispatch.py test_past_the_messages_that_may_wait_the_oldest_asks_its_candidates. The run's kit installs the discussion and closes: no process that installed it is alive, so nothing is decided. p2 only follows and routes 17 messages: the 17th pushes the first out, which asks every candidate, queued in their order, and 16 stay waiting. Once p2 installs the discussion it takes the lease and decides the 16, the second to the 17th, in order (an empty decision each), before the turns the first asked for.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              []
+            ]
+          }
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 1"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 2"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 3"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 4"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 5"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 6"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 7"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 8"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 9"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 10"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 11"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 12"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 13"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 14"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 15"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 16"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "message 17"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": [
+            "investigator",
+            "dev",
+            "sre"
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_speak_queue": {
+              "dispatching": [
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                },
+                {
+                  "event_id": {
+                    "$present": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p2"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "event": {
+            "content": {
+              "body": "message 2"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 3"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 4"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 5"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 6"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 7"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 8"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 9"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 10"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 11"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 12"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 13"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 14"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 15"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 16"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "message 17"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 1"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 2"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 3"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 4"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 5"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 6"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 7"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 8"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 9"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 10"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 11"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 12"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 13"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 14"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 15"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 16"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "message 17"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "investigator"
+          },
+          "content": {
+            "body": "investigator here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "body": "dev here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,291 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-posted-result-queued-when-the-discussion-ends-is-posted-once-no-turn-runs",
+  "title": "A posted result queued when the discussion ends asks no turn: it is posted once the turn under way has ended",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§19.7.5 rule 15"
+  ],
+  "requirements": [
+    "RK-19.7.5-182"
+  ],
+  "notes": "Python: _driver.py (done asked before the next turn), _room.py, _posts.py post_later. The result is queued behind sre's turn (ON_SPEAK_QUEUE reports it), then done holds: sre's turn ends as it would, the discussion is over and its queue dropped, and the result is posted all the same, after sre's answer. The uninstalled half is discussion/an-uninstall-under-the-room-lock-posts-the-waiting-result-itself's. Not observed: the wait for the floor, a result that comes back once the discussion is over while its last turn runs (test_discussion_background.py test_a_result_back_once_over_waits_for_the_last_turn), which no step can stage: nothing reports such a result waiting.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-speaking",
+              "text": "sre here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ],
+          "done": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async",
+        "reactions": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "gate": "post-queued"
+          }
+        ]
+      },
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre quick one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-speaking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "wait_for": "post-queued"
+    },
+    {
+      "open": "post-queued"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "sre",
+          "queue": [
+            "comms"
+          ]
+        }
+      }
+    },
+    {
+      "call": "discussion.done",
+      "strategy": "d",
+      "holds": true
+    },
+    {
+      "open": "sre-speaking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": true,
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@comms please go through the tickets"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "On it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@sre quick one"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": [
+                "Result of the task",
+                "go through the tickets",
+                "Findings."
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "comms": [
+        {},
+        {}
+      ]
+    }
+  }
+}

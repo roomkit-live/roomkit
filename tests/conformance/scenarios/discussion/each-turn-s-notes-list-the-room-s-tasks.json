@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/each-turn-s-notes-list-the-room-s-tasks",
+  "title": "Each turn of a discussion lists the room's tasks in its notes: an agent asked how a task goes reads it running",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§23.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-179"
+  ],
+  "notes": "Python: channels/_tasks_note.py render_tasks_note, channels/_ai_context.py (the room's background tasks for the turn's notes). The host starts comms's task, which holds in its worker; sre, asked how it goes, is handed the room's tasks in its turn's notes, the task running. Its result then comes back to comms.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "12 tickets, done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-thinking",
+              "text": "Still going."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings: 12 tickets."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "relay"
+    },
+    {
+      "call": "start_task",
+      "room_id": "r1",
+      "agent_id": "comms",
+      "task": "go through the tickets"
+    },
+    {
+      "wait_for": "working"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre how is the ticket task going?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-thinking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "open": "sre-thinking"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sre": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "@sre how is the ticket task going?",
+                  "The background tasks of this conversation.",
+                  "- helper, asked “go through the tickets”: running",
+                  "no result yet"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

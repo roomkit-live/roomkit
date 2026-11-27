@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-task-s-result-to-post-is-posted-for-an-agent-no-executor-serves",
+  "title": "A task's result to post is the agent's message whatever its presence: it is posted for an agent no executor online serves",
+  "rules": [
+    "§19.7.5 rule 7",
+    "§19.7.5 rule 19",
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-19.7.5-067"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_offline_agents.py test_a_task_s_result_is_posted_for_an_agent_gone_offline. comms is held by its declaration, its executor never started: agent_presence reads it offline. The host starts its task, which helper works: the result is posted as comms's message all the same. How a posted result takes its place in the queue is discussion/a-posted-result-is-the-agent-s-message-without-a-generation-and-asks-no-one's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings: 12 tickets."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "comms_host",
+        "hosts": [
+          "comms"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "comms",
+            "online": false,
+            "executors": []
+          },
+          {
+            "channel_id": "sre",
+            "online": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "start_task",
+      "room_id": "r1",
+      "agent_id": "comms",
+      "task": "go through the tickets"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": [
+                "Result of the task",
+                "go through the tickets",
+                "Findings: 12 tickets."
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

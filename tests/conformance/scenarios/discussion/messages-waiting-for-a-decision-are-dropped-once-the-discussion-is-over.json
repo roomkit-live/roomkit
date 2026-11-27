@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/messages-waiting-for-a-decision-are-dropped-once-the-discussion-is-over",
+  "title": "Once the discussion is over, the messages waiting for a decision are dropped with its queue: no agent answers them",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§19.7.5 rule 15"
+  ],
+  "requirements": [
+    "RK-19.7.5-162"
+  ],
+  "notes": "Python: _driver.py _next_turn (done asked first), _waiting_decision(done=True), the queue dropped as rule 15 says. The policy holds its decision on the first message while the second waits; done then holds, and the gate opens: neither message's pick takes a turn, and the stored queue holds no message waiting. Whether the policy is asked about the second before the holder finds the discussion over is not asserted: the RFC asks done before each turn is given.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "done": true,
+          "dispatch": {
+            "decisions": [
+              [
+                "dev"
+              ]
+            ],
+            "gate": "deciding"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "first: the error rate"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "deciding"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "second: the latency"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "discussion.done",
+      "strategy": "d",
+      "holds": true
+    },
+    {
+      "open": "deciding"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": true,
+          "speaking": null,
+          "queue": []
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_speak_queue": {
+              "over": true,
+              "dispatching": []
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "first: the error rate"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "second: the latency"
+          }
+        }
+      ]
+    },
+    "models": {
+      "investigator": [],
+      "dev": [],
+      "sre": []
+    }
+  }
+}

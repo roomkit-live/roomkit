@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-uninstall-detaches-no-agent-a-configuration-stored-without-them-names",
+  "title": "Uninstalling a discussion stored without the agents its installs attached detaches none of them; one stored with them detaches those",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-19.7.5-130"
+  ],
+  "notes": "Python: _discussion_config.py StoredDiscussion.attached (empty by default); core/mixins/strategies.py uninstall_strategy, the stored attached agents. The kit only follows each room's stored discussion and uninstalls it for all (discussion/a-process-that-only-follows-uninstalls-the-discussion-for-all): r1's configuration names no attached agent, r2's names a.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a",
+              "b"
+            ],
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a",
+              "b"
+            ],
+            "max_depth": 5,
+            "attached": [
+              "a"
+            ]
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r2",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "ops": {
+          "channel_id": "ops"
+        },
+        "a": {
+          "channel_id": "a"
+        },
+        "b": {
+          "channel_id": "b"
+        }
+      },
+      "r2": {
+        "ops": {
+          "channel_id": "ops"
+        },
+        "a": null,
+        "b": {
+          "channel_id": "b"
+        }
+      }
+    }
+  }
+}

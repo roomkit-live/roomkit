@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-configuration-stored-without-handles-addresses-each-agent-by-its-channel-id",
+  "title": "A discussion configuration stored without handles addresses each agent by its channel id, never by its name; one stored with handles by its handles",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 4"
+  ],
+  "requirements": [
+    "RK-19.7.5-126"
+  ],
+  "notes": "Python: _discussion_config.py StoredDiscussion.handles (None: each agent's channel id), channels/_discussion_turn.py. The kit installed nothing: it follows each room's stored discussion, routes and queues by it, and gives no turn. dev's identity names it Builder: in r1, stored without handles, @Builder names nobody and @dev names dev; in r2, stored with dev's handle Builder, @Builder names dev.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "agent": {
+          "name": "Builder"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "dev",
+              "sre"
+            ],
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "dev",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "sre",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "dev",
+              "sre"
+            ],
+            "handles": {
+              "dev": "Builder",
+              "sre": "sre"
+            },
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "dev",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "sre",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre then @dev, status?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": [
+            "sre",
+            "dev"
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@Builder status?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@Builder status?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@sre then @dev, status?"
+          },
+          "addressed_to": [
+            "sre",
+            "dev"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@Builder status?"
+          },
+          "addressed_to": null
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@Builder status?"
+          },
+          "addressed_to": [
+            "dev"
+          ]
+        }
+      ]
+    },
+    "models": {
+      "dev": [],
+      "sre": []
+    }
+  }
+}

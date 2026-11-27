@@ -1,0 +1,248 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-task-outlives-an-uninstalled-discussion-its-hand-back-an-instruction-like-any-other",
+  "title": "A task outlives the discussion uninstalled while it runs: its relayed result is an instruction like any other, which its agent, still bound, takes in the plain room",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§23.3"
+  ],
+  "requirements": [
+    "RK-19.7.5-181"
+  ],
+  "notes": "Python: core/mixins/delegation.py _hand_back_held, tasks/handback.py hand_back (an instruction addressed to the agent). comms is bound by the host, so the uninstall leaves it. Once comms said it is on it, the discussion is uninstalled while the worker holds; the result then reaches comms as an instruction it takes, as in any room, and ON_TASK_COMPLETED keeps it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "12 tickets, shared."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings: 12 tickets."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "comms",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "relay"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "wait_for": "working"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "working"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@comms please go through the tickets"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "On it."
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": "Findings: 12 tickets."
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "12 tickets, shared."
+          }
+        }
+      ]
+    },
+    "models": {
+      "comms": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "hooks": {
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "body": "Findings: 12 tickets."
+            },
+            "metadata": {
+              "task_status": "completed"
+            }
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "comms": {
+          "channel_id": "comms"
+        },
+        "sre": null
+      }
+    }
+  }
+}

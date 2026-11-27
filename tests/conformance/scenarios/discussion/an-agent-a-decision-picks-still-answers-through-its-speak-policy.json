@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-a-decision-picks-still-answers-through-its-speak-policy",
+  "title": "An agent the dispatch policy picks still answers through its speak policy: a silence keeps it quiet, and the next agent picked answers",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§19.7.5 rule 13"
+  ],
+  "requirements": [
+    "RK-19.7.5-170"
+  ],
+  "notes": "Python: _dispatching.py (a decision queues its agents as a person's message does), channels/ai.py the speak policy asked before a generation. dev's speak policy says silent: it is asked with the message and dev's model is never asked; sre, picked after it, answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "nothing to add"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "dev should not be heard"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "dev",
+                "sre"
+              ]
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "event": {
+            "content": {
+              "body": "anyone?"
+            }
+          }
+        }
+      ]
+    },
+    "speak_turns": {
+      "dev": [
+        {
+          "event": {
+            "content": {
+              "body": "anyone?"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "dev": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    }
+  }
+}

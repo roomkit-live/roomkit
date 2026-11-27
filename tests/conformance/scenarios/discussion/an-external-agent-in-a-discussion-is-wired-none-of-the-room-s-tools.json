@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-external-agent-in-a-discussion-is-wired-none-of-the-room-s-tools",
+  "title": "An external agent of a discussion keeps its own tools: its session declares the servers it was given and none of the room's tools",
+  "rules": [
+    "§19.7.5",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-190"
+  ],
+  "notes": "Python: channels/acp.py (the session's mcpServers, the channel's own). sre, a model agent of the discussion, is given the room's task tools (setup_task_tools); dev, an external agent, opens its session with its one server, and nothing of the room's. Not observed here: the voice channels, realtime channels and agents that think while they listen the paragraph also leaves out, which a room holding a discussion refuses (discussion/a-room-with-a-voice-channel-is-refused, discussion/a-room-with-a-realtime-channel-is-refused, discussion/a-room-with-an-agent-that-thinks-while-it-listens-is-refused).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "mcp_servers": [
+            {
+              "name": "workspace",
+              "command": "/usr/local/bin/workspace-tools",
+              "args": [],
+              "env": []
+            }
+          ],
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "dev here"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_task_tools",
+      "agent_id": "sre"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@dev then @sre, why 422?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@dev then @sre, why 422?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "body": "dev here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sre": [
+        {
+          "tools": {
+            "task_status": {
+              "$present": true
+            },
+            "cancel_task": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "dev": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "mcpServers": [
+              {
+                "name": "workspace",
+                "command": "/usr/local/bin/workspace-tools",
+                "args": [],
+                "env": []
+              }
+            ]
+          }
+        },
+        {
+          "method": "session/prompt"
+        }
+      ]
+    }
+  }
+}

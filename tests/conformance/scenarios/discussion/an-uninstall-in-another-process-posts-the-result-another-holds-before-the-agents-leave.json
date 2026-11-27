@@ -1,0 +1,306 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-uninstall-in-another-process-posts-the-result-another-holds-before-the-agents-leave",
+  "title": "Uninstalling in another process posts the result the process giving the turns holds, through the uninstalling process's hooks, before it detaches the agents its installs attached",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§19.7.5 rule 16"
+  ],
+  "requirements": [
+    "RK-19.7.5-183"
+  ],
+  "notes": "Python: test_discussion_background.py test_a_result_another_process_holds_is_posted_once_by_the_one_that_uninstalls (queued); _posts.py take_listed, post_all. The run's kit gives the turns and holds comms's result, queued behind sre's turn. p2, which only follows, uninstalls: it posts the result as comms's message, then detaches comms and sre, which the install attached. The setup's hooks are the run's kit's only (README, setup.processes), so p2 registers none: seen, the run's kit's before_broadcast hook on comms, never reads the post, which is how the post crossing the uninstalling process's hooks is observed, negatively. Once sre's gate opens, its answer is no message ops is delivered: its agent is detached (whether the run's kit read the uninstall before is not asserted, so the timeline is not compared). Not observed: a result that waits for the floor, or that another process is committing, when the uninstall runs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-speaking",
+              "text": "sre too late"
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async",
+        "reactions": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "gate": "post-queued"
+          }
+        ]
+      },
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      },
+      {
+        "name": "seen",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "comms"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre quick one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-speaking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "wait_for": "post-queued"
+    },
+    {
+      "open": "post-queued"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "sre",
+          "queue": [
+            "comms"
+          ]
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "sre-speaking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "type": "tool_call_start",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": "On it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": {
+                "$contains": [
+                  "Result of the task",
+                  "go through the tickets",
+                  "Findings."
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "bindings": {
+      "r1": {
+        "ops": {
+          "channel_id": "ops"
+        },
+        "comms": null,
+        "sre": null
+      }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "tool_call_start"
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "tool_call_end"
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "On it."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

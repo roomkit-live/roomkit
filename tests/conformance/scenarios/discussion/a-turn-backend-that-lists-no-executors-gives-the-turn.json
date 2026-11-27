@@ -1,0 +1,272 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-turn-backend-that-lists-no-executors-gives-the-turn",
+  "title": "A turn backend that does not list its executors tells nothing of an agent's presence: the turn of an agent no executor serves is given, not skipped, and fails",
+  "rules": [
+    "§19.7.5 rule 7",
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-19.7.5-066"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_offline_agents.py test_an_agent_the_kit_cannot_tell_is_offline_still_takes_its_turn; the kit's executor catalogue is left out (kit.executor_catalogue false). ana's executor is not started: its turn is given and fails, as a turn with no executor does, and bob's follows. Once the executor serves it, ana answers. Compare discussion/an-offline-agent-s-turn-is-skipped-not-failed, where the catalogue tells ana offline and its turn is skipped.",
+  "setup": {
+    "kit": {
+      "executor_catalogue": false
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ana",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "ana here."
+            }
+          ]
+        }
+      },
+      {
+        "id": "bob",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "bob here."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "ana_host",
+        "hosts": [
+          "ana"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "ana",
+            "bob"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      },
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "Hello everyone."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.start",
+      "executor": "ana_host"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ana and now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "Hello everyone."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "bob"
+          },
+          "content": {
+            "body": "bob here."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@ana and now?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ana"
+          },
+          "content": {
+            "body": "ana here."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1"
+        }
+      ],
+      "follow": [
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "queued",
+            "channel_ids": [
+              "ana",
+              "bob"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_given",
+            "channel_ids": [
+              "ana"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_ended",
+            "channel_ids": [
+              "ana"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_given",
+            "channel_ids": [
+              "bob"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_ended",
+            "channel_ids": [
+              "bob"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "queued",
+            "channel_ids": [
+              "ana"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_given",
+            "channel_ids": [
+              "ana"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_ended",
+            "channel_ids": [
+              "ana"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

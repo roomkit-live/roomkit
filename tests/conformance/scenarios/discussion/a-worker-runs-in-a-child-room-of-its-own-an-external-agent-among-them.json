@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-worker-runs-in-a-child-room-of-its-own-an-external-agent-among-them",
+  "title": "A task's worker runs in a child room of its own, outside the discussion: an external agent works it there, and only its result reaches the room",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§23.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-180"
+  ],
+  "notes": "Python: tasks/background.py start_background_task (kit.delegate to the agent's worker), core/mixins/delegation.py. comms's worker is coder, a scripted ACP agent: its session is opened for the task's child room, never for r1, and the result is posted as comms's message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Findings: 12 tickets."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "coder",
+      "hand_back": "post"
+    },
+    {
+      "call": "start_task",
+      "room_id": "r1",
+      "agent_id": "comms",
+      "task": "go through the tickets",
+      "expect": {
+        "result": {
+          "parent_room_id": "r1",
+          "agent_id": "coder",
+          "child_room_id": {
+            "$as": "child"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": [
+                "Result of the task",
+                "go through the tickets",
+                "Findings: 12 tickets."
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "comms": [],
+      "sre": []
+    },
+    "acp_wire": {
+      "coder": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": {
+                "$as": "child"
+              }
+            }
+          }
+        },
+        {
+          "method": "session/prompt"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-result-s-post-that-comes-second-is-a-replay-and-stores-nothing",
+  "title": "A result's post is keyed by the id the discussion took it under: once another process's uninstall posted it, the holder's own post is a replay and stores nothing",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§13.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-186"
+  ],
+  "notes": "Python: _posts.py post_held (the holder posts what it held once the queue is gone), tasks/posting.py send_posted (keyed by the result's id, a replay once posted). As discussion/an-uninstall-in-another-process-posts-the-result-another-holds-before-the-agents-leave, but comms is bound by the host, so the uninstall leaves it: the run's kit, reading the uninstall, posts the result it held again, a replay. ops is delivered the result once. Not observed: a commit under way once the lock is released, and the holder's post once its agent was detached (in discussion/an-uninstall-in-another-process-posts-the-result-another-holds-before-the-agents-leave, where comms is detached, a replay and a refusal for the detached agent store the same).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-speaking",
+              "text": "sre too late"
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "comms",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async",
+        "reactions": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "gate": "post-queued"
+          }
+        ]
+      },
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre quick one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-speaking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "wait_for": "post-queued"
+    },
+    {
+      "open": "post-queued"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "sre",
+          "queue": [
+            "comms"
+          ]
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "sre-speaking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "type": "tool_call_start",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": "On it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": {
+                "$contains": [
+                  "Result of the task",
+                  "go through the tickets",
+                  "Findings."
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "bindings": {
+      "r1": {
+        "comms": {
+          "channel_id": "comms"
+        },
+        "sre": null
+      }
+    }
+  }
+}

@@ -1,0 +1,361 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-kept-result-whose-message-was-deleted-for-good-is-posted-again",
+  "title": "A result committed but still kept, whose message was deleted for good meanwhile, is posted again by the next uninstall: its key went with the message",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§10.3",
+    "§13.4"
+  ],
+  "requirements": [
+    "RK-19.7.5-188"
+  ],
+  "notes": "Python: _posts.py post (the result taken off the list once committed), post_all; store/memory.py delete_event (the event's idempotency key removed with it). comms's result waits behind sre's turn; the store then fails its next private-state write, so the post turn commits the result and cannot take it off the list. The message is deleted for good; the uninstall posts the result again, as a new message. The fault is armed once the result is listed: no named author commits before the post, so the next private-state write is the one that takes it off the list (an author register is written for named authors only).",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-speaking",
+              "text": "sre here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async",
+        "reactions": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "gate": "post-queued"
+          }
+        ]
+      },
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre quick one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-speaking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "wait_for": "post-queued"
+    },
+    {
+      "open": "post-queued"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "sre",
+          "queue": [
+            "comms"
+          ]
+        }
+      }
+    },
+    {
+      "store_fault": "set_private_state",
+      "room_id": "r1",
+      "fail": "the store is unreachable"
+    },
+    {
+      "open": "sre-speaking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delete_event",
+      "room_id": "r1",
+      "event_id": "r1#6",
+      "expect": {
+        "result": [
+          {
+            "$present": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@comms please go through the tickets"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "On it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@sre quick one"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": [
+                "Result of the task",
+                "go through the tickets",
+                "Findings."
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "type": "tool_call_start",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "source": {
+              "channel_id": "comms"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": "On it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sre"
+            },
+            "content": {
+              "body": "sre here"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": {
+                "$contains": [
+                  "Result of the task",
+                  "go through the tickets",
+                  "Findings."
+                ]
+              }
+            }
+          },
+          {
+            "source": {
+              "channel_id": "comms"
+            },
+            "content": {
+              "body": {
+                "$contains": [
+                  "Result of the task",
+                  "go through the tickets",
+                  "Findings."
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

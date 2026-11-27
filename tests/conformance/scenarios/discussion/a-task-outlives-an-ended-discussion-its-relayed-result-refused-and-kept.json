@@ -1,0 +1,258 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-task-outlives-an-ended-discussion-its-relayed-result-refused-and-kept",
+  "title": "A task outlives the discussion that ended: its relayed result is refused as an instruction to a discussion that is over, and kept on ON_TASK_COMPLETED and the StatusBus",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§19.7.5 rule 15",
+    "§23.3"
+  ],
+  "requirements": [
+    "RK-19.7.5-181"
+  ],
+  "notes": "Python: test_discussion_background.py (the results that land once over); core/mixins/delegation.py _complete (ON_TASK_COMPLETED, the StatusBus, then the hand-back). max_turns 1: comms's turn, which starts the task, is the last, and the discussion is over once it is given. The relayed result is refused: it is never queued (ON_SPEAK_QUEUE reports comms's one turn and the end of the discussion, in an order the RFC does not fix), comms is not asked again and the room holds nothing more, while ON_TASK_COMPLETED and the bus keep the result. The uninstalled half is discussion/a-task-outlives-an-uninstalled-discussion-its-hand-back-an-instruction-like-any-other.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings: 12 tickets."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ],
+          "max_turns": 1
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      },
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "relay"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": true,
+          "speaking": null,
+          "queue": []
+        }
+      }
+    },
+    {
+      "call": "status.recent",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "helper",
+            "status": "pending",
+            "detail": "go through the tickets"
+          },
+          {
+            "agent_id": "helper",
+            "status": "completed",
+            "detail": "Findings: 12 tickets."
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@comms please go through the tickets"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "On it."
+          }
+        }
+      ]
+    },
+    "models": {
+      "comms": [
+        {},
+        {}
+      ],
+      "sre": []
+    },
+    "hooks": {
+      "follow": {
+        "$unordered": [
+          {
+            "trigger": "on_speak_queue",
+            "room_id": "r1",
+            "speak_queue": {
+              "change": "queued",
+              "channel_ids": [
+                "comms"
+              ]
+            }
+          },
+          {
+            "trigger": "on_speak_queue",
+            "room_id": "r1",
+            "speak_queue": {
+              "change": "turn_given",
+              "channel_ids": [
+                "comms"
+              ]
+            }
+          },
+          {
+            "trigger": "on_speak_queue",
+            "room_id": "r1",
+            "speak_queue": {
+              "change": "over",
+              "channel_ids": []
+            }
+          },
+          {
+            "trigger": "on_speak_queue",
+            "room_id": "r1",
+            "speak_queue": {
+              "change": "turn_ended",
+              "channel_ids": [
+                "comms"
+              ]
+            }
+          }
+        ]
+      },
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "body": "Findings: 12 tickets."
+            },
+            "metadata": {
+              "task_status": "completed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
