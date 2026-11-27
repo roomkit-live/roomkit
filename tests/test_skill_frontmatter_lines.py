@@ -111,6 +111,15 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "allowed_tools: 3",
         "allowed_tools: [on, 010, 1_000, yes, 0x1A]",
         "requires:\n  - lookup_order\n  - off",
+        "allowed_tools: issue_refund: money",
+        "allowed_tools: lookup_order, issue_refund: money",
+        "allowed_tools:\n  - issue_refund: money",
+        "allowed_tools: [lookup_order, issue_refund: money]",
+        "requires:\n  - lookup_order:\tfirst",
+        "allowed_tools: issue_refund:",
+        "allowed_tools:\n  - issue_refund:",
+        "requires: [lookup_order:, issue_refund]",
+        "allowed_tools: [lookup, 0b_]",
     ],
     ids=[
         "flow over lines",
@@ -125,6 +134,15 @@ def test_a_line_it_cannot_place_under_a_list_key_refuses_the_skill(
         "number",
         "names YAML retypes",
         "item YAML retypes",
+        "value holding a key",
+        "text holding a key",
+        "item holding a key",
+        "flow item holding a key",
+        "item holding a key after a tab",
+        "value ending in a colon",
+        "item ending in a colon",
+        "flow item ending in a colon",
+        "binary prefix YAML types",
     ],
 )
 def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, lines: str) -> None:
@@ -142,6 +160,13 @@ def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, line
         ("allowed_tools: issue_refund, void_*", "issue_refund, void_*"),
         ('allowed_tools: "issue_refund, void_*"', "issue_refund, void_*"),
         ("allowed_tools: [\"on\", '010', 3d_render, v1.2]", ["on", "010", "3d_render", "v1.2"]),
+        ('allowed_tools:\n  - "issue_refund: money"', ["issue_refund: money"]),
+        ("allowed_tools: 'issue_refund: money'", "issue_refund: money"),
+        ("allowed_tools: [issue_refund:money, 'void: *']", ["issue_refund:money", "void: *"]),
+        (
+            "allowed_tools: [yEs, 08, 1e5, 0:30, 10-20, 2026-1-5]",
+            ["yEs", "08", "1e5", "0:30", "10-20", "2026-1-5"],
+        ),
     ],
     ids=[
         "block",
@@ -151,6 +176,10 @@ def test_a_gating_key_a_line_cannot_hold_whole_refuses_the_skill(head: str, line
         "text",
         "quoted text",
         "quoted names YAML would retype",
+        "quoted item holding a colon",
+        "quoted text holding a colon",
+        "colons YAML keeps in a name",
+        "names YAML keeps as texts",
     ],
 )
 def test_each_form_reads_as_yaml_reads_it(lines: str, expected: object) -> None:
@@ -225,6 +254,8 @@ def test_a_bracketed_description_stays_whole() -> None:
         "requires: [1, 2]",
         "allowed_tools: [on, 010, 1_000, yes, 0x1A]",
         "requires:\n  - lookup_order\n  - off",
+        "allowed_tools:\n  - issue_refund: money",
+        "allowed_tools: [lookup_order, issue_refund: money]",
     ],
     ids=[
         "mapping",
@@ -236,6 +267,8 @@ def test_a_bracketed_description_stays_whole() -> None:
         "list of numbers",
         "names YAML retypes",
         "item YAML retypes",
+        "item holding a key",
+        "flow item holding a key",
     ],
 )
 def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, lines: str) -> None:
@@ -279,6 +312,12 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         "requires: '\"[ab]'\n",
         "requires:\n - lookup_order\n  - refund_x\n",
         "allowed_tools: [on, 010]\n",
+        "allowed_tools:\n  - issue_refund: money\n",
+        "allowed_tools: [issue_refund: money]\n",
+        "requires:\n  - lookup_order: first\n",
+        "allowed_tools:\n  - issue_refund:\n",
+        "allowed_tools:\n  - issue_refund:\tmoney\n",
+        "allowed_tools: [issue_refund:]\n",
     ],
     ids=[
         "nested empty key",
@@ -308,6 +347,12 @@ def test_yaml_refuses_a_gating_key_that_is_not_a_list_of_texts(tmp_path: Path, l
         "quote in a quoted text",
         "item YAML folds into the one before",
         "names YAML retypes",
+        "item holding a key",
+        "flow item holding a key",
+        "requires item holding a key",
+        "item ending in a colon",
+        "item holding a key after a tab",
+        "flow item ending in a colon",
     ],
 )
 def test_the_line_reader_never_gates_less_than_yaml(lines: str) -> None:

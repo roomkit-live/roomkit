@@ -30,6 +30,9 @@ _NOT_A_PLAIN_TEXT = re.compile(r"^(?:[\[\]{}|>&!%@`,]|[-?:](?:\s|$))")
 collection, a block scalar, an anchor, a tag, a reserved indicator, or a
 nested item, key or entry. A leading ``*`` stays text: no line defines an
 anchor for it to name, and ``*`` or ``*_admin`` is a glob a skill gates."""
+_HOLDS_A_KEY = re.compile(r":(?:[ \t]|$)")
+"""Where YAML reads a key in an unquoted text: a colon before a space, a
+tab or the text's end."""
 _RESOLVER = Resolver()
 """How the YAML reader types an unquoted scalar: the safe loaders' own."""
 _TYPED = frozenset(f"tag:yaml.org,2002:{name}" for name in ("bool", "int", "float", "timestamp"))
@@ -122,7 +125,7 @@ def _list_value(key: str, text: str) -> str | list[str]:
         return []
     if text.startswith("[") and text.endswith("]") and not any(c in text[1:-1] for c in "[]{}"):
         return [item for part in text[1:-1].split(",") for item in _list_item(key, part)]
-    if _NOT_A_PLAIN_TEXT.match(text) or _typed_by_yaml(text):
+    if _not_read_as_written(text):
         raise _unread(key)
     return _unquoted(text)
 
@@ -142,23 +145,30 @@ def _list_item(key: str, text: str | None) -> list[str]:
 
     Raises:
         SkillParseError: An item of ``allowed_tools`` or ``requires`` is YAML
-            a line cannot hold (a collection, an anchor, a tag, a nested item),
-            or a scalar YAML reads as other than a text.
+            a line cannot hold (a collection, an anchor, a tag, a nested item,
+            a key), or a scalar YAML reads as other than a text.
     """
     item = _entry_text(key, text or "")
-    if key in GATING_KEYS and (_NOT_A_PLAIN_TEXT.match(item) or _typed_by_yaml(item)):
+    if key in GATING_KEYS and _not_read_as_written(item):
         raise _unread(key)
     item = "" if item in _NULLS else _unquoted(item)
     return [item] if item else []
 
 
+def _not_read_as_written(text: str) -> bool:
+    """Whether YAML reads the gating *text* as more or other than the text
+    written: a collection, an indicator, a scalar it types, or a key. Read as
+    written, ``issue_refund: money`` would gate a name no tool has and leave
+    ``issue_refund`` open; a quoted text stays the text it quotes."""
+    if text[:1] in ("'", '"'):
+        return False
+    return bool(_NOT_A_PLAIN_TEXT.match(text) or _HOLDS_A_KEY.search(text)) or _typed_by_yaml(text)
+
+
 def _typed_by_yaml(text: str) -> bool:
     """Whether YAML reads the unquoted *text* as other than a text or no
     value: ``on`` as a boolean, ``010`` as a number, a date. Read so, it gates
-    another name than the one written, and the YAML reader refuses it; a
-    quoted text stays the text it quotes."""
-    if text[:1] in ("'", '"'):
-        return False
+    another name than the one written, and the YAML reader refuses it."""
     return _RESOLVER.resolve(ScalarNode, text, (True, False)) in _TYPED
 
 
