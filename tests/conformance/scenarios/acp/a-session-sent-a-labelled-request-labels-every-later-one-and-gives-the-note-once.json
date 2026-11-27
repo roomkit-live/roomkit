@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-session-sent-a-labelled-request-labels-every-later-one-and-gives-the-note-once",
+  "title": "An ACP agent's request is labelled as the conversation is, and a session that was sent a labelled request labels every later one, the note given once",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-365",
+    "RK-6.4-374"
+  ],
+  "notes": "Alice and Bob take part, so Alice's first request reaches the agent labelled line by line, after the note on how speakers are named. Bob then leaves (his record's status left): Alice is the one person taking part, yet the session that was sent a labelled request keeps it, and her next request is labelled too, without the note again. Room 2, where Bob had left before the session's first request, shows that Alice alone reads as a one-to-one conversation: its request is not labelled. Python: channels/_acp_context.py labelled_request, channels/acp.py _labelled_rooms.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "p-bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "p-bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "status": "left"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Fix the build.\nThen run the tests."
+      },
+      "addressed_to": [
+        "coder"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.update_participant",
+      "participant": {
+        "id": "p-bob",
+        "room_id": "room-1",
+        "channel_id": "ws",
+        "display_name": "Bob",
+        "status": "left"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "And push it."
+      },
+      "addressed_to": [
+        "coder"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "And push it."
+      },
+      "addressed_to": [
+        "coder"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "coder": [
+        {
+          "text": {
+            "$contains": [
+              "[Speaker labels from the runtime",
+              "Alice: \"Fix the build.\"\nAlice: \"Then run the tests.\""
+            ]
+          }
+        },
+        {
+          "text": "Alice: \"And push it.\""
+        },
+        {
+          "text": "And push it."
+        }
+      ]
+    }
+  }
+}

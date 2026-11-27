@@ -1,0 +1,293 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-compaction-between-rounds-leaves-a-later-overflow-its-compacted-replay",
+  "title": "A memory's compaction between two rounds answers no refusal: a call refused as too long after it is still compacted and replayed",
+  "rules": [
+    "§6.4",
+    "§20.1"
+  ],
+  "requirements": [
+    "RK-6.4-342"
+  ],
+  "notes": "Three questions and answers come first. On the fourth, the agent calls lookup; its memory then compacts the history into a summary and keeps the last four messages. The next generation is refused as too long for the model: the compaction that answers that refusal still runs, and the call is replayed once on the compacted context, which the turn completes. Python: channels/_ai_resilience.py _compact_after_round and _generate_stream_with_retry.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "text": "a3"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "memory": {
+          "compacts": [
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary."
+                }
+              ],
+              "keep": 4
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "q1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "q2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "q3"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "q4"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "compacted": {
+      "room-1": {
+        "agent": [
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "q1"
+              },
+              {
+                "role": "assistant",
+                "text": "a1"
+              },
+              {
+                "role": "user",
+                "text": "q2"
+              },
+              {
+                "role": "assistant",
+                "text": "a2"
+              },
+              {
+                "role": "user",
+                "text": "q3"
+              },
+              {
+                "role": "assistant",
+                "text": "a3"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary.\n\nq2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            },
+            {
+              "role": "assistant",
+              "text": "a3"
+            },
+            {
+              "role": "user",
+              "text": "q4"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “Summary. q2”\n[assistant]: “a2”\n[user]: “q3”"
+            },
+            {
+              "role": "assistant",
+              "text": "a3"
+            },
+            {
+              "role": "user",
+              "text": "q4"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "answer": [
+        {},
+        {},
+        {},
+        {
+          "response": {
+            "loop_end_reason": "completed",
+            "response_content": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/an-event-withheld-from-the-agent-is-not-among-what-its-policy-reads",
+  "title": "An event withheld from the agent at delivery is not among the recent events its speak policy reads",
+  "rules": [
+    "§6.4",
+    "§7.5"
+  ],
+  "requirements": [
+    "RK-6.4-133"
+  ],
+  "notes": "The side channel is bound with the visibility ws: its message reaches ws alone, never the agent, so the agent opens no turn on it and its policy is asked once, on alice's message. The recent events that policy reads hold nothing: the side message, stored before, is withheld from the agent. Python: channels/_ai_speaking.py _speak_turn (visible_events).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "side",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "side",
+      "visibility": "ws"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "side",
+        "sender_id": "someone",
+        "content": {
+          "type": "text",
+          "body": "Only ws may read this."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what do you think?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "Nova, what do you think?"
+            }
+          },
+          "recent": []
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "side"
+          },
+          "content": {
+            "body": "Only ws may read this."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "body": "Nova, what do you think?"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": []
+    }
+  }
+}

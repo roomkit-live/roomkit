@@ -1,0 +1,340 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-later-event-reads-the-thought-and-no-late-decision-is-owed-to-the-earlier-one",
+  "title": "A thought back late after a later event was given to the thinker owes the earlier event no late decision: the later event reads it",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-6.4-191"
+  ],
+  "notes": "The channel does not wait for a thought (think_wait_ms 0): the first message is decided silent before its thought comes back, which owes it a late decision should the thought come back with something to say while no later event was given to the thinker. The thinker call is held at its gate while a second message arrives, decided silent and final. Once the gate opens, the first call's thought, which has something to say, decides nothing late: the second event was given to the thinker meanwhile. The second call, held at a gate of its own, reads that thought as its previous one, and the second event is decided late on what it brings, its observer held at a gate so that the run reads it. Python: channels/_ai_thinking.py _late_decision.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "quiet",
+                "judgments": {},
+                "notes": [],
+                "final": true
+              }
+            },
+            {
+              "decision": {
+                "mode": "offer",
+                "reason": "has something to add",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "First.",
+                "want_to_say": [
+                  "A."
+                ],
+                "urgent": false
+              },
+              "gate": "think-1"
+            },
+            {
+              "thought": {
+                "text": "Second.",
+                "want_to_say": [
+                  "B."
+                ],
+                "urgent": false
+              },
+              "gate": "think-2"
+            }
+          ]
+        },
+        "think_wait_ms": 0,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "gate": "late-observed"
+          }
+        ]
+      },
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We need the price."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "think-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "And the delivery date."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "think-1"
+    },
+    {
+      "wait_for": "think-2"
+    },
+    {
+      "open": "think-2"
+    },
+    {
+      "wait_for": "late-observed"
+    },
+    {
+      "open": "late-observed"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "We need the price."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "previous": {
+            "text": "First.",
+            "want_to_say": [
+              "A."
+            ],
+            "urgent": false
+          },
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "We need the price."
+                }
+              },
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "And the delivery date."
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "And the delivery date."
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "And the delivery date."
+            }
+          },
+          "thought": {
+            "text": "Second.",
+            "want_to_say": [
+              "B."
+            ],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "event": {
+              "content": {
+                "body": "We need the price."
+              }
+            },
+            "decision": {
+              "mode": "silent",
+              "reason": "listening"
+            },
+            "late": false
+          }
+        },
+        {
+          "speak_decision": {
+            "event": {
+              "content": {
+                "body": "And the delivery date."
+              }
+            },
+            "decision": {
+              "mode": "silent",
+              "reason": "quiet",
+              "final": true
+            },
+            "late": false
+          }
+        },
+        {
+          "speak_decision": {
+            "event": {
+              "content": {
+                "body": "And the delivery date."
+              }
+            },
+            "decision": {
+              "mode": "offer",
+              "reason": "has something to add"
+            },
+            "asked_again": true,
+            "late": true,
+            "thought": {
+              "text": "Second.",
+              "want_to_say": [
+                "B."
+              ],
+              "urgent": false
+            }
+          }
+        }
+      ],
+      "answer": []
+    }
+  }
+}

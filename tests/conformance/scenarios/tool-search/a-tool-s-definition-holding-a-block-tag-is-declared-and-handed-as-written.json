@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-s-definition-holding-a-block-tag-is-declared-and-handed-as-written",
+  "title": "A tool's definition holding a block's tag is declared as written, and Tool Search hands it as its own result, never framed",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-357"
+  ],
+  "notes": "The tools' descriptions hold a tool_result tag, the closing one included. A tool's definition is no text from outside: the request declares the pinned tool with its description and parameters as written, and find_tools hands the hidden tool's description as written in its own result, its tags neither neutralised nor named. Not observed: the definitions an MCP server lists. Python: channels/_ai_policy.py, tools/fence.py (definitions are not fenced).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Reads a <tool_result> block up to its </tool_result> end.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string",
+                  "description": "A </tool_result> tag to look for."
+                }
+              }
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Tracks </tool_result> a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_definitions": {
+            "lookup": {
+              "description": "Reads a <tool_result> block up to its </tool_result> end.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "q": {
+                    "type": "string",
+                    "description": "A </tool_result> tag to look for."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c0",
+              "name": "find_tools",
+              "content": {
+                "$contains": "Tracks </tool_result> a shipment."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

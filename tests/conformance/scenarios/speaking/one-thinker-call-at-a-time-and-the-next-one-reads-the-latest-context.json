@@ -1,0 +1,204 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/one-thinker-call-at-a-time-and-the-next-one-reads-the-latest-context",
+  "title": "One thinker call runs at a time per room, and the events that arrive during it are thought about in the next one, from the latest context",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-185"
+  ],
+  "notes": "The policy leaves every message silent and the channel does not wait for a thought (think_wait_ms 0). The first thinker call is held at its gate while two more messages arrive: no second call starts meanwhile, and once the first returns, one more call thinks about both, from the context of the last, starting from the first call's thought. None is queued: two calls for three messages. The second call is held at a gate of its own, so that the run reads the calls once it started. Python: channels/_ai_thinking.py _RoomMind.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "First."
+              },
+              "gate": "think-1"
+            },
+            {
+              "thought": {
+                "text": "Latest."
+              },
+              "gate": "think-2"
+            }
+          ]
+        },
+        "think_wait_ms": 0,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "think-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "think-1"
+    },
+    {
+      "wait_for": "think-2"
+    },
+    {
+      "open": "think-2"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "One."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "previous": {
+            "text": "First.",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "One."
+                }
+              },
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "Two."
+                }
+              },
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "Three."
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

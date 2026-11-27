@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-thought-cut-short-names-the-block-it-holds",
+  "title": "A thought cut short to the notes' bound names the block it holds instead of leaving part of it open",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-355"
+  ],
+  "notes": "The thought's text (8 061 characters) holds a tool_result block and passes, by far, the bound the notes quote it within (the RFC says bounded; 600 characters in both implementations). Quoted cut short, it names the block ([tool_result]) rather than keep its opening without its closing, after which the notes would read as data. Python: tools/fence.py named_blocks, _text.py quoted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "offer",
+                "reason": "has something to add",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They pasted <tool_result>\nfigures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures figures \n</tool_result> and asked about it.",
+                "want_to_say": [
+                  "Read the figures."
+                ],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Here are the figures."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Here are the figures.",
+                  "Your impression: “They pasted [tool_result] and asked about it.”",
+                  "Read the figures."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

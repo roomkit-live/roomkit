@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-turn-a-memory-s-summary-joins-keeps-its-label-out-of-the-compaction-s-quote",
+  "title": "A labelled turn a memory's summary is joined to keeps its label out of the quote in a compaction's rendering, the summary rendered before it",
+  "rules": [
+    "§6.4",
+    "§20.1"
+  ],
+  "requirements": [
+    "RK-6.4-376"
+  ],
+  "notes": "Alice and Bob take part. The agent's memory writes a summary ahead of the history, which joins Alice's first turn. On the third question the provider refuses the context as too long, and the compaction renders the older messages: the joined turn reads the summary quoted first, then Alice's label out of the quote and her words quoted after it. Not observed: a thinker's transcript (a scripted thinker reads the context, not a transcript). The speak policy's clause is cited by speaking/the-people-a-policy-reads-are-those-taking-part-named-as-their-turns-name-them. Python: channels/_compaction.py _said.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "memory": {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary: the order was approved."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "q2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q3"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[user]: “Summary: the order was approved.”\nAlice: “q1”"
+              }
+            },
+            "$any",
+            "$any"
+          ]
+        }
+      ]
+    }
+  }
+}

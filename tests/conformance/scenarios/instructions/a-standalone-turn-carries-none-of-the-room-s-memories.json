@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-standalone-turn-carries-none-of-the-room-s-memories",
+  "title": "A standalone instruction's turn carries none of the room's memories",
+  "rules": [
+    "§6.4",
+    "§10.1.1",
+    "§20"
+  ],
+  "requirements": [
+    "RK-6.4-301"
+  ],
+  "notes": "The agent's memory gives every turn of the room what it built and the notes it retrieved. A message's turn carries both; a standalone instruction's turn reads nothing of the room: its request holds its instruction alone, and none of the memory's messages or notes. Python: channels/_instruction.py, channels/_ai_context.py (standalone).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "A summary."
+            }
+          ]
+        },
+        "memory": {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Earlier: the customer asked about a refund."
+            }
+          ],
+          "notes": [
+            "The customer prefers email."
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Can I return it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the order."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Earlier: the customer asked about a refund.",
+                  "Can I return it?",
+                  "The customer prefers email."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize the order."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-provider-that-holds-no-tool-receives-the-reopened-tools-declared-plainly",
+  "title": "A provider a router hands a generation to that cannot hold a tool receives the tools the turn reopened declared plainly, without the exchange",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-394"
+  ],
+  "notes": "The room's first turn, on the agent's model, which holds tools unseen, reveals track_shipment. The second turn starts on that model too and reopens track_shipment with an exchange before its input; the model refuses the generation, worth another try, and with no retry left the router hands it to a model that cannot hold a tool. That model receives track_shipment declared plainly, the held tools not at all, and no reopening exchange before the input. Python: channels/_ai_policy.py declared_for.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "track_shipment"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "busy",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "retry_policy": {
+          "max_retries": 0,
+          "base_delay_ms": 1
+        },
+        "router": {
+          "models": {
+            "plain": {
+              "rounds": [
+                {
+                  "text": "Again."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent"
+          ],
+          "retries": [
+            "agent/plain"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "reopened_tools": [
+            "track_shipment"
+          ],
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ]
+        }
+      ],
+      "agent/plain": [
+        {
+          "deferred_tools": [],
+          "reopened_tools": [],
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "track_shipment": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "Done."
+            },
+            {
+              "role": "user",
+              "text": "again"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

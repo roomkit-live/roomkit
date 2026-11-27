@@ -1,0 +1,335 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-silence-a-hook-leaves-is-thought-about",
+  "title": "A silence an ON_SPEAK_DECISION hook leaves, by a block or a modify, is thought about as any other",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-6.4-150"
+  ],
+  "notes": "The policy decides speak on each message. In room 1 the hook blocks, in room 2 it modifies the decision to silent: either way the agent is left silent, and the thinker is then asked about the event, as for a silence the policy decided: one call per room, under BEFORE_AI_GENERATION with the purpose thought, and no answer. The thought has nothing to say, so the policy is not asked again. Not observed: the silence a fail-closed hook's failure leaves. Python: channels/_ai_speaking.py, channels/_ai_thinking.py _think_while_listening.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "addressed",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They ask about the price.",
+                "want_to_say": [],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hand",
+        "trigger": "on_speak_decision",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "wait"
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "decision": {
+                  "mode": "silent",
+                  "reason": "hand raised",
+                  "judgments": {},
+                  "notes": [],
+                  "final": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      },
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what does it cost?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Nova, and the delivery?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "Nova, what does it cost?"
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Nova, and the delivery?"
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "room": {
+              "room": {
+                "id": "room-1"
+              }
+            },
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "Nova, what does it cost?"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "room": {
+              "room": {
+                "id": "room-2"
+              }
+            },
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "Nova, and the delivery?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "room_id": "room-1",
+            "decision": {
+              "mode": "silent",
+              "reason": "blocked by hand",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": false,
+            "late": false
+          }
+        },
+        {
+          "speak_decision": {
+            "room_id": "room-2",
+            "decision": {
+              "mode": "silent",
+              "reason": "hand raised",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": false,
+            "late": false
+          }
+        }
+      ],
+      "thoughts": [
+        {
+          "thought": {
+            "room_id": "room-1",
+            "thought": {
+              "text": "They ask about the price.",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "previous": {
+              "text": "",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "duration_ms": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "thought": {
+            "room_id": "room-2",
+            "thought": {
+              "text": "They ask about the price.",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "previous": {
+              "text": "",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "duration_ms": {
+              "$present": true
+            }
+          }
+        }
+      ],
+      "generation": [
+        {
+          "generation": {
+            "purpose": "thought"
+          }
+        },
+        {
+          "generation": {
+            "purpose": "thought"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-people-a-policy-reads-are-the-voices-of-one-microphone-when-more",
+  "title": "The people a speak policy reads are the distinct voices of the turns when they are more than the participants",
+  "rules": [
+    "§6.4",
+    "§12.2.3"
+  ],
+  "requirements": [
+    "RK-6.4-151",
+    "RK-6.4-152",
+    "RK-6.4-372"
+  ],
+  "notes": "One participant, the meeting room's microphone, takes part; its transport stamps the name of each voice it carries on its messages (metadata.sender_name: Ann, then Ben). On Ann's turn the one participant is named as its latest turn names it; on Ben's, the turns carry two distinct voices, more than the one participant, and the policy reads those voices. Python: channels/_ai_speaking.py _people.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "mic",
+            "channel_id": "ws",
+            "display_name": "Meeting room",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "mic",
+        "content": {
+          "type": "text",
+          "body": "Where are the figures?"
+        },
+        "metadata": {
+          "sender_name": "Ann"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "mic",
+        "content": {
+          "type": "text",
+          "body": "In the shared folder."
+        },
+        "metadata": {
+          "sender_name": "Ben"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "Where are the figures?"
+            }
+          },
+          "people": [
+            "Ann"
+          ],
+          "speakers": {
+            "room-1#0": "Ann"
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "In the shared folder."
+            }
+          },
+          "people": [
+            "Ann",
+            "Ben"
+          ],
+          "speakers": {
+            "room-1#0": "Ann",
+            "room-1#1": "Ben"
+          }
+        }
+      ]
+    }
+  }
+}

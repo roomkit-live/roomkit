@@ -1,0 +1,201 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-thought-on-a-context-taken-while-the-agent-answered-wants-to-say-nothing",
+  "title": "A thinker call on a context taken while one of the agent's turns ran in the room does not bring back what it would say",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-6.4-193"
+  ],
+  "notes": "The first message is decided speak, and the agent's answer is held at its model's gate. Meanwhile a second message is left silent, and the thinker thinks about a context taken while that turn ran: what it would say is that answer, not in its context yet, so the thought it leaves wants to say nothing, and the policy is not asked again. Python: channels/_ai_thinking.py _RoomMind._run (answering).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "addressed",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They want a quote.",
+                "want_to_say": [
+                  "It costs 1,200 a year."
+                ],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "It costs 1,200 a year.",
+              "gate": "answer"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what does it cost?"
+        }
+      },
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "answer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "I think it is cheap."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "asked",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "Nova, what does it cost?"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "I think it is cheap."
+            }
+          }
+        }
+      ]
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "thoughts": [
+        {
+          "thought": {
+            "thought": {
+              "text": "They want a quote.",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "previous": {
+              "text": "",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "duration_ms": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

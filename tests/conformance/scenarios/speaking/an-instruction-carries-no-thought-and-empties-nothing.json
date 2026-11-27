@@ -1,0 +1,302 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/an-instruction-carries-no-thought-and-empties-nothing",
+  "title": "An instruction's turn carries no thought and empties nothing of what the agent wanted to say",
+  "rules": [
+    "§6.4",
+    "§10.1.1"
+  ],
+  "requirements": [
+    "RK-6.4-194"
+  ],
+  "notes": "The first message is left silent; its thought, back in time, has something to say, and the policy, asked again, keeps the silence. An instruction then opens a turn of its own, submitted to no policy: its notes carry no thought, and the thought keeps what it wanted to say (no ON_THOUGHT reports an emptied thought). The next message is decided speak: its notes carry the thought, what it wanted to say included, which is then emptied. Python: channels/_ai_speaking.py, channels/_ai_thinking.py _thought_notes.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "still listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "addressed",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They need the price.",
+                "want_to_say": [
+                  "It costs 1,200 a year."
+                ],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello, everyone."
+            },
+            {
+              "text": "It costs 1,200 a year."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We need the price."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Greet the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what does it cost?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "They need the price.",
+            "want_to_say": [
+              "It costs 1,200 a year."
+            ],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Nova, what does it cost?"
+            }
+          },
+          "thought": {
+            "text": "They need the price.",
+            "want_to_say": [
+              "It costs 1,200 a year."
+            ],
+            "urgent": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "We need the price."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$lacks": "Your impression:"
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "We need the price."
+            },
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant",
+              "text": "Hello, everyone."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Nova, what does it cost?",
+                  "Your impression:",
+                  "They need the price.",
+                  "It costs 1,200 a year."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "thoughts": [
+        {
+          "thought": {
+            "thought": {
+              "text": "They need the price.",
+              "want_to_say": [
+                "It costs 1,200 a year."
+              ],
+              "urgent": false
+            },
+            "previous": {
+              "text": "",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "duration_ms": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "thought": {
+            "thought": {
+              "text": "They need the price.",
+              "want_to_say": [],
+              "urgent": false
+            },
+            "previous": {
+              "text": "They need the price.",
+              "want_to_say": [
+                "It costs 1,200 a year."
+              ],
+              "urgent": false
+            },
+            "duration_ms": null
+          }
+        }
+      ]
+    }
+  }
+}

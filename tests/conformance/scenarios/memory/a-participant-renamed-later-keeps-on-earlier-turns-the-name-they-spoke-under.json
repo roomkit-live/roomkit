@@ -1,0 +1,230 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-participant-renamed-later-keeps-on-earlier-turns-the-name-they-spoke-under",
+  "title": "A participant renamed after a turn keeps on that turn the name they spoke under, in every later prompt",
+  "rules": [
+    "§6.4",
+    "§10.1 step 12"
+  ],
+  "requirements": [
+    "RK-6.4-382"
+  ],
+  "notes": "Alice and Bob take part. Alice speaks, then the room's record of her is renamed Alicia, then Bob speaks, then she speaks again. Her first turn keeps the name it was recorded with (metadata.author) and is labelled Alice in the later prompts; her turn after the rename is labelled Alicia. Python: core/_authors.py recorded_author.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "I approve the order."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.update_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "room-1",
+        "channel_id": "ws",
+        "display_name": "Alicia",
+        "connected_via": [
+          "ws"
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Noted."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ship it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "metadata": {
+            "author": {
+              "name": "Alice",
+              "rank": 1
+            }
+          }
+        },
+        {},
+        {
+          "metadata": {
+            "author": {
+              "name": "Bob",
+              "rank": 1
+            }
+          }
+        },
+        {},
+        {
+          "metadata": {
+            "author": {
+              "name": "Alicia",
+              "rank": 1
+            }
+          }
+        },
+        {}
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"I approve the order.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Bob: \"Noted.\""
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"I approve the order.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "Bob: \"Noted.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Alicia: \"Ship it.\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

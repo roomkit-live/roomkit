@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-compaction-that-summarizes-a-referencing-result-away-declares-its-tools",
+  "title": "A compaction that summarizes away the result that referenced a held tool declares that tool from then on",
+  "rules": [
+    "§6.4",
+    "§20.1",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-391"
+  ],
+  "notes": "The room's first turn reveals track_shipment. The second turn holds it, and reopens it with an exchange before its input whose find_tools result references it. That turn calls lookup, and the agent's memory then compacts the history before the input, the exchange included, into a summary: the reference is summarized away, so the turn's next request no longer holds track_shipment but declares it. Not observed: whether a later turn keeps it declared (the room's declaration, which the text leaves to the room's first turn). Python: channels/_ai_policy.py _show_summarized_references, called from channels/_ai_resilience.py after a compaction.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "track_shipment"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "memory": {
+          "compacts": [
+            null,
+            null,
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary: the shipment was tracked."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ],
+          "reopened_tools": [
+            "track_shipment"
+          ]
+        },
+        {
+          "deferred_tools": [
+            "refund"
+          ],
+          "tools": {
+            "track_shipment": {
+              "$present": true
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary: the shipment was tracked.\n\nagain"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "compacted": {
+      "room-1": {
+        "agent": [
+          "$any",
+          "$any",
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "go"
+              },
+              {
+                "role": "assistant"
+              },
+              {
+                "role": "tool"
+              },
+              {
+                "role": "assistant"
+              },
+              {
+                "role": "tool"
+              },
+              {
+                "role": "assistant",
+                "text": "Done."
+              },
+              {
+                "role": "assistant",
+                "round": [
+                  {
+                    "call": "$any",
+                    "arguments": "$any",
+                    "metadata": {}
+                  }
+                ]
+              },
+              {
+                "role": "tool"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-standalone-turn-replays-no-instruction-an-earlier-turn-read",
+  "title": "A standalone instruction's turn replays none of the instructions the room's earlier turns read",
+  "rules": [
+    "§6.4",
+    "§10.1.1"
+  ],
+  "requirements": [
+    "RK-6.4-401"
+  ],
+  "notes": "An instruction opens a turn of the room, which reads it; a later message's turn replays it at its place. A standalone instruction's turn replays none: its request holds its own instruction alone. Not observed: the turn's footprint counting the instructions it replays (Section 20). Python: channels/_instruction.py, channels/_tool_history.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": {},
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Good day."
+            },
+            {
+              "text": "A summary."
+            },
+            {
+              "text": "Sure."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Note this."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Answer formally."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize the room."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Note this."
+            },
+            {
+              "role": "assistant",
+              "content": "Noted."
+            },
+            {
+              "role": "user",
+              "content": {
+                "$contains": "Answer formally."
+              }
+            },
+            {
+              "role": "assistant",
+              "content": "Good day."
+            },
+            {
+              "role": "assistant",
+              "content": "A summary."
+            },
+            {
+              "role": "user",
+              "content": "And now?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

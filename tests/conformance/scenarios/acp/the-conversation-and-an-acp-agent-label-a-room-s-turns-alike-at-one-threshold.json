@@ -1,0 +1,276 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/the-conversation-and-an-acp-agent-label-a-room-s-turns-alike-at-one-threshold",
+  "title": "The conversation and an ACP agent's room context and request label a room's turns alike, at one threshold",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-366"
+  ],
+  "notes": "Room 1: Alice and Bob take part, and two readers read their turns, a scripted agent's conversation and an ACP agent's room context and request: both label each turn Alice or Bob, and the ACP agent, which then answers the scripted agent's reply, reads it under the agent's channel label. Room 2: Alice alone takes part, a one-to-one conversation: the agent's conversation and the ACP agent's first request read unlabelled (the room context names her as it names every speaker); once the scripted agent's reply makes the turns the ACP agent reads hold two speakers, its request is labelled, after the note. Not observed: a line broadcast into a realtime session (realtime, Python only) and the lines a memory summarizer reads. Python: channels/_speaker.py, channels/_acp_context.py.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "p-bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p-alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "bonjour"
+      },
+      "addressed_to": [],
+      "participant_id": "p-alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "salut"
+      },
+      "addressed_to": [],
+      "participant_id": "p-bob"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "addressed_to": [
+        "coder"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and you?"
+      },
+      "addressed_to": [
+        "agent"
+      ],
+      "participant_id": "p-bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "hello"
+      },
+      "addressed_to": [],
+      "participant_id": "p-alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "addressed_to": [
+        "coder"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and you?"
+      },
+      "addressed_to": [
+        "agent"
+      ],
+      "participant_id": "p-alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "coder": [
+        {
+          "session_id": "session-1",
+          "text": {
+            "$contains": [
+              "[1] Alice: “bonjour”\n[2] Bob: “salut”\n[End of room context]\n\n[Speaker labels from the runtime",
+              "\n\nAlice: \"go\""
+            ]
+          }
+        },
+        {
+          "session_id": "session-1",
+          "text": "[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] Bob: “and you?”\n[End of room context]\n\n@agent: \"Seen 0.\""
+        },
+        {
+          "session_id": "session-2",
+          "text": "[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] Alice: “hello”\n[End of room context]\n\ngo"
+        },
+        {
+          "session_id": "session-2",
+          "text": {
+            "$contains": [
+              "[Speaker labels from the runtime",
+              "\n\n@agent: \"Seen 1.\""
+            ]
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"bonjour\""
+            },
+            {
+              "role": "user",
+              "text": "Bob: \"salut\""
+            },
+            {
+              "role": "user",
+              "text": "Alice: \"go\""
+            },
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Bob: \"and you?\"\n\n[Notes kept by the assistant's runtime"
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            },
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "user",
+              "text": "and you?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-people-a-policy-reads-are-those-taking-part-named-as-their-turns-name-them",
+  "title": "The people a speak policy reads are those taking part besides the agent, named as their turns name them",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-151",
+    "RK-6.4-152",
+    "RK-6.4-372",
+    "RK-6.4-376"
+  ],
+  "notes": "Alice, Bob and Carol take part, in that order; Carol never speaks. Bob's transport stamps the name Robert on his message (metadata.sender_name). The policy reads, on each event, the people in the order they joined, each named as the turns name them: Alice by her display name, Bob by the name his transport stamped once he spoke, Carol by the room's record; and each turn under the label the conversation gives it (speakers). RK-6.4-376 is cited for its last clause alone: a speak policy reads each turn under the conversation's label; the summary joined to a turn is another scenario's. Python: channels/_ai_speaking.py _people, channels/_speaker.py people_taking_part.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "carol",
+            "channel_id": "ws",
+            "display_name": "Carol",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Shall we order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Yes, two of them."
+        },
+        "metadata": {
+          "sender_name": "Robert"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "Shall we order?"
+            }
+          },
+          "recent": [],
+          "people": [
+            "Alice",
+            "Bob",
+            "Carol"
+          ],
+          "speakers": {
+            "room-1#0": "Alice"
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Yes, two of them."
+            }
+          },
+          "recent": [
+            {
+              "content": {
+                "body": "Shall we order?"
+              }
+            }
+          ],
+          "people": [
+            "Alice",
+            "Robert",
+            "Carol"
+          ],
+          "speakers": {
+            "room-1#0": "Alice",
+            "room-1#1": "Robert"
+          }
+        }
+      ]
+    }
+  }
+}

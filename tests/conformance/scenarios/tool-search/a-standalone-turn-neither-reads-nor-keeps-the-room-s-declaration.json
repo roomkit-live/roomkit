@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-standalone-turn-neither-reads-nor-keeps-the-room-s-declaration",
+  "title": "A standalone turn on a provider that holds tools unseen neither reads nor keeps the room's declaration, and reopens nothing",
+  "rules": [
+    "§6.4",
+    "§10.1.1",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-395"
+  ],
+  "notes": "The observer's role denies the pinned tool lookup. The room's first turn is the observer's: the room's declaration, fixed then, holds no lookup. A standalone instruction's turn, whose sender's role admits lookup, takes its own declaration: lookup shown, the rest held, nothing reopened, as if the room had none. The member's next turn reads the room's declaration, which the standalone turn left as it was: lookup is beyond it, so the turn reopens it. The pinned tool is held like any other tool the room's declaration does not show (RK-6.4-392: every other tool the turn declares is held), as both implementations hold it. Python: channels/_ai_policy.py _open_turn_declaration (standalone).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            },
+            {
+              "text": "A summary."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "lookup"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "dev",
+            "channel_id": "ws",
+            "role": "member"
+          },
+          {
+            "id": "obs",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "obs",
+        "content": {
+          "type": "text",
+          "body": "status?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup": {
+              "$absent": true
+            }
+          },
+          "reopened_tools": []
+        },
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            }
+          },
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ],
+          "reopened_tools": [],
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize the room."
+            }
+          ]
+        },
+        {
+          "reopened_tools": [
+            "lookup"
+          ]
+        }
+      ]
+    }
+  }
+}

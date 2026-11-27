@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/every-line-break-is-a-line-feed-before-the-labels-are-placed",
+  "title": "Every line break of a participant's message is made a line feed before the speaker labels are placed",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-362"
+  ],
+  "notes": "Alice and Bob take part, so their turns are labelled line by line. Alice's message breaks its lines with a carriage return, a Unicode line separator, a paragraph separator, a form feed and a carriage return then a line feed: each is made one line feed, and each of the six lines carries her label. Python: channels/_speaker.py labelled_lines.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "One\rtwo three four\ffive\r\nsix"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Alice: \"One\"\nAlice: \"two\"\nAlice: \"three\"\nAlice: \"four\"\nAlice: \"five\"\nAlice: \"six\"\n\n[Notes kept by the assistant's runtime"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

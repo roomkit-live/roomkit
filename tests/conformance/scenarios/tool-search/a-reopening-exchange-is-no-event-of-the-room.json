@@ -1,0 +1,326 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-reopening-exchange-is-no-event-of-the-room",
+  "title": "The exchange that reopens a room's held tools is the turn's context: not stored, not delivered, not counted as a tool call",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-6.4-394"
+  ],
+  "notes": "The room's first turn reveals track_shipment; the second turn reopens it with an exchange placed before its input. That exchange is no event of the room: the timeline holds no row of it, the streaming channel is delivered none, the room's subscribers read no tool event of it, and the turn's response counts no tool call. Python: channels/_tool_reopen.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "track_shipment"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "reopened_tools": [
+            "track_shipment"
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "answer": [
+        {
+          "response": {
+            "tool_calls_count": 2
+          }
+        },
+        {
+          "response": {
+            "tool_calls_count": 0
+          }
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "name": "find_tools"
+            }
+          ],
+          "round": 0
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "name": "find_tools",
+              "status": "completed"
+            }
+          ],
+          "round": 0
+        },
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "name": "track_shipment"
+            }
+          ],
+          "round": 1
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "name": "track_shipment",
+              "status": "completed"
+            }
+          ],
+          "round": 1
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "row": {
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_end"
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_end"
+            }
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "Done."
+              }
+            }
+          },
+          {
+            "text": "Again."
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "Again."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Done."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "body": "again"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Again."
+          }
+        }
+      ]
+    }
+  }
+}
