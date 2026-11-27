@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from roomkit.channels import AIRouter, RouteRequest
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.context import RoomContext
@@ -17,6 +18,7 @@ from roomkit.models.steering import Cancel, InjectMessage, UpdateSystemPrompt
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
+    AIProvider,
     AIResponse,
     AIToolCall,
     ProviderError,
@@ -455,6 +457,23 @@ async def _ended(task: asyncio.Task[LoopRun]) -> LoopRun:
     return task.result()
 
 
+class _HoldsItsRetry(AIRouter):
+    """Names *first* at a turn's start; asked for a retry, holds its choice
+    until *release* is set, then names *fallback*."""
+
+    def __init__(self, first: AIProvider, fallback: AIProvider) -> None:
+        self.first, self.fallback = first, fallback
+        self.choosing = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def route(self, request: RouteRequest) -> AIProvider | None:
+        if request.reason == "turn":
+            return self.first
+        self.choosing.set()
+        await self.release.wait()
+        return self.fallback
+
+
 class TestACancelCutsAHeldGeneration:
     """A steering ``Cancel`` aborts the current generation at once (RFC
     §21.3, RMK-1764): it does not wait for the provider's next event."""
@@ -487,6 +506,26 @@ class TestACancelCutsAHeldGeneration:
         run = await _ended(turn)
 
         assert (reached, run.reason, provider.generations) == (1, "cancelled", 1)
+
+    async def test_a_cancel_while_the_router_chooses_a_fallback_ends_the_turn(self) -> None:
+        """The router's choice of another provider, once the turn's spent its
+        retries, is part of the generation: a Cancel there ends the turn,
+        and the fallback is never asked."""
+        provider, fallback = _HeldStream(fail_first=True), _HeldStream()
+        router = _HoldsItsRetry(provider, fallback)
+        ch = AIChannel("ai1", router=router)
+        turn = asyncio.create_task(_turn(ch))
+        await asyncio.wait_for(router.choosing.wait(), 2)
+
+        reached = ch.steer(Cancel(reason="stop pressed"), room_id="r1")
+        run = await _ended(turn)
+
+        assert (reached, run.reason, provider.generations, fallback.generations) == (
+            1,
+            "cancelled",
+            1,
+            0,
+        )
 
     @pytest.mark.parametrize("first", ["cancel", "caller"])
     async def test_the_caller_s_cancellation_beside_a_cancel_reaches_the_caller(
