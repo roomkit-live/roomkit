@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-construction/from-url-sse-requests-given-up-are-cancelled",
+  "title": "legacy SSE tells the server of each request given up at its deadline",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-004",
+    "RK-21.2-046"
+  ],
+  "notes": "Public MCP construction and legacy SSE against a bounded loopback peer; the messages the client posted are observed as sent, notifications included. As Python's MCP SDK 2 does, a request given up on once its write began tells the server it is cancelled, the reason its caller's (RMK-2203). Request ids are the implementation's own: each cancellation is matched to the request it names. The 1-second deadlines leave time for local dispatch under parallel test load.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "constructor": "from_url",
+      "transport": "sse",
+      "discover": false,
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/call",
+            "params": {
+              "name": "slow",
+              "arguments": {}
+            },
+            "hold": true
+          },
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "file:///slow"
+            },
+            "hold": true
+          },
+          {
+            "method": "host/held",
+            "hold": true
+          },
+          {
+            "method": "host/read",
+            "result": {
+              "ok": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "call_tool",
+          "name": "slow",
+          "arguments": {},
+          "timeout_ms": 1000
+        },
+        {
+          "method": "read_resource",
+          "uri": "file:///slow",
+          "timeout_ms": 1000
+        },
+        {
+          "method": "request",
+          "name": "host/held",
+          "timeout_ms": 1000
+        },
+        {
+          "method": "request",
+          "name": "host/read"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "result": {
+                "ok": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/call",
+              "params": {
+                "name": "slow",
+                "arguments": {}
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "file:///slow"
+              }
+            },
+            {
+              "method": "host/held"
+            },
+            {
+              "method": "host/read"
+            }
+          ],
+          "messages": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "notifications/initialized"
+            },
+            {
+              "method": "tools/call",
+              "id": {
+                "$as": "tool"
+              }
+            },
+            {
+              "method": "notifications/cancelled",
+              "params": {
+                "requestId": {
+                  "$as": "tool"
+                },
+                "reason": "caller cancelled"
+              }
+            },
+            {
+              "method": "resources/read",
+              "id": {
+                "$as": "resource"
+              }
+            },
+            {
+              "method": "notifications/cancelled",
+              "params": {
+                "requestId": {
+                  "$as": "resource"
+                },
+                "reason": "caller cancelled"
+              }
+            },
+            {
+              "method": "host/held",
+              "id": {
+                "$as": "host"
+              }
+            },
+            {
+              "method": "notifications/cancelled",
+              "params": {
+                "requestId": {
+                  "$as": "host"
+                },
+                "reason": "caller cancelled"
+              }
+            },
+            {
+              "method": "host/read"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"result\":{\"ok\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/call\",\"params\":{\"arguments\":{},\"name\":\"slow\"}},{\"method\":\"resources/read\",\"params\":{\"uri\":\"file:///slow\"}},{\"method\":\"host/held\"},{\"method\":\"host/read\"}]"
+        }
+      }
+    }
+  ]
+}

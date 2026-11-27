@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-construction/from-url-sse-requests-given-no-time-send-nothing",
+  "title": "legacy SSE sends nothing for a request given no time",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-004",
+    "RK-21.2-046"
+  ],
+  "notes": "Public MCP construction and legacy SSE against a bounded loopback peer; the messages the client posted are observed as sent, notifications included. A deadline of zero expires before the call starts: no request goes out, hence no cancellation either, as with Python's provider (RMK-2203). The request answered last shows that nothing went out before it.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "constructor": "from_url",
+      "transport": "sse",
+      "discover": false,
+      "peer": {
+        "replies": [
+          {
+            "method": "host/read",
+            "result": {
+              "ok": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "call_tool",
+          "name": "echo",
+          "arguments": {},
+          "timeout_ms": 0
+        },
+        {
+          "method": "read_resource",
+          "uri": "file:///a",
+          "timeout_ms": 0
+        },
+        {
+          "method": "request",
+          "name": "x/read",
+          "timeout_ms": 0
+        },
+        {
+          "method": "request",
+          "name": "host/read"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "result": {
+                "ok": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "host/read"
+            }
+          ],
+          "messages": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "notifications/initialized"
+            },
+            {
+              "method": "host/read"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"result\":{\"ok\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"host/read\"}]"
+        }
+      }
+    }
+  ]
+}

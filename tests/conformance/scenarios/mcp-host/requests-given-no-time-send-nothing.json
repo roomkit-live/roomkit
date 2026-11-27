@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/requests-given-no-time-send-nothing",
+  "title": "a request given no time sends nothing",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-004",
+    "RK-21.2-046"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. A deadline of zero expires before the call starts: no request goes out, as with Python's provider on every transport (RMK-2203); the legacy SSE scenario observes that no cancellation goes out either. The request answered last shows that nothing went out before it.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "discover": false,
+      "peer": {
+        "replies": [
+          {
+            "method": "host/read",
+            "result": {
+              "ok": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "call_tool",
+          "name": "echo",
+          "arguments": {},
+          "timeout_ms": 0
+        },
+        {
+          "method": "read_resource",
+          "uri": "file:///a",
+          "timeout_ms": 0
+        },
+        {
+          "method": "request",
+          "name": "x/read",
+          "timeout_ms": 0
+        },
+        {
+          "method": "request",
+          "name": "host/read"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "result": {
+                "ok": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "host/read"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"error\":\"timeout\"},{\"result\":{\"ok\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"host/read\"}]"
+        }
+      }
+    }
+  ]
+}
