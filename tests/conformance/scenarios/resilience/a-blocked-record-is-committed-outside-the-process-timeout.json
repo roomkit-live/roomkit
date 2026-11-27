@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-blocked-record-is-committed-outside-the-process-timeout",
+  "title": "A message its hook blocks has its BLOCKED record committed once the pre-commit phase is over, outside process_timeout: a commit held past the deadline still stores the record, and the call returns the block, not a timeout",
+  "rules": [
+    "§13.6",
+    "§10.1 step 10",
+    "§10.1 step 11"
+  ],
+  "requirements": [
+    "RK-13.6-004"
+  ],
+  "notes": "process_timeout is 300 ms. deny blocks spam within it; the commit of its BLOCKED record is held once written. slow, in room-2, runs to its own deadline meanwhile, so the deadline of spam has passed too when the commit goes on: spam's call returns its block, its record stored, and no process_timeout is emitted in room-1.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 300,
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "deny",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "spam"
+            },
+            "result": {
+              "action": "block",
+              "reason": "spam"
+            }
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "slow"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-1",
+      "gate": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "spam"
+        }
+      },
+      "background": true,
+      "as": "spam"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "slow"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "late"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "spam",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "status": "blocked",
+            "content": {
+              "type": "text",
+              "body": "spam"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "spam"
+          },
+          "status": "blocked"
+        }
+      ],
+      "room-2": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "event_blocked"
+      ]
+    }
+  }
+}

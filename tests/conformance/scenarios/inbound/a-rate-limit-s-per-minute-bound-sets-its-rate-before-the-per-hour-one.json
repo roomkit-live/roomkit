@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-rate-limit-s-per-minute-bound-sets-its-rate-before-the-per-hour-one",
+  "title": "A rate limit with no per-second bound takes its per-minute bound, divided by 60, before its per-hour bound: three a minute admits one message, the next refused",
+  "rules": [
+    "§13.3",
+    "§10.1 step 1"
+  ],
+  "requirements": [
+    "RK-13.3-003"
+  ],
+  "notes": "Three a minute is 0.05 a second: the bucket holds one message and refills in twenty seconds, so the second, sent at once, is refused. Were the per-hour bound the rate, ten a second, the bucket would hold ten.",
+  "setup": {
+    "kit": {
+      "inbound_rate_limit": {
+        "max_per_minute": 3,
+        "max_per_hour": 36000
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "over"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "rate_limited",
+          "event": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "m0"
+          }
+        }
+      ]
+    }
+  }
+}

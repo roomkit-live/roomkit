@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-declared-retryable-error-is-believed-whatever-the-binding-s-retry-policy-names",
+  "title": "A refusal its provider declares retryable is retried though the binding's retry policy names none of its types, and one declared permanent is never replayed though the policy retries any error; each policy reads back with its exponential base of 2.0 by default",
+  "rules": [
+    "§13.2",
+    "§5.13"
+  ],
+  "requirements": [
+    "RK-13.2-002",
+    "RK-13.2-005"
+  ],
+  "notes": "eager's policy allows two retries and names only NoSuchError among the retryable types: its refusal, declared retryable, is tried again and succeeds. strict's policy allows two retries of any error (retryable_errors null): its refusal, declared permanent, is attempted once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "eager",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "refuse": {
+              "error": "temporary",
+              "code": "429",
+              "retryable": true
+            }
+          }
+        ]
+      },
+      {
+        "id": "strict",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "repeat": true,
+            "refuse": {
+              "error": "permanent",
+              "code": "400",
+              "retryable": false
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "eager"
+          },
+          {
+            "channel_id": "strict"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.update_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "eager",
+        "channel_type": "websocket",
+        "category": "transport",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_seconds": 0.001,
+          "max_delay_seconds": 0.001,
+          "retryable_errors": [
+            "NoSuchError"
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "retry_policy": {
+            "max_retries": 2,
+            "base_delay_seconds": 0.001,
+            "exponential_base": 2.0,
+            "max_delay_seconds": 0.001,
+            "retryable_errors": [
+              "NoSuchError"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "store.update_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "strict",
+        "channel_type": "websocket",
+        "category": "transport",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_seconds": 0.001,
+          "max_delay_seconds": 0.001,
+          "retryable_errors": null
+        }
+      },
+      "expect": {
+        "result": {
+          "retry_policy": {
+            "max_retries": 2,
+            "base_delay_seconds": 0.001,
+            "exponential_base": 2.0,
+            "max_delay_seconds": 0.001,
+            "retryable_errors": null
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "eager": {
+          "retry_policy": {
+            "max_retries": 2,
+            "base_delay_seconds": 0.001,
+            "exponential_base": 2.0,
+            "max_delay_seconds": 0.001,
+            "retryable_errors": [
+              "NoSuchError"
+            ]
+          }
+        },
+        "strict": {
+          "retry_policy": {
+            "max_retries": 2,
+            "base_delay_seconds": 0.001,
+            "exponential_base": 2.0,
+            "max_delay_seconds": 0.001,
+            "retryable_errors": null
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "eager": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ],
+        "strict": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

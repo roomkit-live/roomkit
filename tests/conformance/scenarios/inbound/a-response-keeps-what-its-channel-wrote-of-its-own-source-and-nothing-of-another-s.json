@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-response-keeps-what-its-channel-wrote-of-its-own-source-and-nothing-of-another-s",
+  "title": "A buffered answer that names the event it answers keeps that name; one that claims another channel's source is committed under its responder's, keeping nothing of the claim; one under its own source keeps the fields its channel wrote; none keeps a verification",
+  "rules": [
+    "§8.5",
+    "§5.2",
+    "§11.7"
+  ],
+  "requirements": [
+    "RK-8.5-011",
+    "RK-8.5-016",
+    "RK-8.5-017",
+    "RK-8.5-018"
+  ],
+  "notes": "The agent answers Hello three times. Named names elsewhere as the event it answers, an id no event of the run holds, read as $e1. Claimed gives the source of an inbound sms message, with its participant, provider, payload, provider message id and a verification: it is committed under ai's own source, OUTBOUND, keeping none of them. Own gives its own source a participant, a provider, a payload, a provider message id and a verification: the four are kept, the verification cleared. Not observed: the warning a claimed source is logged with, and a stream's rows.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Named"
+                },
+                "responds_to": "elsewhere"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Claimed"
+                },
+                "source": {
+                  "channel_id": "sms",
+                  "channel_type": "sms",
+                  "direction": "inbound",
+                  "participant_id": "intruder",
+                  "provider": "claimed",
+                  "raw_payload": {
+                    "from": "intruder"
+                  },
+                  "provider_message_id": "pm-claimed",
+                  "verification": "verified"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Own"
+                },
+                "source": {
+                  "participant_id": "bot-1",
+                  "provider": "scripted",
+                  "raw_payload": {
+                    "turn": 1
+                  },
+                  "provider_message_id": "pm-own",
+                  "verification": "verified"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Named"
+          },
+          "responds_to": "$e1",
+          "source": {
+            "channel_id": "ai",
+            "direction": "outbound"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Claimed"
+          },
+          "responds_to": "room-1#0",
+          "source": {
+            "channel_id": "ai",
+            "channel_type": "ai",
+            "direction": "outbound",
+            "participant_id": null,
+            "provider": null,
+            "raw_payload": {
+              "from": {
+                "$absent": true
+              }
+            },
+            "provider_message_id": null,
+            "verification": null
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Own"
+          },
+          "responds_to": "room-1#0",
+          "source": {
+            "channel_id": "ai",
+            "channel_type": "ai",
+            "direction": "outbound",
+            "participant_id": "bot-1",
+            "provider": "scripted",
+            "raw_payload": {
+              "turn": 1
+            },
+            "provider_message_id": "pm-own",
+            "verification": null
+          }
+        }
+      ]
+    }
+  }
+}

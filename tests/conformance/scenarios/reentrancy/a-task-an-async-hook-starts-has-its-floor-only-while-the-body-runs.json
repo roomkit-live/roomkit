@@ -1,0 +1,484 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-task-an-async-hook-starts-has-its-floor-only-while-the-body-runs",
+  "title": "A task an ASYNC hook's body starts, awaited or not, calls at the body's floor while the body runs; once the body is over, its calls are work of its own, at the depth of their own event and each on a budget of its own, while another hook of the same trigger still runs",
+  "rules": [
+    "§8.3",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-8.3-016",
+    "RK-8.3-018",
+    "RK-8.3-044"
+  ],
+  "notes": "max_chain_depth is 1: the cascade of go holds ten hook calls and its AFTER_BROADCAST bodies have the floor 1. While a's body waits at a-body, the task it started sends during, and the task it awaits sends awaited: both at the floor. b's body waits at a gate no step opens until its timeout cuts it; once hook_timeout is emitted, the task it started sends after eleven times, at depth 0 and each on its own budget, all delivered, while a's body still runs: on the cascade's budget of ten hook calls, they could not all be delivered. The body is over by its timeout here: a body that returned is not observed, since no step tells when an ASYNC body returns.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "a",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "spawn": {
+              "gate": "during",
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "during"
+                  },
+                  "as": "during"
+                }
+              ],
+              "after_do_gate": "during-sent"
+            },
+            "gate": "a-body",
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "awaited"
+                },
+                "own_task": true,
+                "as": "awaited"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "b",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "timeout_ms": 300,
+        "reactions": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "spawn": {
+              "gate": "late",
+              "do": [
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                },
+                {
+                  "call": "send_event",
+                  "room_id": "$room",
+                  "channel_id": "ws",
+                  "content": {
+                    "type": "text",
+                    "body": "after"
+                  },
+                  "as": "after"
+                }
+              ],
+              "after_do_gate": "after-sent"
+            },
+            "gate": "never"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "hook_timeout",
+        "reactions": [
+          {
+            "gate": "timed-out"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "wait_for": "a-body"
+    },
+    {
+      "open": "during"
+    },
+    {
+      "wait_for": "during-sent"
+    },
+    {
+      "wait_for": "timed-out"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "wait_for": "after-sent"
+    },
+    {
+      "open": "a-body"
+    },
+    {
+      "open": "during-sent"
+    },
+    {
+      "open": "after-sent"
+    },
+    {
+      "open": "timed-out"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "go"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "during"
+          },
+          "chain_depth": 1,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "after"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "awaited"
+          },
+          "chain_depth": 1,
+          "status": "delivered"
+        }
+      ]
+    },
+    "actions": {
+      "during": [
+        {
+          "result": {
+            "chain_depth": 1,
+            "blocked_by": null
+          }
+        }
+      ],
+      "after": [
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        }
+      ],
+      "awaited": [
+        {
+          "result": {
+            "chain_depth": 1,
+            "blocked_by": null
+          }
+        }
+      ]
+    }
+  }
+}

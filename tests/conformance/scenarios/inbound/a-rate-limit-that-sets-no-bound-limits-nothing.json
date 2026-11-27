@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-rate-limit-that-sets-no-bound-limits-nothing",
+  "title": "A rate limit that sets none of its bounds limits nothing: every message is admitted",
+  "rules": [
+    "§13.3",
+    "§10.1 step 1"
+  ],
+  "requirements": [
+    "RK-13.3-003"
+  ],
+  "notes": "The kit's inbound limit is given with no bound: five messages sent at once are all admitted, where any bound would hold at most its one second of messages. Not observed: a binding's limit that sets no bound, whose deliveries no step tells from unlimited ones.",
+  "setup": {
+    "kit": {
+      "inbound_rate_limit": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m3"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m4"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "m0"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "m1"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "m2"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "m3"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "m4"
+          }
+        }
+      ]
+    }
+  }
+}

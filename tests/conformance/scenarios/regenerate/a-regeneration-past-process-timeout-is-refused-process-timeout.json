@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-past-process-timeout-is-refused-process-timeout",
+  "title": "A regeneration whose wait for the room lock outlasts process_timeout returns blocked with reason process_timeout and emits process_timeout with operation regenerate",
+  "rules": [
+    "§13.6",
+    "§8.2"
+  ],
+  "requirements": [
+    "RK-13.6-027"
+  ],
+  "notes": "An install holds the room lock at a gate no step opens before the regeneration's deadline (injection/a-first-post-waits-for-the-room-lock-within-process-timeout): the regeneration waits for it past its 300 ms and is refused, the agent not asked again.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "slow",
+        "agents": [
+          "sales"
+        ],
+        "install": {
+          "gate": "installing"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "room-1",
+      "strategy": "slow",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for": "installing"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "response_events": []
+        }
+      }
+    },
+    {
+      "open": "installing"
+    },
+    {
+      "await": "install"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "First answer"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the weather?"
+            }
+          ]
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "event_processed",
+        {
+          "$unordered": [
+            {
+              "event": "room_channel_attached",
+              "channel_id": "sales"
+            },
+            {
+              "event": "process_timeout",
+              "operation": "regenerate"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

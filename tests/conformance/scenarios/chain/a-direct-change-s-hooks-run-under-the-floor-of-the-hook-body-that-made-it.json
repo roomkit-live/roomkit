@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-direct-change-s-hooks-run-under-the-floor-of-the-hook-body-that-made-it",
+  "title": "A direct change an AFTER_BROADCAST hook's body makes runs its own ON_EVENT_UPDATED hooks under that body's floor: what they send is as deep as the body's event, one deeper",
+  "rules": [
+    "§8.3",
+    "§9.2",
+    "§10.3"
+  ],
+  "requirements": [
+    "RK-8.3-015"
+  ],
+  "notes": "deep arrives at depth 2, so the body of the AFTER_BROADCAST hook it fires has the floor 3. That body updates start, at depth 0; the update's ON_EVENT_UPDATED hook sends notice from its body at the floor 3, not at its own 1. The same update made by a step, outside any body, fires the hook whose body sends plain at its own floor, one deeper than start.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "change",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "deep"
+            },
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "room-1#0",
+                "content": {
+                  "type": "text",
+                  "body": "v1"
+                },
+                "as": "change"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "v1"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "notice"
+                },
+                "as": "notice"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "v2"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "plain"
+                },
+                "as": "plain"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "start"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "deep"
+      },
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "room-1#0",
+      "content": {
+        "type": "text",
+        "body": "v2"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "v2"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "deep"
+          },
+          "chain_depth": 2
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "chain_depth": 3,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "plain"
+          },
+          "chain_depth": 1,
+          "status": "delivered"
+        }
+      ]
+    },
+    "actions": {
+      "change": [
+        {
+          "result": {
+            "content": {
+              "type": "text",
+              "body": "v1"
+            }
+          }
+        }
+      ],
+      "notice": [
+        {
+          "result": {
+            "chain_depth": 3
+          }
+        }
+      ],
+      "plain": [
+        {
+          "result": {
+            "chain_depth": 1
+          }
+        }
+      ]
+    }
+  }
+}

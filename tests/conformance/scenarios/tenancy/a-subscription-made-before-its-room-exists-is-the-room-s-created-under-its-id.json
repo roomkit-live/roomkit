@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-subscription-made-before-its-room-exists-is-the-room-s-created-under-its-id",
+  "title": "A subscription made while no room holds its id is the room's that holds the id when it reads its first event: it reads that room's typing, and nothing of another room the store holds under the id once the first is gone",
+  "rules": [
+    "§8.4",
+    "§17.2"
+  ],
+  "requirements": [
+    "RK-8.4-014"
+  ],
+  "notes": "early subscribes before later exists, and reads first's typing in the room the store holds next, its gate telling that the read happened before the room is deleted: its mark is that room's. The store deletes the room and holds another under the id, both written to the store straight, a day apart, so that no kit's room creation ends the subscriptions: early reads nothing of the new room's typing, by its mark alone, while late, subscribed to the new room, reads second's. Not observed: an event of a room gone before the subscription read it, since no step holds a subscription's read.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "subscribe_room",
+      "room_id": "later",
+      "subscriber": "early",
+      "gate": "early_read"
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "later",
+        "created_at": "2026-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "publish_typing",
+      "room_id": "later",
+      "user_id": "first"
+    },
+    {
+      "wait_for": "early_read"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "later"
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "later",
+        "created_at": "2026-01-02T00:00:00Z"
+      }
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "later",
+      "subscriber": "late",
+      "gate": "late_read"
+    },
+    {
+      "call": "publish_typing",
+      "room_id": "later",
+      "user_id": "second"
+    },
+    {
+      "wait_for": "late_read"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "early": [
+        {
+          "type": "typing_start",
+          "room_id": "later",
+          "user_id": "first"
+        }
+      ],
+      "late": [
+        {
+          "type": "typing_start",
+          "room_id": "later",
+          "user_id": "second"
+        }
+      ]
+    }
+  }
+}

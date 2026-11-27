@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-s-hook-sends-through-the-host-after-the-turn-at-its-answer-s-depth",
+  "title": "An ASYNC hook a turn executor fires on the turn's answer and that sends through the turn's host once the turn is over still sends at least as deep as that answer: its floor crosses with the verb, not with the turn",
+  "rules": [
+    "§8.3",
+    "§10.6.5",
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-8.3-019"
+  ],
+  "notes": "go arrives at depth 2, so the agent, served on an executor apart, answers at depth 3. The executor's ON_AI_RESPONSE hook waits at tell until the answer is being delivered to ws, the turn then over, and only then sends told through the host, its send's delivery waiting in the lane behind the answer's: told is at depth 3, its body's floor carried with the verb, where an event the turn's host sends outside every body is at the depth it names (host/work-a-turn-began-sends-at-the-depth-of-its-own-event). The scenario executors/an-executor-s-hook-sends-through-the-host-at-the-depth-of-the-turn-s-answer sends while the turn may still run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "answer"
+            },
+            "gate": "answered"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ],
+        "hooks": [
+          {
+            "name": "tell",
+            "trigger": "on_ai_response",
+            "execution": "async",
+            "reactions": [
+              {
+                "do": [
+                  {
+                    "call": "host.send_event",
+                    "room_id": "$room",
+                    "channel_id": "agent",
+                    "content": {
+                      "type": "text",
+                      "body": "told"
+                    },
+                    "as": "told"
+                  }
+                ],
+                "after_do_gate": "told-sent",
+                "gate": "tell"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "chain_depth": 2,
+      "background": true,
+      "as": "go"
+    },
+    {
+      "wait_for": "answered"
+    },
+    {
+      "open": "tell"
+    },
+    {
+      "open": "answered"
+    },
+    {
+      "wait_for": "told-sent"
+    },
+    {
+      "open": "told-sent"
+    },
+    {
+      "await": "go"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "go"
+            },
+            "chain_depth": 2
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "answer"
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 3
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "told"
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 3
+          }
+        ]
+      }
+    },
+    "actions": {
+      "told": [
+        {
+          "result": {
+            "chain_depth": 3
+          }
+        }
+      ]
+    }
+  }
+}

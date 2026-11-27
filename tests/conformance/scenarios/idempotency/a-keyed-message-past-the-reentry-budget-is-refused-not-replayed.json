@@ -1,0 +1,384 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-keyed-message-past-the-reentry-budget-is-refused-not-replayed",
+  "title": "A message past its cascade's reentry budget is refused first thing, with nothing stored, though its key names an event the room holds: its key is never read, so it is no replay",
+  "rules": [
+    "§13.4",
+    "§8.3",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-13.4-010"
+  ],
+  "notes": "max_chain_depth is 1: hello's cascade holds ten passes. Its delivery to loop sends ten fill messages, then hello again with its key k: past the budget, the message is refused with reentry_loop_cap and no event, where a read key would have made it a replay of hello. The same message sent once the cascade is over is the replay.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "loop",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "fill"
+                  }
+                },
+                "as": "fill"
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "hello"
+                  },
+                  "idempotency_key": "k"
+                },
+                "as": "past"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "loop"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "duplicate": true,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "fill": [
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        }
+      ],
+      "past": [
+        {
+          "result": {
+            "blocked": true,
+            "reason": "reentry_loop_cap",
+            "event": null,
+            "duplicate": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "idempotency_key": "k"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "fill"
+          }
+        }
+      ]
+    }
+  }
+}

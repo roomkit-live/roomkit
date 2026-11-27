@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-instruction-whose-latest-index-read-fails-waits-for-no-other-index",
+  "title": "An instruction's delivery set whose read of the room's latest index the store fails runs behind its own process's sets alone, waiting for no index another delivery owes, and its call reports the failure once the set has run",
+  "rules": [
+    "§13.5",
+    "§10.1.1"
+  ],
+  "requirements": [
+    "RK-13.5-034"
+  ],
+  "notes": "lost is committed to the store straight, index 1, a hole no lane runs. The instruction's set would wait for the cursor to reach it, for the default gap timeout, past the step's bound. Once the instruction's hook has decided it, the store fails the next read of the room, the latest-index read its set's place takes: the set runs at once, behind zero's set, already run, and its agent's turn reads the cursor still at 0. The agent answers nothing: an answer, at index 2, would wait for the hole. The call's completion carries the failure. Not observed: the set waiting behind sets of its own process still to run, since none is, and the room's delivery claim it runs under.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "do": [
+              {
+                "call": "store.get_room",
+                "room_id": "room-1",
+                "as": "cursor"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decide",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "gate": "decided"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "zero"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "lost"
+        }
+      },
+      "expect": {
+        "result": {
+          "index": 1
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "instruction",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "background": true
+    },
+    {
+      "wait_for": "decided"
+    },
+    {
+      "store_fault": "get_room",
+      "room_id": "room-1",
+      "fail": "the latest index could not be read"
+    },
+    {
+      "open": "decided"
+    },
+    {
+      "await": "instruction",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction"
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "instruction",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the latest index could not be read"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "cursor": [
+        {
+          "result": {
+            "latest_index": 1,
+            "delivered_index": 0
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "agent": [
+          {
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "zero"
+            }
+          },
+          {
+            "type": "instruction"
+          }
+        ]
+      }
+    }
+  }
+}

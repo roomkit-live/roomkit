@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-s-hooks-run-without-the-room-lock",
+  "title": "A streamed answer's row runs its BEFORE_BROADCAST hooks without the room lock: while a hook holds the row, another message takes the lock and commits",
+  "rules": [
+    "§13.5",
+    "§9.5.1",
+    "§4"
+  ],
+  "requirements": [
+    "RK-13.5-007"
+  ],
+  "notes": "ws takes the agent's answer as a stream. The row of the first answer is held at its BEFORE_BROADCAST hook, a hook that needs the lock; meanwhile Other is processed and committed at index 1, its delivery deferred, which it could not be if the row's hooks held the lock. The row then commits after it. Cited in part: RK-13.5-007 says the row's commit runs without the lock too, which no step observes, and which RK-9.5.1-067 contradicts (the row takes the lock for its commit).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Streamed answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "row",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Streamed answer"
+            },
+            "gate": "row-held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Ask"
+        }
+      },
+      "background": true,
+      "as": "ask"
+    },
+    {
+      "wait_for": "row-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Other"
+        }
+      },
+      "defer_delivery": true,
+      "as": "other",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "row-held"
+    },
+    {
+      "await": "ask",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "other",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Ask"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Other"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Streamed answer"
+          },
+          "index": 2,
+          "source": {
+            "channel_id": "agent"
+          },
+          "responds_to": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second answer"
+          },
+          "index": 3,
+          "source": {
+            "channel_id": "agent"
+          },
+          "responds_to": "room-1#1"
+        }
+      ]
+    }
+  }
+}

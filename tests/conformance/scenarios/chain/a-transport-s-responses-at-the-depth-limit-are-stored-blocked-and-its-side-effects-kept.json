@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-transport-s-responses-at-the-depth-limit-are-stored-blocked-and-its-side-effects-kept",
+  "title": "A transport's response events returned at the chain-depth limit are stored BLOCKED with the limit's blocked_by, and the side effects it returned with them are still collected",
+  "rules": [
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-8.3-030",
+    "RK-8.3-051"
+  ],
+  "notes": "max_chain_depth is 1, so the echo ws returns to start would be at depth 1, at the limit: it is stored BLOCKED with event_chain_depth_limit, as an agent's answer at the limit is, and never delivered, while the task ws returned with it is stored. Not observed: RK-8.3-051's first sentence, that a channel not asked has no side effects to collect.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "when": {
+              "text": "start"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "echo"
+                }
+              }
+            ],
+            "output": {
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "start"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "start"
+          },
+          "chain_depth": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "echo"
+          },
+          "source": {
+            "channel_id": "ws"
+          },
+          "chain_depth": 1,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    }
+  }
+}

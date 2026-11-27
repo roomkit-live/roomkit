@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-cursor-write-the-store-fails-leaves-the-set-as-it-ran-and-the-lane-goes-on",
+  "title": "A delivery cursor write the store fails changes nothing its set did: the set's side effects and AFTER_BROADCAST hooks run, its call is not cancelled, and the lane's next set runs at once, skipping nothing, the cursor written again from the index the store holds",
+  "rules": [
+    "§13.5",
+    "§10.1 step 15",
+    "§10.1 step 16"
+  ],
+  "requirements": [
+    "RK-13.5-029",
+    "RK-13.5-030"
+  ],
+  "notes": "The store fails the cursor write after one's set ran. The set's task is stored and its AFTER_BROADCAST hook fires; the call returns uncancelled. two, the next set, runs at once: waiting on the hole the store's cursor shows would hold it for the default gap timeout, past the step's bound. Its cursor write moves the cursor over both indexes. Not observed: the log line; for RK-13.5-030, cited in part for the set left as it ran after a store failure, another process's lane waiting on the index and skipping it past its gap timeout, since a process of setup.processes takes none of the kit's settings.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "when": {
+              "text": "one"
+            },
+            "output": {
+              "tasks": [
+                {
+                  "title": "Note one"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "advance_delivered_index",
+      "room_id": "room-1",
+      "fail": "the cursor write failed"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "two"
+            }
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Note one"
+        }
+      ]
+    },
+    "hooks": {
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "one"
+            }
+          }
+        },
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "two"
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    }
+  }
+}

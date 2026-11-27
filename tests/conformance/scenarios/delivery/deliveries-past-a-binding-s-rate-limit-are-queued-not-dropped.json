@@ -1,0 +1,224 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/deliveries-past-a-binding-s-rate-limit-are-queued-not-dropped",
+  "title": "A binding's rate limit, read back with its three bounds, holds deliveries past its bucket until a token comes: every message reaches the channel, none dropped",
+  "rules": [
+    "§13.3",
+    "§10.2"
+  ],
+  "requirements": [
+    "RK-13.3-002",
+    "RK-13.3-005"
+  ],
+  "notes": "The reader binding is limited to four deliveries a second, a bucket of four: the six messages are all delivered to it, the fifth and sixth once the bucket refilled, about a quarter of a second each. Its two other bounds read null.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "reader"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.update_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "reader",
+        "channel_type": "websocket",
+        "category": "transport",
+        "rate_limit": {
+          "max_per_second": 4
+        }
+      },
+      "expect": {
+        "result": {
+          "rate_limit": {
+            "max_per_second": 4,
+            "max_per_minute": null,
+            "max_per_hour": null
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m3"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m4"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "m5"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "reader": {
+          "rate_limit": {
+            "max_per_second": 4,
+            "max_per_minute": null,
+            "max_per_hour": null
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "reader": [
+          {
+            "content": {
+              "type": "text",
+              "body": "m0"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "m1"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "m2"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "m3"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "m4"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "m5"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

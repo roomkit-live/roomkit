@@ -1,0 +1,217 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cascade-a-failed-commit-stops-still-delivers-what-it-committed",
+  "title": "A cascade whose response commit the store fails runs no further pass, and still delivers every event it committed, the event a hook nested under the failed pass's lock included",
+  "rules": [
+    "§13.6",
+    "§9.5.1",
+    "§10.1"
+  ],
+  "requirements": [
+    "RK-13.6-017"
+  ],
+  "notes": "The agent answers hello with R1, R2 and R3. R1 is committed and delivered. R2's BEFORE_BROADCAST hook sends nested from its body, under R2's lock: nested commits ahead of R2. Then the store fails R2's commit: the cascade runs no further pass, so R3 is never committed, and nested, committed, is still delivered. The call's error is the failure.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "R1"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "R2"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "R3"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "nest",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "R2"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "nested"
+                },
+                "as": "nested"
+              }
+            ],
+            "after_do_gate": "r2"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "hello"
+    },
+    {
+      "wait_for": "r2"
+    },
+    {
+      "store_fault": "commit_event",
+      "room_id": "room-1",
+      "fail": "the commit failed"
+    },
+    {
+      "open": "r2"
+    },
+    {
+      "await": "hello",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          },
+          "error": {
+            "$contains": "the commit failed"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "R1"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "nested"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "R1"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "nested"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "R1"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "nested": [
+        {
+          "result": {
+            "content": {
+              "type": "text",
+              "body": "nested"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

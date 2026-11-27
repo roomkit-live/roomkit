@@ -1,0 +1,319 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-response-and-the-events-hooks-inject-take-fresh-ids-whatever-id-they-carry",
+  "title": "A response, an event a hook injects and a direct injection each take a fresh id as their pass begins, and the hooks read each event under the id it is committed with, whatever id its channel or its hook gave it",
+  "rules": [
+    "§8.1",
+    "§8.5",
+    "§9.4",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-8.1-012"
+  ],
+  "notes": "The parse gives the message the id dup, the agent's answer reuses it, and the hook injects one event under the id of the answer it runs for ($event) and two under the constant fixed. Each is stored under a fresh id: no update finds dup or fixed, and the timeline holds six events of six indexes. The hook reads every event at its BEFORE_BROADCAST under the id it is committed with. Not observed: what identity resolution reads, since the scripted resolver records no event id.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "parsed": {
+              "id": "dup"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "respond": [
+              {
+                "id": "dup",
+                "content": {
+                  "type": "text",
+                  "body": "Reply"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Reply"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "id": "$event",
+                    "content": {
+                      "type": "text",
+                      "body": "Echo"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                },
+                {
+                  "event": {
+                    "id": "fixed",
+                    "content": {
+                      "type": "text",
+                      "body": "First notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                },
+                {
+                  "event": {
+                    "id": "fixed",
+                    "content": {
+                      "type": "text",
+                      "body": "Second notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Injected"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#5"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "dup",
+      "metadata": {
+        "probe": true
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "fixed",
+      "metadata": {
+        "probe": true
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#1",
+          "content": {
+            "type": "text",
+            "body": "Reply"
+          },
+          "responds_to": "room-1#0",
+          "source": {
+            "channel_id": "ai"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#2",
+          "content": {
+            "type": "text",
+            "body": "Echo"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#3",
+          "content": {
+            "type": "text",
+            "body": "First notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#4",
+          "content": {
+            "type": "text",
+            "body": "Second notice"
+          },
+          "status": "delivered"
+        },
+        {
+          "id": "room-1#5",
+          "content": {
+            "type": "text",
+            "body": "Injected"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#1",
+            "content": {
+              "type": "text",
+              "body": "Reply"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#2",
+            "content": {
+              "type": "text",
+              "body": "Echo"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#3",
+            "content": {
+              "type": "text",
+              "body": "First notice"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#4",
+            "content": {
+              "type": "text",
+              "body": "Second notice"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#5",
+            "content": {
+              "type": "text",
+              "body": "Injected"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

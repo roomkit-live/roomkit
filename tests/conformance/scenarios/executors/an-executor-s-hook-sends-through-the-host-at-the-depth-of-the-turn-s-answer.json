@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-s-hook-sends-through-the-host-at-the-depth-of-the-turn-s-answer",
+  "title": "An ASYNC hook a turn executor fires on the turn's answer sends through the turn's host at least as deep as that answer: its floor crosses with the verb",
+  "rules": [
+    "§8.3",
+    "§10.6.5",
+    "§10.6.6"
+  ],
+  "requirements": [
+    "RK-8.3-019"
+  ],
+  "notes": "go arrives at depth 2, so the agent, served on an executor apart, answers at depth 3, and the executor's ON_AI_RESPONSE hook sends told through the host from its body: told is at depth 3, not at the 0 of an event that names no depth. Its source is the agent, which does not answer itself. The answer and told commit in an order no rule fixes.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ],
+        "hooks": [
+          {
+            "name": "tell",
+            "trigger": "on_ai_response",
+            "execution": "async",
+            "reactions": [
+              {
+                "do": [
+                  {
+                    "call": "host.send_event",
+                    "room_id": "$room",
+                    "channel_id": "agent",
+                    "content": {
+                      "type": "text",
+                      "body": "told"
+                    },
+                    "as": "told"
+                  }
+                ],
+                "after_do_gate": "told-sent"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "chain_depth": 2
+    },
+    {
+      "wait_for": "told-sent"
+    },
+    {
+      "open": "told-sent"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "go"
+            },
+            "chain_depth": 2
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "answer"
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 3
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "told"
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 3
+          }
+        ]
+      }
+    },
+    "actions": {
+      "told": [
+        {
+          "result": {
+            "chain_depth": 3
+          }
+        }
+      ]
+    }
+  }
+}

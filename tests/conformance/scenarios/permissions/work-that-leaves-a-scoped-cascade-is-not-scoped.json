@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/work-that-leaves-a-scoped-cascade-is-not-scoped",
+  "title": "A message's answer scope binds its own cascade only: what the agent's turn sends once it is over starts a new cascade, which the scope does not follow",
+  "rules": [
+    "§8.5",
+    "§5.12",
+    "§10.6.5"
+  ],
+  "requirements": [
+    "RK-8.5-021"
+  ],
+  "notes": "hello carries the answer scope sms: the agent's answer is stored for sms alone. The turn's work after it ends sends Later. through its host from ws, a new cascade: Later. and the agent's answer to it reach every channel.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A"
+                }
+              }
+            ],
+            "after_turn": [
+              {
+                "call": "host.send_event",
+                "room_id": "room-1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "Later."
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Later."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Again"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "response_visibility": "sms"
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "response_visibility": "sms"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "A"
+          },
+          "visibility": "sms"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Later."
+          },
+          "visibility": "all",
+          "response_visibility": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again"
+          },
+          "visibility": "all"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "A"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Later."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Again"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Again"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
