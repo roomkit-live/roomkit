@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Mapping
 from typing import Any
 
@@ -63,5 +64,7 @@ def wire_observation(peer: MCPPeer, spec: Mapping[str, Any]) -> dict[str, Any]:
                 }
                 for (method, target), headers in zip(peer.targets, peer.raw_headers, strict=True)
             ],
-        }
+        },
+        # Each message posted, as sent: a notification is seen here only.
+        "messages": copy.deepcopy(peer.messages),
     }

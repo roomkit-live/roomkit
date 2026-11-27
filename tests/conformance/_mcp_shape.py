@@ -63,9 +63,9 @@ def _operations(values: Any, path: str, found: list[str]) -> None:
         ):
             found.append(f"{at}.params: expected an object or null")
         if "timeout_ms" in value and (
-            type(value["timeout_ms"]) is not int or value["timeout_ms"] < 1
+            type(value["timeout_ms"]) is not int or value["timeout_ms"] < 0
         ):
-            found.append(f"{at}.timeout_ms: expected a positive integer")
+            found.append(f"{at}.timeout_ms: expected a non-negative integer")
         if "mutate" in value:
             _mutation(value["mutate"], f"{at}.mutate", found)
         if "arguments" in value and not isinstance(value["arguments"], Mapping):

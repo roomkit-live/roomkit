@@ -82,7 +82,7 @@ async def test_peer_closes_connections_accepted_at_shutdown_without_starting_the
         {"operations": [{"method": "connect", "timeout_ms": 10}]},
         {"operations": [{"method": "request"}]},
         {"operations": [{"method": "request", "name": "read", "params": []}]},
-        {"operations": [{"method": "read_resource", "uri": "resource://x", "timeout_ms": 0}]},
+        {"operations": [{"method": "read_resource", "uri": "resource://x", "timeout_ms": -1}]},
         {"operations": [{"method": "tool_meta", "mutate": {"path": [], "value": None}}]},
         {"discover": None},
         {"tool_filter": "all"},
