@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/a-server-refusing-discovery-over-http-is-reached-by-the-handshake",
+  "title": "A server of an earlier revision that refuses the discovery probe with HTTP 400, as a stateful mcp 1.x server answers a request without a session, is reached by the initialize handshake",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-034",
+    "RK-21.2-056"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer of an earlier revision whose refusal of server/discover is an HTTP 400 carrying a JSON-RPC error (refuse_discovery: http), and no session.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "refuse_discovery": "http",
+        "server_info": {
+          "name": "stateful",
+          "version": "1"
+        },
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "stateful",
+                "version": "1"
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "server/discover"
+            },
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"name\":\"stateful\",\"version\":\"1\"}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

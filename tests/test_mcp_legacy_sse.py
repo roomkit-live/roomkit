@@ -93,14 +93,17 @@ async def test_reentering_legacy_sse_uses_a_fresh_endpoint_and_replaces_the_cata
     assert peer.problems == []
 
 
+@pytest.mark.wallclock
 @pytest.mark.parametrize("stage", ["endpoint", "listing"])
 async def test_the_connection_bound_closes_legacy_sse_and_allows_reentry(stage: str) -> None:
     held = [{"method": "tools/list", "hold": True}] if stage == "listing" else []
     peer = LegacySSEPeer({"replies": held + [listing()]}, endpoint=stage != "endpoint")
     peer.discovery = True
     async with peer:
-        provider = MCPToolProvider(peer.url, transport="sse", connect_timeout=0.05)
-        with pytest.raises(TimeoutError, match="within 0.05 s"):
+        # The same bound holds the re-entry, which must connect within it: a
+        # legacy SSE connect takes up to ~50 ms here under load.
+        provider = MCPToolProvider(peer.url, transport="sse", connect_timeout=0.25)
+        with pytest.raises(TimeoutError, match="within 0.25 s"):
             await provider.__aenter__()
         await asyncio.wait_for(peer.get_closed.wait(), 3)
         assert not provider.connected

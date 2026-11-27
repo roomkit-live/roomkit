@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/a-tool-call-on-2026-07-28-mirrors-its-annotated-arguments-into-headers",
+  "title": "On a 2026-07-28 connection, a call of a tool whose listing annotates an argument with x-mcp-header carries that argument in its Mcp-Param header, and a tool whose annotation is invalid is left out of the catalogue",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-056"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer of MCP 2026-07-28 (era). The peer checks each request's Mcp-Method, Mcp-Protocol-Version and Mcp-Name headers, and on tools/call the Mcp-Param-<header> of each argument the listed tool annotates. misrouted annotates an object argument, which 2026-07-28 does not allow. Python: tools/mcp.py _headed_listing and _well_headed; tests/test_mcp_transports.py::test_http_transports_against_a_real_server, tests/test_mcp_discovery.py.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "era": "2026-07-28",
+        "replies": [
+          {
+            "method": "tools/list",
+            "result": {
+              "tools": [
+                {
+                  "name": "routed",
+                  "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                      "region": {
+                        "type": "string",
+                        "x-mcp-header": "Region"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "misrouted",
+                  "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                      "blob": {
+                        "type": "object",
+                        "x-mcp-header": "Blob"
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "plain",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "resultType": "complete",
+              "ttlMs": 0,
+              "cacheScope": "private"
+            }
+          },
+          {
+            "method": "tools/call",
+            "params": {
+              "name": "routed",
+              "arguments": {
+                "region": "eu"
+              }
+            },
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "routed to eu"
+                }
+              ],
+              "isError": false,
+              "resultType": "complete",
+              "ttlMs": 0,
+              "cacheScope": "private"
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "call_tool",
+          "name": "routed",
+          "arguments": {
+            "region": "eu"
+          }
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "routed",
+                "plain"
+              ]
+            },
+            {
+              "result": "routed to eu"
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "server/discover"
+            },
+            {
+              "method": "tools/list"
+            },
+            {
+              "method": "tools/call",
+              "params": {
+                "name": "routed",
+                "arguments": {
+                  "region": "eu"
+                }
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":[\"routed\",\"plain\"]},{\"result\":\"routed to eu\"},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"tools/list\"},{\"method\":\"tools/call\",\"params\":{\"arguments\":{\"region\":\"eu\"},\"name\":\"routed\"}}]"
+        }
+      }
+    }
+  ]
+}

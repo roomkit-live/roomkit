@@ -155,7 +155,7 @@ async def _list_tools(
     seen: set[str] = set()
     params: Any = None
     for _ in range(_MAX_LIST_PAGES):
-        page = ListToolsResult.model_validate(await read_page(params), by_name=False)
+        page = ListToolsResult.model_validate(_unenveloped(await read_page(params)), by_name=False)
         tools.extend(page.tools)
         cursor = page.next_cursor
         if not isinstance(cursor, str) or not cursor:
@@ -227,25 +227,61 @@ def _retrieved(task: asyncio.Task[Any]) -> None:
 
 _ENVELOPE = {"resultType": "complete", "ttlMs": 0, "cacheScope": "private"}
 """The members MCP 2026-07-28 requires of a cacheable result, which the SDK
-checks on a 2026-07-28 connection (its earlier revisions drop them)."""
+checks on a 2026-07-28 connection (its earlier revisions drop them). The
+provider uses none of them: what it shows the SDK carries these, whatever the
+server sent, and its own reading of a listing leaves them out."""
 
 
-def _enveloped(result: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
-    """*body* with *result*'s envelope, as the SDK reads it in place of
-    *result*: the server's own ``resultType``, ``ttlMs`` and ``cacheScope``,
-    or the plainest ones where it sent none (the provider reads *result*
-    itself)."""
-    return body | {name: result.get(name, plain) for name, plain in _ENVELOPE.items()}
+def _unenveloped(result: dict[str, Any]) -> dict[str, Any]:
+    """*result* without the envelope the provider does not read."""
+    return {name: value for name, value in result.items() if name not in _ENVELOPE}
 
 
-def _empty_listing(result: dict[str, Any]) -> dict[str, Any]:
-    """What the SDK reads in place of a ``tools/list`` page."""
-    return _enveloped(result, {"tools": []})
+def _empty_listing(_result: dict[str, Any]) -> dict[str, Any]:
+    """What the SDK reads in place of a ``tools/list`` page on a connection of
+    an earlier revision: the provider reads the page itself."""
+    return {"tools": []} | _ENVELOPE
 
 
-def _empty_read(result: dict[str, Any]) -> dict[str, Any]:
+def _headed_listing(result: dict[str, Any]) -> dict[str, Any]:
+    """What the SDK reads in place of a ``tools/list`` page on a 2026-07-28
+    connection: the tools whose arguments the protocol mirrors into
+    ``Mcp-Param-*`` headers (``x-mcp-header``), by their name and input
+    schema alone, so that its calls of them carry those headers. The
+    provider reads the page itself."""
+    tools = result.get("tools")
+    headed = [
+        {"name": tool["name"], "inputSchema": tool["inputSchema"]}
+        for tool in (tools if isinstance(tools, list) else [])
+        if isinstance(tool, dict)
+        and isinstance(tool.get("name"), str)
+        and _headed(tool.get("inputSchema"))
+    ]
+    return {"tools": headed} | _ENVELOPE
+
+
+def _headed(schema: Any) -> bool:
+    """Whether *schema* mirrors an argument into a header, by annotations
+    MCP 2026-07-28 accepts."""
+    from mcp.shared.inbound import find_invalid_x_mcp_header, x_mcp_header_map
+
+    return (
+        isinstance(schema, dict)
+        and find_invalid_x_mcp_header(schema) is None
+        and bool(x_mcp_header_map(schema))
+    )
+
+
+def _wrongly_headed(schema: Any) -> str | None:
+    """Why *schema*'s ``x-mcp-header`` annotations are invalid, if they are."""
+    from mcp.shared.inbound import find_invalid_x_mcp_header
+
+    return find_invalid_x_mcp_header(schema) if isinstance(schema, dict) else None
+
+
+def _empty_read(_result: dict[str, Any]) -> dict[str, Any]:
     """What the SDK reads in place of a ``resources/read`` result."""
-    return _enveloped(result, {"contents": []})
+    return {"contents": []} | _ENVELOPE
 
 
 _MESSAGE_LIMIT = 4 * 1024 * 1024
@@ -383,10 +419,14 @@ class MCPToolProvider:
         discover: bool = True,
         label: str | None = None,
         connect_timeout: float | None = None,
+        protocol: str = "auto",
+        propagate_trace_context: bool = False,
     ) -> None:
         _check_label(label)
         if transport not in ("streamable_http", "sse", "stdio"):
             raise ValueError(f"Unsupported transport: {transport!r}")
+        if protocol not in ("auto", "legacy"):
+            raise ValueError(f"protocol must be 'auto' or 'legacy', not {protocol!r}")
         if transport == "stdio":
             if not command:
                 raise ValueError("the stdio transport needs a command to start the server")
@@ -420,8 +460,12 @@ class MCPToolProvider:
         self._connect_timeout = _CONNECT_TIMEOUT if connect_timeout is None else connect_timeout
         self._discover = discover
         self._label = label
+        self._protocol = protocol
+        self._propagate_trace_context = propagate_trace_context
         self._session: Any = None
         self._capture: WireCapture | None = None
+        # Whether the connection speaks MCP 2026-07-28 (a discovery agreed).
+        self._modern = False
         self._abandoned: set[asyncio.Task[Any]] = set()
         self._stack: AsyncExitStack | None = None
         self._tools: list[AITool] = []
@@ -444,6 +488,8 @@ class MCPToolProvider:
         discover: bool = True,
         label: str | None = None,
         connect_timeout: float = _CONNECT_TIMEOUT,
+        protocol: str = "auto",
+        propagate_trace_context: bool = False,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for the given URL.
 
@@ -467,16 +513,31 @@ class MCPToolProvider:
                 would make an alias read another server). The tool handler then serves
                 only the aliases naming this server. ``None`` (the default)
                 serves an alias whatever server it names.
-            connect_timeout: The seconds entering may take: the handshake and
-                the listing of the tools. Past it the connection is closed,
-                its session deleted, and entering raises :class:`TimeoutError`.
+            connect_timeout: The seconds entering may take: the protocol's
+                negotiation and the listing of the tools. Past it the
+                connection is closed, its session deleted, and entering raises
+                :class:`TimeoutError`.
+            protocol: How the connection agrees on the MCP revision.
+                ``"auto"`` (the default) probes the server's discovery
+                (``server/discover``, MCP 2026-07-28) and falls back to the
+                ``initialize`` handshake for a server of an earlier revision;
+                ``"legacy"`` goes straight to the handshake, for a server that
+                fails on the probe (a Python server on ``mcp`` 1.9.3 or
+                earlier) or leaves it unanswered. The ``sse`` transport,
+                which 2026-07-28 does not define, always takes the handshake.
+            propagate_trace_context: Carry the host's trace context on each
+                request (W3C ``traceparent``, ``tracestate``, ``baggage`` in
+                its ``_meta``, from the current OpenTelemetry span). ``False``
+                (the default) sends only the trace keys a caller writes in a
+                :meth:`request`'s ``_meta`` itself.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
 
         Raises:
-            ValueError: *label* cannot name the server in an alias, or *url*
-                or *headers* cannot be sent as given.
+            ValueError: *label* cannot name the server in an alias, *url*
+                or *headers* cannot be sent as given, or *protocol* is
+                neither ``"auto"`` nor ``"legacy"``.
         """
         return cls(
             url,
@@ -486,6 +547,8 @@ class MCPToolProvider:
             discover=discover,
             label=label,
             connect_timeout=connect_timeout,
+            protocol=protocol,
+            propagate_trace_context=propagate_trace_context,
         )
 
     @classmethod
@@ -500,6 +563,8 @@ class MCPToolProvider:
         discover: bool = True,
         label: str | None = None,
         connect_timeout: float = _CONNECT_TIMEOUT,
+        protocol: str = "auto",
+        propagate_trace_context: bool = False,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for a server started as a subprocess (stdio).
 
@@ -518,15 +583,21 @@ class MCPToolProvider:
                 :meth:`from_url`.
             label: The host's name for the server; see :meth:`from_url`.
             connect_timeout: The seconds entering may take: the server's
-                start, the handshake and the listing of its tools, a first
-                start that fetches its package included. Past it the server
-                is stopped and entering raises :class:`TimeoutError`.
+                start, the protocol's negotiation and the listing of its
+                tools, a first start that fetches its package included. Past
+                it the server is stopped and entering raises
+                :class:`TimeoutError`.
+            protocol: How the connection agrees on the MCP revision; see
+                :meth:`from_url`.
+            propagate_trace_context: Carry the host's trace context on each
+                request; see :meth:`from_url`.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
 
         Raises:
-            ValueError: *label* cannot name the server in an alias.
+            ValueError: *label* cannot name the server in an alias, or
+                *protocol* is neither ``"auto"`` nor ``"legacy"``.
         """
         return cls(
             transport="stdio",
@@ -538,6 +609,8 @@ class MCPToolProvider:
             discover=discover,
             label=label,
             connect_timeout=connect_timeout,
+            protocol=protocol,
+            propagate_trace_context=propagate_trace_context,
         )
 
     @property
@@ -565,9 +638,10 @@ class MCPToolProvider:
         bound = asyncio.timeout(self._connect_timeout)
         try:
             async with bound:
-                capture = WireCapture()
+                capture = WireCapture(propagate_trace_context=self._propagate_trace_context)
                 streams = capture.streams(*await self._open_transport(stack))
                 session, init = await self._negotiate(Client, streams, stack, capture)
+                self._modern = session.discover_result is not None
                 # Inside the try: a listing the catalogue cannot read releases
                 # what was opened, the stdio server included (RFC §21.2).
                 if self._discover:
@@ -604,14 +678,16 @@ class MCPToolProvider:
         session and the result the server agreed with, as it sent it (RFC
         §21.2).
 
-        The provider probes ``server/discover`` and speaks MCP 2026-07-28 with
-        a server that answers it; one that refuses the probe, or leaves it
-        unanswered within the SDK's own probe bound, is reached through the
-        ``initialize`` handshake (the SDK client's ``auto`` mode). The legacy
-        HTTP+SSE transport, which 2026-07-28 does not define, goes straight
-        to the handshake. The SDK negotiates on a copy it can parse.
+        With ``protocol="auto"`` the provider probes ``server/discover`` and
+        speaks MCP 2026-07-28 with a server that answers it with that
+        revision; one that refuses the probe, leaves it unanswered within the
+        SDK's own probe bound, or offers only earlier revisions, is reached
+        through the ``initialize`` handshake (the SDK client's ``auto``
+        mode). ``protocol="legacy"``, and the legacy HTTP+SSE transport,
+        which 2026-07-28 does not define, go straight to the handshake. The
+        SDK negotiates on a copy it can parse.
         """
-        mode = "legacy" if self._transport == "sse" else "auto"
+        mode = "legacy" if self._transport == "sse" else self._protocol
         # The transport is open already, on *stack*: the client is handed its
         # streams, and lists through the session, off the wire, not its cache.
         connected = client(_opened(*streams), mode=mode, cache=None)
@@ -638,10 +714,17 @@ class MCPToolProvider:
     async def _discover_tools(self, session: Any, capture: WireCapture) -> None:
         """Read the server's whole tool listing into this provider, each page
         off the wire (:func:`_list_tools`)."""
+        shown = _headed_listing if self._modern else _empty_listing
 
         async def read(params: Any) -> dict[str, Any]:
-            with capture.ticket(_empty_listing) as ticket:
-                await session.list_tools(params=params)
+            with capture.ticket(shown) as ticket:
+                try:
+                    await session.list_tools(params=params)
+                except ValidationError:
+                    # The SDK could not parse even the tools it was shown: it
+                    # mirrors no header, and the provider reads the page.
+                    if ticket.result is None:
+                        raise
             return ticket.taken()
 
         async def read_page(params: Any) -> dict[str, Any]:
@@ -654,13 +737,28 @@ class MCPToolProvider:
         """Keep a listing: the catalogue keeps what the filter admits; the
         output schemas cover every listed tool, as a host calls tools the
         model never saw (an MCP App's app-only tool) and their results are
-        checked all the same."""
+        checked all the same. On a 2026-07-28 connection, a tool whose
+        ``x-mcp-header`` annotations are invalid is left out, as the
+        protocol requires of a client."""
+        if self._modern:
+            listed = [tool for tool in listed if self._well_headed(tool)]
         self._catalogue(listed)
         self._output_schemas = {}
         for tool in listed:
             # A name listed twice keeps its first definition, schema included.
             if isinstance(schema := tool.output_schema, dict):
                 self._output_schemas.setdefault(tool.name, schema)
+
+    def _well_headed(self, tool: Any) -> bool:
+        reason = _wrongly_headed(tool.input_schema)
+        if reason is not None:
+            logger.warning(
+                "MCP tool %r of %s left out: invalid x-mcp-header (%s)",
+                tool.name[:_NAME_LIMIT],
+                self._target,
+                reason,
+            )
+        return reason is None
 
     def _catalogue(self, listed: Sequence[Any]) -> None:
         """Keep the listed tools the filter admits and a provider accepts,

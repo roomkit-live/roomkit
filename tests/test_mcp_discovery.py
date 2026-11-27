@@ -18,7 +18,6 @@ import mcp.client.session
 import pytest
 
 from roomkit.tools import MCPToolProvider
-from tests.mcp_legacy_peer import LegacySSEPeer
 
 _SCRIPTED_SERVER = textwrap.dedent(
     """\
@@ -117,17 +116,65 @@ async def test_a_server_that_does_not_discover_is_reached_by_the_handshake(
 async def test_a_probe_past_the_connect_bound_fails_the_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The probe counts within ``connect_timeout``: one that outlasts it fails
+    the connection, though the server would take the handshake after it."""
     monkeypatch.setattr(mcp.client.session, "DISCOVER_TIMEOUT_SECONDS", 30)
-    provider = _provider(tmp_path, {"server/discover": "silent"}, connect_timeout=0.2)
+    plan = {"server/discover": "silent", "initialize": _HANDSHAKE, "tools/list": _TOOLS}
+    provider = _provider(tmp_path, plan, connect_timeout=0.2)
     with pytest.raises(TimeoutError, match="did not connect within 0.2 s"):
         await provider.__aenter__()
     assert not provider.connected
 
 
-async def test_the_legacy_sse_transport_goes_straight_to_the_handshake() -> None:
-    async with LegacySSEPeer({"replies": []}) as peer:
-        provider = MCPToolProvider(peer.url, transport="sse", discover=False)
-        async with provider:
-            pass
-    assert [request["method"] for request in peer.requests] == ["initialize"]
-    assert peer.problems == []
+_HEADED_TOOLS = {
+    "result": {
+        "tools": [
+            {
+                "name": "routed",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"region": {"type": "string", "x-mcp-header": "Region"}},
+                },
+            },
+            {
+                # x-mcp-header names a scalar argument only: this one is invalid.
+                "name": "misrouted",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"blob": {"type": "object", "x-mcp-header": "Blob"}},
+                },
+            },
+            {"name": "plain", "inputSchema": {"type": "object"}},
+        ]
+    }
+}
+
+
+@pytest.mark.parametrize(
+    ("probe", "kept"),
+    [(_DISCOVERY, ["routed", "plain"]), (_REFUSED, ["routed", "misrouted", "plain"])],
+    ids=["2026-07-28", "earlier"],
+)
+async def test_a_tool_whose_header_annotation_is_invalid_is_left_out_on_2026_07_28(
+    probe: Any, kept: list[str], tmp_path: Path
+) -> None:
+    """MCP 2026-07-28 has a client leave out a tool whose ``x-mcp-header``
+    annotations are invalid; an earlier revision knows no such annotation."""
+    plan = {"server/discover": probe, "initialize": _HANDSHAKE, "tools/list": _HEADED_TOOLS}
+    async with _provider(tmp_path, plan) as provider:
+        assert provider.tool_names == kept
+
+
+async def test_the_legacy_protocol_goes_straight_to_the_handshake(tmp_path: Path) -> None:
+    """``protocol="legacy"`` sends no probe, for a server that would fail on
+    it, even to a server that would answer it."""
+    plan = {"server/discover": _DISCOVERY, "initialize": _HANDSHAKE, "tools/list": _TOOLS}
+    async with _provider(tmp_path, plan, protocol="legacy") as provider:
+        assert provider.server_info == {"name": "legacy", "version": "1"}
+    methods = [message["method"] for message in _received(tmp_path)]
+    assert methods == ["initialize", "notifications/initialized", "tools/list"]
+
+
+def test_a_protocol_other_than_auto_or_legacy_is_refused() -> None:
+    with pytest.raises(ValueError, match="protocol must be 'auto' or 'legacy'"):
+        MCPToolProvider.from_command(sys.executable, protocol="2026-07-28")

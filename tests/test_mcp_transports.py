@@ -284,9 +284,11 @@ async def test_an_http_server_that_never_answers_is_left_at_the_connect_bound() 
 _HTTP_SERVER = textwrap.dedent(
     """\
     import sys
-    from mcp.server import MCPServer
+    from typing import Annotated
 
+    from mcp.server import MCPServer
     from mcp.server.mcpserver import Context
+    from pydantic import Field
 
     server = MCPServer("roomkit-http-test")
 
@@ -299,6 +301,16 @@ _HTTP_SERVER = textwrap.dedent(
     def header(name: str, ctx: Context) -> str:
         \"\"\"A header of the HTTP request that called this tool.\"\"\"
         return ctx.request_context.request.headers.get(name, "<missing>")
+
+    # MCP 2026-07-28: an argument mirrored into an Mcp-Param-* header.
+    @server.tool()
+    def routed(
+        region: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Region"})],
+        ctx: Context,
+    ) -> str:
+        \"\"\"The region, and the header that mirrored it.\"\"\"
+        headers = ctx.request_context.request.headers
+        return f"{region} {headers.get('mcp-param-region', '<missing>')}"
 
     server.run(transport=sys.argv[2], port=int(sys.argv[1]))
     """
@@ -335,9 +347,13 @@ async def test_http_transports_against_a_real_server(
             headers={"X-Test": "1"},
         )
         async with provider as mcp:
-            assert sorted(mcp.tool_names) == ["add", "header"]
+            assert sorted(mcp.tool_names) == ["add", "header", "routed"]
             assert await mcp.call_tool("add", {"a": 20, "b": 22}) == "42"
             assert await mcp.call_tool("header", {"name": "x-test"}) == "1"
+            # Streamable HTTP speaks 2026-07-28, which mirrors the argument
+            # into its header; the legacy SSE transport predates it.
+            mirrored = "eu" if transport == "streamable-http" else "<missing>"
+            assert await mcp.call_tool("routed", {"region": "eu"}) == f"eu {mirrored}"
     finally:
         process.terminate()
         await process.wait()

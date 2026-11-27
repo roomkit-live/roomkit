@@ -112,7 +112,8 @@ def resource_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def compatible_handshake(result: Mapping[str, Any]) -> dict[str, Any]:
-    """A copy of an ``initialize`` result that the SDK's model accepts where
+    """A copy of an ``initialize`` or ``server/discover`` result that the
+    SDK's model accepts where
     RoomKit's reading is laxer: extension settings that are not objects, and
     a ``serverInfo`` ``description`` or icon ``theme`` of any shape, are left
     out of it. The result itself is kept whole."""
@@ -148,10 +149,12 @@ def server_info(handshake: Mapping[str, Any]) -> dict[str, Any]:
     """What the server said of itself in its handshake or its discovery
     result, as it sent it, but for the members it sent as ``null`` (in it and
     in each of its icons)."""
-    info = handshake.get("serverInfo")
-    meta = handshake.get("_meta")
-    if info is None and isinstance(meta, dict):
-        info = meta.get(SERVER_INFO_META_KEY)
+    if "supportedVersions" in handshake:
+        # A discovery result: what it says of the server is in its _meta.
+        meta = handshake.get("_meta")
+        info = meta.get(SERVER_INFO_META_KEY) if isinstance(meta, dict) else None
+    else:
+        info = handshake.get("serverInfo")
     if not isinstance(info, dict):
         return {}
     kept = {name: copy.deepcopy(value) for name, value in info.items() if value is not None}

@@ -16,7 +16,9 @@ takes it is still never sent.
 The capture also takes out of each message the W3C trace context the SDK
 writes into its ``_meta`` (``traceparent``, ``tracestate``, ``baggage``)
 whenever the host has a current span: a request carries the trace keys its
-caller wrote, and no other, as roomkit-rs's do.
+caller wrote, and no other, as roomkit-rs's do. A connection that propagates
+the trace context (``propagate_trace_context``) keeps the SDK's, but for the
+keys the caller wrote itself.
 """
 
 from __future__ import annotations
@@ -50,10 +52,15 @@ class Ticket:
     methods: frozenset[str] | None = None
     result: dict[str, Any] | None = None
     request_id: Any = field(default=None, repr=False)
+    bound: list[Any] = field(default_factory=list, repr=False)
+    closed: bool = field(default=False, repr=False)
 
     def follows(self, method: str) -> bool:
         """Whether a request of *method* sent in the ticket's block is the
-        one its result is read from."""
+        one its result is read from. Once the block is over none is: a task
+        started in it, which inherits the ticket, binds nothing to it."""
+        if self.closed:
+            return False
         if self.methods is None:
             return self.request_id is None
         return method in self.methods
@@ -89,16 +96,16 @@ class WireCapture:
     """The raw results of the requests made under :meth:`ticket` on one
     connection."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, propagate_trace_context: bool = False) -> None:
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
+        from mcp.types import JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
 
         self._message = SessionMessage
         self._request = JSONRPCRequest
         self._notification = JSONRPCNotification
         self._response = JSONRPCResponse
-        self._error = JSONRPCError
         self._sent: dict[Any, Ticket] = {}
+        self._propagate = propagate_trace_context
 
     def streams(self, read: Any, write: Any) -> tuple[Any, Any]:
         """The transport's *read* and *write* streams, as the session reads
@@ -128,12 +135,14 @@ class WireCapture:
             yield ticket
         finally:
             _TICKET.reset(token)
-            if ticket.request_id is not None:
-                self._sent.pop(ticket.request_id, None)
+            ticket.closed = True
+            for request_id in ticket.bound:
+                self._sent.pop(request_id, None)
 
     def _outgoing(self, item: Any) -> Any:
-        """*item* as it goes out: the SDK's trace keys taken out, and a
-        request made under a ticket bound to it."""
+        """*item* as it goes out: the SDK's trace keys taken out (unless the
+        connection propagates the trace context), and a request made under a
+        ticket bound to it."""
         ticket = _TICKET.get()
         message = getattr(item, "message", None)
         binds = (
@@ -142,9 +151,8 @@ class WireCapture:
             and ticket.follows(message.method)
         )
         if binds and ticket is not None:
-            if ticket.request_id is not None:
-                self._sent.pop(ticket.request_id, None)
             ticket.request_id = _correlated(message.id)
+            ticket.bound.append(ticket.request_id)
             self._sent[ticket.request_id] = ticket
         if isinstance(message, (self._request, self._notification)):
             return self._untraced(item, message, ticket.own_trace if binds and ticket else {})
@@ -155,7 +163,14 @@ class WireCapture:
         meta = params.get("_meta") if isinstance(params, dict) else None
         if not isinstance(meta, dict) or not any(key in meta for key in _TRACE_KEYS):
             return item
-        kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
+        if self._propagate:
+            # The SDK's context of the host's span, but for what the caller
+            # wrote itself.
+            kept = meta | own
+            if kept == meta:
+                return item
+        else:
+            kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
         rest = {key: value for key, value in params.items() if key != "_meta"}
         params = rest | {"_meta": kept} if kept else rest
         fields = message.model_dump(exclude={"params"}, exclude_unset=True)
@@ -165,10 +180,6 @@ class WireCapture:
 
     def _incoming(self, item: Any) -> Any:
         message = getattr(item, "message", None)
-        if isinstance(message, self._error):
-            # An error answers the request: no result to read for it.
-            self._sent.pop(_correlated(message.id), None)
-            return item
         if not isinstance(message, self._response):
             return item
         ticket = self._sent.pop(_correlated(message.id), None)

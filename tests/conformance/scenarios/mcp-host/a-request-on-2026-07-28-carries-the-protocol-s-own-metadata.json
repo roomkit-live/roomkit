@@ -6,7 +6,8 @@
     "§21.2"
   ],
   "requirements": [
-    "RK-21.2-046"
+    "RK-21.2-046",
+    "RK-21.2-056"
   ],
   "notes": "Public MCPToolProvider over a bounded local HTTP peer of MCP 2026-07-28 (era): it answers server/discover, takes no initialize and keeps no session; it checks, then leaves out of the observation, the protocol _meta entries each request carries. The third request's caller names its own protocol revision: the peer sees 2026-07-28 there, and the caller's other entries as written.",
   "steps": [

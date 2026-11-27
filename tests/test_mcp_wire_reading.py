@@ -60,6 +60,34 @@ async def test_a_request_carries_no_trace_context_its_caller_did_not_write() -> 
     assert peer.problems == []
 
 
+_HOST_TRACE = "00000000000000000000000000001234"
+"""The trace id of :func:`_host_span`, as W3C writes it."""
+
+
+@pytest.mark.parametrize(
+    ("meta", "traced"),
+    [({}, _HOST_TRACE), ({"traceparent": _CALLER_TRACE}, _CALLER_TRACE.split("-")[1])],
+    ids=["host", "caller"],
+)
+async def test_a_provider_that_propagates_the_trace_context_sends_the_host_s(
+    meta: dict[str, Any], traced: str, tmp_path: Path
+) -> None:
+    """``propagate_trace_context=True``: each request carries the trace
+    context of the host's current span, but for the keys its caller wrote."""
+    script, log = tmp_path / "server.py", tmp_path / "received.jsonl"
+    script.write_text(_RECORDING_SERVER)
+    provider = MCPToolProvider.from_command(
+        sys.executable, [str(script), str(log)], discover=False, propagate_trace_context=True
+    )
+    async with provider:
+        with _host_span(), pytest.raises(TimeoutError):
+            # The recording server answers nothing past the handshake.
+            await provider.request("x/read", {"_meta": meta} if meta else None, timeout=0.2)
+    sent = [json.loads(line) for line in log.read_text().splitlines()]
+    request = next(message for message in sent if message.get("method") == "x/read")
+    assert request["params"]["_meta"]["traceparent"].split("-")[1] == traced
+
+
 class _StringIdPeer(MCPPeer):
     """A server that echoes each request id as a string, ``"7"`` for ``7``."""
 

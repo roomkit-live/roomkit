@@ -116,6 +116,7 @@ def _peer(peer: Any, path: str, found: list[str]) -> None:
             "replies",
             "framing",
             "era",
+            "refuse_discovery",
             "initializations",
             "endpoint_on_connections",
         },
@@ -125,6 +126,8 @@ def _peer(peer: Any, path: str, found: list[str]) -> None:
         return
     if peer.get("era", "2026-07-28") != "2026-07-28":
         found.append(f"{path}.era: expected 2026-07-28")
+    if peer.get("refuse_discovery", "http") != "http":
+        found.append(f"{path}.refuse_discovery: expected http")
     _initialization(peer, path, found)
     if "initializations" in peer:
         values = peer["initializations"]

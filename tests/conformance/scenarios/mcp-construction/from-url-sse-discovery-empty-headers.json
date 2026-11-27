@@ -10,7 +10,8 @@
     "RK-21.2-004",
     "RK-21.2-021",
     "RK-21.2-029",
-    "RK-21.2-048"
+    "RK-21.2-048",
+    "RK-21.2-056"
   ],
   "notes": "Public MCP construction and legacy SSE against a bounded loopback peer. Headers are observed by value and order with case-insensitive wire names; no client SDK method is replaced.",
   "steps": [
