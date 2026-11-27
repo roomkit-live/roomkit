@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Each session of a realtime voice channel fires its own audio levels, at most one per 100 ms in each direction (RFC §12.5, RMK-2159), where the channel's sessions shared one throttle: while one session's audio flowed, `ON_INPUT_AUDIO_LEVEL` and `ON_OUTPUT_AUDIO_LEVEL` fired for it alone, and the level meter of every other session of the channel stood still. A voice channel already throttled each session on its own.
+
 - With `steer_room_turns`, an instruction that comes while the turn another instruction opened runs waits a turn of its own (RFC §6.4, §10.1.1 rule 6, RMK-2146), where it was handed to that turn as a message of the room: the same author, the application, opened both. Steered in, it read unmarked, or under a speaker's label with its mark read as a copy, so a delegated task's result that came while the agent told another's read as a participant's words.
 
 - A realtime voice channel's recorded room track names the participant whose session it is (RFC §12.11, RMK-2142), where it carried no `participant_id`, so a recording of a realtime call could not say who spoke; a voice channel's track already named it.

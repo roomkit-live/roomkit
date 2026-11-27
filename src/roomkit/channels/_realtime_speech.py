@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit import _clock
 from roomkit.channels._room_hooks import RoomHooks
 from roomkit.models.enums import HookTrigger
 from roomkit.voice.events import SpeakerChangeEvent
@@ -38,8 +38,8 @@ class RealtimeSpeechHost(Protocol):
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
         _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
-        _last_input_level_at: Timestamp of last input audio level hook.
-        _last_output_level_at: Timestamp of last output audio level hook.
+        _last_input_level_at: When each session last fired its input level hook.
+        _last_output_level_at: When each session last fired its output level hook.
         _event_loop: Cached event loop for cross-thread scheduling.
         _framework: The RoomKit framework instance (or None).
         _provider: The realtime AI provider.
@@ -64,8 +64,8 @@ class RealtimeSpeechHost(Protocol):
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
-    _last_input_level_at: float
-    _last_output_level_at: float
+    _last_input_level_at: dict[str, float]
+    _last_output_level_at: dict[str, float]
     _event_loop: asyncio.AbstractEventLoop | None
     _framework: RoomKit | None
     _provider: RealtimeVoiceProvider
@@ -103,8 +103,8 @@ class RealtimeSpeechMixin:
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
-    _last_input_level_at: float
-    _last_output_level_at: float
+    _last_input_level_at: dict[str, float]
+    _last_output_level_at: dict[str, float]
     _event_loop: asyncio.AbstractEventLoop | None
     _framework: RoomKit | None
     _provider: RealtimeVoiceProvider
@@ -321,25 +321,27 @@ class RealtimeSpeechMixin:
     def _fire_audio_level_task(
         self, session: VoiceSession, level_db: float, trigger: HookTrigger
     ) -> None:
-        """Schedule a task to fire an audio level hook, throttled to ~10/sec.
+        """Schedule a task to fire an audio level hook for a session in a
+        room, at most every 100 ms per session and direction (RFC §12.5).
 
-        Works from both the event-loop thread and foreign threads (e.g.
-        PortAudio speaker callback).
+        The 100 ms are measured on the media clock (``roomkit._clock``), the
+        real one by default. Works from both the event-loop thread and foreign
+        threads (a transport's playback callback): the session's room is read,
+        and its throttle timestamp compared and written, under the state lock,
+        so a level that arrives once the session ended leaves no entry behind.
         """
-        now = time.monotonic()
-        if trigger == HookTrigger.ON_INPUT_AUDIO_LEVEL:
-            if now - self._last_input_level_at < 0.1:
-                return
-            self._last_input_level_at = now
-        else:
-            if now - self._last_output_level_at < 0.1:
-                return
-            self._last_output_level_at = now
-        if not self._framework:
-            return
+        last_fired = (
+            self._last_input_level_at
+            if trigger == HookTrigger.ON_INPUT_AUDIO_LEVEL
+            else self._last_output_level_at
+        )
+        now = _clock.monotonic()
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
-        if not room_id:
+            if not room_id or now - last_fired.get(session.id, 0.0) < 0.1:
+                return
+            last_fired[session.id] = now
+        if not self._framework:
             return
         try:
             loop = asyncio.get_running_loop()

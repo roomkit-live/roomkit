@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +18,7 @@ from roomkit import (
     RoomContext,
     RoomKit,
     TextContent,
+    _clock,
 )
 from roomkit.channels._realtime_tool_executor import tool_loop_context
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
@@ -40,6 +42,7 @@ from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.channel_tasks import settled
+from tests.media_clock import SetClock
 
 
 @pytest.fixture
@@ -282,6 +285,96 @@ class TestAudioForwarding:
         # Verify transport sent audio to client
         assert len(transport.sent_audio) == 1
         assert transport.sent_audio[0] == (session.id, b"provider-audio-data")
+
+
+class TestAudioLevels:
+    """Each session's audio level hooks fire at most once per 100 ms (RFC §12.5).
+
+    The throttle measures that interval on the media clock (``roomkit._clock``),
+    per session: two sessions handed audio at the same readings of a clock the
+    test sets each fire one level, and one more once the clock moved past
+    100 ms since their last.
+    """
+
+    _FRAME = b"\x01\x00" * 320  # 20 ms at 16 kHz mono, not silent
+    # The clock's readings, in ms, at each of which both sessions are handed
+    # two frames (input) or the model outputs two chunks to each (output), and
+    # how many levels each session has fired once the work of that reading ran.
+    _READINGS_MS = (0, 60, 99, 110, 160, 220)
+    _LEVELS_SO_FAR = (1, 1, 1, 2, 2, 3)
+
+    @pytest.mark.parametrize(
+        ("direction", "trigger"),
+        [
+            ("input", HookTrigger.ON_INPUT_AUDIO_LEVEL),
+            ("output", HookTrigger.ON_OUTPUT_AUDIO_LEVEL),
+        ],
+    )
+    async def test_each_session_s_levels_fire_once_per_100_ms_of_the_media_clock(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+        direction: str,
+        trigger: HookTrigger,
+    ) -> None:
+        levels = {"alice": 0, "bob": 0}
+
+        @kit.hook(trigger, execution=HookExecution.ASYNC)
+        async def record(event: Any, ctx: RoomContext) -> None:
+            levels[event.session.participant_id] += 1
+
+        sessions = [
+            await channel.start_session(room_id, participant, "fake-ws") for participant in levels
+        ]
+        clock = SetClock()
+        so_far: list[dict[str, int]] = []
+        with _clock.installed(clock):
+            for at_ms in self._READINGS_MS:
+                # Readings well away from 0.0, which the throttle takes for never.
+                clock.now = 1000.0 + at_ms / 1000
+                for session in sessions:
+                    for _ in range(2):
+                        if direction == "input":
+                            await transport.simulate_client_audio(session, self._FRAME)
+                        else:
+                            await provider.simulate_audio(session, self._FRAME)
+                if direction == "output":
+                    sent = 4 * (len(so_far) + 1)
+                    await _until(lambda sent=sent: len(transport.sent_audio) == sent)
+                # The send worker lives as long as its session.
+                await settled(channel, lasting=("rt_send_audio:",))
+                so_far.append(dict(levels))
+        await kit.close()
+
+        assert so_far == [{"alice": n, "bob": n} for n in self._LEVELS_SO_FAR]
+
+    async def test_a_session_that_ended_leaves_no_throttle_entry_behind(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "alice", "fake-ws")
+        await transport.simulate_client_audio(session, self._FRAME)
+        await settled(channel)
+        assert session.id in channel._last_input_level_at
+        await channel.end_session(session)
+
+        # A transport's playback thread can still report audio played for the
+        # session once it ended.
+        late = threading.Thread(
+            target=channel._on_transport_audio_played, args=(session, self._FRAME)
+        )
+        late.start()
+        late.join()
+        await kit.close()
+
+        assert session.id not in channel._last_input_level_at
+        assert session.id not in channel._last_output_level_at
 
 
 class TestRealtimeBargeInGuard:

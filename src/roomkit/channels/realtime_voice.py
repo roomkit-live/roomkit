@@ -554,9 +554,10 @@ class RealtimeVoiceChannel(
         self._playback_buffer: dict[str, tuple[float, float]] = {}
         self._response_generation: dict[str, int] = {}
         self._audio_drained: set[str] = set()
-        # Throttle audio level hooks to ~10/sec per direction
-        self._last_input_level_at: float = 0.0
-        self._last_output_level_at: float = 0.0
+        # When each session last fired an audio level hook, per direction:
+        # at most one every 100 ms per session (RFC §12.5).
+        self._last_input_level_at: dict[str, float] = {}
+        self._last_output_level_at: dict[str, float] = {}
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Per-session flag: True when session's pipeline has VAD — local VAD
@@ -1436,6 +1437,8 @@ class RealtimeVoiceChannel(
             self._response_generation.pop(session_id, None)
             self._audio_drained.discard(session_id)
             self._has_pipeline_vad.pop(session_id, None)
+            self._last_input_level_at.pop(session_id, None)
+            self._last_output_level_at.pop(session_id, None)
             idle = self._idle_events.pop(session_id, None)
             if idle is not None:
                 idle.set()  # unblock any waiters

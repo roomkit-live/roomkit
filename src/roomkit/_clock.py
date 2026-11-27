@@ -2,7 +2,7 @@
 
 The RFC's media durations (the interruption strategy's waits, the echo guard's
 grace, a turn's wait, the video bridge's keyframe interval and wait, a
-conference recording's flush budget, a voice session's audio level throttle)
+conference recording's flush budget, a voice or realtime session's level throttle)
 are measured and waited out through this module rather than through ``time``
 and ``asyncio`` directly. The default is the real clock, so nothing changes for
 an integrator; a test installs a clock of its own with :func:`installed` to
