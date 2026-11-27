@@ -1,0 +1,348 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/installs-and-turns-leave-a-binding-the-supervisor-shares-as-it-was",
+  "title": "A supervisor installed in two rooms and bound by its host in a third serves each: neither install nor the turns they run writes into the binding it holds in another room",
+  "rules": [
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-19.7-070"
+  ],
+  "notes": "The host binds sup in r3 with a prompt of its own; Supervisors with different teams are installed in r1 and r2 and each delegates there. Each of sup's bindings is read before and after, and reads the same; r3's turn still reads r3's prompt and declares no delegation tool. Python: tests/test_room_isolation.py::test_two_rooms_run_at_once_and_leave_the_shared_agent_as_it_was.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms3",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Bank"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Bank, done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Clinic"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Clinic, done."
+            },
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      },
+      {
+        "id": "banker",
+        "type": "ai",
+        "agent": {
+          "role": "Banker"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Accounts."
+            }
+          ]
+        }
+      },
+      {
+        "id": "nurse",
+        "type": "ai",
+        "agent": {
+          "role": "Nurse"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Patients."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms2"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "sms3"
+          },
+          {
+            "channel_id": "sup",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "Answer as yourself."
+            }
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "bank",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "banker"
+          ],
+          "strategy": "parallel"
+        }
+      },
+      {
+        "id": "clinic",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "nurse"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "get_binding",
+      "room_id": "r3",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r3"
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "bank"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r1",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r1"
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "clinic"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r2",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r2"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Check the bank."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms2",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Check the clinic."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "sms3",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r1",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r1"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r2",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r2"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "r3",
+      "channel_id": "sup",
+      "expect": {
+        "result": {
+          "$as": "r3"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r3": {
+        "sup": {
+          "metadata": {
+            "system_prompt": "Answer as yourself."
+          }
+        }
+      }
+    },
+    "models": {
+      "sup": [
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {},
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {},
+        {
+          "system_prompt": {
+            "$starts_with": "Answer as yourself."
+          },
+          "tools": {
+            "delegate_workers": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "banker": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Bank"
+            }
+          ]
+        }
+      ],
+      "nurse": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Clinic"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

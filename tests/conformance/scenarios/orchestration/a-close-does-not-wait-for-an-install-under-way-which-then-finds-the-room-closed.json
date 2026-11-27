@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-close-does-not-wait-for-an-install-under-way-which-then-finds-the-room-closed",
+  "title": "A room closed while an install of it waits for its lock is closed without waiting for that install, and the install, reading the room under its lock, finds it closed and does not land",
+  "rules": [
+    "§19.7",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-19.7-054",
+    "RK-19.7-057"
+  ],
+  "notes": "A message holds the room's lock in its SYNC BEFORE_BROADCAST hook. The install starts meanwhile: it claims the room, then waits for the lock. The hook then closes the room: the close takes the room's strategy back as it closes, and an install under way is not waited for, so the close returns and the message's pass ends. The install then reads the room under its lock, finds it CLOSED and is refused room_closed: nothing it would have attached is bound, and the room holds no strategy.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "agents": [
+          "sales"
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "closer",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "close now"
+            },
+            "gate": "held",
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "r1",
+                "as": "closed"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "close now"
+        }
+      },
+      "background": true,
+      "as": "message"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for_lock": "r1"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "message"
+    },
+    {
+      "await": "install",
+      "expect": {
+        "error": "room_closed"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "closed": [
+        {
+          "result": {
+            "status": "closed"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "sales": null
+      }
+    },
+    "rooms": {
+      "r1": {
+        "status": "closed"
+      }
+    }
+  }
+}

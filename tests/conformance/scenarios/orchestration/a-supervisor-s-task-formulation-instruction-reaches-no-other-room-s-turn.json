@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-task-formulation-instruction-reaches-no-other-room-s-turn",
+  "title": "While an auto-delegating Supervisor's task-formulation pass runs in one room, the same supervisor's turn in another room reads its own prompt: the pass's instruction is that turn's alone",
+  "rules": [
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-19.7.3-040"
+  ],
+  "notes": "The first pass of the Supervisor installed in r1 holds at a gate; meanwhile r2, which binds the same supervisor with no strategy, takes a turn. Its request carries the supervisor's identity alone, without the task-formulation instruction r1's pass is given over its prompt.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "gate": "formulating",
+              "text": "Acme"
+            },
+            {
+              "text": "Hello."
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms2"
+          },
+          {
+            "channel_id": "sup",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "formulating"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms2",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "formulating"
+    },
+    {
+      "await": "asked",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "system_prompt": {
+            "$starts_with": "Extract the core topic"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Look into Acme."
+            }
+          ]
+        },
+        {
+          "system_prompt": "\n--- Agent Identity ---\nRole: Coordinator",
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hi."
+            }
+          ]
+        },
+        {
+          "system_prompt": "\n--- Agent Identity ---\nRole: Coordinator"
+        }
+      ]
+    }
+  }
+}

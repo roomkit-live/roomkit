@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-background-run-asked-for-once-the-kit-began-closing-does-not-start",
+  "title": "A Supervisor's background run asked for once the kit's close began does not start: the delegation a realtime session calls for then hands no worker a task and posts nothing",
+  "rules": [
+    "§19.7.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-19.7.3-032"
+  ],
+  "notes": "A message holds the room at a SYNC BEFORE_BROADCAST gate while the kit's close starts in the background; the room's realtime session then calls delegate_workers, which an auto-delegating Supervisor with async_delivery serves there. The close has begun, so the run does not start: the researcher is asked nothing and no status entry is posted for the run. Python: tests/orchestration/test_background_close.py::test_a_run_asked_for_while_the_kit_closes_never_starts (the voice door). roomkit-rs reports it skipped (realtime, O1).",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "async_delivery": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "holder",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "hold"
+        }
+      },
+      "background": true,
+      "as": "message"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "delegate_workers",
+      "arguments": {
+        "task": "Find the facts."
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "message"
+    },
+    {
+      "await": "closing"
+    },
+    {
+      "call": "status.recent",
+      "n": 20,
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "researcher": []
+    }
+  }
+}

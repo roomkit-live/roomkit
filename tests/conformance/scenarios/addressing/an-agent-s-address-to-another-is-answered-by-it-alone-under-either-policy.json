@@ -1,0 +1,252 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "addressing/an-agent-s-address-to-another-is-answered-by-it-alone-under-either-policy",
+  "title": "Under AGENT_CHAIN as under ADDRESSED_ONLY, an agent's answer addressed to another agent is answered by that agent alone: the room's third agent is not asked",
+  "rules": [
+    "§19.3.1",
+    "§19.3"
+  ],
+  "requirements": [
+    "RK-19.3.1-007"
+  ],
+  "notes": "In each room a person asks a1, whose answer is addressed to a2: a2 answers, and its own answer is addressed to nobody, so that nothing else asks the agents. a3, which answers whatever it is handed, is asked about nothing in either room: under AGENT_CHAIN an unaddressed answer of a1 would have asked it too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "@a1 ask a2"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "@a2 over to you"
+                },
+                "addressed_to": [
+                  "a2"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a2",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "a1"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "done"
+                },
+                "addressed_to": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a3",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "chain",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1"
+          },
+          {
+            "channel_id": "a2"
+          },
+          {
+            "channel_id": "a3"
+          }
+        ]
+      },
+      {
+        "id": "addressed",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1"
+          },
+          {
+            "channel_id": "a2"
+          },
+          {
+            "channel_id": "a3"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_agent_response_policy",
+      "room_id": "chain",
+      "policy": "agent_chain"
+    },
+    {
+      "call": "set_agent_response_policy",
+      "room_id": "addressed",
+      "policy": "addressed_only"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "chain",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 ask a2"
+        },
+        "addressed_to": [
+          "a1"
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "addressed",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 ask a2"
+        },
+        "addressed_to": [
+          "a1"
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "turns": {
+      "chain": {
+        "a1": [
+          {
+            "id": "chain#0"
+          }
+        ],
+        "a2": [
+          {
+            "id": "chain#1"
+          }
+        ],
+        "a3": []
+      },
+      "addressed": {
+        "a1": [
+          {
+            "id": "addressed#0"
+          }
+        ],
+        "a2": [
+          {
+            "id": "addressed#1"
+          }
+        ],
+        "a3": []
+      }
+    },
+    "timeline": {
+      "chain": [
+        {
+          "index": 0,
+          "addressed_to": [
+            "a1"
+          ]
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "a1"
+          },
+          "addressed_to": [
+            "a2"
+          ],
+          "responds_to": "chain#0"
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "a2"
+          },
+          "responds_to": "chain#1"
+        }
+      ],
+      "addressed": [
+        {
+          "index": 0,
+          "addressed_to": [
+            "a1"
+          ]
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "a1"
+          },
+          "addressed_to": [
+            "a2"
+          ],
+          "responds_to": "addressed#0"
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "a2"
+          },
+          "responds_to": "addressed#1"
+        }
+      ]
+    }
+  }
+}

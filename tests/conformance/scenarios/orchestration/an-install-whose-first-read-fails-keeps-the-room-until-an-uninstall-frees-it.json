@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-install-whose-first-read-fails-keeps-the-room-until-an-uninstall-frees-it",
+  "title": "An install whose initial snapshot of the room cannot be read returns the store's error and keeps its claim: another install is refused until an uninstall, which does not wait for the failed attempt, frees the room for the next",
+  "rules": [
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-19.7-036",
+    "RK-19.7-037"
+  ],
+  "notes": "The install claims the room, then reads its snapshot under the room's lock: the room's bindings, whose read the store fails. The error is returned; the room still names the strategy and refuses a second install. The uninstall returns at once, the failed attempt being over, and a second strategy installs. Python: tests/orchestration/test_strategy_install.py::test_an_uninstall_after_an_install_the_store_cut_short_frees_the_room.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      },
+      {
+        "id": "support",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "first",
+        "agents": [
+          "sales"
+        ]
+      },
+      {
+        "id": "second",
+        "agents": [
+          "support"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "list_bindings",
+      "room_id": "r1",
+      "fail": "store down"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "first",
+      "expect": {
+        "error": "store_failed"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "first"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "second",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "second"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "second"
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "ops": {
+          "$present": true
+        },
+        "support": {
+          "category": "intelligence"
+        }
+      }
+    }
+  }
+}

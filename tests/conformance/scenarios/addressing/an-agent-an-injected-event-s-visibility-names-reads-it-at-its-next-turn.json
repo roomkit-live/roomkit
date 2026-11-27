@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "addressing/an-agent-an-injected-event-s-visibility-names-reads-it-at-its-next-turn",
+  "title": "An event a hook injects asks no agent, and the agent its visibility names reads it in its history at its next turn, while an agent it does not name never reads it",
+  "rules": [
+    "§19.3",
+    "§9.4"
+  ],
+  "requirements": [
+    "RK-19.3-012"
+  ],
+  "notes": "The hook injects a notice for ws and b (its visibility \"b,ws\") on a message addressed to nobody, so no agent takes a turn then. The room is ADDRESSED_ONLY, so the agents' answers ask no one. The next message, unaddressed, asks both agents: b's request reads the notice at its place in the history, a's does not.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From a."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From b."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "ws",
+                    "b"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "Notice: the office closes at noon."
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_agent_response_policy",
+      "room_id": "room-1",
+      "policy": "addressed_only"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "When can I come?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Notice: the office closes at noon."
+          },
+          "visibility": "b,ws"
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "When can I come?"
+          }
+        },
+        "$any",
+        "$any"
+      ]
+    },
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Hello"
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "When can I come?"
+              }
+            }
+          ]
+        }
+      ],
+      "b": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Hello"
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Notice: the office closes at noon."
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "When can I come?"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

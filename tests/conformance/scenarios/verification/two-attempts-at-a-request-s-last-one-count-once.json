@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/two-attempts-at-a-request-s-last-one-count-once",
+  "title": "Two wrong attempts at a request's last one count once: the one held inside its transition fails the request, and the other, waiting on the identity's transitions, finds it no longer open",
+  "rules": [
+    "§11.7.7",
+    "§11.7.2",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-11.7.7-007"
+  ],
+  "notes": "max_attempts is 2 and one wrong secret was counted. The next wrong attempt holds at a gate in its write of the request's count (in_place), inside its transition, before anything is written. A second wrong attempt starts meanwhile: the identity's transitions are serialized under verification:<organization>:<identity>, so it reads the request only once the first is over, and is refused not_open. Read without that serialization, it would find the request open with one attempt and fail it too. The request counts two attempts, and one verification_ended is emitted.",
+  "setup": {
+    "kit": {
+      "verification_policy": {
+        "max_attempts": 2
+      },
+      "store_faults": true
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "wrong",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "mismatch"
+        }
+      }
+    },
+    {
+      "store_fault": "update_verification_request",
+      "gate": "counting",
+      "in_place": true
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "wrong again",
+      "background": true,
+      "as": "last"
+    },
+    {
+      "wait_for": "counting"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "wrong once more",
+      "background": true,
+      "as": "racing"
+    },
+    {
+      "open": "counting"
+    },
+    {
+      "await": "last",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "failed"
+        }
+      }
+    },
+    {
+      "await": "racing",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "attempts": 2
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "reason": "failed",
+          "ended": "request"
+        }
+      ]
+    }
+  }
+}

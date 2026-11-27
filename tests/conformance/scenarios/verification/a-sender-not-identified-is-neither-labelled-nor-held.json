@@ -1,0 +1,256 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-sender-not-identified-is-neither-labelled-nor-held",
+  "title": "Under a policy that holds the unverified, an unknown sender and a pending one are not identified: their messages carry no verification label, are not held, reach the agents, and ON_VERIFICATION_REQUIRED hears neither",
+  "rules": [
+    "§11.7",
+    "§11.7.3"
+  ],
+  "requirements": [
+    "RK-11.7-001"
+  ],
+  "notes": "Verification applies to an IDENTIFIED sender only. The resolver leaves the first sender unknown and the second ambiguous, which no hook answers, so they join pending. A sender_verification read in a BEFORE_BROADCAST hook finds no label on either event.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "verification_policy": {
+        "hold_unverified": true
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "required",
+        "trigger": "on_verification_required"
+      },
+      {
+        "name": "read",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "sms"
+        ],
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "seen",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "from an unknown sender"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "all",
+            "source": {
+              "participant_id": "+15550000001",
+              "verification": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "from a pending sender"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "all",
+            "source": {
+              "verification": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "required": []
+    },
+    "actions": {
+      "seen": [
+        {
+          "result": null
+        },
+        {
+          "result": null
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "from an unknown sender"
+          },
+          "visibility": "all",
+          "source": {
+            "verification": {
+              "$absent": true
+            }
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "from a pending sender"
+          },
+          "visibility": "all",
+          "source": {
+            "verification": {
+              "$absent": true
+            }
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "from an unknown sender"
+            }
+          },
+          {
+            "content": {
+              "body": "from a pending sender"
+            }
+          }
+        ]
+      }
+    },
+    "participants": {
+      "room-1": [
+        {
+          "identification": "pending",
+          "identity_id": null,
+          "candidates": [
+            "alice-id",
+            "bob-id"
+          ]
+        }
+      ]
+    }
+  }
+}

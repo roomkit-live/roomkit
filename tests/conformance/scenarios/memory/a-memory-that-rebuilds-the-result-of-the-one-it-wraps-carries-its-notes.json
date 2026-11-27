@@ -1,0 +1,460 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-memory-that-rebuilds-the-result-of-the-one-it-wraps-carries-its-notes",
+  "title": "A budget-aware, a compacting, a summarizing and a retrieval memory each rebuild the result of the memory they wrap and carry its notes: the turn's input is followed by them at every turn",
+  "rules": [
+    "§20.2",
+    "§20.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-20.2-012"
+  ],
+  "notes": "Each agent's scripted memory retrieves the same note for every turn, wrapped in one of the implementation's wrappers, each with a window that trims and summarizes nothing (the retrieval memory's source finds nothing of its own). The note rides the turn's input, after the notes' header, as the scripted memory alone gives it (memory/a-memory-s-notes-follow-the-turn-s-input), and never the history.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "budget",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Yes."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ],
+          "budget_aware": {
+            "max_context_tokens": 100000
+          }
+        }
+      },
+      {
+        "id": "compacting",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Yes."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ],
+          "compacting": {
+            "max_context_tokens": 100000
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "unused summary"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "summarizing",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Yes."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ],
+          "summarizing": {
+            "max_context_tokens": 100000
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "unused summary"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "retrieval",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Yes."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ],
+          "retrieval": {
+            "sources": [
+              {
+                "name": "handbook",
+                "results": []
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-budget",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "budget",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-compacting",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "compacting",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-summarizing",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "summarizing",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-retrieval",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "retrieval",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-budget",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-budget",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Even on sale items?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-compacting",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-compacting",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Even on sale items?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-summarizing",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-summarizing",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Even on sale items?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-retrieval",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-retrieval",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Even on sale items?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "budget": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Even on sale items?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ],
+      "compacting": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Even on sale items?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ],
+      "summarizing": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Even on sale items?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ],
+      "retrieval": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Even on sale items?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ],
+      "compacting/summarizer": [],
+      "summarizing/summarizer": []
+    }
+  }
+}

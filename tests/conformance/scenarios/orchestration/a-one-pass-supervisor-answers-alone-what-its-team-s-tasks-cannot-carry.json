@@ -1,0 +1,255 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-one-pass-supervisor-answers-alone-what-its-team-s-tasks-cannot-carry",
+  "title": "A Supervisor that runs its team on the user's message itself answers a media, a composite and an empty text alone, through its own channel: no worker is handed a task",
+  "rules": [
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-19.7.3-004"
+  ],
+  "notes": "auto_delegate with refine_task false is the one pass: the workers' tasks are the message's text (orchestration/an-auto-delegating-supervisor-that-does-not-refine-hands-its-team-the-message). A media, a composite and an empty text carry no task: the supervisor's own turn answers each, and no child room is made.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A picture."
+            },
+            {
+              "text": "Seen."
+            },
+            {
+              "text": "Nothing said."
+            }
+          ],
+          "vision": true
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "refine_task": false
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "media",
+          "url": "data:image/png;base64,AQIDBA==",
+          "mime_type": "image/png",
+          "filename": "lamp.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "see here"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png;base64,AQIDBA==",
+              "mime_type": "image/png",
+              "filename": "lamp.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": ""
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "analyst": [],
+      "sup": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            "$any",
+            "$any",
+            {
+              "role": "user",
+              "parts": [
+                {
+                  "text": "see here"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "media"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "A picture."
+          },
+          "responds_to": "r1#0"
+        },
+        {
+          "index": 2,
+          "content": {
+            "type": "composite"
+          }
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Seen."
+          },
+          "responds_to": "r1#2"
+        },
+        {
+          "index": 4,
+          "content": {
+            "type": "text",
+            "body": ""
+          }
+        },
+        {
+          "index": 5,
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Nothing said."
+          },
+          "responds_to": "r1#4"
+        }
+      ]
+    }
+  }
+}

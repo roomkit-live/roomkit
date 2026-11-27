@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-s-language-change-writes-the-agent-s-identity-in-that-language",
+  "title": "A handoff handler's language change reaches the agent's next turn: its system prompt ends with its identity block, in the language set, where the turn before read the agent's own",
+  "rules": [
+    "§19.1",
+    "§19.6"
+  ],
+  "requirements": [
+    "RK-19.1-011"
+  ],
+  "notes": "set_language keeps the language in the room's conversation state (orchestration/a-handoff-s-language-is-the-room-s-state); the agent writes its identity block at the end of its turns' system prompt in the room's language, else its own (orchestration/an-agent-s-turn-prompt-ends-with-its-identity). The room has no realtime session, so nothing else is reconfigured. Cited in part: the prompt a language change writes for a room's realtime sessions (set_language reconfigures them with the active agent's prompt and its identity block, RK-19.6-043) is not observed; no step gives the handoff handler its agents and a realtime channel.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales",
+          "language": "English"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            },
+            {
+              "text": "Bonjour."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "Be helpful."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "handoff.set_language",
+      "handler": "h",
+      "room_id": "r1",
+      "language": "French"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Encore"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {
+          "system_prompt": "Be helpful.\n--- Agent Identity ---\nRole: Sales\nLanguage: Always respond in English"
+        },
+        {
+          "system_prompt": "Be helpful.\n--- Agent Identity ---\nRole: Sales\nLanguage: Always respond in French"
+        }
+      ]
+    }
+  }
+}

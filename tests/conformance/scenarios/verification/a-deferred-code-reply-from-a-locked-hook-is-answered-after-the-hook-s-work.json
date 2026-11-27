@@ -1,0 +1,247 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-deferred-code-reply-from-a-locked-hook-is-answered-after-the-hook-s-work",
+  "title": "A code reply a SYNC hook sends with defer_delivery from its locked section completes apart from the hook: the released message is answered after the hook's event is delivered and answered",
+  "rules": [
+    "§11.7.4",
+    "§11.7.6",
+    "§10.1 step 18",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-11.7.6-008"
+  ],
+  "notes": "The hook runs under the room's lock (BEFORE_BROADCAST, SYNC) and sends the sender's code with defer_delivery: the call returns verification_code once the reply is known for one, and the attempt, the release and the answer go on as the kit's own work, outside that lock. So the answer to the released message waits for the room: the hook's event is delivered and answered first. A completion made under the lock itself (verification/a-release-from-a-hook-that-allows-its-event-is-answered-first) places the answer ahead instead.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Verified by phone"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "as": "reply",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "$req.secret"
+                  }
+                },
+                "defer_delivery": true,
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "verification_code",
+                    "event": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z",
+      "method": "code"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Verified by phone"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "reply": [
+        {
+          "result": {
+            "blocked": true,
+            "reason": "verification_code",
+            "event": null
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Verified by phone"
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "answer to Verified by phone"
+          },
+          "responds_to": "room-1#1"
+        },
+        {
+          "index": 3,
+          "content": {
+            "body": "answer to Wire 500 to Bob"
+          },
+          "responds_to": "room-1#0"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Verified by phone"
+            }
+          },
+          {
+            "content": {
+              "body": "Wire 500 to Bob"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-watches-an-agent-s-unaddressed-answer-under-addressed-only",
+  "title": "Under ADDRESSED_ONLY an agent's unaddressed answer asks no other agent, and the router's supervisor still receives it, as it received the message addressed to that agent",
+  "rules": [
+    "§19.4",
+    "§19.3.1"
+  ],
+  "requirements": [
+    "RK-19.4-019"
+  ],
+  "notes": "The room is set ADDRESSED_ONLY. A person addresses a: the supervisor receives that message (orchestration/a-supervisor-watches-an-addressed-message). a's answer names nobody, so under ADDRESSED_ONLY it solicits no agent, b not; the supervisor is not solicited, it watches, and receives a's answer too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "for a"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "a's answer"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_agent_response_policy",
+      "room_id": "r1",
+      "policy": "addressed_only",
+      "expect": {
+        "result": {
+          "agent_response_policy": "addressed_only"
+        }
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "supervisor_id": "sup"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "for a"
+        },
+        "addressed_to": [
+          "a"
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "addressed_to": [
+            "a"
+          ],
+          "metadata": {
+            "_always_process": [
+              "sup"
+            ]
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "a"
+          },
+          "addressed_to": null,
+          "metadata": {
+            "_always_process": [
+              "sup"
+            ]
+          }
+        }
+      ]
+    },
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "b": [],
+        "sup": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#1"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/an-identity-s-id-on-a-channel-it-was-never-resolved-on-carries-no-verification",
+  "title": "The room's IDENTIFIED participant names its sender on the channel it was reached through, where its message is labelled and held; the same id arriving through another channel names no identified sender and carries no verification",
+  "rules": [
+    "§11.7.3",
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-11.7.3-003"
+  ],
+  "notes": "The room holds alice-id's record, IDENTIFIED and reached through sms. The resolver answers unknown to whatever it is asked. On sms the room's record names the sender, who is not asked about again: the message is labelled unverified and held. On ws nothing ever resolved alice-id: the message goes on unlabelled and unheld, and a sender_verification read in a BEFORE_BROADCAST hook on ws finds none.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": []
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice-id",
+            "channel_id": "sms",
+            "identification": "identified",
+            "identity_id": "alice-id"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "read",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "ws"
+        ],
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "seen",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice-id",
+        "content": {
+          "type": "text",
+          "body": "on the channel it was reached through"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "transport",
+            "source": {
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "all",
+                "identity_id": "alice-id",
+                "organization_id": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice-id",
+        "content": {
+          "type": "text",
+          "body": "through another channel"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "all",
+            "source": {
+              "verification": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "seen": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "resolver": [
+      {
+        "room_id": "room-1",
+        "channel_id": "ws",
+        "sender_id": "alice-id"
+      }
+    ],
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "on the channel it was reached through"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "through another channel"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "ws",
+            "verification": {
+              "$absent": true
+            }
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "through another channel"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

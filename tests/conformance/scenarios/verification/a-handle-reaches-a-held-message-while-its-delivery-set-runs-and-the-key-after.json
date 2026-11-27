@@ -1,0 +1,340 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-handle-reaches-a-held-message-while-its-delivery-set-runs-and-the-key-after",
+  "title": "A deferred call's completion handle cancels its held message only while its delivery set runs: past it the handle's cancel reaches nothing and the release is answered, while the message's key still names it",
+  "rules": [
+    "§11.7.6",
+    "§10.1 step 18",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "requirements": [
+    "RK-11.7.6-014"
+  ],
+  "notes": "Three senders, each held in a room of their own and verified there afterwards. Alice's handle is cancelled while her message's delivery set runs (its delivery to ws held at a gate): the release restores it and no agent answers. Bob's handle is cancelled once his delivery set ran: a handle done returns its result unchanged and reaches nothing, so the release is answered. Carol's message carries a key, cancelled once her delivery set ran: the key still names the held message, and no agent answers its release. Python: tests/test_verification_release_cancel.py::test_the_handle_reaches_a_held_message_while_its_delivery_set_runs and ::test_a_deferred_held_message_cancelled_by_key_is_released_with_no_answer.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "bob-id"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000003"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "carol-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "gate": "delivering"
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      },
+      "defer_delivery": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "delivering"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "alice",
+      "reason": "user_stopped"
+    },
+    {
+      "open": "delivering"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "alice"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "alice_req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$alice_req",
+      "secret": "$alice_req.secret"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      },
+      "defer_delivery": true,
+      "as": "bob"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "bob"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "bob",
+      "reason": "user_stopped",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "bob-id",
+      "room_id": "room-2",
+      "channel_id": "sms",
+      "as": "bob_req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$bob_req",
+      "secret": "$bob_req.secret"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        },
+        "delivery_key": "task-42"
+      },
+      "defer_delivery": true,
+      "as": "carol"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "carol"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "reason": "user_stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "carol-id",
+      "room_id": "room-3",
+      "channel_id": "sms",
+      "as": "carol_req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$carol_req",
+      "secret": "$carol_req.secret"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "answer"
+          },
+          "responds_to": "room-2#0"
+        }
+      ],
+      "room-3": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      },
+      "room-2": {
+        "ai": [
+          {
+            "content": {
+              "body": "Wire 500 to Bob"
+            }
+          }
+        ]
+      },
+      "room-3": {
+        "ai": []
+      }
+    }
+  }
+}

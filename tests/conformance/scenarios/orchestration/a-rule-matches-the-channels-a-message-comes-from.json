@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-rule-matches-the-channels-a-message-comes-from",
+  "title": "A router's rule on source_channel_ids matches a message from one of those channels and no other: the same text from another channel falls to the default agent",
+  "rules": [
+    "§19.4"
+  ],
+  "requirements": [
+    "RK-19.4-012"
+  ],
+  "notes": "Two otherwise identical messages, one from sms and one from ws. The rule names sms: the first is routed to b, the second, matching no rule, to the default agent a.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "a",
+          "rules": [
+            {
+              "agent_id": "b",
+              "conditions": {
+                "source_channel_ids": [
+                  "sms"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Same words."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Same words."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "sms"
+          },
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "ws"
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#1"
+          }
+        ],
+        "b": [
+          {
+            "id": "r1#0"
+          }
+        ]
+      }
+    }
+  }
+}

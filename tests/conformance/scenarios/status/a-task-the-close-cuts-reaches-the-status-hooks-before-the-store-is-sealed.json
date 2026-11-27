@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/a-task-the-close-cuts-reaches-the-status-hooks-before-the-store-is-sealed",
+  "title": "A delegated task still running when the kit closes is cut by the close, and its terminal status entry reaches the room's ON_STATUS_POSTED hook before the close seals the store",
+  "rules": [
+    "§19.8",
+    "§12.10.4",
+    "§23.3"
+  ],
+  "requirements": [
+    "RK-19.8-018"
+  ],
+  "notes": "The worker holds its turn at a gate no step opens. The kit's close cuts the task: its end, failed (§23.3), is posted on the status bus while the close runs, before the store is sealed, so the room's status hook hears it as it heard the task's pending entry. A post once the close is over starts no room hook (status/a-status-posted-after-close-starts-no-room-hook).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "gate": "working",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "posted",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "as": "task"
+    },
+    {
+      "wait_for": "working"
+    },
+    {
+      "call": "close"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "posted": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "worker",
+            "status": "pending"
+          }
+        },
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "worker",
+            "status": "failed"
+          }
+        }
+      ]
+    }
+  }
+}

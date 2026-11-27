@@ -1,0 +1,278 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-hook-s-status-its-trigger-does-not-act-on-reads-as-null",
+  "title": "An identity hook that answers a status its trigger does not act on is read as null: an unknown sender goes on unresolved, a refused one stays held, an ambiguous one is pending with the resolver's candidates",
+  "rules": [
+    "§11.2",
+    "§11.3"
+  ],
+  "requirements": [
+    "RK-11.2-017"
+  ],
+  "notes": "ON_IDENTITY_UNKNOWN acts on identified, pending, challenge_sent and rejected; ON_IDENTITY_AMBIGUOUS on the same four. Each hook here answers a status outside them, carrying an identity, candidates or a name it would have used: none of it is taken. The first sender is unknown and goes on under its address with no record; the second the resolver refused, and stays held with the resolver's message; the third is ambiguous, and joins pending with the resolver's candidates and no name, as if no hook had answered.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "message": "not allowed"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000003"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "identity": {
+                "id": "found-id",
+                "display_name": "Found User"
+              },
+              "candidates": [
+                {
+                  "id": "carol-id",
+                  "display_name": "Carol"
+                }
+              ],
+              "display_name": "Maybe Carol"
+            }
+          }
+        ]
+      },
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "unknown",
+              "candidates": [
+                {
+                  "id": "carol-id",
+                  "display_name": "Carol"
+                }
+              ],
+              "display_name": "Maybe Carol"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "unknown"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "refused"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not allowed",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "ambiguous"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": {
+                "$as": "pending"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "unknown": [
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "unknown",
+            "address": "+15550000001"
+          }
+        },
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "address": "+15550000002"
+          }
+        }
+      ],
+      "ambiguous": [
+        {
+          "trigger": "on_identity_ambiguous",
+          "identity_result": {
+            "status": "ambiguous",
+            "address": "+15550000003"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "unknown"
+          },
+          "source": {
+            "participant_id": "+15550000001"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "ambiguous"
+          },
+          "source": {
+            "participant_id": {
+              "$as": "pending"
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "unknown"
+            }
+          },
+          {
+            "content": {
+              "body": "ambiguous"
+            }
+          }
+        ]
+      }
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": {
+            "$as": "pending"
+          },
+          "identification": "pending",
+          "identity_id": null,
+          "candidates": [
+            "alice-id",
+            "bob-id"
+          ],
+          "display_name": null
+        }
+      ]
+    }
+  }
+}
