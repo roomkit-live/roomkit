@@ -80,6 +80,14 @@ _LOCAL_TURN_CONTEXT = {
         "acp/handler-before-tool-use-observer-after-turn-independent",
     )
 }
+# A hook of the turn's tool call sends into the turn's own room through the kit
+# it holds, as the Python test's kit-object doors do.
+_OWN_ROOM = "turn-record/a-message-a-turn-sends-into-its-own-room-is-answered-after-it"
+_LOCAL_TURN_CONTEXT[_OWN_ROOM] = (
+    "a before_tool_use hook of the turn's call calls the kit it holds; across Redis the turn "
+    "reaches its room through TurnHost (tests/test_room_turns_in_order.py::"
+    "test_a_message_a_turn_sends_into_its_own_room_is_answered_after_it, the kit's doors)"
+)
 
 
 def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:

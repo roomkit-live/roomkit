@@ -1,0 +1,391 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-mode-the-agent-switches-to-itself-is-not-set-on-the-room-s-next-session",
+  "title": "A configuration value the ACP agent switches to itself is its live session's: the Room's next session is set again to the value the host set through the kit, never to the agent's own",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-6.4-495"
+  ],
+  "notes": "The host sets model to small through a channel call. During the prompt the agent reports mode plan itself (config_option_update): the live session reads it, the Room stores none of it. After the agent's connection drops, the Room's next session is set to model small again and receives no session/set_config_option for mode.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "large",
+                      "options": [
+                        {
+                          "value": "large",
+                          "name": "Large"
+                        },
+                        {
+                          "value": "small",
+                          "name": "Small"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "plan",
+                          "name": "Plan"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "large",
+                      "options": [
+                        {
+                          "value": "large",
+                          "name": "Large"
+                        },
+                        {
+                          "value": "small",
+                          "name": "Small"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "plan",
+                          "name": "Plan"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "set_config_options": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "small",
+                      "options": [
+                        {
+                          "value": "large",
+                          "name": "Large"
+                        },
+                        {
+                          "value": "small",
+                          "name": "Small"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "plan",
+                          "name": "Plan"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "small",
+                      "options": [
+                        {
+                          "value": "large",
+                          "name": "Large"
+                        },
+                        {
+                          "value": "small",
+                          "name": "Small"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "plan",
+                          "name": "Plan"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [
+                      {
+                        "id": "model",
+                        "name": "Model",
+                        "type": "select",
+                        "currentValue": "small",
+                        "options": [
+                          {
+                            "value": "large",
+                            "name": "Large"
+                          },
+                          {
+                            "value": "small",
+                            "name": "Small"
+                          }
+                        ]
+                      },
+                      {
+                        "id": "mode",
+                        "name": "Mode",
+                        "type": "select",
+                        "currentValue": "plan",
+                        "options": [
+                          {
+                            "value": "auto",
+                            "name": "Auto"
+                          },
+                          {
+                            "value": "plan",
+                            "name": "Plan"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {}
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "room-1",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": "small"
+      },
+      "expect": {
+        "result": {
+          "model": "small",
+          "mode": "auto"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "room-1",
+      "verb": "session_config",
+      "arguments": {},
+      "expect": {
+        "result": {
+          "model": "small",
+          "mode": "plan"
+        }
+      }
+    },
+    {
+      "acp_disconnect": "coder"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "room-1",
+      "verb": "session_config",
+      "arguments": {},
+      "expect": {
+        "result": {
+          "model": "small",
+          "mode": "auto"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "coder": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "sessionId": "session-1",
+            "configId": "model",
+            "value": "small"
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "sessionId": "session-2",
+            "configId": "model",
+            "value": "small"
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "roomkit:channel_state:coder": {
+            "config": {
+              "model": "small",
+              "mode": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

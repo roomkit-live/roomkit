@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-limit-counts-code-points-and-a-cut-splits-none",
+  "title": "A channel's max_length counts code points, not bytes or code units, and a cut never splits a code point",
+  "rules": [
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-032"
+  ],
+  "notes": "Each emoji is one code point, four bytes in UTF-8 and a surrogate pair in UTF-16; each é is one code point, two bytes. With a limit of 8, ten emoji become five and the marker, and a text of eight code points, sixteen bytes, is not cut.",
+  "setup": {
+    "channels": [
+      {
+        "id": "console",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ],
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      },
+      {
+        "id": "short",
+        "type": "pager",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text"
+          ],
+          "max_length": 8
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "short"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "text",
+        "body": "😀😀😀😀😀😀😀😀😀😀"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "text",
+        "body": "éééééééé"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "text",
+        "body": "aé😀bé😀cé😀"
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "short": [
+          {
+            "content": {
+              "type": "text",
+              "body": "😀😀😀😀😀..."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "éééééééé"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "aé😀bé..."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

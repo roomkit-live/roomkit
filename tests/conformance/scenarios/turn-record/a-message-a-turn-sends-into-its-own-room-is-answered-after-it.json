@@ -1,0 +1,221 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-message-a-turn-sends-into-its-own-room-is-answered-after-it",
+  "title": "With serialize_room_turns, a message the agent's running turn sends into its own room during a tool's call, awaited or deferred, returns without waiting for its answer, and the agent answers it after that turn",
+  "rules": [
+    "§6.4",
+    "§10.1"
+  ],
+  "requirements": [
+    "RK-6.4-451"
+  ],
+  "notes": "The before_tool_use hook runs in the call's execution context: it sends two messages into room-1 that ask the agent, one awaited, one deferred. Waiting for their answers would wait on the turn that made the call; both return, the call completes, and the agent answers them in turn after its running turn. Python: tests/test_room_turns_in_order.py::test_a_message_a_turn_sends_into_its_own_room_is_answered_after_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "desk",
+        "type": "desk",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me ask.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_room",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "outer answer"
+            },
+            {
+              "text": "nested answer one"
+            },
+            {
+              "text": "nested answer two"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "ask_room",
+            "description": "Ask the room.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "sent"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asks",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "desk",
+                  "sender_id": "bob",
+                  "content": {
+                    "type": "text",
+                    "body": "nested question one"
+                  }
+                },
+                "as": "awaited",
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "error": null
+                  }
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "defer_delivery": true,
+                "message": {
+                  "channel_id": "desk",
+                  "sender_id": "bob",
+                  "content": {
+                    "type": "text",
+                    "body": "nested question two"
+                  }
+                },
+                "as": "deferred",
+                "expect": {
+                  "result": {
+                    "blocked": false
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "sent",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {}
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "chat": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Let me ask."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "nested question one"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "nested question two"
+            }
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "outer answer"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "nested answer one"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "nested answer two"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

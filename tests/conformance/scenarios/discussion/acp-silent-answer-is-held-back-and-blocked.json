@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/acp-silent-answer-is-held-back-and-blocked",
+  "title": "An ACP agent's discussion answer that is the silent token streams like any agent's: held back while it could still be the token, then stored blocked and delivered to no one",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "requirements": [
+    "RK-6.4-515"
+  ],
+  "notes": "dev answers \"(sil\" then \"ent)\", the default silent token in two chunks. Neither chunk reaches the streaming transport live nor the plain one chat: the answer's row is stored blocked as discussion_silent (rule 13).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "live",
+        "type": "chat",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "(sil"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "ent)"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "agent": {
+          "name": "SRE"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "live"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ],
+          "max_turns": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@dev anything to add?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "chat"
+          },
+          "content": {
+            "type": "text",
+            "body": "@dev anything to add?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "type": "text",
+            "body": "(silent)"
+          },
+          "status": "blocked",
+          "blocked_by": "discussion_silent"
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "chat": [],
+        "live": [
+          {
+            "content": {
+              "type": "text",
+              "body": "@dev anything to add?"
+            }
+          }
+        ]
+      }
+    },
+    "streamed": {
+      "r1": {
+        "live": []
+      }
+    },
+    "models": {
+      "sre": []
+    }
+  }
+}

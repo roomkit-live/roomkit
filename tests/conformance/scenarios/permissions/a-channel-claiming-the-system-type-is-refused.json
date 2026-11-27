@@ -1,0 +1,56 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-channel-claiming-the-system-type-is-refused",
+  "title": "Registering a channel of the type system, reserved to the framework's own records, is refused, and nothing of it is registered",
+  "rules": [
+    "§6.2",
+    "§5.3"
+  ],
+  "requirements": [
+    "RK-6.2-011"
+  ],
+  "notes": "The transport and the intelligence channel of type system are refused with invalid_argument, and no channel_registered is emitted; the same id registers once it names another type. The part of RK-6.2-011 left unobserved: only a host channel claims host (§10.5); a scripted channel of type host is the runner's host channel, so no step registers another channel of that type. Python: core/mixins/channel_ops.py register_channel; roomkit-rs: roomkit-core rules/host.rs claims_reserved_type.",
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "relay",
+        "type": "system",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "bot",
+        "type": "system",
+        "category": "intelligence"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "relay",
+        "type": "relay",
+        "category": "transport"
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "*": [
+        {
+          "event": "channel_registered",
+          "channel_id": "relay",
+          "channel_type": "relay"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-text-reaches-every-channel-unchanged-whatever-it-declares",
+  "title": "A text reaches a text-only, a rich, a media and a location-only channel unchanged, and a rich text reaches a channel that names no text as its plain text",
+  "rules": [
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-006",
+    "RK-6.6-007"
+  ],
+  "notes": "geo declares LOCATION alone, as a conference channel declares AUDIO alone: text is the fallback every channel takes, so the text reaches it unchanged and the rich text as its text form, its plain_text. The text reaches every other channel unchanged too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "console",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ],
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      },
+      {
+        "id": "plain",
+        "type": "pager",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text"
+          ]
+        }
+      },
+      {
+        "id": "rich",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich"
+          ]
+        }
+      },
+      {
+        "id": "files",
+        "type": "kiosk",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ]
+        }
+      },
+      {
+        "id": "geo",
+        "type": "tracker",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "plain"
+          },
+          {
+            "channel_id": "rich"
+          },
+          {
+            "channel_id": "files"
+          },
+          {
+            "channel_id": "geo"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "text",
+        "body": "Meet at noon"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "rich",
+        "body": "**Hi** there",
+        "format": "markdown",
+        "plain_text": "Hi there"
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "plain": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Meet at noon"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Hi there"
+            }
+          }
+        ],
+        "rich": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Meet at noon"
+            }
+          },
+          {
+            "content": {
+              "type": "rich",
+              "body": "**Hi** there",
+              "plain_text": "Hi there"
+            }
+          }
+        ],
+        "files": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Meet at noon"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Hi there"
+            }
+          }
+        ],
+        "geo": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Meet at noon"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Hi there"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

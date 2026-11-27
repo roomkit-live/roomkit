@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-composite-a-channel-takes-in-part-keeps-its-parts-in-order",
+  "title": "A composite whose parts do not all become text keeps its transcoded parts in order: a part the channel takes as it is, a part it cannot carry as its text form",
+  "rules": [
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-021"
+  ],
+  "notes": "files carries TEXT and MEDIA, JPEG only: the JPEG stays a file, so the composite is not flattened; the PNG and the location become their texts, each in its place. A channel that takes every part receives the composite unchanged.",
+  "setup": {
+    "channels": [
+      {
+        "id": "console",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ],
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      },
+      {
+        "id": "files",
+        "type": "kiosk",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/jpeg"
+          ]
+        }
+      },
+      {
+        "id": "wide",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media",
+            "location"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "files"
+          },
+          {
+            "channel_id": "wide"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "media",
+            "url": "https://example.com/p.png",
+            "mime_type": "image/png",
+            "caption": "A drawing",
+            "size_bytes": 200
+          },
+          {
+            "type": "text",
+            "body": "Look"
+          },
+          {
+            "type": "media",
+            "url": "https://example.com/s.jpg",
+            "mime_type": "image/jpeg",
+            "caption": "A photo",
+            "size_bytes": 300
+          },
+          {
+            "type": "location",
+            "latitude": 45.5,
+            "longitude": -73.6,
+            "label": "Office"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "files": [
+          {
+            "content": {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "text",
+                  "body": "[Media: A drawing]"
+                },
+                {
+                  "type": "text",
+                  "body": "Look"
+                },
+                {
+                  "type": "media",
+                  "url": "https://example.com/s.jpg",
+                  "mime_type": "image/jpeg",
+                  "caption": "A photo",
+                  "size_bytes": 300
+                },
+                {
+                  "type": "text",
+                  "body": "[Location: Office (45.5, -73.6)]"
+                }
+              ]
+            }
+          }
+        ],
+        "wide": [
+          {
+            "content": {
+              "type": "composite",
+              "parts": [
+                {
+                  "type": "media",
+                  "url": "https://example.com/p.png",
+                  "mime_type": "image/png",
+                  "caption": "A drawing"
+                },
+                {
+                  "type": "text",
+                  "body": "Look"
+                },
+                {
+                  "type": "media",
+                  "url": "https://example.com/s.jpg",
+                  "mime_type": "image/jpeg",
+                  "caption": "A photo",
+                  "size_bytes": 300
+                },
+                {
+                  "type": "location",
+                  "latitude": 45.5,
+                  "longitude": -73.6,
+                  "label": "Office"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

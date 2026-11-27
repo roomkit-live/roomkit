@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-orders-its-serialized-producer-s-generations-itself",
+  "title": "A Loop that takes a producer's turns orders its generations itself: with serialize_room_turns on the producer, its second draft does not wait on the first, and the loop answers",
+  "rules": [
+    "§6.4",
+    "§19.7.4"
+  ],
+  "requirements": [
+    "RK-6.4-452"
+  ],
+  "notes": "The reviewer rejects the first draft and approves the second: the loop asks the producer twice inside the one delivery of the message. Had each generation waited its place in the room's line, the second would have waited on the turn that runs the loop, and the message would never be answered. Python: tests/test_room_turns_in_order.py::test_a_strategy_that_takes_the_agent_s_turns_orders_them_itself.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Draft one."
+            },
+            {
+              "text": "Draft two."
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "submit_review",
+                  "arguments": {
+                    "approved": false,
+                    "feedback": "Shorter."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "r2",
+                  "name": "submit_review",
+                  "arguments": {
+                    "approved": true,
+                    "feedback": ""
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor",
+          "max_iterations": 2
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "writer": [
+        {},
+        {}
+      ],
+      "editor": [
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "chat"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Draft two."
+          },
+          "responds_to": "r1#0",
+          "metadata": {
+            "approved": true,
+            "iteration": 2
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/an-edit-and-a-delete-read-as-their-text-form-whatever-the-channel-takes",
+  "title": "A channel that supports neither edits nor deletes receives an edit as the correction of its new content's text form and a delete as the deletion text, even when it takes the new content's media",
+  "rules": [
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-024"
+  ],
+  "notes": "files takes MEDIA but supports no edit: the edit reaches it as \"Correction: [Media: A new drawing]\", the text form of its new content, never the file, as it reaches the text-only channel; the delete reads \"[Message deleted]\" on both, a text or a system content (RK-6.6-016). A channel that supports both receives them natively (RK-6.6-027). The part of RK-6.6-024 left unobserved: the readers outside a channel.",
+  "setup": {
+    "channels": [
+      {
+        "id": "console",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ],
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      },
+      {
+        "id": "files",
+        "type": "kiosk",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ]
+        }
+      },
+      {
+        "id": "plain",
+        "type": "pager",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "files"
+          },
+          {
+            "channel_id": "plain"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/p.png",
+          "mime_type": "image/png",
+          "caption": "A drawing",
+          "size_bytes": 200
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "media",
+            "url": "https://example.com/q.png",
+            "mime_type": "image/png",
+            "caption": "A new drawing"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "alice",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "files": [
+          {
+            "content": {
+              "type": "media",
+              "url": "https://example.com/p.png"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Correction: [Media: A new drawing]"
+            }
+          },
+          {
+            "content": {
+              "body": "[Message deleted]"
+            }
+          }
+        ],
+        "plain": [
+          {
+            "content": {
+              "type": "text",
+              "body": "[Media: A drawing]"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Correction: [Media: A new drawing]"
+            }
+          },
+          {
+            "content": {
+              "body": "[Message deleted]"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

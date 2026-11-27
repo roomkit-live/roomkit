@@ -1,0 +1,211 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/a-worker-s-turn-inside-a-supervisor-s-asks-its-own-router",
+  "title": "A worker's turn run while its supervisor's turn waits on the delegation reads none of the supervisor's provider: the worker asks its own router, and its model answers",
+  "rules": [
+    "§6.4",
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-6.4-523"
+  ],
+  "notes": "sup's router picks sup/big for its turn; the call to delegate_to_researcher runs the researcher's turn while sup's turn waits on it, and the researcher's router puts that turn on researcher/small. Had the researcher read the turn it runs inside, sup/big would have been asked three times. The part of RK-6.4-523 left unobserved: a loop a handler of one agent's turn drives directly for another agent (Python: channels/ai.py _routed; tests/test_channels/test_ai_router.py::test_a_loop_run_inside_another_agent_s_turn_runs_on_its_own_provider), which no step drives; in the delegation the worker's turn builds its own context.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": []
+        },
+        "router": {
+          "models": {
+            "big": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "c1",
+                      "name": "delegate_to_researcher",
+                      "arguments": {
+                        "task": "Find the facts."
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "Here are the facts."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "sup/big"
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": []
+        },
+        "router": {
+          "models": {
+            "small": {
+              "rounds": [
+                {
+                  "text": "The facts."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "researcher/small"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "ai_routes": {
+      "sup": [
+        {
+          "reason": "turn",
+          "text": "Look into Acme.",
+          "previous": null,
+          "failed": null
+        }
+      ],
+      "researcher": [
+        {
+          "reason": "turn",
+          "text": {
+            "$contains": "Find the facts."
+          },
+          "previous": null,
+          "failed": null
+        }
+      ]
+    },
+    "models": {
+      "sup": [],
+      "sup/big": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "researcher": [],
+      "researcher/small": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Find the facts."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Look into Acme."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_name": "delegate_to_researcher"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_name": "delegate_to_researcher"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Here are the facts."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-message-in-a-room-the-agent-runs-no-turn-in-gets-a-turn-of-its-own",
+  "title": "With steer_room_turns, a message from the author of the turn the agent runs in another room is not handed to that turn: the agent runs no turn in the message's room, so the message gets a turn of its own there",
+  "rules": [
+    "§6.4",
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-6.4-461"
+  ],
+  "notes": "Alice is a participant of both rooms, one author. Her turn in room-2 holds at its tool's gate; her message in room-1 meanwhile is answered by a turn of room-1 that runs at once, and the turn of room-2 never reads it. The owner reads the author on the request of the one turn the channel runs in the message's room. The part of RK-6.4-461 left unobserved: a channel that runs several turns in the room, which no step brings about. Python: core/_room_turns.py RoomTurns._steered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "Hello in room one."
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "chat",
+            "display_name": "Alice"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "chat",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "files"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello, room one."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "files",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the files."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Hello, room one."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the files."
+              }
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Hello, room one."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello in room one."
+          },
+          "responds_to": "room-1#0"
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "List the files."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "a.py"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,226 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-waiting-turn-leaves-the-room-s-delivery-lane-to-the-turn-before-it",
+  "title": "With serialize_room_turns, a turn that waits its place holds no part of the room's delivery lane: a later event of the room is delivered while it waits, and so is the answer of the turn before it",
+  "rules": [
+    "§6.4",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-6.4-446"
+  ],
+  "notes": "The first turn holds at its generation's gate g1, so the second waits its place. The second message's delivery reaches desk at the gate m2, so it was committed and its delivery set runs before the marker is sent. The marker, committed after the second message and delivered to chat alone, reaches chat's delivery at the gate mark meanwhile: the lane ran past the delivery set that asked the waiting turn. Once g1 opens, the first turn's answer, delivered through the lane, reaches chat's delivery at the gate dlv while the second turn still waits its place: had the waiting turn waited in the lane, neither gate would be reached, each delivery queued behind it. When the second turn starts once the first wrote its answer is not asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "marker"
+            },
+            "gate": "mark"
+          },
+          {
+            "when": {
+              "text": "First answer"
+            },
+            "gate": "dlv"
+          }
+        ]
+      },
+      {
+        "id": "desk",
+        "type": "desk",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "Second question"
+            },
+            "gate": "m2"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer",
+              "gate": "g1"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First question"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second question"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "m2"
+    },
+    {
+      "open": "m2"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "desk",
+      "content": {
+        "type": "text",
+        "body": "marker"
+      },
+      "visibility": "chat",
+      "background": true,
+      "as": "marked"
+    },
+    {
+      "wait_for": "mark"
+    },
+    {
+      "open": "mark"
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "wait_for": "dlv"
+    },
+    {
+      "open": "dlv"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "marked"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First question"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First question"
+            },
+            {
+              "role": "assistant",
+              "text": "First answer"
+            },
+            {
+              "role": "user",
+              "text": "Second question"
+            }
+          ]
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "chat": [
+          {
+            "content": {
+              "type": "text",
+              "body": "marker"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "First answer"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Second answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

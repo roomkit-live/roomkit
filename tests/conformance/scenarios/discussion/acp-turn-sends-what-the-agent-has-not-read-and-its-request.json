@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/acp-turn-sends-what-the-agent-has-not-read-and-its-request",
+  "title": "An ACP agent's discussion turn sends what its session has not read yet and the event it answers as its request, its notes naming that event and who asked; its next turn sends only what came since",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "requirements": [
+    "RK-6.4-513"
+  ],
+  "notes": "The first message asks sre, which answers; dev reads neither. The second asks dev: its prompt carries the two events it has not read, then the second message as its request (acp_prompts), and the notes, under the runtime's mark, name the message it answers and Ops as who asked (acp_wire, the same prompt): neither the notes' wording nor their place in the prompt is asserted. The third asks dev again: its prompt opens with the third message, every earlier event read, no catch-up before it. The part of RK-6.4-513 left unobserved: an event committed after the turn's start, which the catch-up stops before.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "A missing field."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Fixed."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "agent": {
+          "name": "SRE"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Logs are clean."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          }
+        ],
+        "participants": [
+          {
+            "id": "oncall",
+            "channel_id": "chat",
+            "display_name": "Ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre check the logs"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@dev why 422?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@dev fix it"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "dev": [
+        {
+          "text": {
+            "$contains": [
+              "check the logs",
+              "Logs are clean.",
+              "why 422?"
+            ]
+          }
+        },
+        {
+          "text": {
+            "$starts_with": "Ops: \"@dev fix it\""
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "dev": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "prompt": [
+              {
+                "text": {
+                  "$contains": [
+                    "[Notes kept by the assistant's runtime",
+                    "@dev why 422?",
+                    "Ops"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "method": "session/prompt"
+        }
+      ]
+    }
+  }
+}

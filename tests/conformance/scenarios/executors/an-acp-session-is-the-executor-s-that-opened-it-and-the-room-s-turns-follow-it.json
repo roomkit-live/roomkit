@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-acp-session-is-the-executor-s-that-opened-it-and-the-room-s-turns-follow-it",
+  "title": "An ACP agent channel's session is local to the turn executor that opened it: a turn placed on another executor opens a session of its own there, and the room's later turns are placed on the executor holding it",
+  "rules": [
+    "§6.4",
+    "§10.6.7"
+  ],
+  "requirements": [
+    "RK-6.4-488"
+  ],
+  "notes": "first takes the room's first turn, its copy opening the room's session. Paused, it takes no turn: second takes the next one, its own copy opening a session of its own. Once first resumes, the room's third turn is placed on second, which holds the room's session, though first, the first executor that takes the channel, would take it otherwise. The part of RK-6.4-488 left unobserved: what each copy's session read, since the runners record the ACP agent of a channel's last build alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.pause",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.resume",
+      "executor": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "C."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        }
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "build": 1,
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}

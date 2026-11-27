@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-muted-agent-takes-no-place-in-the-room-s-line",
+  "title": "With serialize_room_turns, a muted agent takes no place in the room's line: a message for it while its turn runs is read at once, its delivery waiting on no turn, and no answer of the muted agent is delivered",
+  "rules": [
+    "§6.4",
+    "§7.2",
+    "§7.5"
+  ],
+  "requirements": [
+    "RK-6.4-450"
+  ],
+  "notes": "The agent's first turn holds at its generation's gate g1; the agent is muted meanwhile. The second message's processing returns while that turn still holds, so its delivery waited on no turn, and the agent's memory was handed it as it came. The first turn's answer, committed after the mute, is not delivered (§7.5 rule 2); whether a muted agent generates an answer at all is left to the implementation, so no model request is asserted. Python: core/event_router.py _serializes; tests/test_room_turns_in_order.py::test_a_muted_agent_still_reads_each_message_at_once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "desk",
+        "type": "desk",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer",
+              "gate": "g1"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        },
+        "memory": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First question"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "mute",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second question"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "ingested": {
+      "room-1": {
+        "agent": [
+          {
+            "content": {
+              "type": "text",
+              "body": "First question"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Second question"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "chat": [],
+        "desk": [
+          {
+            "content": {
+              "type": "text",
+              "body": "First question"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Second question"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

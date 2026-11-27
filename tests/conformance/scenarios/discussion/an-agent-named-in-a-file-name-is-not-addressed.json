@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-named-in-a-file-name-is-not-addressed",
+  "title": "A discussion reads a message's names in its author's words alone, a media's caption included: an agent named in a media's caption is addressed, one named only in its file name is not",
+  "rules": [
+    "§6.6",
+    "§19.7.5"
+  ],
+  "requirements": [
+    "RK-6.6-030"
+  ],
+  "notes": "The first media's caption names a; its file name names b. The second media has no caption and a file name naming b: its text form reads that file name, but the discussion's addressing reads no file name, so it addresses no one, and with addressed_only no agent answers it. The part of RK-6.6-030 left unobserved: a memory's retrieval query.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media"
+          ]
+        }
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "name": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Read it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "name": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "max_turns": 1,
+          "addressed_only": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/r.pdf",
+          "mime_type": "application/pdf",
+          "filename": "for-@b.pdf",
+          "caption": "@a please read"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "oncall",
+        "content": {
+          "type": "media",
+          "url": "https://example.com/n.pdf",
+          "mime_type": "application/pdf",
+          "filename": "@b notes.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "chat"
+          },
+          "addressed_to": [
+            "a"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "Read it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "chat"
+          },
+          "addressed_to": {
+            "$absent": true
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {}
+      ],
+      "b": []
+    }
+  }
+}

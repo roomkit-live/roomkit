@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-channel-of-a-type-no-table-lists-keeps-that-type-on-its-records",
+  "title": "A channel whose type is a name no table lists, of lowercase letters, digits, _ and -, registers, and the records it writes and receives read back with that type as written",
+  "rules": [
+    "§6.2"
+  ],
+  "requirements": [
+    "RK-6.2-007",
+    "RK-6.2-008"
+  ],
+  "notes": "kiosk and team_chat-2 are in no table of §6.2: each is a type all the same, written as a plain string. The register_channel step registers a third, its framework event naming the type; the timeline, read from the store, and each delivery name the sender's type as written. Python: models/enums.py ChannelType._missing_; roomkit-rs: roomkit-core model/channel.rs ChannelType::new.",
+  "setup": {
+    "channels": [
+      {
+        "id": "kiosk",
+        "type": "kiosk",
+        "category": "transport"
+      },
+      {
+        "id": "team",
+        "type": "team_chat-2",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "kiosk"
+          },
+          {
+            "channel_id": "team"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "relay",
+        "type": "relay_9-x",
+        "category": "transport"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "relay"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "kiosk",
+        "sender_id": "U1",
+        "content": {
+          "type": "text",
+          "body": "From the kiosk channel"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "team",
+        "sender_id": "u-2",
+        "content": {
+          "type": "text",
+          "body": "From the team channel"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "*": [
+        {
+          "event": "channel_registered",
+          "channel_id": "relay",
+          "channel_type": "relay_9-x"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "kiosk",
+            "channel_type": "kiosk",
+            "participant_id": "U1"
+          },
+          "content": {
+            "type": "text",
+            "body": "From the kiosk channel"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "team",
+            "channel_type": "team_chat-2",
+            "participant_id": "u-2"
+          },
+          "content": {
+            "type": "text",
+            "body": "From the team channel"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "kiosk": [
+          {
+            "source": {
+              "channel_type": "team_chat-2"
+            },
+            "content": {
+              "type": "text",
+              "body": "From the team channel"
+            }
+          }
+        ],
+        "team": [
+          {
+            "source": {
+              "channel_type": "kiosk"
+            },
+            "content": {
+              "type": "text",
+              "body": "From the kiosk channel"
+            }
+          }
+        ],
+        "relay": [
+          {
+            "source": {
+              "channel_type": "kiosk"
+            },
+            "content": {
+              "type": "text",
+              "body": "From the kiosk channel"
+            }
+          },
+          {
+            "source": {
+              "channel_type": "team_chat-2"
+            },
+            "content": {
+              "type": "text",
+              "body": "From the team channel"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

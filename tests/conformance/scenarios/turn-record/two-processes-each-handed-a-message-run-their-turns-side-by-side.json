@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/two-processes-each-handed-a-message-run-their-turns-side-by-side",
+  "title": "With serialize_room_turns, the order is the owner's process's: a turn the run's kit runs and a turn another process runs for the same agent and room run side by side",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "requirements": [
+    "RK-6.4-453"
+  ],
+  "notes": "The run's kit is handed the first message and p2 the second, each over the run's store. The first turn holds at its generation's gate g1; p2's turn reaches its own gate g2 meanwhile, reading the room without the first answer: it waited on no turn of the other process.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "desk",
+        "type": "desk",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer",
+              "gate": "g1"
+            },
+            {
+              "text": "Second answer",
+              "gate": "g2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First question"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second question"
+        }
+      },
+      "background": true,
+      "as": "second",
+      "kit": "p2"
+    },
+    {
+      "wait_for": "g2"
+    },
+    {
+      "open": "g2"
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First question"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First question"
+            },
+            {
+              "role": "user",
+              "text": "Second question"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

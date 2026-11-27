@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/a-thought-asks-the-router-as-a-turn-s-start-does",
+  "title": "A thinker's thought on an agent with a router asks the router as a turn's start does: reason turn, with the text of the event it thinks about",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-518"
+  ],
+  "notes": "The speak policy keeps the agent silent, so no turn answers the message; the thinker thinks about it, its context built as a turn's, and that build asks the router once (reason turn, the message's text, no previous, no failure). No model generates: the thinker is scripted. Python: channels/_ai_context.py (the context build routes the turn), channels/ai.py _route_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They want the price.",
+                "want_to_say": [],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi."
+            }
+          ],
+          "streaming": false
+        },
+        "router": {
+          "models": {
+            "other": {
+              "rounds": [
+                {
+                  "text": "Other."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent/other"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We need the price."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinker_calls": {
+      "agent": [
+        {
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "We need the price."
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "thoughts": [
+        {
+          "thought": {
+            "thought": {
+              "text": "They want the price."
+            }
+          }
+        }
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "We need the price.",
+          "previous": null,
+          "failed": null
+        }
+      ]
+    },
+    "models": {
+      "agent": [],
+      "agent/other": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "We need the price."
+          }
+        }
+      ]
+    }
+  }
+}

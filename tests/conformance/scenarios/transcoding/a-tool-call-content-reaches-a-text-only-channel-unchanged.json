@@ -1,0 +1,91 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "transcoding/a-tool-call-content-reaches-a-text-only-channel-unchanged",
+  "title": "A tool call content reaches a channel that declares text alone unchanged, never as its text form",
+  "rules": [
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-018"
+  ],
+  "notes": "The ToolCallContent row reads any target, Unchanged: the text-only channel receives the content as it was written, not \"[Tool call: lookup]\", its text form.",
+  "setup": {
+    "channels": [
+      {
+        "id": "console",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "rich",
+            "media",
+            "location"
+          ],
+          "supports_edit": true,
+          "supports_delete": true
+        }
+      },
+      {
+        "id": "plain",
+        "type": "pager",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "plain"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "console",
+      "content": {
+        "type": "tool_call",
+        "tool_name": "lookup",
+        "tool_id": "c1",
+        "arguments": {
+          "order": 42
+        },
+        "status": "completed",
+        "result": "shipped"
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "plain": [
+          {
+            "content": {
+              "type": "tool_call",
+              "tool_name": "lookup",
+              "tool_id": "c1",
+              "arguments": {
+                "order": 42
+              },
+              "status": "completed",
+              "result": "shipped"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

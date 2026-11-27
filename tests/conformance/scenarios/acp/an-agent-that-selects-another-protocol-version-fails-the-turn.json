@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/an-agent-that-selects-another-protocol-version-fails-the-turn",
+  "title": "An ACP agent that answers initialize with a protocol version the channel does not speak fails the turn clearly, and no session is opened",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-485"
+  ],
+  "notes": "The scripted agent selects version 2; the channel speaks the stable version 1. The negotiation fails at initialization: the caller reads the turn's error, ON_ERROR is told, and the agent receives no session/new. The error's wording is not asserted. Python: channels/_acp_client.py (the protocol version check after initialize).",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "initialize": {
+              "protocol_version": 2
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "error",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "coder": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "error": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -6,6 +6,7 @@
     "§14.1"
   ],
   "requirements": [
+    "RK-1.4-013",
     "RK-14.1-033"
   ],
   "notes": "Python: tests/test_threading.py::TestStoreThreadQueries::test_thread_summaries_counts_and_last_reply, test_thread_summaries_absent_for_root_without_replies. A reply the room refused is not counted: a default timeline read of the thread does not serve it (ConversationStore.get_thread_summaries).",

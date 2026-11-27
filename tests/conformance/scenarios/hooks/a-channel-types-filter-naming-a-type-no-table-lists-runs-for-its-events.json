@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-channel-types-filter-naming-a-type-no-table-lists-runs-for-its-events",
+  "title": "A hook whose channel_types names a type no table lists runs for the events of that type's channel and for no other",
+  "rules": [
+    "§6.2",
+    "§9.1"
+  ],
+  "requirements": [
+    "RK-6.2-012"
+  ],
+  "notes": "Outside its addressing a channel type is a label: a hook filter names it as it names a well-known type. The part of RK-6.2-012 left unobserved: identity keys and traces, which no step reads by an unlisted type. Python: core/hooks.py (channel_types filter); roomkit-rs: roomkit-core rules/hooks.",
+  "setup": {
+    "channels": [
+      {
+        "id": "kiosk",
+        "type": "kiosk",
+        "category": "transport"
+      },
+      {
+        "id": "team",
+        "type": "team_chat-2",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "kiosk"
+          },
+          {
+            "channel_id": "team"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "kiosk_only",
+        "trigger": "before_broadcast",
+        "channel_types": [
+          "kiosk"
+        ]
+      },
+      {
+        "name": "team_only",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "channel_types": [
+          "team_chat-2"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "kiosk",
+        "sender_id": "U1",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "team",
+        "sender_id": "u-2",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "kiosk",
+        "sender_id": "U1",
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "kiosk_only": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_type": "kiosk"
+            },
+            "content": {
+              "type": "text",
+              "body": "one"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_type": "kiosk"
+            },
+            "content": {
+              "type": "text",
+              "body": "three"
+            }
+          }
+        }
+      ],
+      "team_only": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_type": "team_chat-2"
+            },
+            "content": {
+              "type": "text",
+              "body": "two"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

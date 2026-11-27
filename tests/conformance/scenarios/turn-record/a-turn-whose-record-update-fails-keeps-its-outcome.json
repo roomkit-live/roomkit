@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-turn-whose-record-update-fails-keeps-its-outcome",
+  "title": "A turn whose record the store fails to write on its row keeps its outcome: the caller learns no error and reads the record, the answer stands, and the stored row lacks the record",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-432"
+  ],
+  "notes": "The turn's last round says nothing, so its record goes on the row its first round wrote, which the turn updates once it learned its end. The store fails that update: the turn completes all the same, its caller reading no error and the record, and the row keeps what it was committed with. The part of RK-6.4-432 left unobserved: the failure's log line.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "returns": "done"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "update_event",
+      "fail": "the store is down"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "empty_response"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Looking."
+          },
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        }
+      ]
+    }
+  }
+}

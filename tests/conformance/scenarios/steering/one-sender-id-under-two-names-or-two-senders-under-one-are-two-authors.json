@@ -1,0 +1,443 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/one-sender-id-under-two-names-or-two-senders-under-one-are-two-authors",
+  "title": "With steer_room_turns, a message from the sender id of the running turn's author signed with another name, or from another sender signed with the author's name, is not that turn's author's: it waits a turn of its own, while one from the same sender under the same name is read by the turn",
+  "rules": [
+    "§6.4",
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-6.4-458"
+  ],
+  "notes": "The author is the room source that wrote the message under the name it is signed with (metadata.sender_name, the stamp a transport writes at ingress). In room-1 one sender id, bridge, carries two people: its second message signed Alice is read by Alice's running turn, its third, signed Bob, waits a turn of its own. In room-2 two senders sign Sam: u1's second message is read by u1's turn, u2's waits. Each room's turn holds at its own tool's gate meanwhile. Six generations: two for each running turn, one for each waiting message. Python: core/_room_turns.py _author, core/_authors.py source_of and author_name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "files",
+            "returns": "a.py b.txt"
+          },
+          {
+            "name": "list_logs",
+            "description": "List the logs.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "logs",
+            "returns": "x.log"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            },
+            {
+              "text": "Hello Bob."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "list_logs"
+                }
+              ]
+            },
+            {
+              "text": "x.log"
+            },
+            {
+              "text": "Hello other Sam."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "bridge",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        },
+        "metadata": {
+          "sender_name": "Alice"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "files"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "bridge",
+        "content": {
+          "type": "text",
+          "body": "Only the .py ones."
+        },
+        "metadata": {
+          "sender_name": "Alice"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "bridge",
+        "content": {
+          "type": "text",
+          "body": "Hi, Bob here."
+        },
+        "metadata": {
+          "sender_name": "Bob"
+        }
+      },
+      "background": true,
+      "as": "bob"
+    },
+    {
+      "open": "files"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "bob",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "List the logs."
+        },
+        "metadata": {
+          "sender_name": "Sam"
+        }
+      },
+      "background": true,
+      "as": "sam"
+    },
+    {
+      "wait_for": "logs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Only today's."
+        },
+        "metadata": {
+          "sender_name": "Sam"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "u2",
+        "content": {
+          "type": "text",
+          "body": "Hi, another Sam."
+        },
+        "metadata": {
+          "sender_name": "Sam"
+        }
+      },
+      "background": true,
+      "as": "other"
+    },
+    {
+      "open": "logs"
+    },
+    {
+      "await": "sam",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "other",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the files."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the files."
+              }
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Only the .py ones."
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the logs."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "List the logs."
+              }
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Only today's."
+              }
+            }
+          ]
+        },
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "List the files."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Only the .py ones."
+            }
+          },
+          {
+            "id": {
+              "$as": "bob"
+            },
+            "content": {
+              "type": "text",
+              "body": "Hi, Bob here."
+            }
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "source": {
+              "channel_id": "agent"
+            },
+            "content": {
+              "type": "text",
+              "body": "a.py"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "agent"
+            },
+            "content": {
+              "type": "text",
+              "body": "Hello Bob."
+            },
+            "responds_to": {
+              "$as": "bob"
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "List the logs."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Only today's."
+            }
+          },
+          {
+            "id": {
+              "$as": "other"
+            },
+            "content": {
+              "type": "text",
+              "body": "Hi, another Sam."
+            }
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "source": {
+              "channel_id": "agent"
+            },
+            "content": {
+              "type": "text",
+              "body": "x.log"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "agent"
+            },
+            "content": {
+              "type": "text",
+              "body": "Hello other Sam."
+            },
+            "responds_to": {
+              "$as": "other"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

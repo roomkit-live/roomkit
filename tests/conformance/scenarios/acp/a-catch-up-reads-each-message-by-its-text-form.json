@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-catch-up-reads-each-message-by-its-text-form",
+  "title": "An ACP agent's catch-up reads each message it did not receive by its text form: a media by its label, a composite by its parts in order",
+  "rules": [
+    "§6.4",
+    "§6.6"
+  ],
+  "requirements": [
+    "RK-6.6-029"
+  ],
+  "notes": "The two messages address no one, so coder receives neither; its next prompt's catch-up reads them as text, each media as its label (its caption, else its file name), the composite's parts in order. The parts of RK-6.6-029 left unobserved: a content of another kind than text, media and composite (a location, a template), and the other readers outside a channel (a delegated task's brief, a speak classifier, a discussion's dispatch and notes, a scoring query, a memory's summary).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport",
+        "capabilities": {
+          "media_types": [
+            "text",
+            "media",
+            "location"
+          ]
+        }
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "chat",
+      "addressed_to": [],
+      "content": {
+        "type": "media",
+        "url": "https://example.com/p.png",
+        "mime_type": "image/png",
+        "caption": "A drawing"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "chat",
+      "addressed_to": [],
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "Look"
+          },
+          {
+            "type": "media",
+            "url": "https://example.com/plan.png",
+            "mime_type": "image/png",
+            "filename": "plan.png"
+          }
+        ]
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "chat",
+      "addressed_to": [
+        "coder"
+      ],
+      "content": {
+        "type": "text",
+        "body": "What do you see?"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "coder": [
+        {
+          "text": {
+            "$contains": [
+              "[Media: A drawing]",
+              "Look",
+              "[Media: plan.png]",
+              "What do you see?"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

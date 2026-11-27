@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-cut-short-after-a-round-delivers-nothing-again",
+  "title": "A turn the provider cuts short after a round delivers nothing again: the round's text, delivered before its calls, is not delivered a second time, and nothing of the earlier turn its history holds is delivered",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-407"
+  ],
+  "notes": "The first turn answers. The second says \"Let me look.\" before its call, then its provider fails in the next round: the room keeps what it has, and chat receives each answer once, the first turn's included, which the second turn's history held. The part of RK-6.4-407 left unobserved: a turn cancelled between rounds.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Earlier answer."
+            },
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "search"
+                }
+              ]
+            },
+            {
+              "fails": "the provider broke"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the provider broke"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First."
+            },
+            {
+              "role": "assistant",
+              "text": "Earlier answer."
+            },
+            {
+              "role": "user",
+              "text": "Second."
+            }
+          ]
+        },
+        {}
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "chat": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Earlier answer."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Let me look."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          }
+        ]
+      }
+    }
+  }
+}

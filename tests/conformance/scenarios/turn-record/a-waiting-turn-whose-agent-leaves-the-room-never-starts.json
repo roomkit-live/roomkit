@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-waiting-turn-whose-agent-leaves-the-room-never-starts",
+  "title": "With serialize_room_turns, a turn whose agent is detached from the room while it waits its place never starts: its model is never asked",
+  "rules": [
+    "§6.4",
+    "§7.2"
+  ],
+  "requirements": [
+    "RK-6.4-449"
+  ],
+  "notes": "The first turn holds at its generation's gate g1. The second message's turn waits its place: its delivery reaches desk at the gate m2 before the marker is sent, and the marker, committed after it, reaches chat's delivery meanwhile (RK-6.4-446), so the lane has asked the agent for it. The agent is detached, then g1 opens: the agent's model is asked for the first turn alone. What becomes of the first turn's answer once its agent left is not asserted. Python: tests/test_room_turns_in_order.py::test_a_waiting_turn_whose_agent_leaves_the_room_never_starts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "chat",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "marker"
+            },
+            "gate": "mark"
+          }
+        ]
+      },
+      {
+        "id": "desk",
+        "type": "desk",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "Second question"
+            },
+            "gate": "m2"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer",
+              "gate": "g1"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "chat"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First question"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second question"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "m2"
+    },
+    {
+      "open": "m2"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "desk",
+      "content": {
+        "type": "text",
+        "body": "marker"
+      },
+      "visibility": "chat",
+      "background": true,
+      "as": "marked"
+    },
+    {
+      "wait_for": "mark"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "open": "mark"
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "await": "first"
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "await": "marked"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First question"
+            }
+          ]
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "agent": null
+      }
+    }
+  }
+}
