@@ -122,6 +122,20 @@ class IdempotencyKeyTakenError(RoomKitError):
     """
 
 
+class EventIndexTakenError(RoomKitError):
+    """An event was stored at an index another event holds in its room (RFC
+    §8.1, §14.3).
+
+    An index is unique per room. A commit takes the room's next index under
+    its lock, so only an event added at an index of its own meets it: a
+    caller of a store's ``add_event``. Every shipped store refuses the event,
+    nothing written, and the index stays its first event's. A second write of
+    an event under an id the store holds is not this error: the database
+    refuses the id with its own (``asyncpg.UniqueViolationError``,
+    ``sqlite3.IntegrityError``).
+    """
+
+
 class ChangeRefusedError(RoomKitError):
     """An edit or a delete was refused at RFC §10.1 step 8a, nothing written.
 

@@ -927,6 +927,7 @@
   "roomkit.EventFilter": {
     "__init__": ["def", "*", "event_types=None", "exclude_types=None", "visibility=None", "source_channel_id=None", "source_channel_type=None", "correlation_id=None", "participant_id=None", "responds_to=None", "parent_event_id=None", "top_level_only=False", "after_time=None", "before_time=None", "include_blocked=False"]
   },
+  "roomkit.EventIndexTakenError": {},
   "roomkit.EventNotFoundError": {},
   "roomkit.EventSource": {
     "__init__": ["def", "*", "channel_id", "channel_type", "direction=<EventDirection.INBOUND: 'inbound'>", "participant_id=None", "external_id=None", "provider=None", "raw_payload=<factory>", "provider_message_id=None", "verification=None"]

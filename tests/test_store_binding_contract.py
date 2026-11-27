@@ -15,7 +15,11 @@ import pytest
 from roomkit import InboundMessage, RoomKit
 from roomkit.channels import SMSChannel
 from roomkit.channels.addressing import written_recipient
-from roomkit.core.exceptions import EventNotFoundError, IdempotencyKeyTakenError
+from roomkit.core.exceptions import (
+    EventIndexTakenError,
+    EventNotFoundError,
+    IdempotencyKeyTakenError,
+)
 from roomkit.core.inbound_router import DefaultInboundRoomRouter
 from roomkit.models.channel import ChannelBinding, RateLimit, RetryPolicy
 from roomkit.models.enums import (
@@ -1239,6 +1243,38 @@ async def test_a_key_its_channel_holds_refuses_another_event(
         if refusal is not None:
             with pytest.raises(refusal):
                 await contract_store.commit_event(room.id, first)
+    finally:
+        await contract_store.delete_room(room.id)
+
+
+async def test_an_event_at_a_held_index_is_refused(contract_store: ConversationStore) -> None:
+    """RFC §8.1, §14.3: an index is unique in its room. An event added at an
+    index another event holds raises ``EventIndexTakenError``, nothing
+    written, the stored one kept and the room's counters unmoved; an index no
+    event holds is taken. A second write of the stored event itself is the
+    database's refusal of a held id."""
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    try:
+        first = await contract_store.commit_event(room.id, make_event(room_id=room.id))
+        await contract_store.commit_event(room.id, make_event(room_id=room.id))
+        before = await contract_store.get_room(room.id)
+        again = make_event(room_id=room.id, body="again", index=first.index)
+
+        with pytest.raises(EventIndexTakenError):
+            await contract_store.add_event(again)
+
+        assert await contract_store.get_event(again.id) is None
+        kept = await contract_store.get_event(first.id)
+        assert kept is not None and kept.content == first.content
+        after = await contract_store.get_room(room.id)
+        assert before is not None and after is not None
+        assert (after.event_count, after.latest_index) == (before.event_count, before.latest_index)
+        free = await contract_store.add_event(make_event(room_id=room.id, index=5))
+        assert free.index == 5
+        refusal = _refusal_of_a_held_id(contract_store)
+        if refusal is not None:
+            with pytest.raises(refusal):
+                await contract_store.add_event(first)
     finally:
         await contract_store.delete_room(room.id)
 

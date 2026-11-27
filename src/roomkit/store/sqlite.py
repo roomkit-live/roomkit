@@ -55,6 +55,7 @@ from roomkit.store.base import (
     address_linked,
     committed_state,
     deletes_edits,
+    index_taken,
     is_marked_deleted,
     key_taken,
     link_target,
@@ -229,6 +230,18 @@ def _key_taken(conn: sqlite3.Connection, event: RoomEvent) -> bool:
     held = conn.execute(
         "SELECT 1 FROM events WHERE room_id = ? AND source_channel_id = ? AND idempotency_key = ?",
         (event.room_id, event.source.channel_id, event.idempotency_key),
+    ).fetchone()
+    return held is not None
+
+
+def _index_taken(conn: sqlite3.Connection, event: RoomEvent) -> bool:
+    """Whether *event*'s insert was refused on its index, which another
+    event holds in the room (RFC §8.1), and not on its id: an id the store
+    holds is the database's own refusal."""
+    if conn.execute("SELECT 1 FROM events WHERE id = ?", (event.id,)).fetchone() is not None:
+        return False
+    held = conn.execute(
+        "SELECT 1 FROM events WHERE room_id = ? AND idx = ?", (event.room_id, event.index)
     ).fetchone()
     return held is not None
 
@@ -983,6 +996,8 @@ class SQLiteStore(ConversationStore):
         except sqlite3.IntegrityError as exc:
             if not replace and _key_taken(conn, event):
                 raise key_taken(event) from exc
+            if not replace and _index_taken(conn, event):
+                raise index_taken(event) from exc
             raise
         if event.idempotency_key:
             conn.execute(

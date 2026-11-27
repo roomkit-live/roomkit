@@ -14,6 +14,7 @@ from typing import Any
 from roomkit.channels.addressing import written_recipient
 from roomkit.core.exceptions import (
     AddressLinkedError,
+    EventIndexTakenError,
     EventNotFoundError,
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
@@ -171,6 +172,14 @@ def key_taken(event: RoomEvent) -> IdempotencyKeyTakenError:
     return IdempotencyKeyTakenError(
         f"Idempotency key {event.idempotency_key!r} of channel {event.source.channel_id}"
         f" is taken in room {event.room_id}"
+    )
+
+
+def index_taken(event: RoomEvent) -> EventIndexTakenError:
+    """The refusal of *event*, added at an index another event holds in its
+    room (RFC §8.1, §14.3): nothing is written."""
+    return EventIndexTakenError(
+        f"Index {event.index} of room {event.room_id} is held by another event"
     )
 
 
@@ -705,6 +714,14 @@ class ConversationStore(ABC):
     @abstractmethod
     async def add_event(self, event: RoomEvent) -> RoomEvent:
         """Store a new event.
+
+        An index is unique in its room (RFC §8.1): an *event* at an index
+        another event holds raises
+        :class:`~roomkit.core.exceptions.EventIndexTakenError`, nothing
+        written (:func:`index_taken`), as one under a key its channel holds
+        raises :class:`~roomkit.core.exceptions.IdempotencyKeyTakenError`.
+        An event under an id the store holds is refused by the database with
+        its own error, which is neither.
 
         On a room a kit serves, an index this takes at or past the room's next opens a
         hole in the delivery cursor that no lane runs: the room's next delivery waits

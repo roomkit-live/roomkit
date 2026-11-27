@@ -520,13 +520,6 @@ class TestPersistence:
             await first.close()
             await second.close()
 
-    async def test_duplicate_index_is_rejected_by_database(self, store: SQLiteStore) -> None:
-        await store.create_room(Room(id="r1"))
-        await store.add_event(make_event(room_id="r1", body="first", index=0))
-
-        with pytest.raises(sqlite3.IntegrityError):
-            await store.add_event(make_event(room_id="r1", body="duplicate", index=0))
-
     async def test_duplicate_idempotency_key_is_rejected_across_connections(
         self, tmp_path
     ) -> None:

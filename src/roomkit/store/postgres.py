@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from roomkit.core.exceptions import (
+    EventIndexTakenError,
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
     RoomNotFoundError,
@@ -37,6 +38,7 @@ from roomkit.store.base import (
     address_linked,
     committed_state,
     deletes_edits,
+    index_taken,
     is_marked_deleted,
     key_taken,
     participant_exists,
@@ -157,19 +159,38 @@ def _refuses_the_key(exc: Exception) -> bool:
     )
 
 
+# The unique index of an event's index in its room (RFC §8.1).
+_ROOM_INDEX = "idx_events_room_index"
+
+
+def _refuses_the_index(exc: Exception) -> bool:
+    """Whether *exc* is the database refusing an event's index, which
+    another event holds in the room: a unique violation on the room's index.
+    A refused index whose event id the store holds is a second write of that
+    event (:meth:`PostgresStore._a_held_id_as_such`)."""
+    return (
+        getattr(exc, "sqlstate", None) == "23505"
+        and getattr(exc, "constraint_name", None) == _ROOM_INDEX
+    )
+
+
 async def _insert_event(conn: Any, event: RoomEvent) -> None:
     """Run the canonical ``events`` INSERT on *conn*.
 
     Shared by :meth:`PostgresStore.add_event`, ``add_event_auto_index`` and
     ``commit_event`` so the column list and parameter order can never drift
     between the three write paths. An event under a key its channel holds in
-    the room raises :class:`~roomkit.core.exceptions.IdempotencyKeyTakenError`.
+    the room raises :class:`~roomkit.core.exceptions.IdempotencyKeyTakenError`,
+    one at an index another event holds
+    :class:`~roomkit.core.exceptions.EventIndexTakenError`.
     """
     try:
         await _execute_insert(conn, event)
     except Exception as exc:
         if _refuses_the_key(exc):
             raise key_taken(event) from exc
+        if _refuses_the_index(exc):
+            raise index_taken(event) from exc
         raise
 
 
@@ -662,15 +683,15 @@ class PostgresStore(ConversationStore):
 
     @asynccontextmanager
     async def _a_held_id_as_such(self, event_id: str) -> AsyncGenerator[None, None]:
-        """Around the transaction of an event's insert: a key refused for an
-        event whose id the store holds is a second write of that event, which
-        stays the driver's refusal of the id (RFC §14.3). Postgres reports
-        the first unique index it checks, in index order, which a reindex or
-        a restore changes: whether the id is held is read once the
-        transaction rolled back."""
+        """Around the transaction of an event's insert: a key or an index
+        refused for an event whose id the store holds is a second write of
+        that event, which stays the driver's refusal of the id (RFC §14.3).
+        Postgres reports the first unique index it checks, in index order,
+        which a reindex or a restore changes: whether the id is held is read
+        once the transaction rolled back."""
         try:
             yield
-        except IdempotencyKeyTakenError as taken:
+        except (IdempotencyKeyTakenError, EventIndexTakenError) as taken:
             driver = taken.__cause__
             async with self._acquire() as conn:
                 held = await conn.fetchval("SELECT 1 FROM events WHERE id = $1", event_id)

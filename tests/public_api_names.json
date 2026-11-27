@@ -115,6 +115,7 @@
     "EmptyEventDescriber",
     "EventDirection",
     "EventFilter",
+    "EventIndexTakenError",
     "EventNotFoundError",
     "EventSource",
     "EventStatus",

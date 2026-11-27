@@ -25,7 +25,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
-from roomkit import RoomKit
+from roomkit import EventIndexTakenError, RoomKit
 from roomkit.channels.base import Channel
 from roomkit.core.lanes import delivery_claim_key
 from roomkit.core.locks import _OTHER_KIND, InMemoryLockManager
@@ -64,15 +64,6 @@ def _event(room_id: str, eid: str, index: int) -> RoomEvent:
         source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
         content=TextContent(body="hi"),
     )
-
-
-async def test_unique_index_constraint_rejects_duplicate(store: PostgresStore) -> None:
-    """The DB rejects a second event at the same (room_id, index) — the backstop
-    that turns a multi-process race into a loud failure instead of corruption."""
-    await store.create_room(Room(id="r1"))
-    await store.add_event(_event("r1", "e1", 0))
-    with pytest.raises(asyncpg.UniqueViolationError):
-        await store.add_event(_event("r1", "e2", 0))
 
 
 async def test_advisory_lock_serializes_concurrent_assignment(store: PostgresStore) -> None:
@@ -118,7 +109,7 @@ async def test_without_cross_process_lock_the_constraint_catches_races(
             await asyncio.sleep(0)  # widen the race window
             await store.add_event(_event("r1", f"e{i}", index))
             return True
-        except asyncpg.UniqueViolationError:
+        except EventIndexTakenError:
             return False
 
     results = await asyncio.gather(*(unlocked_worker(i) for i in range(10)))
@@ -160,7 +151,7 @@ async def test_dedupe_repairs_and_enforces_unique(store: PostgresStore) -> None:
     assert report["now_unique"] is True
     events = await store.list_events("r1", limit=100)
     assert sorted(e.index for e in events) == [0, 1, 2]  # unique + sequential
-    with pytest.raises(asyncpg.UniqueViolationError):  # constraint now enforced
+    with pytest.raises(EventIndexTakenError):  # constraint now enforced
         await store.add_event(_event("r1", "x", 0))
     room = await store.get_room("r1")
     assert room is not None

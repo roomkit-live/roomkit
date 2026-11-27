@@ -30,6 +30,7 @@ from roomkit.store.base import (
     committed_state,
     deletes_edits,
     edits_target,
+    index_taken,
     is_marked_deleted,
     key_taken,
     link_target,
@@ -460,6 +461,7 @@ class InMemoryStore(ConversationStore):
         # is what lets every read share the stored object instead of paying
         # a deep copy per event per read.
         self._refuse_taken_key(event.room_id, event)
+        self._refuse_held_index(event)
         event = event.model_copy(deep=True)
         self._events[event.id] = event
         self._room_events.setdefault(event.room_id, []).append(event.id)
@@ -481,6 +483,17 @@ class InMemoryStore(ConversationStore):
         held = keys.get((event.source.channel_id, event.idempotency_key))
         if held is not None and held != event.id:
             raise key_taken(event)
+
+    def _refuse_held_index(self, event: RoomEvent) -> None:
+        """Refuse *event* when another event holds its index in its room (RFC
+        §8.1), before anything is written. Every index the room holds is
+        below its next one, so an event at or past it is never compared."""
+        if event.index >= self._next_event_index.get(event.room_id, 0):
+            return
+        for event_id in self._room_events.get(event.room_id, []):
+            held = self._events.get(event_id)
+            if held is not None and held.index == event.index and held.id != event.id:
+                raise index_taken(event)
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
         # Committed events are immutable (RFC 4, 14.4): reads share the
