@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-webhook-message-keeps-its-provider-s-id-as-its-provider-message-id",
+  "title": "A message a webhook carries keeps its provider's own identifier in source.provider_message_id",
+  "rules": [
+    "§8.1",
+    "§5.2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-8.1-013"
+  ],
+  "notes": "The message a webhook carries keeps its provider's id as its provider_message_id, beside its external_id and its idempotency key, which delivery/a-webhook-is-a-message-a-status-or-nothing pins.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "meta": {
+        "provider": "acme-cloud",
+        "sender": "+15550000001",
+        "recipient": "+15559999999",
+        "body": "Hello",
+        "external_id": "SM1",
+        "timestamp": null,
+        "raw": {},
+        "direction": "inbound"
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-alice": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          },
+          "source": {
+            "channel_id": "sms",
+            "external_id": "SM1",
+            "provider_message_id": "SM1"
+          }
+        }
+      ]
+    }
+  }
+}

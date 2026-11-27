@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-webhook-message-keeps-its-raw-payload",
+  "title": "A message a webhook carries keeps the provider's payload, unmodified, as its source's raw_payload",
+  "rules": [
+    "§5.2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-5.2-010"
+  ],
+  "notes": "The message a webhook carries keeps the webhook's payload as its source's raw_payload, nested members included. The match reads the members the payload holds: a member an implementation adds, or a null member it drops, goes unobserved; each implementation's own test compares the whole payload.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "meta": {
+        "provider": "acme-cloud",
+        "sender": "+15550000001",
+        "recipient": "+15559999999",
+        "body": "Hello",
+        "external_id": "SM1",
+        "timestamp": null,
+        "raw": {
+          "message_id": "SM1",
+          "text": "Hello",
+          "segments": "1",
+          "carrier": {
+            "network": "mobile-1",
+            "codes": [
+              1,
+              2
+            ]
+          }
+        },
+        "direction": "inbound"
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-alice": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          },
+          "source": {
+            "channel_id": "sms",
+            "raw_payload": {
+              "message_id": "SM1",
+              "text": "Hello",
+              "segments": "1",
+              "carrier": {
+                "network": "mobile-1",
+                "codes": [
+                  1,
+                  2
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
