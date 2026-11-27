@@ -25,7 +25,6 @@ from roomkit.models.event import (
 from roomkit.models.hook import HookResult
 from roomkit.models.room import Room, RoomTimers
 from roomkit.store.memory import InMemoryStore
-from tests.conftest import make_event
 
 
 class RecordingTransport(Channel):
@@ -79,6 +78,19 @@ def _track(kit: RoomKit, trigger: HookTrigger) -> list[RoomEvent]:
 async def _send(kit: RoomKit, body: str, sender_id: str = "u1") -> RoomEvent:
     result = await kit.process_inbound(
         InboundMessage(channel_id="src", sender_id=sender_id, content=TextContent(body=body))
+    )
+    assert result.event is not None
+    return result.event
+
+
+async def _reply(kit: RoomKit, root: RoomEvent) -> RoomEvent:
+    result = await kit.process_inbound(
+        InboundMessage(
+            channel_id="src",
+            sender_id="u1",
+            content=TextContent(body="reply"),
+            parent_event_id=root.id,
+        )
     )
     assert result.event is not None
     return result.event
@@ -199,8 +211,7 @@ class TestDeleteEventApi:
         with the event as it was stored."""
         kit, _src = await _setup()
         root = await _send(kit, "root")
-        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id, index=1)
-        await kit.store.add_event(reply)
+        reply = await _reply(kit, root)
         edit = await kit.process_inbound(
             InboundMessage(
                 channel_id="src",
@@ -224,8 +235,7 @@ class TestDeleteEventApi:
     async def test_no_cascade_keeps_replies(self) -> None:
         kit, _src = await _setup()
         root = await _send(kit, "root")
-        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
-        await kit.store.add_event(reply)
+        reply = await _reply(kit, root)
 
         deleted = await kit.delete_event("r1", root.id, cascade_replies=False)
 

@@ -506,6 +506,11 @@ class InMemoryStore(ConversationStore):
             raise target_gone(event)
         event = self._rewritten(event)
         self._events[event.id] = event
+        # A rewrite that moves the event's index keeps the room's next index
+        # past it, as SQLite's does: every index held stays below it.
+        self._next_event_index[event.room_id] = max(
+            self._next_event_index.get(event.room_id, 0), event.index + 1
+        )
         return event
 
     def _rewritten(self, event: RoomEvent) -> RoomEvent:

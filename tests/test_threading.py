@@ -69,19 +69,21 @@ async def _room_with_thread() -> tuple[InMemoryStore, RoomEvent, list[RoomEvent]
     """A room with one root, two replies to it, and one standalone message."""
     store = InMemoryStore()
     await store.create_room(Room(id="r1"))
-    root = make_event(room_id="r1", body="root")
+    root = make_event(room_id="r1", body="root", index=0)
     await store.add_event(root)
-    await store.add_event(make_event(room_id="r1", body="standalone"))
+    await store.add_event(make_event(room_id="r1", body="standalone", index=1))
     reply1 = make_event(
         room_id="r1",
         body="reply1",
         parent_event_id=root.id,
+        index=2,
         created_at=datetime(2026, 1, 1, 12, 0, 1, tzinfo=UTC),
     )
     reply2 = make_event(
         room_id="r1",
         body="reply2",
         parent_event_id=root.id,
+        index=3,
         created_at=datetime(2026, 1, 1, 12, 0, 2, tzinfo=UTC),
     )
     await store.add_event(reply1)
@@ -119,9 +121,9 @@ class TestStoreThreadQueries:
     async def test_parent_event_id_round_trips_through_store(self) -> None:
         store = InMemoryStore()
         await store.create_room(Room(id="r1"))
-        root = make_event(room_id="r1", body="root")
+        root = make_event(room_id="r1", body="root", index=0)
         await store.add_event(root)
-        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
+        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id, index=1)
         await store.add_event(reply)
         fetched = await store.get_event(reply.id)
         assert fetched is not None

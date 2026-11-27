@@ -720,8 +720,9 @@ class ConversationStore(ABC):
         :class:`~roomkit.core.exceptions.EventIndexTakenError`, nothing
         written (:func:`index_taken`), as one under a key its channel holds
         raises :class:`~roomkit.core.exceptions.IdempotencyKeyTakenError`.
-        An event under an id the store holds is refused by the database with
-        its own error, which is neither.
+        An event under an id the store holds is neither: a SQL store's
+        database refuses it with its own error, and the in-memory store does
+        not check it.
 
         On a room a kit serves, an index this takes at or past the room's next opens a
         hole in the delivery cursor that no lane runs: the room's next delivery waits

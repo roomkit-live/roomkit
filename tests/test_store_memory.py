@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from roomkit import EventIndexTakenError
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.identity import Identity
@@ -136,6 +137,16 @@ class TestEventOperations:
         result = await store.get_event(event.id)
         assert result is not None
         assert result.id == event.id
+
+    async def test_an_index_an_update_moved_an_event_to_is_held(
+        self, store: InMemoryStore
+    ) -> None:
+        # RFC §8.1: the index an update writes is held like any other.
+        await store.create_room(Room(id="r1"))
+        event = await store.add_event(make_event(room_id="r1", index=0))
+        await store.update_event(event.model_copy(update={"index": 10}))
+        with pytest.raises(EventIndexTakenError):
+            await store.add_event(make_event(room_id="r1", index=10))
 
     async def test_get_nonexistent(self, store: InMemoryStore) -> None:
         assert await store.get_event("nope") is None

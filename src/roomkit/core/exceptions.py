@@ -130,9 +130,9 @@ class EventIndexTakenError(RoomKitError):
     its lock, so only an event added at an index of its own meets it: a
     caller of a store's ``add_event``. Every shipped store refuses the event,
     nothing written, and the index stays its first event's. A second write of
-    an event under an id the store holds is not this error: the database
-    refuses the id with its own (``asyncpg.UniqueViolationError``,
-    ``sqlite3.IntegrityError``).
+    an event under an id the store holds is not this error: a SQL store's
+    database refuses the id with its own (``asyncpg.UniqueViolationError``,
+    ``sqlite3.IntegrityError``), and the in-memory store does not check it.
     """
 
 

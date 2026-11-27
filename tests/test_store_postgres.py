@@ -3073,6 +3073,29 @@ async def test_a_held_id_is_the_driver_s_refusal_whatever_the_index_order(
     assert [e.id for e in await store.list_events("r1")] == [held.id]
 
 
+async def test_a_held_id_at_its_index_is_the_driver_s_refusal_whatever_the_index_order(
+    store,
+) -> None:
+    """RFC §8.1, §14.3: a second add of a stored event at its own index is
+    the database's refusal of the id, and another event at that index a
+    held index, whichever unique index Postgres checks first: after
+    ``REINDEX ... CONCURRENTLY`` the primary key is checked last."""
+    import asyncpg
+
+    from roomkit.core.exceptions import EventIndexTakenError
+
+    async with store._pool.acquire() as conn:
+        await conn.execute("REINDEX INDEX CONCURRENTLY events_pkey")
+    await store.create_room(Room(id="r1"))
+    held = await store.commit_event("r1", _make_event())
+
+    with pytest.raises(asyncpg.UniqueViolationError):
+        await store.add_event(held)
+    with pytest.raises(EventIndexTakenError):
+        await store.add_event(_make_event(index=held.index))
+    assert [e.id for e in await store.list_events("r1")] == [held.id]
+
+
 # Open transactions a booting worker meets: readers of the tables init()
 # once added columns to, a writer of a room, and a commit reserving an index.
 _OPEN_TRANSACTIONS = {
