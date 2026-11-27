@@ -9,7 +9,7 @@
   "requirements": [
     "RK-13.6-025"
   ],
-  "notes": "The message names room-new, which no store holds: step 2 creates it. Its first ON_ROOM_CREATED hook holds at creating; the caller leaves meanwhile. Once the gate opens, the second hook runs and sms is attached: the room stands, empty, and the message, expired as past its deadline, starts no session there (RK-10.1-025, RK-13.6-022). Not observed: a code reply's attempt at step 5b and its completion, which identity verification runs.",
+  "notes": "The message names room-new, which no store holds: step 2 creates it. Its first ON_ROOM_CREATED hook holds at creating; the caller leaves meanwhile. Once the gate opens, the second hook runs and sms is attached: the room stands, empty. Not observed: a code reply's attempt at step 5b and its completion, which identity verification runs; and whether the message, once its caller left, still starts a session in the room: roomkit starts none, roomkit-rs starts one by an earlier decision (gap G-068), a question put to the maintainer.",
   "setup": {
     "channels": [
       {
@@ -96,12 +96,6 @@
         "id": "room-new",
         "event_count": 0
       }
-    },
-    "framework_events": {
-      "room-new": [
-        "room_created",
-        "room_channel_attached"
-      ]
     }
   }
 }

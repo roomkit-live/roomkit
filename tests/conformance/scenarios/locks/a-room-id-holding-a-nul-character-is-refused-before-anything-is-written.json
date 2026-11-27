@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "locks/a-room-id-holding-a-nul-character-is-refused-before-anything-is-written",
-  "title": "A room id holding a NUL character is refused with a value error before anything is written: by create_room, and by the taking of a room's lock for a message naming a room the store holds under such an id, or a router's answer naming one",
+  "title": "A room id holding a NUL character is refused by create_room with a value error, before anything is written",
   "rules": [
     "§13.5",
     "§10.1 step 2"
@@ -9,13 +9,8 @@
   "requirements": [
     "RK-13.5-022"
   ],
-  "notes": "create_room refuses room\\u0000one, which the store then does not hold. The store is written bad\\u0000room straight: a message naming it is refused before the lock is taken, nothing stored. The router answers every routed message with r\\u0000x: the routed message is refused, and no room is created. Not observed: that the refusal comes before the lock manager is asked, which no step reads.",
+  "notes": "create_room refuses room\\u0000one: no room is created, and no framework event names it. The steps neither read such an id from the store nor route a message to one, since not every store can hold or look up an id with a NUL character. Not observed: the taking of a room's lock refusing such an id that came from elsewhere (a room written to the store straight, a router's answer), before the lock manager is asked.",
   "setup": {
-    "kit": {
-      "router": {
-        "room_id": "r\u0000x"
-      }
-    },
     "channels": [
       {
         "id": "sms",
@@ -35,62 +30,6 @@
       }
     },
     {
-      "call": "store.room_exists",
-      "room_id": "room\u0000one",
-      "expect": {
-        "result": false
-      }
-    },
-    {
-      "call": "store.create_room",
-      "room": {
-        "id": "bad\u0000room"
-      }
-    },
-    {
-      "call": "process_inbound",
-      "room_id": "bad\u0000room",
-      "message": {
-        "channel_id": "sms",
-        "sender_id": "+15551234567",
-        "content": {
-          "type": "text",
-          "body": "named"
-        }
-      },
-      "expect": {
-        "error": "invalid_argument"
-      }
-    },
-    {
-      "call": "store.get_timeline",
-      "room_id": "bad\u0000room",
-      "expect": {
-        "result": []
-      }
-    },
-    {
-      "call": "process_inbound",
-      "message": {
-        "channel_id": "sms",
-        "sender_id": "+15551234567",
-        "content": {
-          "type": "text",
-          "body": "routed"
-        }
-      },
-      "expect": {
-        "error": "invalid_argument"
-      }
-    },
-    {
-      "call": "store.room_exists",
-      "room_id": "r\u0000x",
-      "expect": {
-        "result": false
-      }
-    },
-    {
       "idle": true
     }
   ],
@@ -99,6 +38,9 @@
       "$created": {
         "$unordered": []
       }
+    },
+    "framework_events": {
+      "room\u0000one": []
     }
   }
 }
