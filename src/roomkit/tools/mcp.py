@@ -541,7 +541,7 @@ class MCPToolProvider:
                 # provider keeps the server's result as it sent it.
                 with capture.ticket(compatible_handshake) as handshake:
                     await session.initialize()
-                init = handshake.result or {}
+                init = handshake.taken()
                 # Inside the try: a listing the catalogue cannot read releases
                 # what was opened, the stdio server included (RFC §21.2).
                 if self._discover:
@@ -700,6 +700,10 @@ class MCPToolProvider:
         seconds for a writer that may be stuck, which the caller does not
         wait for. The provider holds the call until it ends.
         """
+        if timeout is not None and timeout <= 0:
+            # No time at all: the call is never started, so nothing is sent.
+            work.close()
+            raise TimeoutError
         task = asyncio.ensure_future(work)
         try:
             done, _ = await asyncio.wait({task}, timeout=timeout)

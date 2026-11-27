@@ -32,9 +32,9 @@ from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransp
 from tests.conftest import make_event
 from tests.test_mcp_tool_provider import (
     SEARCH_TOOL,
-    MockCallToolResult,
-    MockTextContent,
     _make_provider_connected,
+    _result,
+    _text,
 )
 from tests.test_toolset_edges import _calling
 from tests.tool_loop_modes import respond
@@ -50,9 +50,7 @@ async def _fails(name: str, arguments: dict[str, Any]) -> str:
 def _mcp_handler() -> Any:
     provider = _make_provider_connected(
         [SEARCH_TOOL],
-        call_tool_side_effect=lambda name, args: MockCallToolResult(
-            [MockTextContent(WORDS)], is_error=True
-        ),
+        call_tool_side_effect=lambda name, args: _result([_text(WORDS)], is_error=True),
     )
     return provider.as_tool_handler()
 
@@ -286,9 +284,7 @@ async def test_an_mcp_is_error_audits_alike_through_both_wrappers() -> None:
     either way."""
     provider = _make_provider_connected(
         [SEARCH_TOOL],
-        call_tool_side_effect=lambda name, args: MockCallToolResult(
-            [MockTextContent(WORDS)], is_error=True
-        ),
+        call_tool_side_effect=lambda name, args: _result([_text(WORDS)], is_error=True),
     )
     auditor = _Auditor()
     raised = audit_tool_handler(provider.as_tool_handler(), auditor, "agent")

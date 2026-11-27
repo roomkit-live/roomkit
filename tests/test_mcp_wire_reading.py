@@ -7,13 +7,18 @@ off the wire instead, and sends only the trace keys its caller wrote.
 
 from __future__ import annotations
 
+import json
+import sys
+import textwrap
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
 from opentelemetry import baggage, context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
+from pydantic import ValidationError
 
 from roomkit.tools import MCPToolProvider
 from tests.conformance._mcp_peer import MCPPeer
@@ -92,3 +97,58 @@ async def test_a_request_the_sdk_models_still_returns_what_the_server_sent(metho
         async with provider:
             assert await provider.request(method) == {"echo": "outside the method's schema"}
     assert peer.problems == []
+
+
+_RECORDING_SERVER = textwrap.dedent(
+    """\
+    import json, sys
+
+    log = open(sys.argv[1], "a")
+    for line in sys.stdin:
+        log.write(line)
+        log.flush()
+        message = json.loads(line)
+        if message.get("method") == "initialize":
+            result = {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "serverInfo": {"name": "recording", "version": "1"},
+            }
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}))
+            sys.stdout.write("\\n")
+            sys.stdout.flush()
+    """
+)
+
+
+@pytest.mark.parametrize("call", ["request", "call_tool", "read_resource"])
+async def test_a_call_given_no_time_sends_nothing(call: str, tmp_path: Path) -> None:
+    """A timeout of 0 expires before the call starts: no request goes out,
+    hence no cancellation either. Over stdio, where a started call writes at
+    once."""
+    script, log = tmp_path / "server.py", tmp_path / "received.jsonl"
+    script.write_text(_RECORDING_SERVER)
+    provider = MCPToolProvider.from_command(
+        sys.executable, [str(script), str(log)], discover=False
+    )
+    async with provider:
+        with pytest.raises(TimeoutError):
+            if call == "request":
+                await provider.request("x/read", timeout=0)
+            elif call == "call_tool":
+                await provider.call_tool("echo", {}, timeout=0)
+            else:
+                await provider.read_resource("file:///a", timeout=0)
+    received = [json.loads(line)["method"] for line in log.read_text().splitlines()]
+    assert received == ["initialize", "notifications/initialized"]
+
+
+async def test_a_listing_is_read_by_its_wire_names_only() -> None:
+    """A tool listed with ``input_schema`` lacks MCP's ``inputSchema``: the
+    listing is refused, as roomkit-rs and the SDK 1 refused it."""
+    listing = {"tools": [{"name": "lookup", "input_schema": {"type": "object"}}]}
+    async with MCPPeer({"replies": [{"method": "tools/list", "result": listing}]}) as peer:
+        provider = MCPToolProvider(peer.url)
+        with pytest.raises(ValidationError, match="inputSchema"):
+            await provider.__aenter__()
+        assert not provider.connected
