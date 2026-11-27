@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-the-response-cut-tells-the-model-it-did-not-run-and-why",
+  "title": "A call the response cut short does not run, and the model reads that nothing ran and why: its call was cut off, so it can call again, with shorter arguments if the response ran out of room",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-096"
+  ],
+  "notes": "Python: providers/ai/tool_calls.py cut_call_error; channels/_ai_tools.py _partial_call_error. RK-6.4-096 is cited in part: a call written with unreadable arguments, under a response not cut short, is not scripted here (a scripted call is either cut or read).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  },
+                  "cut": true
+                }
+              ],
+              "finish_reason": "length"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "calls",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "{\"error\": \"Tool call cut off\", \"tool\": \"lookup\", \"hint\": \"This call was cut off before its arguments were complete, so it did not run. Call it again if it is still needed, with shorter arguments if the response ran out of room.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Checking."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "status": "failed",
+            "result": "{\"error\": \"Tool call cut off\", \"tool\": \"lookup\", \"hint\": \"This call was cut off before its arguments were complete, so it did not run. Call it again if it is still needed, with shorter arguments if the response ran out of room.\"}"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

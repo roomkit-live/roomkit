@@ -1,0 +1,420 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-s-intent-is-normalized-or-is-none",
+  "title": "With call intents on, only a string is an intent: control characters become spaces, the bidirectional formatting characters go, each run of white space becomes one space, and the text is trimmed, cut at 200 Unicode scalar values and trimmed again; a value absent, null, not a string or empty after this leaves the call without one",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-112"
+  ],
+  "notes": "Python: providers/ai/tool_intent.py normalized_intent; tests/test_channels/test_tool_call_intents.py test_an_intent_is_normalized_or_none. c5 counts scalar values: 150 letters and 60 characters outside the Basic Multilingual Plane are cut to 150 and 50. c6 is cut on a space, trimmed again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 1",
+                    "_roomkit_intent": "  Je  cherche\n\tles fichiers "
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 2",
+                    "_roomkit_intent": "Je\u0000cherche\u001b[31m"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 3",
+                    "_roomkit_intent": "‮Je‎ che⁦rche⁩؜"
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 4",
+                    "_roomkit_intent": "Je 　cherche ici "
+                  }
+                },
+                {
+                  "id": "c5",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 5",
+                    "_roomkit_intent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+                  }
+                },
+                {
+                  "id": "c6",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 6",
+                    "_roomkit_intent": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccc"
+                  }
+                },
+                {
+                  "id": "c7",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 7",
+                    "_roomkit_intent": " \u0007 ‏ "
+                  }
+                },
+                {
+                  "id": "c8",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 8",
+                    "_roomkit_intent": ""
+                  }
+                },
+                {
+                  "id": "c9",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 9",
+                    "_roomkit_intent": null
+                  }
+                },
+                {
+                  "id": "c10",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 10",
+                    "_roomkit_intent": 42
+                  }
+                },
+                {
+                  "id": "c11",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 11",
+                    "_roomkit_intent": [
+                      "Je cherche"
+                    ]
+                  }
+                },
+                {
+                  "id": "c12",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 12",
+                    "_roomkit_intent": {
+                      "text": "Je cherche"
+                    }
+                  }
+                },
+                {
+                  "id": "c13",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls 13"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "agent",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 1"
+              },
+              "intent": "Je cherche les fichiers"
+            },
+            {
+              "id": "$e2",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 2"
+              },
+              "intent": "Je cherche [31m"
+            },
+            {
+              "id": "$e3",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 3"
+              },
+              "intent": "Je cherche"
+            },
+            {
+              "id": "$e4",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 4"
+              },
+              "intent": "Je cherche ici"
+            },
+            {
+              "id": "$e5",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 5"
+              },
+              "intent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+            },
+            {
+              "id": "$e6",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 6"
+              },
+              "intent": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            {
+              "id": "$e7",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 7"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e8",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 8"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e9",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 9"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e10",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 10"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e11",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 11"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e12",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 12"
+              },
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e13",
+              "name": "shell",
+              "arguments": {
+                "command": "ls 13"
+              },
+              "intent": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "status": "completed",
+              "intent": "Je cherche les fichiers"
+            },
+            {
+              "id": "$e2",
+              "status": "completed",
+              "intent": "Je cherche [31m"
+            },
+            {
+              "id": "$e3",
+              "status": "completed",
+              "intent": "Je cherche"
+            },
+            {
+              "id": "$e4",
+              "status": "completed",
+              "intent": "Je cherche ici"
+            },
+            {
+              "id": "$e5",
+              "status": "completed",
+              "intent": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+            },
+            {
+              "id": "$e6",
+              "status": "completed",
+              "intent": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            {
+              "id": "$e7",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e8",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e9",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e10",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e11",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e12",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e13",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

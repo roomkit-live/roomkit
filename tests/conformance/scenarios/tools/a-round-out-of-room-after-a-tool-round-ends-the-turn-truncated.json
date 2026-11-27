@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-out-of-room-after-a-tool-round-ends-the-turn-truncated",
+  "title": "A round that runs out of room before any answer, after a tool round, ends the turn truncated and is not tried again, though the agent tries an empty round again",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-098"
+  ],
+  "notes": "Python: channels/_ai_loop_rules.py _empty_round_nudge (is_truncation); tests/test_channels/test_loop_end_marker.py test_a_truncated_round_is_named_truncated. The output cap and the context window filling up reach the loop as one stop reason, length (§6.7).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ],
+        "max_empty_retries": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "",
+              "finish_reason": "length"
+            },
+            {
+              "text": "Never asked."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "truncated",
+            "round_count": 1
+          }
+        }
+      ]
+    }
+  }
+}

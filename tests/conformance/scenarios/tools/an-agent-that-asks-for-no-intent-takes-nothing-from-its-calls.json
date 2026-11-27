@@ -1,0 +1,281 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-agent-that-asks-for-no-intent-takes-nothing-from-its-calls",
+  "title": "An agent whose call intents are off, as they are by default, shows its tools' schemas as declared and takes nothing from a call: an argument named _roomkit_intent reaches the hook, the tool, the events, the rows and the next round as any argument, and no call has an intent",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-100"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_call_intents.py test_off_nothing_is_taken_from_a_call. The agent leaves tool_call_intents unset: off by default.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste les fichiers."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tool_use"
+      },
+      {
+        "name": "ran",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_definitions": {
+            "shell": {
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "_roomkit_intent": {
+                    "$absent": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "$e1",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste les fichiers."
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "$e1",
+              "content": "a.txt",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "before": [
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "name": "shell",
+            "tool_call_id": "c1",
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": "Je liste les fichiers."
+            }
+          }
+        }
+      ],
+      "ran": [
+        {
+          "trigger": "on_tool_call",
+          "tool_call": {
+            "name": "shell",
+            "tool_call_id": "c1",
+            "result": "a.txt",
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": "Je liste les fichiers."
+            }
+          }
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "agent",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "shell",
+              "intent": {
+                "$absent": true
+              },
+              "arguments": {
+                "command": "ls",
+                "_roomkit_intent": "Je liste les fichiers."
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "shell",
+              "result": "a.txt",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "intent": {
+              "$absent": true
+            },
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": "Je liste les fichiers."
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "intent": {
+              "$absent": true
+            },
+            "outcome": "served",
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": "Je liste les fichiers."
+            }
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

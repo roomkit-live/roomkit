@@ -1,0 +1,348 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-subschema-whose-type-is-no-single-portable-word-fails-the-turn",
+  "title": "A binding's response schema whose subschema gives its type as a list, as null, or as a word outside object, array, string, number, integer and boolean fails the turn before its model is asked",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-070"
+  ],
+  "notes": "Python: providers/ai/json_schema.py check_portable_schema; channels/ai.py _portable_schema reads a binding's schema as the turn reads its settings, before the model is asked; tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"name\": \"Alice\", \"count\": 2, \"share\": 0.5, \"paid\": true, \"tags\": [\"billing\"], \"card\": {\"last4\": \"4242\"}}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-list",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-null",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-date",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "when": {
+                    "type": "date"
+                  }
+                },
+                "required": [
+                  "when"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-six",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  },
+                  "share": {
+                    "type": "number"
+                  },
+                  "paid": {
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "card": {
+                    "type": "object",
+                    "properties": {
+                      "last4": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "last4"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "count",
+                  "share",
+                  "paid",
+                  "tags",
+                  "card"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-list",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.note: 'type' must be one of object, array, string, number, integer, boolean, as a single string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-null",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.note: 'type' must be one of object, array, string, number, integer, boolean, as a single string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-date",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.when: 'type' must be one of object, array, string, number, integer, boolean, as a single string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-six",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "share": {
+                "type": "number"
+              },
+              "paid": {
+                "type": "boolean"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "card": {
+                "type": "object",
+                "properties": {
+                  "last4": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "last4"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "name",
+              "count",
+              "share",
+              "paid",
+              "tags",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-list": [
+        {
+          "index": 0
+        }
+      ],
+      "room-null": [
+        {
+          "index": 0
+        }
+      ],
+      "room-date": [
+        {
+          "index": 0
+        }
+      ],
+      "room-six": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"name\": \"Alice\", \"count\": 2, \"share\": 0.5, \"paid\": true, \"tags\": [\"billing\"], \"card\": {\"last4\": \"4242\"}}"
+          }
+        }
+      ]
+    }
+  }
+}

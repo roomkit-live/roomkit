@@ -1,0 +1,356 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/an-enum-off-a-string-or-not-of-distinct-strings-fails-the-turn",
+  "title": "A binding's response schema with an enum on a number, or a string's enum that is empty, repeats a value or holds other than strings, fails the turn before its model is asked",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-075"
+  ],
+  "notes": "Python: providers/ai/json_schema.py check_portable_schema; channels/ai.py _portable_schema reads a binding's schema as the turn reads its settings, before the model is asked; tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-number",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ]
+                  }
+                },
+                "required": [
+                  "count"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-empty",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "enum": []
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-twice",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "enum": [
+                      "billing",
+                      "billing"
+                    ]
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-mixed",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "enum": [
+                      "billing",
+                      2
+                    ]
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-strings",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "enum": [
+                      "billing",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-number",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.count: ['enum'] not portable on a 'integer' schema"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-empty",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.department: 'enum' must be a non-empty list of distinct strings"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-twice",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.department: 'enum' must be a non-empty list of distinct strings"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-mixed",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.department: 'enum' must be a non-empty list of distinct strings"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-strings",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "department"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-number": [
+        {
+          "index": 0
+        }
+      ],
+      "room-empty": [
+        {
+          "index": 0
+        }
+      ],
+      "room-twice": [
+        {
+          "index": 0
+        }
+      ],
+      "room-mixed": [
+        {
+          "index": 0
+        }
+      ],
+      "room-strings": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"department\": \"billing\"}"
+          }
+        }
+      ]
+    }
+  }
+}

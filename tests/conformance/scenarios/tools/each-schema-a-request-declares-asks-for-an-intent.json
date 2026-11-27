@@ -1,0 +1,253 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/each-schema-a-request-declares-asks-for-an-intent",
+  "title": "With call intents on, each tool schema a request declares carries one optional string property more, _roomkit_intent, on the request's copy only: the tool's own schema stays as declared on the turn's report, and a schema that declares the property already, or is no object schema, is shown as it is",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-101",
+    "RK-6.4-102",
+    "RK-6.4-103"
+  ],
+  "notes": "Python: providers/ai/tool_intent.py presented_tools, _takes_intent; tests/test_channels/test_tool_call_intents.py test_a_call_s_intent_rides_apart_from_its_arguments. RK-6.4-101 is cited in part: an object matches in part, so a second property added to the request's copy would go unseen; the scenario asserts the one property and that it is not required. RK-6.4-102 is cited in part: the schema the turn reports as declared is read on ON_AI_RESPONSE's declared_tools, and the one a call's arguments are checked against through a closed schema that runs a call carrying the property (RK-6.4-110); the schema a BEFORE_AI_GENERATION hook reads is not observed, its record naming the tools alone. RK-6.4-103 is cited in part: the log line a schema shown as it is gets is not observed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a.txt"
+          },
+          {
+            "name": "owner",
+            "description": "Run a command it owns the intent of.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "_roomkit_intent": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a.txt"
+          },
+          {
+            "name": "listing",
+            "description": "List some names.",
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste les fichiers."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_definitions": {
+            "shell": {
+              "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "_roomkit_intent": {
+                    "type": "string",
+                    "description": {
+                      "$present": true
+                    }
+                  }
+                }
+              }
+            },
+            "owner": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "_roomkit_intent": {
+                    "type": "string",
+                    "description": {
+                      "$absent": true
+                    }
+                  }
+                }
+              }
+            },
+            "listing": {
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "properties": {
+                  "$absent": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "a.txt",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "shell": {
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "command"
+                  ],
+                  "properties": {
+                    "command": {
+                      "type": "string"
+                    },
+                    "_roomkit_intent": {
+                      "$absent": true
+                    }
+                  }
+                }
+              },
+              "owner": {
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string"
+                    },
+                    "_roomkit_intent": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "listing": {
+                "parameters": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

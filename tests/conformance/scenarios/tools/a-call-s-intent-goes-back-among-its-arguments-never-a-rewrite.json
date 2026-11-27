@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-s-intent-goes-back-among-its-arguments-never-a-rewrite",
+  "title": "With call intents on, the model reads its call back with its intent, as normalized, among its arguments, in the turn's next round and in a later turn, never a BEFORE_TOOL_USE rewrite of them; a value that made no intent is not replayed",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-116",
+    "RK-6.4-117",
+    "RK-6.4-264"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_call_intents.py test_the_next_round_reads_its_call_with_its_intent, test_a_later_turn_reads_the_call_with_its_intent_while_asked; channels/_tool_history.py. RK-6.4-116 is cited in part: an agent that no longer asks for intents is tools/a-later-turn-of-an-agent-asking-no-intent-replays-the-arguments-alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "  Je liste\nles fichiers. "
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "pwd",
+                    "_roomkit_intent": 42
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rewrite",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "modify",
+              "event": {
+                "arguments": {
+                  "command": "rewritten"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "more"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "rewrite": [
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "tool_call_id": "c1",
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "tool_call_id": "c2",
+            "arguments": {
+              "command": "pwd",
+              "_roomkit_intent": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste les fichiers."
+                  }
+                },
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "command": "pwd",
+                    "_roomkit_intent": {
+                      "$absent": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste les fichiers."
+                  }
+                },
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "command": "pwd",
+                    "_roomkit_intent": {
+                      "$absent": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "Done."
+            },
+            {
+              "role": "user",
+              "text": "more"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

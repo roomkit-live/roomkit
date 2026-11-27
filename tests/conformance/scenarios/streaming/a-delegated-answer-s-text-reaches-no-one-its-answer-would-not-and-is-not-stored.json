@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-delegated-answer-s-text-reaches-no-one-its-answer-would-not-and-is-not-stored",
+  "title": "A delegated answer's text events reach the room's subscribers only while its answer reaches every channel of the room: once its binding's visibility narrows, none is published; and none is ever stored, the trace's message remaining the answer",
+  "rules": [
+    "§6.4",
+    "§8.4",
+    "§23.3"
+  ],
+  "requirements": [
+    "RK-6.4-059"
+  ],
+  "notes": "Python: turns/_owner_publish.py publish_frame reads the binding as the room holds it at each publication; tests/test_ai_streaming_text_events.py, tests/test_turn_ephemerals_scope.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "open-worker",
+        "type": "ai",
+        "category": "intelligence",
+        "publish_text_deltas": true,
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "It shipped today."
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "narrowed-worker",
+        "type": "ai",
+        "category": "intelligence",
+        "publish_text_deltas": true,
+        "model": {
+          "rounds": [
+            {
+              "gate": "narrowed",
+              "deltas": [
+                "It shipped."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "open-worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "narrowed-worker",
+      "task": "Go.",
+      "as": "t2"
+    },
+    {
+      "wait_for": "narrowed"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "$r2",
+      "channel_id": "narrowed-worker",
+      "visibility": "intelligence"
+    },
+    {
+      "open": "narrowed"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "It shipped today.",
+          "round": 0,
+          "channel_id": "open-worker"
+        }
+      ],
+      "$r2": []
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "open-worker"
+          },
+          "content": {
+            "body": "It shipped today."
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "narrowed-worker"
+          },
+          "content": {
+            "body": "It shipped."
+          }
+        }
+      ]
+    }
+  }
+}

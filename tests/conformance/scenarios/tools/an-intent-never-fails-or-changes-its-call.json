@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-intent-never-fails-or-changes-its-call",
+  "title": "With call intents on, an intent never fails its call, never changes its outcome and is never read as markup or code: a value that makes no intent runs its call, markup is carried as the text it is, and a call that fails or is refused ends so with its intent",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-113"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_call_intents.py test_an_unusable_intent_never_fails_the_call, test_a_call_refused_or_failed_keeps_its_intent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a.txt"
+          },
+          {
+            "name": "boom",
+            "description": "Break.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "raises": {
+              "kind": "ValueError",
+              "message": "boom"
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": {
+                      "nested": true
+                    }
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "pwd",
+                    "_roomkit_intent": "<b>Je</b> regarde {{ici}} `rm -rf /` $(id) **ici**"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "boom",
+                  "arguments": {
+                    "_roomkit_intent": "Je casse."
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "shell",
+                  "arguments": {
+                    "command": 3,
+                    "_roomkit_intent": "Je compte."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "agent",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "intent": {
+                "$absent": true
+              },
+              "arguments": {
+                "command": "ls",
+                "_roomkit_intent": {
+                  "$absent": true
+                }
+              }
+            },
+            {
+              "id": "$e2",
+              "intent": "<b>Je</b> regarde {{ici}} `rm -rf /` $(id) **ici**",
+              "arguments": {
+                "command": "pwd",
+                "_roomkit_intent": {
+                  "$absent": true
+                }
+              }
+            },
+            {
+              "id": "$e3",
+              "intent": "Je casse."
+            },
+            {
+              "id": "$e4",
+              "intent": "Je compte.",
+              "arguments": {
+                "command": 3,
+                "_roomkit_intent": {
+                  "$absent": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "status": "completed",
+              "result": "a.txt",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e2",
+              "status": "completed",
+              "result": "a.txt",
+              "intent": "<b>Je</b> regarde {{ici}} `rm -rf /` $(id) **ici**"
+            },
+            {
+              "id": "$e3",
+              "status": "failed",
+              "intent": "Je casse."
+            },
+            {
+              "id": "$e4",
+              "status": "failed",
+              "intent": "Je compte."
+            }
+          ]
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "$e1",
+              "content": "a.txt",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "$e2",
+              "content": "a.txt",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "$e3",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "$e4",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

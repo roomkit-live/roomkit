@@ -1,0 +1,248 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/an-object-that-declares-no-properties-fails-the-turn",
+  "title": "A binding's response schema with an object that declares no properties, or declares them as no map, fails the turn before its model is asked; an object whose properties are empty is taken",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-071"
+  ],
+  "notes": "Python: providers/ai/json_schema.py check_portable_schema; channels/ai.py _portable_schema reads a binding's schema as the turn reads its settings, before the model is asked; tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\", \"card\": {}}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-missing",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "card": {
+                    "type": "object",
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "card"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-list",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "card": {
+                    "type": "object",
+                    "properties": [
+                      "last4"
+                    ],
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "card"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-empty",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  },
+                  "card": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "department",
+                  "card"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-missing",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.card: an object must declare 'properties', keyed by name"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-list",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.card: an object must declare 'properties', keyed by name"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-empty",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string"
+              },
+              "card": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "department",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-missing": [
+        {
+          "index": 0
+        }
+      ],
+      "room-list": [
+        {
+          "index": 0
+        }
+      ],
+      "room-empty": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"department\": \"billing\", \"card\": {}}"
+          }
+        }
+      ]
+    }
+  }
+}

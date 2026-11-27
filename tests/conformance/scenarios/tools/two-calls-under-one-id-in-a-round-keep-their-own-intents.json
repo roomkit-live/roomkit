@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/two-calls-under-one-id-in-a-round-keep-their-own-intents",
+  "title": "With call intents on, two calls of one round under one id each carry their own intent, on the start and on the end: the second, refused under the id the first holds, ends with its own",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-115"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_call_intents.py test_two_calls_under_one_id_keep_their_own_intents.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste."
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "wc",
+                    "_roomkit_intent": "Je compte."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "agent",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "intent": "Je liste.",
+              "arguments": {
+                "command": "ls"
+              }
+            },
+            {
+              "id": "$e1",
+              "intent": "Je compte.",
+              "arguments": {
+                "command": "wc"
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "status": "completed",
+              "intent": "Je liste."
+            },
+            {
+              "id": "$e1",
+              "status": "failed",
+              "intent": "Je compte."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

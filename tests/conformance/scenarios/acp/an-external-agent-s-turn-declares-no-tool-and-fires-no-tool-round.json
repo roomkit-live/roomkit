@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/an-external-agent-s-turn-declares-no-tool-and-fires-no-tool-round",
+  "title": "An external agent that runs its own loop declares no tool on its turn's report, whatever it called, and fires no AFTER_TOOL_ROUND",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-6.4-242",
+    "RK-6.4-262"
+  ],
+  "notes": "Python: channels/_acp_turn.py fires ON_AI_RESPONSE with an empty declaration; AFTER_TOOL_ROUND belongs to an AI channel's tool loop (channels/_ai_streaming.py _after_tool_round). RK-6.4-242 is cited in part: the matcher does not tell an empty map from another one, so the scenario asserts that the tool the agent called is not declared. RK-6.4-262 is cited in part: a realtime session and a reasoning backend's agent need the realtime feature.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "read-1",
+                    "title": "Read",
+                    "kind": "read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "notes.txt",
+                      "_roomkit_intent": "Je lis les notes."
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "read-1",
+                    "status": "completed",
+                    "rawOutput": "Read."
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Done."
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "publish_tool_call_text": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "round",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "channel_id": "coder",
+            "tool_calls_count": 1,
+            "loop_end_reason": "completed",
+            "declared_tools": {
+              "Read": {
+                "$absent": true
+              },
+              "read-1": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ],
+      "round": []
+    }
+  }
+}

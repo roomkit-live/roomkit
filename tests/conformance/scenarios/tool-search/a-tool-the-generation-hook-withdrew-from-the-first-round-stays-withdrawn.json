@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-the-generation-hook-withdrew-from-the-first-round-stays-withdrawn",
+  "title": "Under Tool Search, a pinned tool the first round would declare and that the generation hook took out is withdrawn for the whole turn: no round declares it, find_tools does not name it, and a call naming it is refused",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-6.4-222",
+    "RK-6.4-224"
+  ],
+  "notes": "Python: tools/context.py withdraw takes the tool out of the rest of the turn; tests/test_hook_tool_restrictions.py. The hook's toolset is the turn's, so a withdrawal limited to the first round, which would withdraw nothing, does not exist: the tool the hook took out of the first round's declaration stays out of every later round.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": true,
+        "tool_search_pinned": [
+          "safe_read"
+        ],
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "read_audit",
+            "description": "Read the audit log.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "wire_money",
+            "description": "Wire money to an account.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "read"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "take",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": [
+                  "read_audit",
+                  "wire_money",
+                  "find_tools",
+                  "list_tools"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read my record."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "safe_read": {
+              "$absent": true
+            },
+            "find_tools": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "safe_read": {
+              "$absent": true
+            },
+            "read_audit": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "safe_read": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c0",
+              "content": {
+                "$lacks": "safe_read"
+              }
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'safe_read' is not available in this turn.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

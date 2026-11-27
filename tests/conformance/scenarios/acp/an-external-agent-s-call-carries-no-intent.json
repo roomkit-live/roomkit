@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/an-external-agent-s-call-carries-no-intent",
+  "title": "An external agent's call carries no intent: its arguments, _roomkit_intent among them, stay as the agent reported them, on its events and its rows",
+  "rules": [
+    "§6.4",
+    "§8.4"
+  ],
+  "requirements": [
+    "RK-6.4-120"
+  ],
+  "notes": "Python: channels/_acp_turn.py reports the agent's calls as it gives them; an ACP channel shows no schema of its agent's tools and has no tool_call_intents option, so its calls carry none whatever an AI channel asks. RK-6.4-120 is cited in part: a provider-served call is provider-served/a-call-its-provider-served-carries-no-intent, and a realtime session's own calls need the realtime feature.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "read-1",
+                    "title": "Read",
+                    "kind": "read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "notes.txt",
+                      "_roomkit_intent": "Je lis les notes."
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "read-1",
+                    "status": "completed",
+                    "rawOutput": "Read."
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Done."
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "publish_tool_call_text": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "channel_id": "coder",
+          "round": 0,
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "Read",
+              "intent": {
+                "$absent": true
+              },
+              "arguments": {
+                "path": "notes.txt",
+                "_roomkit_intent": "Je lis les notes."
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "channel_id": "coder",
+          "round": 0,
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "status": "completed",
+              "result": "Read.",
+              "intent": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_name": "Read",
+            "intent": {
+              "$absent": true
+            },
+            "arguments": {
+              "path": "notes.txt",
+              "_roomkit_intent": "Je lis les notes."
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_name": "Read",
+            "intent": {
+              "$absent": true
+            },
+            "status": "completed"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

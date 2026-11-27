@@ -1,0 +1,259 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/an-object-whose-required-misses-or-repeats-a-property-fails-the-turn",
+  "title": "A binding's response schema with an object whose required list leaves a property out, names one twice, names one it does not declare or is absent fails the turn before its model is asked",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-072"
+  ],
+  "notes": "Python: providers/ai/json_schema.py check_portable_schema; channels/ai.py _portable_schema reads a binding's schema as the turn reads its settings, before the model is asked; tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-missing",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-twice",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "department",
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-unknown",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "department",
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-absent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-missing",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $: 'required' must list every property, each once"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-twice",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $: 'required' must list every property, each once"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-unknown",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $: 'required' must list every property, each once"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-absent",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $: 'required' must list every property, each once"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-missing": [
+        {
+          "index": 0
+        }
+      ],
+      "room-twice": [
+        {
+          "index": 0
+        }
+      ],
+      "room-unknown": [
+        {
+          "index": 0
+        }
+      ],
+      "room-absent": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

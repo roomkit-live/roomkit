@@ -1,0 +1,246 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-later-turn-of-an-agent-asking-no-intent-replays-the-arguments-alone",
+  "title": "A later turn of an agent that no longer asks for call intents replays an earlier call with its arguments alone, the intent its row keeps left out",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-116"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_call_intents.py test_a_later_turn_reads_the_call_with_its_intent_while_asked (intents off): the agent registered again with the option off keeps its binding and reads its rows. RK-6.4-116 is cited in part: the option on is tools/a-call-s-intent-goes-back-among-its-arguments-never-a-rewrite.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "agent"
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tool_call_intents": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "more"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_definitions": {
+            "shell": {
+              "parameters": {
+                "properties": {
+                  "_roomkit_intent": {
+                    "$absent": true
+                  }
+                }
+              }
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": {
+                      "$absent": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "Done."
+            },
+            {
+              "role": "user",
+              "text": "more"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "intent": "Je liste."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "intent": "Je liste."
+          }
+        },
+        {
+          "index": 3,
+          "type": "message"
+        },
+        {
+          "index": 4,
+          "type": "message"
+        },
+        {
+          "index": 5,
+          "type": "message"
+        }
+      ]
+    }
+  }
+}

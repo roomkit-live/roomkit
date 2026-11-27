@@ -1,0 +1,265 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-title-and-a-description-are-taken-on-any-subschema-as-strings",
+  "title": "A binding's response schema whose subschemas carry a title and a description is taken, and reaches the model as written; one whose title or description is not a string fails the turn before its model is asked",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-076"
+  ],
+  "notes": "Python: providers/ai/json_schema.py check_portable_schema; channels/ai.py _portable_schema reads a binding's schema as the turn reads its settings, before the model is asked; tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\", \"tags\": [\"refund\"]}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-title",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "title": 7
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-description",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "department"
+                ],
+                "additionalProperties": false,
+                "description": [
+                  "Triage."
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-guided",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "department": {
+                    "type": "string",
+                    "title": "Department",
+                    "description": "Where it goes.",
+                    "enum": [
+                      "billing",
+                      "other"
+                    ]
+                  },
+                  "tags": {
+                    "type": "array",
+                    "description": "What it is about.",
+                    "items": {
+                      "type": "string",
+                      "title": "Tag"
+                    }
+                  }
+                },
+                "required": [
+                  "department",
+                  "tags"
+                ],
+                "additionalProperties": false,
+                "title": "Triage",
+                "description": "How to route the message."
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-title",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.department: 'title' must be a string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-description",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $: 'description' must be a string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-guided",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "title": "Department",
+                "description": "Where it goes.",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              },
+              "tags": {
+                "type": "array",
+                "description": "What it is about.",
+                "items": {
+                  "type": "string",
+                  "title": "Tag"
+                }
+              }
+            },
+            "required": [
+              "department",
+              "tags"
+            ],
+            "additionalProperties": false,
+            "title": "Triage",
+            "description": "How to route the message."
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-title": [
+        {
+          "index": 0
+        }
+      ],
+      "room-description": [
+        {
+          "index": 0
+        }
+      ],
+      "room-guided": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"department\": \"billing\", \"tags\": [\"refund\"]}"
+          }
+        }
+      ]
+    }
+  }
+}

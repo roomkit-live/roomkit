@@ -1,0 +1,273 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-that-declares-the-intent-property-keeps-it-and-a-cut-call-is-left-as-it-is",
+  "title": "With call intents on, a tool whose own schema declares _roomkit_intent keeps it as its argument and its call carries no intent; a call the response cut is left as it is, what arrived of its arguments, the property's text among it, going back as it came",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-109"
+  ],
+  "notes": "Python: providers/ai/tool_intent.py take_intent (owners, a partial call returned as it is); tests/test_channels/test_tool_call_intents.py test_a_tool_that_declares_the_property_keeps_it_as_its_argument. The cut call is streamed with the arguments that arrived, as reasoning/a-cut-call-goes-back-with-the-round streams one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "publish_tool_call_text": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            },
+            "returns": "a.txt"
+          },
+          {
+            "name": "owner",
+            "description": "Run a command it owns the intent of.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "_roomkit_intent": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "owner",
+                    "arguments": {
+                      "command": "ls",
+                      "_roomkit_intent": "Je liste."
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "shell",
+                    "arguments": {
+                      "raw": "{\"command\": \"pwd\", \"_roomkit_intent\": \"Je regarde."
+                    },
+                    "cut": true
+                  }
+                }
+              ],
+              "finish_reason": "length"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_call_intents": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tool_use"
+      },
+      {
+        "name": "round",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "before": [
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "name": "owner",
+            "tool_call_id": "c1",
+            "arguments": {
+              "command": "ls",
+              "_roomkit_intent": "Je liste."
+            }
+          }
+        }
+      ],
+      "round": [
+        {
+          "trigger": "after_tool_round",
+          "tool_round": {
+            "calls": [
+              {
+                "tool_call_id": "c1",
+                "arguments": {
+                  "command": "ls",
+                  "_roomkit_intent": "Je liste."
+                },
+                "partial": false
+              },
+              {
+                "tool_call_id": "c2",
+                "arguments": {
+                  "raw": "{\"command\": \"pwd\", \"_roomkit_intent\": \"Je regarde."
+                },
+                "partial": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "$e1",
+                  "arguments": {
+                    "command": "ls",
+                    "_roomkit_intent": "Je liste."
+                  }
+                },
+                {
+                  "call": "$e2",
+                  "arguments": {
+                    "raw": "{\"command\": \"pwd\", \"_roomkit_intent\": \"Je regarde."
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "agent",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "owner",
+              "intent": {
+                "$absent": true
+              },
+              "arguments": {
+                "command": "ls",
+                "_roomkit_intent": "Je liste."
+              }
+            },
+            {
+              "id": "$e2",
+              "name": "shell",
+              "intent": {
+                "$absent": true
+              },
+              "arguments": {
+                "raw": "{\"command\": \"pwd\", \"_roomkit_intent\": \"Je regarde."
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          },
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "owner",
+              "status": "completed",
+              "intent": {
+                "$absent": true
+              }
+            },
+            {
+              "id": "$e2",
+              "name": "shell",
+              "status": "failed",
+              "intent": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
