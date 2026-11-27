@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 
+import pytest
+
 from roomkit.channels.ai import AIChannel
+from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.context import RoomContext
+from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
 from roomkit.models.steering import Cancel, InjectMessage, UpdateSystemPrompt
 from roomkit.providers.ai.base import (
@@ -13,12 +19,15 @@ from roomkit.providers.ai.base import (
     AIMessage,
     AIResponse,
     AIToolCall,
+    ProviderError,
+    StreamEvent,
     StreamTextDelta,
     StreamToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.context import _ToolLoopContext
-from tests.tool_loop_modes import run_tool_loop
+from tests.conftest import make_event
+from tests.tool_loop_modes import LoopRun, read_reply, respond, run_tool_loop
 
 
 def _tool_response(content: str = "", tool_name: str = "search") -> AIResponse:
@@ -397,3 +406,103 @@ class TestToolLoopContextIsolation:
             pass
 
         assert len(ch._active_loops) == 0
+
+
+class _HeldStream(MockAIProvider):
+    """Streams *first* (when given), then holds its generation until
+    *release* is set; its first generation fails, retryable, with
+    *fail_first*."""
+
+    def __init__(self, first: str = "", *, fail_first: bool = False) -> None:
+        super().__init__()
+        self._supports_structured_streaming = True
+        self.first = first
+        self.fail_first = fail_first
+        self.generations = 0
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def generate_structured_stream(  # type: ignore[override]
+        self, context: AIContext
+    ) -> AsyncIterator[StreamEvent]:
+        self.generations += 1
+        self.entered.set()
+        if self.fail_first and self.generations == 1:
+            raise ProviderError("overloaded", retryable=True, status_code=503)
+        if self.first:
+            yield StreamTextDelta(text=self.first)
+        await self.release.wait()
+        yield StreamTextDelta(text="late")
+
+
+_BINDING = ChannelBinding(
+    channel_id="ai1",
+    room_id="r1",
+    channel_type=ChannelType.AI,
+    category=ChannelCategory.INTELLIGENCE,
+)
+
+
+async def _turn(ch: AIChannel) -> LoopRun:
+    return await respond(ch, make_event(body="go", channel_id="sms1"), _BINDING, _IN_ROOM)
+
+
+async def _ended(task: asyncio.Task[LoopRun]) -> LoopRun:
+    """The turn's run, once it ended within a second: the wait cancels
+    nothing, so a turn that waits for its provider fails the test."""
+    done, _ = await asyncio.wait({task}, timeout=1)
+    assert done, "the turn still waited for its provider"
+    return task.result()
+
+
+class TestACancelCutsAHeldGeneration:
+    """A steering ``Cancel`` aborts the current generation at once (RFC
+    §21.3, RMK-1764): it does not wait for the provider's next event."""
+
+    async def test_a_cancel_between_two_events_stops_before_the_next(self) -> None:
+        """A Cancel that comes while the reader holds a delta, with no wait
+        on the provider under way, keeps the next wait from starting."""
+        provider = _HeldStream("Hello ")
+        ch = AIChannel("ai1", provider=provider)
+        output = await ch.on_event(make_event(body="go", channel_id="sms1"), _BINDING, _IN_ROOM)
+        assert output.response_stream is not None
+        stream = output.response_stream
+        assert await anext(stream) == "Hello "
+
+        ch.steer(Cancel(reason="stop pressed"), room_id="r1")
+        run = await _ended(asyncio.ensure_future(read_reply(output)))
+
+        assert (run.reason, run.text, provider.release.is_set()) == ("cancelled", "", False)
+
+    async def test_a_cancel_during_a_retry_s_backoff_ends_the_turn_at_once(self) -> None:
+        """The backoff before a retry is part of the generation: a Cancel
+        there ends the turn, and the provider is not asked again."""
+        provider = _HeldStream(fail_first=True)
+        policy = RetryPolicy(max_retries=1, base_delay_seconds=30)
+        ch = AIChannel("ai1", provider=provider, retry_policy=policy)
+        turn = asyncio.create_task(_turn(ch))
+        await asyncio.wait_for(provider.entered.wait(), 2)
+
+        reached = ch.steer(Cancel(reason="stop pressed"), room_id="r1")
+        run = await _ended(turn)
+
+        assert (reached, run.reason, provider.generations) == (1, "cancelled", 1)
+
+    @pytest.mark.parametrize("first", ["cancel", "caller"])
+    async def test_the_caller_s_cancellation_beside_a_cancel_reaches_the_caller(
+        self, first: str
+    ) -> None:
+        """The cut withdraws its own cancellation alone: the caller's,
+        made in the same step, before or after the Cancel, still cancels
+        the turn's task."""
+        provider = _HeldStream()
+        ch = AIChannel("ai1", provider=provider)
+        turn = asyncio.create_task(_turn(ch))
+        await asyncio.wait_for(provider.entered.wait(), 2)
+
+        steps = [lambda: ch.steer(Cancel(reason="stop pressed"), room_id="r1"), turn.cancel]
+        for step in steps if first == "cancel" else reversed(steps):
+            step()
+
+        with pytest.raises(asyncio.CancelledError):
+            await turn

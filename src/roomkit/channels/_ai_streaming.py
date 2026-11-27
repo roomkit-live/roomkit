@@ -882,6 +882,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             index=index,
             room_id=turn.room_id,
             cancel_event=turn.loop_ctx.cancel_event,
+            generation=turn.loop_ctx.generation,
             thinking_coalescer=self._new_thinking_coalescer(turn.room_id, index),
             text_coalescer=self._new_text_coalescer(turn.room_id, index),
             new_composition=partial(self._new_tool_call_coalescer, turn.room_id, index),

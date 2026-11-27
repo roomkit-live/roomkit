@@ -47,7 +47,8 @@ class AISteeringMixin(_AIChannelContract):
 
         Safe to call from any coroutine. Cancel directives also set the
         fast-path cancel event so the loop can exit without waiting for
-        the next drain point. One channel object serves every room it is
+        the next drain point, and cut a generation that waits on its
+        provider's next event. One channel object serves every room it is
         bound to, so a host names the one loop, room or turn it acts for.
 
         Args:
@@ -79,6 +80,7 @@ class AISteeringMixin(_AIChannelContract):
             ctx.steering_queue.put_nowait(directive)
             if isinstance(directive, Cancel):
                 ctx.cancel_event.set()
+                ctx.generation.cut()
         return len(targets)
 
     async def _end_running_turns(self) -> None:

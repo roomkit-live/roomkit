@@ -114,7 +114,8 @@ async def _turn(ch: AIChannel, room_id: str) -> LoopRun:
 
 async def test_a_stop_in_one_room_leaves_the_other_rooms_turn_running(streaming: bool) -> None:
     """Two members' turns on one shared channel: a Stop pressed in room A
-    cancels A's turn, and B's turn answers."""
+    cancels A's turn at once, while its provider still holds the generation
+    (RFC §21.3, RMK-1764), and B's turn answers."""
     release = asyncio.Event()
     ch = AIChannel("ai1", provider=_HeldProvider(release, streaming=streaming))
     turn_a = asyncio.create_task(_turn(ch, "A"))
@@ -124,9 +125,13 @@ async def test_a_stop_in_one_room_leaves_the_other_rooms_turn_running(streaming:
             await asyncio.sleep(0.001)
 
     reached = ch.steer(Cancel(reason="stop pressed"), room_id="A")
+    # A wait that cancels nothing: the turn ends by the Cancel alone.
+    done, _ = await asyncio.wait({turn_a}, timeout=1)
+    assert done, "A's turn still waited for its provider"
+    run_a = turn_a.result()
     release.set()
-    run_a, run_b = await asyncio.gather(turn_a, turn_b)
+    run_b = await turn_b
 
     assert reached == 1
-    assert run_a.reason == "cancelled"
+    assert (run_a.reason, run_a.text) == ("cancelled", "")
     assert (run_b.reason, run_b.text) == ("completed", "done")

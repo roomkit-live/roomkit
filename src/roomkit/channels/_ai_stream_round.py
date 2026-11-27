@@ -35,6 +35,7 @@ from roomkit.providers.ai.finish_reason import FinishReason
 from roomkit.providers.ai.round_parts import RoundTranscript
 from roomkit.providers.utils import _aclose_stream
 from roomkit.realtime.base import EphemeralEventType
+from roomkit.tools._generation_wait import CUT, GenerationWait, _Cut
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools.result import as_tool_result
 
@@ -151,6 +152,8 @@ class _StreamRound:
     index: int
     room_id: str | None
     cancel_event: asyncio.Event
+    # The turn's wait on its provider, which a Cancel cuts (RFC §21.3).
+    generation: GenerationWait
     thinking_coalescer: _ThinkingCoalescer
     new_composition: Callable[[], _ToolCallDeltaCoalescer]
     publish_thinking: Callable[[EphemeralEventType, str, str, int], Awaitable[None]]
@@ -269,14 +272,24 @@ class _StreamRound:
                     self.state.provider_results.append(provider_result(call, delta))
                 yield delta
 
+    async def _next(
+        self, source: AsyncIterator[StreamEvent | _StreamRetryBoundary]
+    ) -> StreamEvent | _StreamRetryBoundary | _Cut | None:
+        """The provider's next event, :data:`CUT` when a Cancel cut the wait
+        for it, ``None`` at the stream's end."""
+        try:
+            return await self.generation.next(source)
+        except StopAsyncIteration:
+            return None
+
     async def stream(
         self, source: AsyncIterator[StreamEvent | _StreamRetryBoundary]
     ) -> AsyncGenerator[StreamDelta, None]:
         """Yield on demand; the direct consumer must explicitly close this iterator."""
         state = self.state
         try:
-            async for event in source:
-                if self.cancel_event.is_set():
+            while (event := await self._next(source)) is not None:
+                if event is CUT or self.cancel_event.is_set():
                     state.cancelled = True
                     await self.close()
                     return

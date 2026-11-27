@@ -35,6 +35,7 @@ from uuid import uuid4
 
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.room import Room
+from roomkit.tools._generation_wait import GenerationWait
 from roomkit.tools._turn_calls import TurnCalls
 
 if TYPE_CHECKING:
@@ -285,6 +286,9 @@ class _ToolLoopContext:
     # loop no more.
     steering_closed: bool = False
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # The turn's wait on its provider's next event: a Cancel cuts it, so the
+    # generation ends at once, not at the provider's next event (RFC §21.3).
+    generation: GenerationWait = field(default_factory=GenerationWait)
     # Set by the channel's close (RFC §9.3): the calls the turn runs are
     # cancelled, each reported cancelled, and no further round is asked.
     closing: bool = False
