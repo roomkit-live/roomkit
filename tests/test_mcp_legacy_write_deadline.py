@@ -111,10 +111,12 @@ async def test_concurrent_callers_wait_before_http_pool_acquisition() -> None:
                 "done": True
             }
         await asyncio.wait_for(peer.get_closed.wait(), 1)
-        assert len(peer.targets) == 4
-        assert [message["method"] for message in peer.messages] == [
-            "initialize",
-            "notifications/initialized",
-            "host/read",
-        ]
+        # None of the 64 requests went out; the SDK tells the server of each
+        # once its writer is free, as it counts a request its writer took as
+        # sent.
+        methods = [message["method"] for message in peer.messages]
+        assert methods[:2] == ["initialize", "notifications/initialized"]
+        assert methods[2:-1] == ["notifications/cancelled"] * 64
+        assert methods[-1] == "host/read"
+        assert len(peer.targets) == 4 + 64
     assert peer.problems == []

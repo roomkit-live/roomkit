@@ -214,13 +214,13 @@ class TestMCP:
     def test_a_tool_no_provider_accepts_is_skipped_with_a_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        listed = SimpleNamespace(name="read file", description="d", inputSchema={}, meta=None)
+        listed = SimpleNamespace(name="read file", description="d", input_schema={}, meta=None)
 
         assert _definition(listed, "server") is None
         assert "'read file' skipped" in caplog.text
 
     def test_a_dotted_mcp_tool_is_kept(self) -> None:
-        listed = SimpleNamespace(name="files.read", description="d", inputSchema={}, meta=None)
+        listed = SimpleNamespace(name="files.read", description="d", input_schema={}, meta=None)
 
         definition = _definition(listed, "server")
 
@@ -259,7 +259,9 @@ class TestEveryDeclarationDeclaresAnEmptyObject:
 
 
 def test_an_mcp_tool_rejected_for_another_reason_is_not_blamed_on_its_name() -> None:
-    listed = SimpleNamespace(name="lookup", description="d", inputSchema="not-a-schema", meta=None)
+    listed = SimpleNamespace(
+        name="lookup", description="d", input_schema="not-a-schema", meta=None
+    )
 
     with pytest.raises(ValidationError, match="parameters"):
         _definition(listed, "server")

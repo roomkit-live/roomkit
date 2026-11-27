@@ -6,13 +6,16 @@ import asyncio
 import copy
 import json
 import logging
+import os
 import re
 import warnings
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AsyncExitStack
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
+
+from pydantic import ValidationError
 
 from roomkit._text import bounded_text, is_label
 from roomkit.core.exceptions import ToolFailedError, UnservedToolCallError
@@ -134,7 +137,7 @@ async def _list_tools(
     seen: set[str] = set()
     params: Any = None
     for _ in range(_MAX_LIST_PAGES):
-        page = ListToolsResult.model_validate(await read_page(params))
+        page = ListToolsResult.model_validate(await read_page(params), by_name=False)
         tools.extend(page.tools)
         cursor = page.next_cursor
         if not isinstance(cursor, str) or not cursor:
@@ -193,6 +196,17 @@ _MAX_HEADER_VALUE_BYTES = 8192
 _STRUCTURED_CONTENT_MAX_BYTES = 512 * 1024
 
 
+def _acknowledged(_result: dict[str, Any]) -> dict[str, Any]:
+    """What the SDK reads in place of a host request's result."""
+    return {}
+
+
+def _retrieved(task: asyncio.Task[Any]) -> None:
+    """Read an abandoned call's outcome, so its error is not reported unread."""
+    if not task.cancelled():
+        task.exception()
+
+
 def _empty_listing(_result: dict[str, Any]) -> dict[str, Any]:
     """What the SDK reads in place of a ``tools/list`` page."""
     return {"tools": []}
@@ -205,8 +219,9 @@ def _empty_read(_result: dict[str, Any]) -> dict[str, Any]:
 
 _MESSAGE_LIMIT = 4 * 1024 * 1024
 """The largest event a Streamable HTTP response's SSE stream may carry, in
-bytes: a larger one fails the connection. roomkit-rs's bound on any MCP
-message. The SDK's default would be 1 MiB."""
+bytes: a larger one fails the request it answers (``MCPError``), the
+connection going on. roomkit-rs's bound on any MCP message. The SDK's
+default would be 1 MiB."""
 
 
 def _publish_structured_content(result: Any) -> None:
@@ -355,9 +370,11 @@ class MCPToolProvider:
             _check_headers(headers or {})
         if transport == "sse":
             warnings.warn(
-                "MCP's HTTP+SSE transport is deprecated since MCP 2026-07-28: use streamable_http",
+                "MCP's HTTP+SSE transport is deprecated by the MCP 2026-07-28 revision: "
+                "use streamable_http",
                 DeprecationWarning,
-                stacklevel=2,
+                # Attributed to the host's call, through from_url as well.
+                skip_file_prefixes=(os.path.dirname(__file__),),
             )
         self._url = url
         self._transport = transport
@@ -374,6 +391,7 @@ class MCPToolProvider:
         self._label = label
         self._session: Any = None
         self._capture: WireCapture | None = None
+        self._abandoned: set[asyncio.Task[Any]] = set()
         self._stack: AsyncExitStack | None = None
         self._tools: list[AITool] = []
         self._tool_set: set[str] = set()
@@ -561,10 +579,14 @@ class MCPToolProvider:
         """Read the server's whole tool listing into this provider, each page
         off the wire (:func:`_list_tools`)."""
 
-        async def read_page(params: Any) -> dict[str, Any]:
+        async def read(params: Any) -> dict[str, Any]:
             with capture.ticket(_empty_listing) as ticket:
                 await session.list_tools(params=params)
-            return ticket.result or {}
+            return ticket.taken()
+
+        async def read_page(params: Any) -> dict[str, Any]:
+            # Bounded by the connection's own deadline, which it never outlasts.
+            return await self._within(read(params), None)
 
         self._keep_listing(await _list_tools(read_page, self._target))
 
@@ -668,6 +690,33 @@ class MCPToolProvider:
                 "MCPToolProvider is not connected. Use 'async with' to connect first."
             )
 
+    async def _within[T](self, work: Coroutine[Any, Any, T], timeout: float | None) -> T:
+        """*work*'s result, the caller waiting *timeout* seconds at most
+        (``None``: no bound of its own, the caller's own deadline is the
+        bound), and never past it (RFC §21.2, §21.6).
+
+        A call cut short is cancelled and left to end on its own: the SDK
+        tells the server with ``notifications/cancelled`` and waits up to five
+        seconds for a writer that may be stuck, which the caller does not
+        wait for. The provider holds the call until it ends.
+        """
+        task = asyncio.ensure_future(work)
+        try:
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+        except BaseException:
+            self._abandon(task)
+            raise
+        if task not in done:
+            self._abandon(task)
+            raise TimeoutError
+        return task.result()
+
+    def _abandon(self, task: asyncio.Task[Any]) -> None:
+        task.cancel()
+        self._abandoned.add(task)
+        task.add_done_callback(self._abandoned.discard)
+        task.add_done_callback(_retrieved)
+
     def _wire(self) -> WireCapture:
         """The capture of the live connection's streams."""
         self._ensure_connected()
@@ -725,9 +774,9 @@ class MCPToolProvider:
             # which RoomKit checks itself (roomkit-rs gives rmcp the same).
             with capture.ticket(_empty_read) as ticket:
                 await self._session.read_resource(sent)
-            return resource_result(ticket.result or {})
+            return resource_result(ticket.taken())
 
-        return await asyncio.wait_for(read(), timeout=timeout)
+        return await self._within(read(), timeout)
 
     @property
     def server_extensions(self) -> dict[str, dict[str, Any]]:
@@ -790,12 +839,18 @@ class MCPToolProvider:
 
         async def send() -> dict[str, Any]:
             # Read off the wire: the SDK's ``Result`` keeps only the fields it
-            # models, and trims a later revision's from a method it knows.
-            with capture.ticket(copy.deepcopy) as ticket:
-                await self._session.send_request(request, RAW_RESULT)
-            return host_result(ticket.result or {})
+            # models, and checks a method it knows against its schema. It
+            # reads an empty result instead, which a method it knows refuses
+            # once the server's own result is already read.
+            with capture.ticket(_acknowledged, (params or {}).get("_meta")) as ticket:
+                try:
+                    await self._session.send_request(request, RAW_RESULT)
+                except ValidationError:
+                    if ticket.result is None:
+                        raise
+            return host_result(ticket.taken())
 
-        return await asyncio.wait_for(send(), timeout=timeout)
+        return await self._within(send(), timeout)
 
     async def call_tool_result(
         self,
@@ -804,12 +859,13 @@ class MCPToolProvider:
         *,
         timeout: float = _DEFAULT_CALL_TIMEOUT,
     ) -> Any:
-        """Call the tool and return the server's ``CallToolResult`` as it is.
+        """Call the tool and return its result, the SDK's ``CallToolResult``:
+        what the SDK models of the server's result, without extension fields.
 
         A failure is the result's ``isError``, not an exception: :meth:`call_tool`
         renders it into its error envelope, the tool handler raises it
         (:class:`~roomkit.core.exceptions.ToolFailedError`). For a
-        host relaying the raw result (an MCP App's frame calling its server).
+        host relaying the result (an MCP App's frame calling its server).
         A successful result's ``structuredContent`` is also published to the
         tool call in progress, when there is one (the model's own calls).
 
@@ -829,7 +885,7 @@ class MCPToolProvider:
         # check a name its listing lacks, on every call of that name.
         request = CallToolRequest(params=CallToolRequestParams(name=name, arguments=arguments))
         sent = self._session.send_request(request, CallToolResult)
-        result = await asyncio.wait_for(sent, timeout=timeout)
+        result = await self._within(sent, timeout)
         if not result.is_error:
             if (schema := self._output_schemas.get(name)) is not None:
                 check_structured_content(name, schema, result)

@@ -12,6 +12,11 @@ ticket shows it in its place. roomkit-rs does the same (``roomkit-mcp``'s
 The streams are wrapped, not relayed: a message reaches the transport when
 the session's own write does, so a request abandoned before the transport
 takes it is still never sent.
+
+The capture also takes out of each message the W3C trace context the SDK
+writes into its ``_meta`` (``traceparent``, ``tracestate``, ``baggage``)
+whenever the host has a current span: a request carries the trace keys its
+caller wrote, and no other, as roomkit-rs's do.
 """
 
 from __future__ import annotations
@@ -26,13 +31,44 @@ Shown = Callable[[dict[str, Any]], dict[str, Any]]
 """What the session reads in place of a ticket's result, given that result."""
 
 
+_TRACE_KEYS = ("traceparent", "tracestate", "baggage")
+"""The ``_meta`` keys the SDK writes a host's trace context into (SEP-414)."""
+
+
 @dataclass
 class Ticket:
-    """One request whose result is read off the wire: the result, once it came."""
+    """One request whose result is read off the wire: the result, once it came.
+
+    ``own_trace`` holds the trace keys the caller itself wrote in the
+    request's ``_meta``, which it keeps as written."""
 
     shown: Shown
+    own_trace: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
     request_id: Any = field(default=None, repr=False)
+
+    def taken(self) -> dict[str, Any]:
+        """The result read off the wire, once the session's call returned.
+
+        Raises:
+            RuntimeError: No result was read for the request: the session
+                answered it without the capture seeing its response.
+        """
+        if self.result is None:
+            raise RuntimeError("the MCP server's result was not read off the wire")
+        return self.result
+
+
+def _correlated(request_id: Any) -> Any:
+    """*request_id* as the SDK correlates it: a string that reads as an
+    integer is that integer, so a server that echoes ``7`` as ``"7"`` still
+    answers request 7 (the SDK's ``coerce_request_id``)."""
+    if isinstance(request_id, str):
+        try:
+            return int(request_id)
+        except ValueError:
+            return request_id
+    return request_id
 
 
 _TICKET: ContextVar[Ticket | None] = ContextVar("roomkit_mcp_ticket", default=None)
@@ -44,10 +80,11 @@ class WireCapture:
 
     def __init__(self) -> None:
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCRequest, JSONRPCResponse
+        from mcp.types import JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
 
         self._message = SessionMessage
         self._request = JSONRPCRequest
+        self._notification = JSONRPCNotification
         self._response = JSONRPCResponse
         self._sent: dict[Any, Ticket] = {}
 
@@ -57,14 +94,20 @@ class WireCapture:
         return _Incoming(read, self), _Outgoing(write, self)
 
     @contextmanager
-    def ticket(self, shown: Shown) -> Generator[Ticket]:
+    def ticket(self, shown: Shown, meta: Any = None) -> Generator[Ticket]:
         """Read off the wire the result of the first request sent in this
-        block, the session reading ``shown(result)`` in its place.
+        block, the session reading ``shown(result)`` in its place. *meta* is
+        the ``_meta`` its caller wrote, whose trace keys the request keeps.
 
         The block is the one task that sends the request: the SDK's session
         writes a request from its caller's task.
         """
-        ticket = Ticket(shown)
+        own = (
+            {key: meta[key] for key in _TRACE_KEYS if key in meta}
+            if isinstance(meta, dict)
+            else {}
+        )
+        ticket = Ticket(shown, own)
         token = _TICKET.set(ticket)
         try:
             yield ticket
@@ -73,20 +116,39 @@ class WireCapture:
             if ticket.request_id is not None:
                 self._sent.pop(ticket.request_id, None)
 
-    def _outgoing(self, item: Any) -> None:
+    def _outgoing(self, item: Any) -> Any:
+        """*item* as it goes out: the SDK's trace keys taken out, and a
+        request made under a ticket bound to it."""
         ticket = _TICKET.get()
         message = getattr(item, "message", None)
-        if ticket is None or ticket.request_id is not None:
-            return
-        if isinstance(message, self._request):
-            ticket.request_id = message.id
-            self._sent[message.id] = ticket
+        binds = (
+            ticket is not None and ticket.request_id is None and isinstance(message, self._request)
+        )
+        if binds and ticket is not None:
+            ticket.request_id = _correlated(message.id)
+            self._sent[ticket.request_id] = ticket
+        if isinstance(message, (self._request, self._notification)):
+            return self._untraced(item, message, ticket.own_trace if binds and ticket else {})
+        return item
+
+    def _untraced(self, item: Any, message: Any, own: dict[str, Any]) -> Any:
+        params = message.params
+        meta = params.get("_meta") if isinstance(params, dict) else None
+        if not isinstance(meta, dict) or not any(key in meta for key in _TRACE_KEYS):
+            return item
+        kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
+        rest = {key: value for key, value in params.items() if key != "_meta"}
+        params = rest | {"_meta": kept} if kept else rest
+        fields = message.model_dump(exclude={"params"}, exclude_unset=True)
+        # No params at all rather than an empty or null one (RK-21.2-046).
+        rewritten = type(message)(**fields, **({"params": params} if params else {}))
+        return self._message(message=rewritten, metadata=item.metadata)
 
     def _incoming(self, item: Any) -> Any:
         message = getattr(item, "message", None)
         if not isinstance(message, self._response):
             return item
-        ticket = self._sent.pop(message.id, None)
+        ticket = self._sent.pop(_correlated(message.id), None)
         if ticket is None:
             return item
         ticket.result = message.result
@@ -103,8 +165,7 @@ class _Outgoing:
         self._capture = capture
 
     async def send(self, item: Any) -> None:
-        self._capture._outgoing(item)
-        await self._stream.send(item)
+        await self._stream.send(self._capture._outgoing(item))
 
     async def __aenter__(self) -> _Outgoing:
         await self._stream.__aenter__()

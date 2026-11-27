@@ -206,6 +206,10 @@ def test_the_legacy_sse_transport_warns_it_is_deprecated() -> None:
     one on Streamable HTTP does not."""
     with pytest.warns(DeprecationWarning, match=r"HTTP\+SSE transport is deprecated"):
         MCPToolProvider("http://localhost:1/mcp", transport="sse")
+    # Attributed to the host's own line, so the default filters show it there.
+    with pytest.warns(DeprecationWarning, match=r"HTTP\+SSE") as warned:
+        MCPToolProvider.from_url("http://localhost:1/mcp", transport="sse")
+    assert warned[0].filename == __file__
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         MCPToolProvider("http://localhost:1/mcp")

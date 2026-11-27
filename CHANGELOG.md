@@ -27,17 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING — `roomkit[mcp]` runs on the MCP Python SDK 2 (`mcp>=2.3,<3`)** (RFC §21.2, RMK-663), where it was capped below 2: a host on `mcp` 1.x upgrades it. The connection still opens with the `initialize` handshake, protocol 2025-11-25. `call_tool_result` returns the SDK 2's `CallToolResult` (`is_error`, `structured_content`), and the SDK's errors are `MCPError` and httpx2's. What RoomKit keeps of the server's words (its `server_info`, its extensions, a tool listing, a raw result) it now reads off the wire, as roomkit-rs does: the SDK 2 checks a known method's result against the protocol revision and drops what it does not model.
+- **BREAKING — `roomkit[mcp]` runs on the MCP Python SDK 2 (`mcp>=2.3,<3`)** (RFC §21.2, RMK-663), where it was capped below 2: a host on `mcp` 1.x upgrades it. The connection still opens with the `initialize` handshake, protocol 2025-11-25. `call_tool_result` returns the SDK 2's `CallToolResult` (`is_error`, `structured_content`), and the SDK's errors are `MCPError` and httpx2's. What RoomKit keeps of the server's words (its `server_info`, its extensions, a tool listing, a raw result) it now reads off the wire, as roomkit-rs does: the SDK 2 checks a known method's result against the protocol revision and drops what it does not model. A listing is checked as the SDK 2 models a tool, as in roomkit-rs: a tool icon whose `theme` is neither `light` nor `dark` fails it.
 
 - **BREAKING — `MCPToolProvider.read_resource(uri)` returns the result as the server sent it, a mapping** (RFC §21.2, RMK-663), where it returned the SDK's `ReadResourceResult`: its `contents` in order, extension fields and explicit nulls included, each URI normalized. `result["contents"][0]["text"]` reads what `result.contents[0].text` did.
 
 - `MCPToolProvider.request()` sends no `params` member for an empty set, nor for an empty or `None` `_meta`, and refuses a `_meta` that is not an object with a `ValidationError`, nothing sent (RFC §21.2, RK-21.2-046, RMK-663), where it sent `"params": {}` and any `_meta` as given: the MCP SDK 2 never sends an empty `params`.
 
-- A request an MCP provider gives up on, past its timeout, now tells the server with `notifications/cancelled`, on every transport (RMK-663), as the MCP SDK 2 does.
+- A request an MCP provider gives up on, past its timeout or cancelled, now tells the server with `notifications/cancelled`, on every transport (RMK-663), as the MCP SDK 2 does; the caller returns at its deadline, the notification going out once the transport's writer can send it.
 
-- A Streamable HTTP MCP connection reads an SSE event of up to 4 MiB, roomkit-rs's bound on any MCP message (RMK-663); a larger one fails the connection.
+- An MCP request carries the trace context of the host's telemetry (`traceparent`, `tracestate`, `baggage`) only where its caller wrote it in `_meta` (RMK-663), as roomkit-rs's do: the MCP SDK 2 writes it into every request whenever the host has a current span, and the provider takes it out.
 
-- The legacy HTTP+SSE MCP transport (`transport="sse"`) is deprecated, as MCP 2026-07-28 deprecates it: building a provider on it warns (`DeprecationWarning`). It takes the MCP SDK 2's behaviour (RMK-663): an SSE event is bounded at 1 MiB, and a `Content-Type` is read as a media type (`Text/Event-Stream` accepted, `prefix-text/event-stream-suffix` refused).
+- A Streamable HTTP MCP connection reads an SSE event of up to 4 MiB, roomkit-rs's bound on any MCP message (RMK-663); a larger one fails the request it answers with an `MCPError`.
+
+- The legacy HTTP+SSE MCP transport (`transport="sse"`) is deprecated, as MCP 2026-07-28 deprecates it: building a provider on it warns (`DeprecationWarning`). It takes the MCP SDK 2's behaviour (RMK-663): an SSE event is bounded at 1 MiB, a larger one ending the connection, and a `Content-Type` is read as a media type (`Text/Event-Stream` accepted, `prefix-text/event-stream-suffix` refused).
 
 - **BREAKING — an event a store's `add_event` brings at an index another event holds in its room raises the new `EventIndexTakenError`, nothing written, whichever store** (RFC §8.1, RMK-2190). `InMemoryStore` stored it, two events at one index; `SQLiteStore` and `PostgresStore` refused it with the driver's error (`sqlite3.IntegrityError`, `asyncpg.UniqueViolationError`), which they still raise for an event under an id they hold. The framework's own writes take the room's next index under its lock and never meet it. An index an `update_event` writes is held too. Migration: code that caught the driver's error on a held index catches `EventIndexTakenError`. The same refusal as roomkit-rs's `StoreError::EventIndexTaken`.
 

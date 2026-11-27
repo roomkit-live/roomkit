@@ -2770,8 +2770,8 @@ connection: `mcp.tool_meta()` (each discovered tool's `_meta`, `ui.resourceUri`
 and `ui.csp` among it, from the listing made at connection),
 `await mcp.read_resource(uri)` (the server's `resources/read` result as it
 sent it, a mapping: `result["contents"][0]["text"]` is the app's HTML) and
-`await mcp.call_tool_result(name, arguments)` (the server's `CallToolResult`,
-`is_error` included, for a frame's own calls). Like
+`await mcp.call_tool_result(name, arguments)` (the SDK's `CallToolResult` of
+the call, `is_error` included, for a frame's own calls). Like
 `call_tool`, `call_tool_result` calls any tool the server has: `tool_filter`
 shapes what discovery offers the model, not what the host may call, so the
 host authorizes a frame's call itself.

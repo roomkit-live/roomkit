@@ -85,13 +85,68 @@ async def test_abandoned_request_waiting_for_the_legacy_writer_is_not_posted(
                 "done" if kind == "tool" else result(kind)
             )
         await asyncio.wait_for(peer.get_closed.wait(), 1)
+        # The SDK counts a request its writer took as sent: it tells the
+        # server once the writer is free, though the request never went out.
         assert [item["method"] for item in peer.messages] == [
             "initialize",
             "notifications/initialized",
+            "notifications/cancelled",
             message(kind, "kept")["method"],
         ]
         assert peer.requests == [{"method": "initialize"}, message(kind, "kept")]
     assert peer.problems == []
+
+
+class HeldListingPeer(LegacySSEPeer):
+    """A server that holds its answer to the POST of the first ``tools/list``."""
+
+    def __init__(self) -> None:
+        super().__init__({"replies": []})
+        self.release = asyncio.Event()
+        self.posts = 0
+
+    def _reply(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        if message.get("method") == "initialize":
+            return super()._reply(message)
+        return None
+
+    async def _send(self, writer: asyncio.StreamWriter, status: int, body: bytes) -> None:
+        self.posts += 1
+        if self.posts == 3:  # initialize, notifications/initialized, tools/list
+            await self.release.wait()
+        await super()._send(writer, status, body)
+
+
+@pytest.mark.wallclock
+@pytest.mark.parametrize("kind", ["tool", "host", "resource"])
+async def test_a_call_cut_short_by_its_deadline_returns_at_it(kind: str) -> None:
+    """The SDK, cancelled, waits up to five seconds to tell the server, behind
+    a writer that is stuck; the caller does not wait for it (RFC §21.6)."""
+    async with HeldPostPeer(kind) as peer:
+        provider = MCPToolProvider(peer.url, transport="sse", discover=False)
+        async with provider:
+            await asyncio.wait_for(peer.post_held.wait(), 1)
+            loop = asyncio.get_running_loop()
+            began = loop.time()
+            with pytest.raises(TimeoutError):
+                await invoke(provider, kind, "abandoned", 0.05)
+            assert loop.time() - began < 1
+            peer.release_post.set()
+
+
+@pytest.mark.wallclock
+async def test_a_connection_cut_short_by_its_bound_returns_at_it() -> None:
+    """A listing the server holds past ``connect_timeout`` ends the connection
+    at its bound, the SDK's cancellation left to end on its own (RFC §21.2)."""
+    async with HeldListingPeer() as peer:
+        provider = MCPToolProvider(peer.url, transport="sse", connect_timeout=0.3)
+        loop = asyncio.get_running_loop()
+        began = loop.time()
+        with pytest.raises(TimeoutError, match="did not connect within 0.3 s"):
+            await provider.__aenter__()
+        assert loop.time() - began < 1.5
+        assert not provider.connected
+        peer.release.set()
 
 
 @pytest.mark.parametrize("kind", ["tool", "host", "resource"])
