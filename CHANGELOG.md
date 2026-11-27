@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `MCPToolProvider(protocol="auto")`, on `from_url` and `from_command` too: how a connection agrees on the MCP revision (RFC §21.2, RMK-664). `"auto"` probes `server/discover` and falls back to the `initialize` handshake; `"legacy"` goes straight to the handshake, for a server that fails on the probe (a Python server on `mcp` 1.9.3 or earlier crashes on it) or leaves it unanswered.
 
-- `MCPToolProvider(propagate_trace_context=False)`, on `from_url` and `from_command` too (RFC §21.2, RMK-664): `True` carries the host's trace context (W3C `traceparent`, `tracestate`, `baggage`, from the current OpenTelemetry span) on each request's `_meta`, the keys a caller writes there itself winning.
+- `MCPToolProvider(propagate_trace_context=False)`, on `from_url` and `from_command` too (RFC §21.2, RMK-664): `True` carries the host's trace context (W3C `traceparent`, `tracestate`, `baggage`, from the current OpenTelemetry span) on each request's `_meta`; a caller who writes a trace context of its own there sends it whole instead.
 
 - `roomkit.telemetry.get_current_telemetry_ctx()` is public: the current span's context as its provider gave it, under which a telemetry provider written outside RoomKit starts its spans, in the current span's trace (RMK-2011). It was the private reader of RoomKit's own `OpenTelemetryProvider`, which a provider in another package could not reach. The same name as roomkit-rs's.
 

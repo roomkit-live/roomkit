@@ -8,6 +8,7 @@ which 2026-07-28 does not define, goes straight to the handshake.
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import textwrap
@@ -18,12 +19,13 @@ import mcp.client.session
 import pytest
 
 from roomkit.tools import MCPToolProvider
+from tests.conformance._mcp_peer import MCPPeer
 
 _SCRIPTED_SERVER = textwrap.dedent(
     """\
     import json, sys
 
-    log, plan = open(sys.argv[1], "a"), json.loads(sys.argv[2])
+    log, plan, held = open(sys.argv[1], "a"), json.loads(sys.argv[2]), []
     for line in sys.stdin:
         log.write(line)
         log.flush()
@@ -31,7 +33,14 @@ _SCRIPTED_SERVER = textwrap.dedent(
         answer = plan.get(message.get("method"))
         if "id" not in message or answer is None or answer == "silent":
             continue
-        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], **answer}) + "\\n")
+        if "late" in answer:
+            # Answered only after the next request's answer.
+            held.append({"jsonrpc": "2.0", "id": message["id"], **answer["late"]})
+            continue
+        replies = [{"jsonrpc": "2.0", "id": message["id"], **answer}] + held
+        held.clear()
+        for reply in replies:
+            sys.stdout.write(json.dumps(reply) + "\\n")
         sys.stdout.flush()
     """
 )
@@ -113,6 +122,7 @@ async def test_a_server_that_does_not_discover_is_reached_by_the_handshake(
     assert methods[-1] == "tools/list"
 
 
+@pytest.mark.wallclock
 async def test_a_probe_past_the_connect_bound_fails_the_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -120,10 +130,11 @@ async def test_a_probe_past_the_connect_bound_fails_the_connection(
     the connection, though the server would take the handshake after it."""
     monkeypatch.setattr(mcp.client.session, "DISCOVER_TIMEOUT_SECONDS", 30)
     plan = {"server/discover": "silent", "initialize": _HANDSHAKE, "tools/list": _TOOLS}
-    provider = _provider(tmp_path, plan, connect_timeout=0.2)
-    with pytest.raises(TimeoutError, match="did not connect within 0.2 s"):
+    provider = _provider(tmp_path, plan, connect_timeout=0.5)
+    with pytest.raises(TimeoutError, match="did not connect within 0.5 s"):
         await provider.__aenter__()
     assert not provider.connected
+    assert [message["method"] for message in _received(tmp_path)] == ["server/discover"]
 
 
 _HEADED_TOOLS = {
@@ -178,3 +189,76 @@ async def test_the_legacy_protocol_goes_straight_to_the_handshake(tmp_path: Path
 def test_a_protocol_other_than_auto_or_legacy_is_refused() -> None:
     with pytest.raises(ValueError, match="protocol must be 'auto' or 'legacy'"):
         MCPToolProvider.from_command(sys.executable, protocol="2026-07-28")
+
+
+async def test_a_late_answer_to_the_probe_leaves_what_the_handshake_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server that answers the probe only after the handshake it fell back
+    to: the connection speaks the handshake's revision and keeps what the
+    handshake said, not the late discovery."""
+    monkeypatch.setattr(mcp.client.session, "DISCOVER_TIMEOUT_SECONDS", 0.05)
+    plan = {
+        "server/discover": {"late": _DISCOVERY},
+        "initialize": _HANDSHAKE,
+        "tools/list": _TOOLS,
+    }
+    async with _provider(tmp_path, plan) as provider:
+        assert provider.server_info == {"name": "legacy", "version": "1"}
+        assert provider.instructions == "from the handshake"
+
+
+async def test_what_a_discovery_says_of_the_server_is_read_from_its_meta(
+    tmp_path: Path,
+) -> None:
+    """A discovery result says what the server is in its ``_meta``: a
+    ``serverInfo`` beside it, which only a handshake result has, is not read."""
+    discovery = copy.deepcopy(_DISCOVERY)
+    discovery["result"]["serverInfo"] = {"name": "stray", "version": "0"}
+    async with _provider(tmp_path, {"server/discover": discovery, "tools/list": _TOOLS}) as p:
+        assert p.server_info == {"name": "modern", "version": "2", "vendor": "x"}
+
+
+@pytest.mark.parametrize("envelope", [{"cacheScope": "shared"}, {"ttlMs": -5}])
+async def test_a_listing_s_cache_hints_do_not_fail_the_connection(
+    envelope: dict[str, Any], tmp_path: Path
+) -> None:
+    """The provider reads no cache hint: a 2026-07-28 listing whose hints are
+    outside the revision's values is listed all the same."""
+    listing = {"result": _TOOLS["result"] | {"resultType": "complete"} | envelope}
+    async with _provider(tmp_path, {"server/discover": _DISCOVERY, "tools/list": listing}) as p:
+        assert p.tool_names == ["lookup"]
+
+
+async def test_a_tool_the_sdk_cannot_read_leaves_the_others_headers() -> None:
+    """A tool annotated with ``x-mcp-header`` whose input schema the SDK does
+    not read (no root ``type``) is listed, and the tools beside it on the
+    page still mirror their arguments into headers."""
+    routed = {
+        "name": "routed",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"region": {"type": "string", "x-mcp-header": "Region"}},
+        },
+    }
+    odd = {
+        "name": "odd",
+        "inputSchema": {"properties": {"zone": {"type": "string", "x-mcp-header": "Zone"}}},
+    }
+    envelope = {"resultType": "complete", "ttlMs": 0, "cacheScope": "private"}
+    called = {"content": [{"type": "text", "text": "eu"}], "isError": False} | envelope
+    replies = [
+        {"method": "tools/list", "result": {"tools": [routed, odd]} | envelope},
+        {
+            "method": "tools/call",
+            "params": {"name": "routed", "arguments": {"region": "eu"}},
+            "result": called,
+        },
+    ]
+    peer = MCPPeer({"era": "2026-07-28", "replies": replies})
+    async with peer:
+        provider = MCPToolProvider(peer.url)
+        async with provider:
+            assert provider.tool_names == ["routed", "odd"]
+            assert await provider.call_tool("routed", {"region": "eu"}) == "eu"
+    assert peer.problems == []

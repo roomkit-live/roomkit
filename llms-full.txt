@@ -2756,8 +2756,8 @@ first definition.
 Entering a provider waits `connect_timeout` seconds at most
 (`from_command(..., connect_timeout=60.0)`, `from_url(..., connect_timeout=60.0)`):
 the protocol's negotiation and the listing, and the start of a server it
-starts. Past it the server is stopped, or the connection closed and its session
-deleted, and entering raises `TimeoutError`.
+starts. Past it the server is stopped, or the connection closed and its session,
+where it holds one, deleted, and entering raises `TimeoutError`.
 
 The negotiation probes `server/discover` and speaks MCP 2026-07-28 with a server
 that answers it; a server of an earlier revision, which refuses the probe or

@@ -17,8 +17,8 @@ The capture also takes out of each message the W3C trace context the SDK
 writes into its ``_meta`` (``traceparent``, ``tracestate``, ``baggage``)
 whenever the host has a current span: a request carries the trace keys its
 caller wrote, and no other, as roomkit-rs's do. A connection that propagates
-the trace context (``propagate_trace_context``) keeps the SDK's, but for the
-keys the caller wrote itself.
+the trace context (``propagate_trace_context``) keeps the SDK's, unless the
+caller wrote a trace context of its own, which goes whole in its place.
 """
 
 from __future__ import annotations
@@ -163,14 +163,12 @@ class WireCapture:
         meta = params.get("_meta") if isinstance(params, dict) else None
         if not isinstance(meta, dict) or not any(key in meta for key in _TRACE_KEYS):
             return item
-        if self._propagate:
-            # The SDK's context of the host's span, but for what the caller
-            # wrote itself.
-            kept = meta | own
-            if kept == meta:
-                return item
-        else:
-            kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
+        if self._propagate and not own:
+            # The SDK's context of the host's span.
+            return item
+        # The caller's own trace context, whole, or none: one W3C context,
+        # never the caller's traceparent with the host's tracestate.
+        kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
         rest = {key: value for key, value in params.items() if key != "_meta"}
         params = rest | {"_meta": kept} if kept else rest
         fields = message.model_dump(exclude={"params"}, exclude_unset=True)
@@ -182,8 +180,12 @@ class WireCapture:
         message = getattr(item, "message", None)
         if not isinstance(message, self._response):
             return item
-        ticket = self._sent.pop(_correlated(message.id), None)
-        if ticket is None:
+        answered = _correlated(message.id)
+        ticket = self._sent.pop(answered, None)
+        if ticket is None or answered != ticket.request_id:
+            # Not a ticket's, or a late answer to a request the ticket no
+            # longer follows (a probe the SDK gave up on before falling back
+            # to the handshake): the session reads it as sent.
             return item
         ticket.result = message.result
         shown = self._response(jsonrpc="2.0", id=message.id, result=ticket.shown(message.result))

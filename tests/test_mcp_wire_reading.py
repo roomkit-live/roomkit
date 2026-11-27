@@ -7,6 +7,7 @@ off the wire instead, and sends only the trace keys its caller wrote.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import textwrap
@@ -73,7 +74,8 @@ async def test_a_provider_that_propagates_the_trace_context_sends_the_host_s(
     meta: dict[str, Any], traced: str, tmp_path: Path
 ) -> None:
     """``propagate_trace_context=True``: each request carries the trace
-    context of the host's current span, but for the keys its caller wrote."""
+    context of the host's current span, unless its caller wrote one of its
+    own, which goes whole: no host baggage beside the caller's traceparent."""
     script, log = tmp_path / "server.py", tmp_path / "received.jsonl"
     script.write_text(_RECORDING_SERVER)
     provider = MCPToolProvider.from_command(
@@ -82,10 +84,12 @@ async def test_a_provider_that_propagates_the_trace_context_sends_the_host_s(
     async with provider:
         with _host_span(), pytest.raises(TimeoutError):
             # The recording server answers nothing past the handshake.
-            await provider.request("x/read", {"_meta": meta} if meta else None, timeout=0.2)
+            await provider.request("x/read", {"_meta": meta} if meta else None, timeout=0.05)
     sent = [json.loads(line) for line in log.read_text().splitlines()]
     request = next(message for message in sent if message.get("method") == "x/read")
-    assert request["params"]["_meta"]["traceparent"].split("-")[1] == traced
+    trace = request["params"]["_meta"]
+    assert trace["traceparent"].split("-")[1] == traced
+    assert ("baggage" in trace) == (not meta)
 
 
 class _StringIdPeer(MCPPeer):
@@ -185,3 +189,44 @@ async def test_a_listing_is_read_by_its_wire_names_only() -> None:
         with pytest.raises(ValidationError, match="inputSchema"):
             await provider.__aenter__()
         assert not provider.connected
+
+
+async def test_a_request_sent_after_a_ticket_s_block_is_not_read_for_it() -> None:
+    """A task started in a ticket's block inherits the ticket; a request it
+    sends once the block is over is not bound to it, and its answer reaches
+    the session as the server sent it."""
+    from mcp.shared.message import SessionMessage
+    from mcp.types import JSONRPCRequest, JSONRPCResponse
+
+    from roomkit.tools._mcp_capture import WireCapture
+
+    written: list[Any] = []
+    answers: list[Any] = []
+
+    class _Write:
+        async def send(self, item: Any) -> None:
+            written.append(item)
+
+    class _Read:
+        async def receive(self) -> Any:
+            return answers.pop(0)
+
+    capture = WireCapture()
+    incoming, outgoing = capture.streams(_Read(), _Write())
+    block_over = asyncio.Event()
+
+    async def late_sender() -> None:
+        await block_over.wait()
+        await outgoing.send(
+            SessionMessage(JSONRPCRequest(jsonrpc="2.0", id=9, method="initialize"))
+        )
+
+    with capture.ticket(
+        lambda _result: {"shown": True}, methods=frozenset({"initialize"})
+    ) as ticket:
+        task = asyncio.create_task(late_sender())
+    block_over.set()
+    await task
+    answers.append(SessionMessage(JSONRPCResponse(jsonrpc="2.0", id=9, result={"sent": 1})))
+    assert (await incoming.receive()).message.result == {"sent": 1}
+    assert ticket.result is None

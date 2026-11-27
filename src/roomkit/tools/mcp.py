@@ -262,11 +262,14 @@ def _headed_listing(result: dict[str, Any]) -> dict[str, Any]:
 
 def _headed(schema: Any) -> bool:
     """Whether *schema* mirrors an argument into a header, by annotations
-    MCP 2026-07-28 accepts."""
+    MCP 2026-07-28 accepts, and is one the SDK's own reading of a tool
+    accepts (an object's): a tool it would refuse would make it refuse the
+    page it is shown, the headers of every other tool on it with it."""
     from mcp.shared.inbound import find_invalid_x_mcp_header, x_mcp_header_map
 
     return (
         isinstance(schema, dict)
+        and schema.get("type") == "object"
         and find_invalid_x_mcp_header(schema) is None
         and bool(x_mcp_header_map(schema))
     )
@@ -527,9 +530,10 @@ class MCPToolProvider:
                 which 2026-07-28 does not define, always takes the handshake.
             propagate_trace_context: Carry the host's trace context on each
                 request (W3C ``traceparent``, ``tracestate``, ``baggage`` in
-                its ``_meta``, from the current OpenTelemetry span). ``False``
-                (the default) sends only the trace keys a caller writes in a
-                :meth:`request`'s ``_meta`` itself.
+                its ``_meta``, from the current OpenTelemetry span), unless a
+                :meth:`request`'s caller writes a trace context of its own
+                there, which goes whole instead. ``False`` (the default) sends
+                only the trace keys a caller writes itself.
 
         Returns:
             An MCPToolProvider instance (not yet connected).

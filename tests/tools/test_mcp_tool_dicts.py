@@ -33,4 +33,8 @@ async def test_tool_dictionaries_own_their_nested_values() -> None:
             assert provider.get_tools_as_dicts() == expected
             assert provider.get_tools()[0].name == "echo"
     assert not peer.problems
-    assert [request["method"] for request in peer.requests] == ["initialize", "tools/list"]
+    assert [request["method"] for request in peer.requests] == [
+        "server/discover",
+        "initialize",
+        "tools/list",
+    ]
