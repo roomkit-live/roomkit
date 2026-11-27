@@ -159,6 +159,10 @@ class BaseSourceProvider(SourceProvider):
     - Stop signal via asyncio.Event
     """
 
+    _status_listener: Callable[[SourceStatus], None] | None = None
+    """Who hears each change of status :meth:`_set_status` makes: the kit
+    the source is attached to, which announces its connection (RFC §8.2)."""
+
     def __init__(self) -> None:
         self._status = SourceStatus.STOPPED
         self._connected_at: datetime | None = None
@@ -181,12 +185,23 @@ class BaseSourceProvider(SourceProvider):
         )
 
     def _set_status(self, status: SourceStatus, error: str | None = None) -> None:
-        """Update status and optionally set error message."""
+        """Update status and optionally set error message.
+
+        A change of status is told to the kit the source is attached to,
+        which emits ``source_connected`` each time it becomes CONNECTED."""
+        changed = status != self._status
         self._status = status
         self._error = error
         if status == SourceStatus.CONNECTED:
             self._connected_at = datetime.now(UTC)
             self._error = None
+        if changed and self._status_listener is not None:
+            self._status_listener(status)
+
+    def _watch_status(self, listener: Callable[[SourceStatus], None] | None) -> None:
+        """Tell *listener* each change of status from now on, in place of
+        the one before; ``None`` tells no one."""
+        self._status_listener = listener
 
     def _record_message(self) -> None:
         """Record that a message was received."""

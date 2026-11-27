@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from roomkit.core.exceptions import SourceAlreadyAttachedError, SourceNotFoundError
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.task_utils import cancel_and_wait, start_named
+from roomkit.sources.base import BaseSourceProvider, SourceStatus
 
 if TYPE_CHECKING:
     from roomkit.models.delivery import InboundMessage, InboundResult
-    from roomkit.sources.base import SourceHealth, SourceProvider, SourceStatus
+    from roomkit.sources.base import SourceHealth, SourceProvider
 
 
 @runtime_checkable
@@ -128,6 +129,7 @@ class SourceOpsMixin(HelpersMixin):
                 return await self.process_inbound(msg)
 
         self._sources[channel_id] = source
+        self._announce_connections(channel_id, source)
         self._source_tasks[channel_id] = asyncio.create_task(
             self._run_source(
                 channel_id,
@@ -142,19 +144,34 @@ class SourceOpsMixin(HelpersMixin):
             name=f"source:{channel_id}",
         )
 
-        # Two names for one fact: ``source_attached`` is the framework's own,
-        # ``source_connected`` is the one RFC §8.2 mandates. Both are emitted,
-        # so a handler registered on either sees every attachment.
+        # ``source_connected`` follows once the source connects
+        # (:meth:`_announce_connections`), not at its attachment.
         await self._emit_framework_event(
             "source_attached",
             channel_id=channel_id,
             data={"source_name": source.name},
         )
-        await self._emit_framework_event(
-            "source_connected",
-            channel_id=channel_id,
-            data={"source_name": source.name},
-        )
+
+    def _announce_connections(self, channel_id: str, source: SourceProvider) -> None:
+        """Emit ``source_connected`` each time *source* becomes CONNECTED
+        while attached to *channel_id* (RFC §8.2): a
+        :class:`~roomkit.sources.base.BaseSourceProvider` tells its changes of
+        status through ``_set_status``. A source on the bare interface tells
+        none, and is never announced connected."""
+        if not isinstance(source, BaseSourceProvider):
+            return
+
+        def on_status(status: SourceStatus) -> None:
+            if status is SourceStatus.CONNECTED and self._sources.get(channel_id) is source:
+                self._emit_framework_event_soon(
+                    "source_connected",
+                    channel_id=channel_id,
+                    data={"source_name": source.name},
+                )
+
+        # Once the source is detached, the check above keeps it quiet; a kit
+        # it is attached to next replaces this listener.
+        source._watch_status(on_status)
 
     async def detach_source(self, channel_id: str) -> None:
         """Detach and stop an event-driven source.
@@ -191,7 +208,7 @@ class SourceOpsMixin(HelpersMixin):
             await cancel_and_wait(task, log_errors_to=logging.getLogger("roomkit.sources"))
         stopping.result()
 
-        # Both names, as in ``attach_source``.
+        # ``source_disconnected`` too: stopping the source ends its connection.
         await self._emit_framework_event(
             "source_detached",
             channel_id=channel_id,

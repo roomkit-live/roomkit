@@ -194,6 +194,29 @@ class _Entered:
         self.now -= 1
 
 
+class _GatedSource(BaseSourceProvider):
+    """Connects once its gate opens, then waits to be stopped; ``reconnect``
+    drops the connection and makes it again."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+
+    @property
+    def name(self) -> str:
+        return "gated"
+
+    async def start(self, emit: EmitCallback) -> None:
+        self._set_status(SourceStatus.CONNECTING)
+        await self.gate.wait()
+        self._set_status(SourceStatus.CONNECTED)
+        await self._stop_event.wait()
+
+    def reconnect(self) -> None:
+        self._set_status(SourceStatus.RECONNECTING)
+        self._set_status(SourceStatus.CONNECTED)
+
+
 class _Burst(BaseSourceProvider):
     """Emits *count* messages at once, then waits to be stopped."""
 
@@ -597,6 +620,53 @@ class TestSourceFrameworkEvents:
         assert events[0]["data"]["source_name"] == "my-source"
 
         await kit.close()
+
+    async def test_source_connected_once_the_source_connects(self) -> None:
+        # RFC §8.2: source_connected is the source connected, not attached.
+        # A source that never connects is never announced connected; one
+        # that connects again after a drop is announced each time.
+        kit = RoomKit()
+        source = _GatedSource()
+        events: list[tuple[str, str | None, dict]] = []
+
+        for name in ("source_attached", "source_connected"):
+
+            @kit.on(name)
+            async def record(event) -> None:
+                events.append((event.type, event.channel_id, event.data))
+
+        try:
+            await kit.attach_source("ch1", source)
+            await until(lambda: source.status is SourceStatus.CONNECTING)
+            await asyncio.sleep(0)
+            assert [name for name, _, _ in events] == ["source_attached"]
+
+            source.gate.set()
+            await until(lambda: len(events) == 2)
+            source.reconnect()
+            await until(lambda: len(events) == 3)
+            connected = ("source_connected", "ch1", {"source_name": "gated"})
+            assert events[1:] == [connected, connected]
+        finally:
+            await kit.close()
+
+    async def test_a_source_on_the_bare_interface_is_never_announced_connected(self) -> None:
+        # It reports no change of its status: whether it connected is unknown.
+        kit = RoomKit()
+        source = MockSource("bare")
+        events: list[str] = []
+
+        @kit.on("source_connected")
+        async def record(event) -> None:
+            events.append(event.type)
+
+        try:
+            await kit.attach_source("ch1", source)
+            await until(lambda: source._started)
+            await asyncio.sleep(0)
+            assert events == []
+        finally:
+            await kit.close()
 
     async def test_source_detached_event(self) -> None:
         kit = RoomKit()

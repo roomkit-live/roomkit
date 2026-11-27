@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `source_connected` is emitted once an attached source connects, each time its status becomes CONNECTED (RFC §8.2, RMK-2190), where `attach_source` emitted it beside `source_attached`, whether the source connected or not: a handler waiting for it heard of a source whose start then failed, or that never reached its server. A source written on `BaseSourceProvider` reports its connection through `_set_status`, as every source RoomKit ships does; one written on `SourceProvider` alone reports none, and is never announced connected.
+
 - A message `WebhookMeta.to_inbound` builds keeps the provider's id as its `provider_message_id` and the webhook's payload, unmodified, as its `raw_payload` (RFC §5.2, §8.1, RMK-2190): `process_webhook` stored the message with neither, its source's `raw_payload` empty and the provider's id only in `external_id` and the idempotency key, which keep it. The same in roomkit-rs.
 
 - Each session of a realtime voice channel fires its own audio levels, at most one per 100 ms in each direction (RFC §12.5, RMK-2159), where the channel's sessions shared one throttle: it fired at most ten `ON_INPUT_AUDIO_LEVEL` and ten `ON_OUTPUT_AUDIO_LEVEL` a second across all of them, so each session's level meter got a share, and none when another session's audio always came first. A voice channel already throttled each session on its own.
