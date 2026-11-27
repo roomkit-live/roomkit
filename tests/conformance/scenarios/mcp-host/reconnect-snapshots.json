@@ -37,7 +37,6 @@
         "replies": [
           {
             "method": "tools/list",
-            "params": {},
             "result": {
               "tools": [
                 {
@@ -58,7 +57,6 @@
           },
           {
             "method": "tools/list",
-            "params": {},
             "result": {
               "tools": []
             }
@@ -153,19 +151,17 @@
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             },
             {
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"name\":\"first\",\"version\":\"1\"}},{\"result\":{\"vendor/first\":{\"on\":true}}},{\"result\":{\"board\":{\"ui\":{\"csp\":\"self\",\"resourceUri\":\"ui://board/view.html\"}}}},{\"result\":null},{\"result\":null},{\"result\":{\"name\":\"second\",\"version\":\"2\"}},{\"result\":{}},{\"result\":{}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]"
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
         }
       }
     }

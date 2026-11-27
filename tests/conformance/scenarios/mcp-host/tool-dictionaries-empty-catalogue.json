@@ -16,7 +16,6 @@
         "replies": [
           {
             "method": "tools/list",
-            "params": {},
             "result": {
               "tools": []
             }
@@ -52,12 +51,11 @@
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":[]},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]"
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
         }
       }
     }

@@ -16,12 +16,10 @@
         "replies": [
           {
             "method": "vendor/read",
-            "params": {},
             "hold": true
           },
           {
             "method": "vendor/next",
-            "params": {},
             "result": {
               "alive": true
             }
@@ -69,16 +67,14 @@
               "method": "initialize"
             },
             {
-              "method": "vendor/read",
-              "params": {}
+              "method": "vendor/read"
             },
             {
-              "method": "vendor/next",
-              "params": {}
+              "method": "vendor/next"
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/next\",\"params\":{}}]"
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/next\"}]"
         }
       }
     }

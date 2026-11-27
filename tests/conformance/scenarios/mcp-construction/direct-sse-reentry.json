@@ -114,15 +114,13 @@
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             },
             {
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             }
           ],
           "http": {
@@ -172,7 +170,7 @@
             ]
           },
           "results_json": "[{\"result\":null},{\"result\":[\"echo\",\"hidden\"]},{\"error\":\"already_connected\"},{\"result\":null},{\"result\":false},{\"result\":null},{\"result\":[\"fresh\"]},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]",
           "http_json": "{\"closed_connections\":2,\"connections\":2,\"requests\":[{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"}]}"
         }
       }

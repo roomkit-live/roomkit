@@ -125,8 +125,7 @@
               "method": "initialize"
             },
             {
-              "method": "tools/list",
-              "params": {}
+              "method": "tools/list"
             },
             {
               "method": "tools/call",
@@ -193,7 +192,7 @@
             ]
           },
           "results_json": "[{\"result\":false},{\"result\":null},{\"result\":true},{\"result\":[\"echo\"]},{\"result\":\"done\"},{\"result\":null},{\"result\":false}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"tools/call\",\"params\":{\"arguments\":{},\"name\":\"echo\"}}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"tools/call\",\"params\":{\"arguments\":{},\"name\":\"echo\"}}]",
           "http_json": "{\"closed_connections\":1,\"connections\":1,\"requests\":[{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"}]}"
         }
       }

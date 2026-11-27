@@ -16,7 +16,6 @@
         "replies": [
           {
             "method": "vendor/read",
-            "params": {},
             "error": {
               "code": -32602,
               "message": "unknown skill"
@@ -74,8 +73,7 @@
               "method": "initialize"
             },
             {
-              "method": "vendor/read",
-              "params": {}
+              "method": "vendor/read"
             },
             {
               "method": "resources/read",
@@ -85,7 +83,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"mcp_error\",\"message\":\"unknown skill\"},{\"error\":\"mcp_error\",\"message\":\"unknown resource\"},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://missing\"}}]"
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://missing\"}}]"
         }
       }
     }

@@ -23,7 +23,6 @@
           },
           {
             "method": "vendor/next",
-            "params": {},
             "result": {
               "alive": true
             }
@@ -77,12 +76,11 @@
               }
             },
             {
-              "method": "vendor/next",
-              "params": {}
+              "method": "vendor/next"
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\",\"params\":{}}]"
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\"}]"
         }
       }
     }

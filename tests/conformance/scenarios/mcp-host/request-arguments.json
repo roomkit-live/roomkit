@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "mcp-host/request-arguments",
-  "title": "Host parameters preserve explicit empty objects and caller-owned metadata",
+  "title": "Host parameters: an empty set goes as none, caller-owned metadata as written, a non-object _meta refused",
   "rules": [
     "§21.2"
   ],
@@ -16,21 +16,18 @@
         "replies": [
           {
             "method": "vendor/read",
-            "params": {},
             "result": {
               "value": 0
             }
           },
           {
             "method": "vendor/read",
-            "params": {},
             "result": {
               "value": 1
             }
           },
           {
             "method": "vendor/read",
-            "params": {},
             "result": {
               "value": 2
             }
@@ -61,27 +58,12 @@
           },
           {
             "method": "vendor/read",
-            "params": {
-              "_meta": null
-            },
             "result": {
               "value": 5
             }
           },
           {
             "method": "vendor/read",
-            "params": {
-              "_meta": "opaque"
-            },
-            "result": {
-              "value": 6
-            }
-          },
-          {
-            "method": "vendor/read",
-            "params": {
-              "_meta": {}
-            },
             "result": {
               "value": 7
             }
@@ -189,9 +171,7 @@
               }
             },
             {
-              "result": {
-                "value": 6
-              }
+              "error": "validation_error"
             },
             {
               "result": {
@@ -207,16 +187,13 @@
               "method": "initialize"
             },
             {
-              "method": "vendor/read",
-              "params": {}
+              "method": "vendor/read"
             },
             {
-              "method": "vendor/read",
-              "params": {}
+              "method": "vendor/read"
             },
             {
-              "method": "vendor/read",
-              "params": {}
+              "method": "vendor/read"
             },
             {
               "method": "vendor/read",
@@ -237,26 +214,14 @@
               }
             },
             {
-              "method": "vendor/read",
-              "params": {
-                "_meta": null
-              }
+              "method": "vendor/read"
             },
             {
-              "method": "vendor/read",
-              "params": {
-                "_meta": "opaque"
-              }
-            },
-            {
-              "method": "vendor/read",
-              "params": {
-                "_meta": {}
-              }
+              "method": "vendor/read"
             }
           ],
-          "results_json": "[{\"result\":null},{\"result\":{\"value\":0}},{\"result\":{\"value\":1}},{\"result\":{\"value\":2}},{\"result\":{\"value\":3}},{\"result\":{\"value\":4}},{\"result\":{\"value\":5}},{\"result\":{\"value\":6}},{\"result\":{\"value\":7}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{\"nested\":{\"value\":3}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null,\"io.modelcontextprotocol/protocolVersion\":\"host-version\",\"progressToken\":\"host-token\"}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":null}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":\"opaque\"}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{}}}]"
+          "results_json": "[{\"result\":null},{\"result\":{\"value\":0}},{\"result\":{\"value\":1}},{\"result\":{\"value\":2}},{\"result\":{\"value\":3}},{\"result\":{\"value\":4}},{\"result\":{\"value\":5}},{\"error\":\"validation_error\"},{\"result\":{\"value\":7}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\",\"params\":{\"nested\":{\"value\":3}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null,\"io.modelcontextprotocol/protocolVersion\":\"host-version\",\"progressToken\":\"host-token\"}}},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"}]"
         }
       }
     }
