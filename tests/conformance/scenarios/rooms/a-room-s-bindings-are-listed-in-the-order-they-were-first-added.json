@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-room-s-bindings-are-listed-in-the-order-they-were-first-added",
+  "title": "list_bindings returns a room's bindings in the order they were first added, not by channel id",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-072"
+  ],
+  "notes": "Python: RoomKit.list_bindings reads the store's list_bindings. The channels are attached in an order that is not the order of their ids.",
+  "setup": {
+    "channels": [
+      {
+        "id": "zeta",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "alpha",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "mid",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "zeta"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "alpha"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "mid"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "zeta"
+          },
+          {
+            "channel_id": "alpha"
+          },
+          {
+            "channel_id": "mid"
+          }
+        ]
+      }
+    }
+  ]
+}

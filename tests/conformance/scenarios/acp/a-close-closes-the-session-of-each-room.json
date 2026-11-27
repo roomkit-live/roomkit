@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-close-closes-the-session-of-each-room",
+  "title": "Closing the ACP channel closes the session each room opened, with an agent that announces session/close",
+  "rules": [
+    "Appendix A.9.1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-A.9.1-031"
+  ],
+  "notes": "Python: ACPChannel.close, _say_goodbye releases every session, then _teardown closes the transport. The two rooms each opened a session with one prompt; the order of the two closes is the implementation's. Not observed: the transport's own release, which no step reads, and the release of the sessions of an agent that does not announce session/close.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "One."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Two."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "acp.close",
+      "channel_id": "coder",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "coder": {
+        "$unordered": [
+          {
+            "method": "initialize"
+          },
+          {
+            "method": "session/new",
+            "params": {
+              "_meta": {
+                "roomkit.live/roomId": "room-1"
+              }
+            }
+          },
+          {
+            "method": "session/prompt",
+            "params": {
+              "sessionId": "session-1"
+            }
+          },
+          {
+            "method": "session/new",
+            "params": {
+              "_meta": {
+                "roomkit.live/roomId": "room-2"
+              }
+            }
+          },
+          {
+            "method": "session/prompt",
+            "params": {
+              "sessionId": "session-2"
+            }
+          },
+          {
+            "method": "session/close",
+            "params": {
+              "sessionId": "session-1"
+            }
+          },
+          {
+            "method": "session/close",
+            "params": {
+              "sessionId": "session-2"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

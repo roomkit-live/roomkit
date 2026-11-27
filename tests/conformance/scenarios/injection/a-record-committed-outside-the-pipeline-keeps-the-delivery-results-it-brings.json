@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-record-committed-outside-the-pipeline-keeps-the-delivery-results-it-brings",
+  "title": "A record the host commits outside the pipeline is stored with the delivery results it brings",
+  "rules": [
+    "§14.3",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-14.3-025"
+  ],
+  "notes": "Python: RoomKit.commit_event stores the record as given (core/mixins/event_ops.py); its delivery_results are written with it, the first write of the row, not a later write the store's record of deliveries alone makes (RK-14.3-023).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Imported from the old system"
+        },
+        "delivery_results": {
+          "sms": {
+            "status": "delivered",
+            "provider_message_id": "m-1"
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "delivery_results": {
+            "sms": {
+              "status": "delivered",
+              "provider_message_id": "m-1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Imported from the old system"
+          },
+          "delivery_results": {
+            "sms": {
+              "status": "delivered",
+              "provider_message_id": "m-1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

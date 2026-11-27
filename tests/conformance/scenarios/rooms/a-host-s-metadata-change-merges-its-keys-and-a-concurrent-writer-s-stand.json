@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-host-s-metadata-change-merges-its-keys-and-a-concurrent-writer-s-stand",
+  "title": "A host's change of a room's metadata alone goes through patch_room_metadata: a key another writer patches while the change is held stands beside the host's",
+  "rules": [
+    "§14.3",
+    "§5.1"
+  ],
+  "requirements": [
+    "RK-14.3-020"
+  ],
+  "notes": "Python: RoomKit.update_room_metadata (core/mixins/room_lifecycle.py) and tests/test_framework.py::TestConcurrentLocking::test_a_metadata_update_keeps_a_key_another_writer_patched_meanwhile. The fault holds the kit's write in place of whichever of patch_room_metadata and update_room it makes, then runs it on the store as it then stands; meanwhile another writer patches the room's metadata through the store, as the framework's own writers (a channel's state, a detach's revocation) do. That writer adds a key and changes one the room holds: a merge of the host's keys alone keeps both, where a whole-record write, or a patch of every key, from the room read before it would undo them. Not compared: the room the host's call returns.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "rooms": [
+      {
+        "id": "room-1",
+        "metadata": {
+          "topic": "billing"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": [
+        "patch_room_metadata",
+        "update_room"
+      ],
+      "gate": "write",
+      "in_place": true
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "stage": "callback"
+      },
+      "background": true,
+      "as": "host"
+    },
+    {
+      "wait_for": "write"
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "room-1",
+      "patch": {
+        "channel": "kept",
+        "topic": "sales"
+      }
+    },
+    {
+      "open": "write"
+    },
+    {
+      "await": "host",
+      "expect": {
+        "result": {
+          "metadata": {
+            "stage": "callback"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "topic": "sales",
+            "stage": "callback",
+            "channel": "kept"
+          }
+        }
+      }
+    }
+  ]
+}

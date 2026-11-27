@@ -8,7 +8,8 @@
     "§9.2"
   ],
   "requirements": [
-    "RK-12.2-025"
+    "RK-12.2-025",
+    "RK-8.2-050"
   ],
   "notes": "The transport fails bob's playback; alice's plays. The order of the two sessions' synthesis is not asserted; that the sessions play in parallel, and that the error is reported once the playback is released, are not shown.",
   "requires_features": [

@@ -1,0 +1,1755 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-timeline-read-takes-50-events-by-default-and-none-at-a-limit-of-0",
+  "title": "A timeline read that names no limit returns 50 events, the store's and the kit's alike, and a limit of 0 returns none, whatever the window",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-062"
+  ],
+  "notes": "Python: store/base.py get_timeline and list_events, limit=50; RoomKit.get_timeline, limit=50. The room holds 52 events: a read with no limit is the oldest 50, or with newest_first the newest 50, in ascending order (RK-14.1-064). Not observed: list_events itself, which no store call of the suite makes; the timeline reads built on it are.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "0"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "1"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "2"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "3"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "4"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "5"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "6"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "7"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "8"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "9"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "10"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "11"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "12"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "13"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "14"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "15"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "16"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "17"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "18"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "19"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "20"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "21"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "22"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "23"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "24"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "25"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "26"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "27"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "28"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "29"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "30"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "31"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "32"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "33"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "34"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "35"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "36"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "37"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "38"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "39"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "40"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "41"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "42"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "43"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "44"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "45"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "46"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "47"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "48"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "49"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "50"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "51"
+        }
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4"
+          },
+          {
+            "id": "room-1#5"
+          },
+          {
+            "id": "room-1#6"
+          },
+          {
+            "id": "room-1#7"
+          },
+          {
+            "id": "room-1#8"
+          },
+          {
+            "id": "room-1#9"
+          },
+          {
+            "id": "room-1#10"
+          },
+          {
+            "id": "room-1#11"
+          },
+          {
+            "id": "room-1#12"
+          },
+          {
+            "id": "room-1#13"
+          },
+          {
+            "id": "room-1#14"
+          },
+          {
+            "id": "room-1#15"
+          },
+          {
+            "id": "room-1#16"
+          },
+          {
+            "id": "room-1#17"
+          },
+          {
+            "id": "room-1#18"
+          },
+          {
+            "id": "room-1#19"
+          },
+          {
+            "id": "room-1#20"
+          },
+          {
+            "id": "room-1#21"
+          },
+          {
+            "id": "room-1#22"
+          },
+          {
+            "id": "room-1#23"
+          },
+          {
+            "id": "room-1#24"
+          },
+          {
+            "id": "room-1#25"
+          },
+          {
+            "id": "room-1#26"
+          },
+          {
+            "id": "room-1#27"
+          },
+          {
+            "id": "room-1#28"
+          },
+          {
+            "id": "room-1#29"
+          },
+          {
+            "id": "room-1#30"
+          },
+          {
+            "id": "room-1#31"
+          },
+          {
+            "id": "room-1#32"
+          },
+          {
+            "id": "room-1#33"
+          },
+          {
+            "id": "room-1#34"
+          },
+          {
+            "id": "room-1#35"
+          },
+          {
+            "id": "room-1#36"
+          },
+          {
+            "id": "room-1#37"
+          },
+          {
+            "id": "room-1#38"
+          },
+          {
+            "id": "room-1#39"
+          },
+          {
+            "id": "room-1#40"
+          },
+          {
+            "id": "room-1#41"
+          },
+          {
+            "id": "room-1#42"
+          },
+          {
+            "id": "room-1#43"
+          },
+          {
+            "id": "room-1#44"
+          },
+          {
+            "id": "room-1#45"
+          },
+          {
+            "id": "room-1#46"
+          },
+          {
+            "id": "room-1#47"
+          },
+          {
+            "id": "room-1#48"
+          },
+          {
+            "id": "room-1#49"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "newest_first": true,
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4"
+          },
+          {
+            "id": "room-1#5"
+          },
+          {
+            "id": "room-1#6"
+          },
+          {
+            "id": "room-1#7"
+          },
+          {
+            "id": "room-1#8"
+          },
+          {
+            "id": "room-1#9"
+          },
+          {
+            "id": "room-1#10"
+          },
+          {
+            "id": "room-1#11"
+          },
+          {
+            "id": "room-1#12"
+          },
+          {
+            "id": "room-1#13"
+          },
+          {
+            "id": "room-1#14"
+          },
+          {
+            "id": "room-1#15"
+          },
+          {
+            "id": "room-1#16"
+          },
+          {
+            "id": "room-1#17"
+          },
+          {
+            "id": "room-1#18"
+          },
+          {
+            "id": "room-1#19"
+          },
+          {
+            "id": "room-1#20"
+          },
+          {
+            "id": "room-1#21"
+          },
+          {
+            "id": "room-1#22"
+          },
+          {
+            "id": "room-1#23"
+          },
+          {
+            "id": "room-1#24"
+          },
+          {
+            "id": "room-1#25"
+          },
+          {
+            "id": "room-1#26"
+          },
+          {
+            "id": "room-1#27"
+          },
+          {
+            "id": "room-1#28"
+          },
+          {
+            "id": "room-1#29"
+          },
+          {
+            "id": "room-1#30"
+          },
+          {
+            "id": "room-1#31"
+          },
+          {
+            "id": "room-1#32"
+          },
+          {
+            "id": "room-1#33"
+          },
+          {
+            "id": "room-1#34"
+          },
+          {
+            "id": "room-1#35"
+          },
+          {
+            "id": "room-1#36"
+          },
+          {
+            "id": "room-1#37"
+          },
+          {
+            "id": "room-1#38"
+          },
+          {
+            "id": "room-1#39"
+          },
+          {
+            "id": "room-1#40"
+          },
+          {
+            "id": "room-1#41"
+          },
+          {
+            "id": "room-1#42"
+          },
+          {
+            "id": "room-1#43"
+          },
+          {
+            "id": "room-1#44"
+          },
+          {
+            "id": "room-1#45"
+          },
+          {
+            "id": "room-1#46"
+          },
+          {
+            "id": "room-1#47"
+          },
+          {
+            "id": "room-1#48"
+          },
+          {
+            "id": "room-1#49"
+          },
+          {
+            "id": "room-1#50"
+          },
+          {
+            "id": "room-1#51"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "newest_first": true,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "after_index": 10,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "0"
+            }
+          },
+          {
+            "content": {
+              "body": "1"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          },
+          {
+            "content": {
+              "body": "4"
+            }
+          },
+          {
+            "content": {
+              "body": "5"
+            }
+          },
+          {
+            "content": {
+              "body": "6"
+            }
+          },
+          {
+            "content": {
+              "body": "7"
+            }
+          },
+          {
+            "content": {
+              "body": "8"
+            }
+          },
+          {
+            "content": {
+              "body": "9"
+            }
+          },
+          {
+            "content": {
+              "body": "10"
+            }
+          },
+          {
+            "content": {
+              "body": "11"
+            }
+          },
+          {
+            "content": {
+              "body": "12"
+            }
+          },
+          {
+            "content": {
+              "body": "13"
+            }
+          },
+          {
+            "content": {
+              "body": "14"
+            }
+          },
+          {
+            "content": {
+              "body": "15"
+            }
+          },
+          {
+            "content": {
+              "body": "16"
+            }
+          },
+          {
+            "content": {
+              "body": "17"
+            }
+          },
+          {
+            "content": {
+              "body": "18"
+            }
+          },
+          {
+            "content": {
+              "body": "19"
+            }
+          },
+          {
+            "content": {
+              "body": "20"
+            }
+          },
+          {
+            "content": {
+              "body": "21"
+            }
+          },
+          {
+            "content": {
+              "body": "22"
+            }
+          },
+          {
+            "content": {
+              "body": "23"
+            }
+          },
+          {
+            "content": {
+              "body": "24"
+            }
+          },
+          {
+            "content": {
+              "body": "25"
+            }
+          },
+          {
+            "content": {
+              "body": "26"
+            }
+          },
+          {
+            "content": {
+              "body": "27"
+            }
+          },
+          {
+            "content": {
+              "body": "28"
+            }
+          },
+          {
+            "content": {
+              "body": "29"
+            }
+          },
+          {
+            "content": {
+              "body": "30"
+            }
+          },
+          {
+            "content": {
+              "body": "31"
+            }
+          },
+          {
+            "content": {
+              "body": "32"
+            }
+          },
+          {
+            "content": {
+              "body": "33"
+            }
+          },
+          {
+            "content": {
+              "body": "34"
+            }
+          },
+          {
+            "content": {
+              "body": "35"
+            }
+          },
+          {
+            "content": {
+              "body": "36"
+            }
+          },
+          {
+            "content": {
+              "body": "37"
+            }
+          },
+          {
+            "content": {
+              "body": "38"
+            }
+          },
+          {
+            "content": {
+              "body": "39"
+            }
+          },
+          {
+            "content": {
+              "body": "40"
+            }
+          },
+          {
+            "content": {
+              "body": "41"
+            }
+          },
+          {
+            "content": {
+              "body": "42"
+            }
+          },
+          {
+            "content": {
+              "body": "43"
+            }
+          },
+          {
+            "content": {
+              "body": "44"
+            }
+          },
+          {
+            "content": {
+              "body": "45"
+            }
+          },
+          {
+            "content": {
+              "body": "46"
+            }
+          },
+          {
+            "content": {
+              "body": "47"
+            }
+          },
+          {
+            "content": {
+              "body": "48"
+            }
+          },
+          {
+            "content": {
+              "body": "49"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "newest_first": true,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          },
+          {
+            "content": {
+              "body": "4"
+            }
+          },
+          {
+            "content": {
+              "body": "5"
+            }
+          },
+          {
+            "content": {
+              "body": "6"
+            }
+          },
+          {
+            "content": {
+              "body": "7"
+            }
+          },
+          {
+            "content": {
+              "body": "8"
+            }
+          },
+          {
+            "content": {
+              "body": "9"
+            }
+          },
+          {
+            "content": {
+              "body": "10"
+            }
+          },
+          {
+            "content": {
+              "body": "11"
+            }
+          },
+          {
+            "content": {
+              "body": "12"
+            }
+          },
+          {
+            "content": {
+              "body": "13"
+            }
+          },
+          {
+            "content": {
+              "body": "14"
+            }
+          },
+          {
+            "content": {
+              "body": "15"
+            }
+          },
+          {
+            "content": {
+              "body": "16"
+            }
+          },
+          {
+            "content": {
+              "body": "17"
+            }
+          },
+          {
+            "content": {
+              "body": "18"
+            }
+          },
+          {
+            "content": {
+              "body": "19"
+            }
+          },
+          {
+            "content": {
+              "body": "20"
+            }
+          },
+          {
+            "content": {
+              "body": "21"
+            }
+          },
+          {
+            "content": {
+              "body": "22"
+            }
+          },
+          {
+            "content": {
+              "body": "23"
+            }
+          },
+          {
+            "content": {
+              "body": "24"
+            }
+          },
+          {
+            "content": {
+              "body": "25"
+            }
+          },
+          {
+            "content": {
+              "body": "26"
+            }
+          },
+          {
+            "content": {
+              "body": "27"
+            }
+          },
+          {
+            "content": {
+              "body": "28"
+            }
+          },
+          {
+            "content": {
+              "body": "29"
+            }
+          },
+          {
+            "content": {
+              "body": "30"
+            }
+          },
+          {
+            "content": {
+              "body": "31"
+            }
+          },
+          {
+            "content": {
+              "body": "32"
+            }
+          },
+          {
+            "content": {
+              "body": "33"
+            }
+          },
+          {
+            "content": {
+              "body": "34"
+            }
+          },
+          {
+            "content": {
+              "body": "35"
+            }
+          },
+          {
+            "content": {
+              "body": "36"
+            }
+          },
+          {
+            "content": {
+              "body": "37"
+            }
+          },
+          {
+            "content": {
+              "body": "38"
+            }
+          },
+          {
+            "content": {
+              "body": "39"
+            }
+          },
+          {
+            "content": {
+              "body": "40"
+            }
+          },
+          {
+            "content": {
+              "body": "41"
+            }
+          },
+          {
+            "content": {
+              "body": "42"
+            }
+          },
+          {
+            "content": {
+              "body": "43"
+            }
+          },
+          {
+            "content": {
+              "body": "44"
+            }
+          },
+          {
+            "content": {
+              "body": "45"
+            }
+          },
+          {
+            "content": {
+              "body": "46"
+            }
+          },
+          {
+            "content": {
+              "body": "47"
+            }
+          },
+          {
+            "content": {
+              "body": "48"
+            }
+          },
+          {
+            "content": {
+              "body": "49"
+            }
+          },
+          {
+            "content": {
+              "body": "50"
+            }
+          },
+          {
+            "content": {
+              "body": "51"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "after_index": 0,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "1"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          },
+          {
+            "content": {
+              "body": "4"
+            }
+          },
+          {
+            "content": {
+              "body": "5"
+            }
+          },
+          {
+            "content": {
+              "body": "6"
+            }
+          },
+          {
+            "content": {
+              "body": "7"
+            }
+          },
+          {
+            "content": {
+              "body": "8"
+            }
+          },
+          {
+            "content": {
+              "body": "9"
+            }
+          },
+          {
+            "content": {
+              "body": "10"
+            }
+          },
+          {
+            "content": {
+              "body": "11"
+            }
+          },
+          {
+            "content": {
+              "body": "12"
+            }
+          },
+          {
+            "content": {
+              "body": "13"
+            }
+          },
+          {
+            "content": {
+              "body": "14"
+            }
+          },
+          {
+            "content": {
+              "body": "15"
+            }
+          },
+          {
+            "content": {
+              "body": "16"
+            }
+          },
+          {
+            "content": {
+              "body": "17"
+            }
+          },
+          {
+            "content": {
+              "body": "18"
+            }
+          },
+          {
+            "content": {
+              "body": "19"
+            }
+          },
+          {
+            "content": {
+              "body": "20"
+            }
+          },
+          {
+            "content": {
+              "body": "21"
+            }
+          },
+          {
+            "content": {
+              "body": "22"
+            }
+          },
+          {
+            "content": {
+              "body": "23"
+            }
+          },
+          {
+            "content": {
+              "body": "24"
+            }
+          },
+          {
+            "content": {
+              "body": "25"
+            }
+          },
+          {
+            "content": {
+              "body": "26"
+            }
+          },
+          {
+            "content": {
+              "body": "27"
+            }
+          },
+          {
+            "content": {
+              "body": "28"
+            }
+          },
+          {
+            "content": {
+              "body": "29"
+            }
+          },
+          {
+            "content": {
+              "body": "30"
+            }
+          },
+          {
+            "content": {
+              "body": "31"
+            }
+          },
+          {
+            "content": {
+              "body": "32"
+            }
+          },
+          {
+            "content": {
+              "body": "33"
+            }
+          },
+          {
+            "content": {
+              "body": "34"
+            }
+          },
+          {
+            "content": {
+              "body": "35"
+            }
+          },
+          {
+            "content": {
+              "body": "36"
+            }
+          },
+          {
+            "content": {
+              "body": "37"
+            }
+          },
+          {
+            "content": {
+              "body": "38"
+            }
+          },
+          {
+            "content": {
+              "body": "39"
+            }
+          },
+          {
+            "content": {
+              "body": "40"
+            }
+          },
+          {
+            "content": {
+              "body": "41"
+            }
+          },
+          {
+            "content": {
+              "body": "42"
+            }
+          },
+          {
+            "content": {
+              "body": "43"
+            }
+          },
+          {
+            "content": {
+              "body": "44"
+            }
+          },
+          {
+            "content": {
+              "body": "45"
+            }
+          },
+          {
+            "content": {
+              "body": "46"
+            }
+          },
+          {
+            "content": {
+              "body": "47"
+            }
+          },
+          {
+            "content": {
+              "body": "48"
+            }
+          },
+          {
+            "content": {
+              "body": "49"
+            }
+          },
+          {
+            "content": {
+              "body": "50"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "newest_first": true,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "offset": 3,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "after_index": 3,
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 0,
+      "before_index": 40,
+      "expect": {
+        "result": []
+      }
+    }
+  ]
+}

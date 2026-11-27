@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-transcript-is-redacted-by-the-hook-that-redacts-a-message",
+  "title": "A BEFORE_BROADCAST hook that redacts a room's messages redacts a voice session's transcript the same way: the room stores and delivers neither as said",
+  "rules": [
+    "§17.6",
+    "§10.1 step 9"
+  ],
+  "requirements": [
+    "RK-17.6-017"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "notes": "One redaction policy, the room's BEFORE_BROADCAST hook, written once, applies to a typed message and to a transcript alike. Not observed: retention, the kit's persistence policy, which selects event types, a transcript being a message as a typed one is; recordings and DTMF digits.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "execution": "sync",
+        "reactions": [
+          {
+            "when": {
+              "text": "my card is 4111"
+            },
+            "repeat": true,
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "my card is [redacted]"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "my card is 4111"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "my card is 4111"
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "my card is [redacted]"
+          },
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "content": {
+            "body": "my card is [redacted]"
+          },
+          "source": {
+            "channel_id": "phone"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ws": [
+          {
+            "content": {
+              "body": "my card is [redacted]"
+            }
+          },
+          {
+            "content": {
+              "body": "my card is [redacted]"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

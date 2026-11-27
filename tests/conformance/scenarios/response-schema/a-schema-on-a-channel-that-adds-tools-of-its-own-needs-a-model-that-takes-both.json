@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-schema-on-a-channel-that-adds-tools-of-its-own-needs-a-model-that-takes-both",
+  "title": "A response schema on a channel that adds tools of its own, skills or a sandbox, with no host tool, fails the turn before any request on a model that takes a schema but not beside tools",
+  "rules": [
+    "Appendix A.9",
+    "§6.7"
+  ],
+  "requirements": [
+    "RK-A.9-042"
+  ],
+  "notes": "Python: channels/ai.py counts the tools the channel adds itself among the turn's tools. Each agent declares no tool of its own: the one with skills is given the skill tools, the one with a sandbox the sandbox's. Not observed: the tools planning and orchestration add.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "skilled",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "skills": [
+          {
+            "name": "billing-guide",
+            "description": "How to read a bill.",
+            "instructions": "Read the bill line by line."
+          }
+        ],
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      },
+      {
+        "id": "boxed",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_run",
+              "description": "Run a command.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ]
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "skilled",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "boxed",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "cannot combine a response schema with tools"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "cannot combine a response schema with tools"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "skilled": [],
+      "boxed": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

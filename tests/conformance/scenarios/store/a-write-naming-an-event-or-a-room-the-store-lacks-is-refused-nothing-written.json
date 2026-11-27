@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-write-naming-an-event-or-a-room-the-store-lacks-is-refused-nothing-written",
+  "title": "update_event of an event the store does not hold is refused event_not_found and add_participant into a room it does not hold room_not_found, nothing written: no timeline read finds the event, and the room created later holds no participant",
+  "rules": [
+    "§14.3",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.3-013"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py::test_a_write_naming_what_the_store_lacks_is_refused[update_event], [add_participant]. Not observed: update_room of a room the store does not hold, which no store call of the suite makes.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.update_event",
+      "event": {
+        "id": "ghost",
+        "room_id": "room-1",
+        "index": 7,
+        "content": {
+          "type": "text",
+          "body": "never added"
+        }
+      },
+      "expect": {
+        "error": "event_not_found"
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "ghost",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "room-9",
+        "channel_id": "sms"
+      },
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-9",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-9"
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [],
+      "room-9": []
+    }
+  }
+}

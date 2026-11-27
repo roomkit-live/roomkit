@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-audited-call-its-turn-s-cut-cancels-is-recorded-cancelled",
+  "title": "An audited tool call its turn's cut cancels while its handler is held is recorded cancelled",
+  "rules": [
+    "§15.8.1",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "requirements": [
+    "RK-15.8.1-009"
+  ],
+  "notes": "Python: orchestration/tool_audit.py audit_tool_handler records a call its handler did not answer, cancelled, as cancelled. The tool's call is held at its gate when the cancellation of the message's delivery cuts the turn; the gate opens only once the turn is over. Not observed: a call a voice or realtime session's end, or a provider's abandonment, cancels.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "slow",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "slow",
+            "description": "The slow tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "late",
+            "gate": "slow"
+          }
+        ],
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "defer_delivery": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "slow"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "turn",
+      "reason": "Alice left"
+    },
+    {
+      "open": "slow"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "agent_id": "agent",
+        "tool_name": "slow",
+        "arguments": {
+          "q": "x"
+        },
+        "status": "cancelled",
+        "duration_ms": {
+          "$present": true
+        }
+      }
+    ]
+  }
+}

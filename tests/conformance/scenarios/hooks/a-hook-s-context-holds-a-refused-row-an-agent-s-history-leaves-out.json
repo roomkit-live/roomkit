@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-s-context-holds-a-refused-row-an-agent-s-history-leaves-out",
+  "title": "The conversation read that fills a context's recent events reads the whole timeline: the next message's hook reads the row the room refused, and the agent's history leaves it out",
+  "rules": [
+    "§14.1",
+    "§7.5 rule 8"
+  ],
+  "requirements": [
+    "RK-14.1-068"
+  ],
+  "notes": "A BEFORE_BROADCAST hook refuses the first message, stored blocked at index 0. The second message's hook is handed a context holding that row, hooks reading the history whole; the agent, the reader the per-reader filter knows, is asked with a history that holds the second message alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "screen",
+        "trigger": "before_broadcast",
+        "execution": "sync",
+        "reactions": [
+          {
+            "when": {
+              "text": "spam"
+            },
+            "result": {
+              "action": "block",
+              "reason": "spam"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "spam"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "status": "blocked",
+          "content": {
+            "body": "spam"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "Hi."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "screen": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "spam"
+            }
+          },
+          "recent_events": []
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "recent_events": [
+            "room-1#0"
+          ]
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "Hi."
+            }
+          },
+          "recent_events": "$any"
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "hello"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-room-s-second-prompt-waits-for-the-first-to-be-answered",
+  "title": "A room's second message, its turn begun while the agent holds the first prompt, is prompted in the same session only once the agent has answered the first",
+  "rules": [
+    "Appendix A.9.1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-A.9.1-010"
+  ],
+  "notes": "Python: channels/_acp_turn.py _prompt_stream prompts under the room's turn lock. The second turn's context contributor is held, then released, while the first prompt is held: that turn has reached the channel. The agent reaches first-answered once it has sent the first prompt's answer, and second-prompt when it receives the second prompt, which must come after. Not observed: prompts that reach the session other than through the room's delivery lane; an implementation that prompts from its response stream passes through the lane's order (RK-10.2-010) alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "context_contributor": {
+            "responses": [
+              {
+                "blocks": [
+                  "Ticket 1"
+                ]
+              },
+              {
+                "blocks": [
+                  "Ticket 2"
+                ],
+                "gate": "second-turn"
+              }
+            ]
+          },
+          "agent": {
+            "prompts": [
+              {
+                "gate": "first-prompt",
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "One."
+                    }
+                  }
+                ],
+                "after_reply": {
+                  "gate": "first-answered"
+                }
+              },
+              {
+                "gate": "second-prompt",
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Two."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      },
+      "background": true,
+      "as": "one"
+    },
+    {
+      "wait_for": "first-prompt"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      },
+      "background": true,
+      "as": "two"
+    },
+    {
+      "wait_for": "second-turn"
+    },
+    {
+      "open": "second-turn"
+    },
+    {
+      "open": "first-prompt"
+    },
+    {
+      "wait_for": "second-prompt",
+      "after": "first-answered"
+    },
+    {
+      "open": "first-answered"
+    },
+    {
+      "open": "second-prompt"
+    },
+    {
+      "await": "one"
+    },
+    {
+      "await": "two"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "First"
+          }
+        },
+        {
+          "content": {
+            "body": "Second"
+          }
+        },
+        {
+          "content": {
+            "body": "One."
+          }
+        },
+        {
+          "content": {
+            "body": "Two."
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "coder": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "_meta": {
+              "roomkit.live/eventId": "room-1#1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-metadata-patch-removes-its-unset-keys-then-merges-its-own-and-writes-nothing-else",
+  "title": "patch_room_metadata removes the keys unset names, then merges its patch, a key in both taking the patch's value; it writes nothing else of the room, and answers null for a room the store does not hold",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-011"
+  ],
+  "notes": "Python: store/base.py ConversationStore.patch_room_metadata and SQLiteStore.patch_room_metadata, which also stamp updated_at, not compared here. The commit before the patch moves the room's counters, which the patch keeps. Not observed: a write that interleaves with the patch itself; rooms/a-host-s-metadata-change-merges-its-keys-and-a-concurrent-writer-s-stand shows a writer between the kit's read and its patch.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "keep": "k",
+          "change": "old",
+          "drop": "d",
+          "back": "b"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "active",
+          "event_count": 1,
+          "latest_index": 0,
+          "created_at": {
+            "$as": "created"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "room-1",
+      "patch": {
+        "change": "new",
+        "added": "x",
+        "back": "again"
+      },
+      "unset": [
+        "drop",
+        "back"
+      ],
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "status": "active",
+          "event_count": 1,
+          "latest_index": 0,
+          "created_at": {
+            "$as": "created"
+          },
+          "metadata": {
+            "keep": "k",
+            "change": "new",
+            "added": "x",
+            "back": "again",
+            "drop": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "active",
+          "event_count": 1,
+          "latest_index": 0,
+          "created_at": {
+            "$as": "created"
+          },
+          "metadata": {
+            "keep": "k",
+            "change": "new",
+            "added": "x",
+            "back": "again",
+            "drop": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "room-9",
+      "patch": {
+        "a": 1
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-9",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

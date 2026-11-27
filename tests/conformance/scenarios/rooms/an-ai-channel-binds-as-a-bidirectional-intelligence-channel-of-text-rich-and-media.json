@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-ai-channel-binds-as-a-bidirectional-intelligence-channel-of-text-rich-and-media",
+  "title": "The implementation's AI channel binds as type ai, category intelligence and direction bidirectional, its media types text, rich and media, with rich text and neither edit nor delete",
+  "rules": [
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-A.9-004",
+    "RK-A.9-005"
+  ],
+  "notes": "agent is a scripted agent, the implementation's own AI channel; the binding names no category, so it takes the channel's own, and its capabilities are the channel's. Python: models/channel.py ai_channel_capabilities. The media types are matched in any order, which the RFC does not fix. Not observed: that rich text depends on the provider, the scripted model being one provider.",
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "expect": {
+        "result": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "category": "intelligence",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supports_rich_text": true,
+            "supports_edit": false,
+            "supports_delete": false
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "agent": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "category": "intelligence",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supports_rich_text": true,
+            "supports_edit": false,
+            "supports_delete": false
+          }
+        }
+      }
+    }
+  }
+}

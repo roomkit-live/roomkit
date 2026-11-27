@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-observed-in-a-turn-that-fails-or-is-abandoned-makes-no-response",
+  "title": "A usage observation the agent sends in a turn whose prompt fails, or whose stream is abandoned, makes no response: ON_AI_RESPONSE is not told, nor any usage",
+  "rules": [
+    "Appendix A.9.1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-A.9.1-042"
+  ],
+  "notes": "Python: channels/_acp_turn.py _report_response is reached only by a turn that ran to its terminal item; the usage update is published as an ephemeral event, which the scenario does not compare (a MAY). room-1's prompt sends its usage, a text, then a JSON-RPC error; in room-2 the streaming transport stops reading after the text, abandoning the stream, while the agent holds the rest of its prompt. Each turn's text is stored, with no usage on its record (ai_usage, RK-6.4-425).",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams_in": [
+          "room-2"
+        ],
+        "deliver_stream": [
+          {
+            "stop_after": "Partial two"
+          }
+        ]
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 40,
+                    "size": 100,
+                    "cost": {
+                      "amount": 0.5,
+                      "currency": "USD"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Partial one"
+                    }
+                  }
+                ],
+                "error": {
+                  "code": -32603,
+                  "message": "Internal error"
+                }
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 40,
+                    "size": 100,
+                    "cost": {
+                      "amount": 0.5,
+                      "currency": "USD"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Partial two"
+                    }
+                  }
+                ],
+                "after_updates_gate": "never-released"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "Internal error"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Partial one"
+          },
+          "metadata": {
+            "ai_usage": {
+              "$absent": true
+            },
+            "ai_last_usage": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Partial two"
+          },
+          "metadata": {
+            "ai_usage": {
+              "$absent": true
+            },
+            "ai_last_usage": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

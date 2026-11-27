@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/the-host-channel-binds-inbound-and-is-never-delivered-to",
+  "title": "The host channel binds inbound: it brings the host's words in, and neither its own post nor a message from another channel is delivered to it",
+  "rules": [
+    "Appendix A.14.1",
+    "§10.5 The host's own voice"
+  ],
+  "requirements": [
+    "RK-A.14.1-003"
+  ],
+  "notes": "The host channel is the implementation's own, attached by the first post. Every delivery the kit makes reports a framework event, so the room's framework events, matched whole, show none to the host channel.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "Your appointment is at 3 pm"
+      },
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "host",
+            "direction": "inbound"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Thanks"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "host": {
+          "channel_type": "host",
+          "direction": "inbound"
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ws": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "room_channel_attached",
+          "channel_id": "host"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws",
+              "event_id": "room-1#1"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#1"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
