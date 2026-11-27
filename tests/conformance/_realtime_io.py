@@ -189,6 +189,10 @@ IO_ARGUMENTS = {
 
 async def io_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     if spec["channel_id"] in harness.conferences:
+        if "room_id" in spec and spec["call"] == "realtime.audio":
+            # A conference's model has the one session of its room (README,
+            # ``realtime.audio``): the runner cannot read another.
+            raise AssertionError("realtime.audio takes no room_id on a conference")
         return await _conference_model_call(harness.conferences[spec["channel_id"]], spec)
     fixture = harness.realtime_sessions[spec["channel_id"]]
     provider, session = fixture.provider, fixture.session

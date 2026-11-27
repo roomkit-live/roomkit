@@ -177,9 +177,11 @@ class ScriptedRealtimeSession:
         self._rooms[spec["room_id"]] = session
 
     def session_in(self, room_id: str) -> VoiceSession:
-        """The session this channel started in *room_id*."""
+        """The session this channel started in *room_id*. A room with no
+        session started fails the scenario: the runner cannot read the
+        call, never the implementation's ``invalid_argument``."""
         if room_id not in self._rooms:
-            raise ValueError(f"no session of this channel in room {room_id}")
+            raise AssertionError(f"no session of this channel in room {room_id}")
         return self._rooms[room_id]
 
     def declare(self, name: str) -> dict[str, Any]:
