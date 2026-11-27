@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/an-update-of-the-system-prompt-reaches-the-turn-s-next-round",
+  "title": "An UpdateSystemPrompt steered at a turn while its tool runs appends its instructions to the system prompt: the model's next request reads the agent's prompt, then the instructions",
+  "rules": [
+    "§21.3"
+  ],
+  "requirements": [
+    "RK-21.3-005"
+  ],
+  "notes": "Python: channels/_ai_steering.py (UpdateSystemPrompt: the context's system_prompt plus its append); roomkit-rs: roomkit-ai steering.rs. The loop reads its directives before each round. What separates the two texts, and whether a later turn keeps the instructions, the RFC does not say, and the scenario does not assert.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "You help with orders.",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found",
+            "gate": "held"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Bonjour."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "steer",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "directive": {
+        "type": "update_system_prompt",
+        "append": " Answer in French."
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$lacks": "Answer in French."
+          }
+        },
+        {
+          "system_prompt": {
+            "$contains": [
+              "You help with orders.",
+              "Answer in French."
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

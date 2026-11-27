@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-open-schema-s-call-runs-with-what-it-does-not-declare-and-nothing-deeper-is-checked",
+  "title": "A call to a tool whose schema does not close itself runs with the arguments it does not declare, and one whose top-level arguments fit runs whatever its nested objects, its $ref, its anyOf, its format and its pattern hold: the handler receives each call's arguments as the model wrote them",
+  "rules": [
+    "§21.1",
+    "§15.8"
+  ],
+  "requirements": [
+    "RK-21.1-035",
+    "RK-21.1-038"
+  ],
+  "notes": "Python: tools/validation.py validate_tool_arguments (the first gate reads required, a top-level primitive type and a closed schema's names); roomkit-rs: roomkit-ai tools/schema.rs. The tool auditor wraps the handler, so its entries hold the arguments the handler was called with.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "record",
+            "description": "Record a thing",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                },
+                "meta": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "pattern": "^[a-z]+@x$"
+                },
+                "choice": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "ref": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "$defs": {
+                "id": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "recorded"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "record",
+                  "arguments": {
+                    "n": 1,
+                    "extra": "kept",
+                    "more": {
+                      "x": [
+                        1,
+                        2
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "record",
+                  "arguments": {
+                    "n": 2,
+                    "meta": {
+                      "count": "many",
+                      "other": true
+                    },
+                    "email": "NOT AN EMAIL",
+                    "choice": "text",
+                    "ref": "not-an-id"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "recorded",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "recorded",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "record",
+          "arguments": {
+            "n": 1,
+            "extra": "kept",
+            "more": {
+              "x": [
+                1,
+                2
+              ]
+            }
+          },
+          "status": "ok",
+          "result": "recorded"
+        },
+        {
+          "tool_name": "record",
+          "arguments": {
+            "n": 2,
+            "meta": {
+              "count": "many",
+              "other": true
+            },
+            "email": "NOT AN EMAIL",
+            "choice": "text",
+            "ref": "not-an-id"
+          },
+          "status": "ok",
+          "result": "recorded"
+        }
+      ]
+    }
+  }
+}

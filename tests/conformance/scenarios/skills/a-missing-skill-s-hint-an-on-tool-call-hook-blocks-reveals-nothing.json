@@ -1,0 +1,228 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-missing-skill-s-hint-an-on-tool-call-hook-blocks-reveals-nothing",
+  "title": "An activation of a skill that does not exist, under a name the turn's tools match, that an ON_TOOL_CALL hook blocks reveals none of them, for the next round or for the room's next turn",
+  "rules": [
+    "§24.4",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-24.4-022"
+  ],
+  "notes": "Python: channels/_ai_tools.py _settle_served_call (a refused call's pending reveal dropped). As tool-search/a-blocked-search-reveals-nothing-this-turn-or-the-next does for find_tools.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": true,
+        "tool_search_pinned": [
+          "player_search"
+        ],
+        "skills": [
+          {
+            "name": "music",
+            "description": "The music procedure",
+            "instructions": "Rules for music."
+          }
+        ],
+        "tools": [
+          {
+            "name": "player_play",
+            "description": "Play a song on the player.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "player_pause",
+            "description": "Pause the player.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "player_search",
+            "description": "Search the player's songs.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "x5",
+            "description": "A fifth thing.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "player"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "judge",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "no skills here"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "player_play": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "player_play": {
+              "$absent": true
+            },
+            "player_pause": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"no skills here\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tools": {
+            "player_play": {
+              "$absent": true
+            },
+            "player_pause": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

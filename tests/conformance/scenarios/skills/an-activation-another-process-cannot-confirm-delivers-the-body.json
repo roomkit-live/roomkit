@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/an-activation-another-process-cannot-confirm-delivers-the-body",
+  "title": "A skill activated in one process, whose stored activation a hook rewrote, is not active in another process serving the room: its prompt holds no rules for it, and its activation there delivers the body",
+  "rules": [
+    "§24.4",
+    "§10.6.3"
+  ],
+  "requirements": [
+    "RK-24.4-013"
+  ],
+  "notes": "Python: channels/_skill_activation.py seed (a stored activate_skill whose result is no readable answer, an ON_TOOL_CALL override here, is never replayed). The second process holds a channel object of its own over the same store: its record is lost, and what the store holds cannot restore it, so it delivers the body. That a stored activation a hook rewrote restores nothing is the reference's criterion; the RFC asks only that a lost record deliver the body. A stored activation it can read restores the record (skills/a-stored-activation-reads-the-turn-s-registry).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "ops",
+            "description": "The ops procedure",
+            "instructions": "Rules for ops."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ops"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "ready"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ops"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "after"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rewrite",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "result": "Ready."
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Ready."
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$lacks": "Rules for ops."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Ready."
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Rules for ops."
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

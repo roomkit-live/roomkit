@@ -1,0 +1,224 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-orchestration-injects-is-gated-by-a-skill-while-the-catalogue-is-hidden",
+  "title": "While Tool Search hides the catalogue, a delegation tool a skill gates is not declared and its call is refused as gated; once the skill is active it is declared, not found, and its call delegates",
+  "rules": [
+    "§21.1",
+    "§24.2",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-21.1-066"
+  ],
+  "notes": "Python: channels/_ai_tools.py (an injected tool kept declared, always, then skill-gated); roomkit-rs: roomkit-ai tool_search and tool_loop/skill_gating.rs. The other half of RK-21.1-066, the policy, is tool-search/a-tool-orchestration-injects-is-denied-by-the-policy-while-the-catalogue-is-hidden. Not observed: the other tools orchestration injects (a handoff tool, a strategy's own), observed here on a delegation tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "tool_search": true,
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "teamwork"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "skills": [
+          {
+            "name": "teamwork",
+            "description": "Working with the team",
+            "instructions": "Rules for teamwork.",
+            "allowed_tools": "delegate_to_*"
+          }
+        ]
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "room-1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            },
+            "widget_0": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'delegate_to_researcher' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$present": true
+            },
+            "widget_0": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {},
+            {},
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "The facts."
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "researcher": [
+        {}
+      ]
+    }
+  }
+}

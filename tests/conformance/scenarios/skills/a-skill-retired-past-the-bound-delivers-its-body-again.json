@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-skill-retired-past-the-bound-delivers-its-body-again",
+  "title": "Five skills activated one after the other in a room retire the least recently used one past four: the next turn's prompt holds the four, an activation of the retired one delivers its body again and one of an active one is acknowledged",
+  "rules": [
+    "§24.4"
+  ],
+  "requirements": [
+    "RK-24.4-012"
+  ],
+  "notes": "Python: channels/_skill_activation.py (SkillActivationMemory, four per room, the least recently used retired); roomkit-rs: roomkit-ai skills/activation.rs. The bound of four, and the least recently used retired first, are the reference's (RK-24.4-011, a MAY), as skills/a-stored-activation-past-the-bound-reads-as-activated shows; the skills are activated one round each, so the order of their activations is the rounds'. The acknowledgement of a skill still active is the reference's answer (RK-24.4-003).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "a",
+            "description": "The a procedure",
+            "instructions": "Rules for a."
+          },
+          {
+            "name": "b",
+            "description": "The b procedure",
+            "instructions": "Rules for b."
+          },
+          {
+            "name": "c",
+            "description": "The c procedure",
+            "instructions": "Rules for c."
+          },
+          {
+            "name": "d",
+            "description": "The d procedure",
+            "instructions": "Rules for d."
+          },
+          {
+            "name": "e",
+            "description": "The e procedure",
+            "instructions": "Rules for e."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-a",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-b",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-c",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "c"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-d",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "d"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-e",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "e"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "again-a",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "a"
+                  }
+                },
+                {
+                  "id": "again-e",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "e"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "after"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "system_prompt": {
+            "$lacks": "Rules for a."
+          }
+        },
+        {
+          "tool_results": [
+            {},
+            {},
+            {},
+            {},
+            {},
+            {
+              "tool_call_id": "again-a",
+              "content": {
+                "$contains": "Rules for a."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "again-e",
+              "content": {
+                "$lacks": "Rules for e."
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

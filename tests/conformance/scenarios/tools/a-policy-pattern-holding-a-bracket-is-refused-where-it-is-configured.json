@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-policy-pattern-holding-a-bracket-is-refused-where-it-is-configured",
+  "title": "An agent whose tool policy holds a pattern with a bracket, in its allow or deny list or in a role's override, is refused as it is configured; the same agent with a pattern of * and ? alone is registered",
+  "rules": [
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-21.1-013"
+  ],
+  "notes": "Python: tools/policy.py bracket_error (ToolPattern, refused by the policy's validation); roomkit-rs: roomkit-ai tools/policy.rs. A refused channel is not registered: the id is free for the one that follows.",
+  "setup": {
+    "channels": []
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "tool_policy": {
+          "deny": [
+            "rm_[a-z]*"
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "tool_policy": {
+          "allow": [
+            "search_]"
+          ]
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "tool_policy": {
+          "role_overrides": {
+            "guest": {
+              "deny": [
+                "[abc]"
+              ]
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "tool_policy": {
+          "deny": [
+            "rm_*",
+            "drop_?"
+          ]
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-reference-name-is-normalized-before-it-is-checked",
+  "title": "A reference name whose characters normalize onto a separator, a drive or a root is refused as the name it normalizes to: a full-width solidus or reverse solidus reads as a path, a full-width root or drive as an absolute name",
+  "rules": [
+    "§24.6"
+  ],
+  "requirements": [
+    "RK-24.6-008"
+  ],
+  "notes": "Python: skills/paths.py safe_join_filename (NFKC before every check); roomkit-rs: roomkit-ai skills/paths.rs. Checked on the raw text, none of these names holds a separator, a root or a drive: each would be looked up as a file and not found, or refused for another cause. The refusal's words, and the order of its causes (an absolute name before a separator), are the reference's. The reference the skill has is read, as a check that the call reaches the reader.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "ops",
+            "description": "The ops procedure",
+            "instructions": "Rules for ops.",
+            "references": {
+              "notes.md": "Ops notes."
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "n1",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "x／notes.md"
+                  }
+                },
+                {
+                  "id": "n2",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "／etc／passwd"
+                  }
+                },
+                {
+                  "id": "n3",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "..＼notes.md"
+                  }
+                },
+                {
+                  "id": "n4",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "Ｃ：＼notes.md"
+                  }
+                },
+                {
+                  "id": "ok",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "notes.md"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "n1",
+              "content": {
+                "$contains": " must not contain a path"
+              }
+            },
+            {
+              "tool_call_id": "n2",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "n3",
+              "content": {
+                "$contains": " must not contain a path"
+              }
+            },
+            {
+              "tool_call_id": "n4",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "ok",
+              "content": {
+                "$contains": "Ops notes."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

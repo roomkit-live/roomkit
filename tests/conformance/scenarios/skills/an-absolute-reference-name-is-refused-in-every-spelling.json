@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/an-absolute-reference-name-is-refused-in-every-spelling",
+  "title": "A reference name that is absolute in any spelling a host recognises is refused: a root, a drive with either separator, a UNC share in either form and a device path",
+  "rules": [
+    "§24.6"
+  ],
+  "requirements": [
+    "RK-24.6-009"
+  ],
+  "notes": "Python: skills/paths.py _is_absolute_anywhere (POSIX root, a Windows drive or UNC, on every platform); roomkit-rs: roomkit-ai skills/paths.rs. That the Windows spellings are refused on every host, the refusal's words, and the order of its causes (an absolute name before a separator) are the reference's; the RFC asks that every spelling the host recognises be refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "ops",
+            "description": "The ops procedure",
+            "instructions": "Rules for ops.",
+            "references": {
+              "notes.md": "Ops notes."
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "p1",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "/etc/passwd"
+                  }
+                },
+                {
+                  "id": "p2",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "C:\\Windows\\win.ini"
+                  }
+                },
+                {
+                  "id": "p3",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "C:/Windows/win.ini"
+                  }
+                },
+                {
+                  "id": "p4",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "\\\\server\\share\\notes.md"
+                  }
+                },
+                {
+                  "id": "p5",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "//server/share/notes.md"
+                  }
+                },
+                {
+                  "id": "p6",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "\\\\?\\C:\\notes.md"
+                  }
+                },
+                {
+                  "id": "ok",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "notes.md"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "p1",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "p2",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "p3",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "p4",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "p5",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "p6",
+              "content": {
+                "$contains": " must be relative"
+              }
+            },
+            {
+              "tool_call_id": "ok",
+              "content": {
+                "$contains": "Ops notes."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

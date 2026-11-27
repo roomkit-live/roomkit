@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-policy-pattern-s-punctuation-stands-for-itself",
+  "title": "A policy pattern's characters other than * and ? stand for themselves: orders.lookup denies that tool and not orders_lookup, a+, ^b$, get.* and (c) deny no tool a pattern language would read them to cover, and AA does not deny aa",
+  "rules": [
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-21.1-012"
+  ],
+  "notes": "Python: tools/policy.py matches_any_pattern (each other character re.escape'd); roomkit-rs: roomkit-ai tools/policy.rs. A host tool's name may hold a dot (§6.7), so the dot is shown both ways; a letter stands for itself in its case: it denies the name that holds it, and stands for no other character. The model calls every tool: the denied one is refused with the policy's text (RK-21.1-048), the others run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tool_policy": {
+          "deny": [
+            "orders.lookup",
+            "a+",
+            "^b$",
+            "get.*",
+            "(c)",
+            "AA"
+          ]
+        },
+        "tools": [
+          {
+            "name": "orders.lookup",
+            "description": "The orders.lookup tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "dotted ran"
+          },
+          {
+            "name": "orders_lookup",
+            "description": "The orders_lookup tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "underscored ran"
+          },
+          {
+            "name": "aa",
+            "description": "The aa tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "aa ran"
+          },
+          {
+            "name": "b",
+            "description": "The b tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "b ran"
+          },
+          {
+            "name": "get_data",
+            "description": "The get_data tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "get_data ran"
+          },
+          {
+            "name": "c",
+            "description": "The c tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "c ran"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "orders.lookup"
+                },
+                {
+                  "id": "c2",
+                  "name": "orders_lookup"
+                },
+                {
+                  "id": "c3",
+                  "name": "aa"
+                },
+                {
+                  "id": "c4",
+                  "name": "b"
+                },
+                {
+                  "id": "c5",
+                  "name": "get_data"
+                },
+                {
+                  "id": "c6",
+                  "name": "c"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "orders.lookup": {
+              "$absent": true
+            },
+            "orders_lookup": {
+              "$present": true
+            },
+            "aa": {
+              "$present": true
+            },
+            "b": {
+              "$present": true
+            },
+            "get_data": {
+              "$present": true
+            },
+            "c": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'orders.lookup' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "underscored ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "aa ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "content": "b ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c5",
+              "content": "get_data ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c6",
+              "content": "c ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

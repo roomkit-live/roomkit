@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-cancel-while-several-calls-are-announced-ends-each-of-them-failed-non-streaming",
+  "title": "A Cancel that comes while a round's three calls are announced runs none of them and ends each one failed, no start row left pending (non-streaming)",
+  "rules": [
+    "§21.3",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-21.3-008"
+  ],
+  "notes": "Python: channels/_ai_tools.py _unrun_call_ends (each announced call ended failed, none run); roomkit-rs: roomkit-ai tool_loop. The hook on the first start row steers the Cancel, as in tools/a-cancel-while-the-calls-are-announced-counts-no-round. The same round is played through the streaming and the whole-response paths of the provider contract. The tool auditor wraps the handler: no call reaches it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "lookup_a",
+            "description": "The lookup_a tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "a"
+          },
+          {
+            "name": "lookup_b",
+            "description": "The lookup_b tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "b"
+          },
+          {
+            "name": "lookup_c",
+            "description": "The lookup_c tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "c"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_a"
+                },
+                {
+                  "id": "c2",
+                  "name": "lookup_b"
+                },
+                {
+                  "id": "c3",
+                  "name": "lookup_c"
+                }
+              ]
+            },
+            {
+              "text": "never asked"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "do": [
+              {
+                "call": "steer",
+                "channel_id": "agent",
+                "room_id": "room-1",
+                "directive": {
+                  "type": "cancel",
+                  "reason": "user stopped"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look all three up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "type": "message"
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c1",
+              "status": "pending"
+            }
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c2",
+              "status": "pending"
+            }
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c3",
+              "status": "pending"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c1",
+              "status": "failed"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c2",
+              "status": "failed"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c3",
+              "status": "failed"
+            }
+          }
+        ]
+      }
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

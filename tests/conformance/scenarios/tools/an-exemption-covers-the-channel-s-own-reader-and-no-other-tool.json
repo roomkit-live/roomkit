@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-exemption-covers-the-channel-s-own-reader-and-no-other-tool",
+  "title": "Under a policy that denies every tool, the agent's own activate_skill and read_skill_reference stay declared and served; a host tool named find_tools on an agent without Tool Search, a host tool whose name begins with activate_skill and an MCP server's tool named list_tools are denied like any other",
+  "rules": [
+    "§21.1",
+    "§21.2",
+    "§24.4"
+  ],
+  "requirements": [
+    "RK-21.1-017"
+  ],
+  "notes": "Python: channels/_ai_policy.py (exempt names are the channel's own, by ChannelRegistry traits), tools/policy.py; roomkit-rs: roomkit-ai tool_loop/skill_gating.rs. Without Tool Search the channel serves no find_tools or list_tools, so the host's find_tools and the server's list_tools are tools of theirs, under a reader's exact name. Not observed here: a tool under one of these names that orchestration sets up or a generation hook declares.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tool_policy": {
+          "deny": [
+            "*"
+          ]
+        },
+        "skills": [
+          {
+            "name": "ops",
+            "description": "Operations",
+            "instructions": "Rules for ops.",
+            "references": {
+              "notes.md": "Ops notes."
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "find_tools",
+            "description": "The find_tools tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "host find_tools ran"
+          },
+          {
+            "name": "activate_skill_now",
+            "description": "The activate_skill_now tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "host prefix ran"
+          }
+        ],
+        "mcp_servers": [
+          {
+            "label": "crm",
+            "declare": "bare",
+            "tools": [
+              {
+                "name": "list_tools",
+                "description": "List the CRM's tools.",
+                "returns": "server list_tools ran"
+              }
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ops"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ops",
+                    "filename": "notes.md"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "activate_skill_now"
+                },
+                {
+                  "id": "c5",
+                  "name": "list_tools"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            },
+            "find_tools": {
+              "$absent": true
+            },
+            "activate_skill_now": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for ops."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Ops notes."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"error\": \"Tool 'find_tools' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c4",
+              "content": "{\"error\": \"Tool 'activate_skill_now' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c5",
+              "content": "{\"error\": \"Tool 'list_tools' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

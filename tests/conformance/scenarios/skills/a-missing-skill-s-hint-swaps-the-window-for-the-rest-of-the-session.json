@@ -1,0 +1,247 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-missing-skill-s-hint-swaps-the-window-for-the-rest-of-the-session",
+  "title": "An activation of a skill that does not exist, under a name the turn's tools match, reveals those tools as find_tools reveals its matches: the window swapped, the pinned tool left where it was, and the tools still declared on the room's next turn",
+  "rules": [
+    "§24.4",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-24.4-021"
+  ],
+  "notes": "Python: channels/_ai_tools.py _handle_activate_skill (tools_hint, then _defer_reveal and _reveal: the window swapped, what Tool Search never defers left out, record_revealed for the room); roomkit-rs: roomkit-ai skills. The first round's search reveals x5; the activation's hint then replaces it with player_play and player_pause; player_search, pinned, stays declared. Not observed: that the hint leaves out of the window what is declared anyway, which no declaration shows apart from the pinned tool declared as before.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": true,
+        "tool_search_pinned": [
+          "player_search"
+        ],
+        "skills": [
+          {
+            "name": "music",
+            "description": "The music procedure",
+            "instructions": "Rules for music."
+          }
+        ],
+        "tools": [
+          {
+            "name": "player_play",
+            "description": "Play a song on the player.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "player_pause",
+            "description": "Pause the player.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "player_search",
+            "description": "Search the player's songs.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "x5",
+            "description": "A fifth thing.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x5"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "player"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "player_play": {
+              "$absent": true
+            },
+            "x5": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "x5": {
+              "$present": true
+            },
+            "player_play": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "player_play": {
+              "$present": true
+            },
+            "player_pause": {
+              "$present": true
+            },
+            "player_search": {
+              "$present": true
+            },
+            "x5": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {},
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "player_play"
+              },
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tools": {
+            "player_play": {
+              "$present": true
+            },
+            "player_pause": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

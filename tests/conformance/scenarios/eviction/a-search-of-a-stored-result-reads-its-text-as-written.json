@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-search-of-a-stored-result-reads-its-text-as-written",
+  "title": "read_stored_result's query is read as the text it is: (eur), .*, [x] and a+b each find the one line that holds them, never the lines a pattern of them would match",
+  "rules": [
+    "§21.5"
+  ],
+  "requirements": [
+    "RK-21.5-012"
+  ],
+  "notes": "Python: channels/_stored_read.py (a case-folded substring per line); roomkit-rs: roomkit-ai tool_eviction. Read as patterns, (eur) would also find line 60, .* every line, [x] line 70 and a+b line 90.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "evict_threshold_tokens": 300,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "row 001\nrow 002\nrow 003\nrow 004\nrow 005\nrow 006\nrow 007\nrow 008\nrow 009\nrow 010\nrow 011\nrow 012\nrow 013\nrow 014\nrow 015\nrow 016\nrow 017\nrow 018\nrow 019\nrow 020\nrow 021\nrow 022\nrow 023\nrow 024\nrow 025\nrow 026\nrow 027\nrow 028\nrow 029\nrow 030\nrow 031\nrow 032\nrow 033\nrow 034\nrow 035\nrow 036\nrow 037\nrow 038\nrow 039\ncost (eur) = 2.5\nrow 041\nrow 042\nrow 043\nrow 044\nrow 045\nrow 046\nrow 047\nrow 048\nrow 049\nrow 050\nrow 051\nrow 052\nrow 053\nrow 054\nrow 055\nrow 056\nrow 057\nrow 058\nrow 059\nprice eur only\nrow 061\nrow 062\nrow 063\nrow 064\nrow 065\nrow 066\nrow 067\nrow 068\nrow 069\nmax value\nrow 071\nrow 072\nrow 073\nrow 074\nrow 075\nrow 076\nrow 077\nrow 078\nrow 079\nglob a.*b kept\nrow 081\nrow 082\nrow 083\nrow 084\nrow 085\nrow 086\nrow 087\nrow 088\nrow 089\ntab key\nrow 091\nrow 092\nrow 093\nrow 094\nrow 095\nrow 096\nrow 097\nrow 098\nrow 099\npick [x] here\nrow 101\nrow 102\nrow 103\nrow 104\nrow 105\nrow 106\nrow 107\nrow 108\nrow 109\nrow 110\nrow 111\nrow 112\nrow 113\nrow 114\nrow 115\nrow 116\nrow 117\nrow 118\nrow 119\nsum a+b total\nrow 121\nrow 122\nrow 123\nrow 124\nrow 125\nrow 126\nrow 127\nrow 128\nrow 129\nrow 130\nrow 131\nrow 132\nrow 133\nrow 134\nrow 135\nrow 136\nrow 137\nrow 138\nrow 139\nrow 140\nrow 141\nrow 142\nrow 143\nrow 144\nrow 145\nrow 146\nrow 147\nrow 148\nrow 149\nrow 150\nrow 151\nrow 152\nrow 153\nrow 154\nrow 155\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "q1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "query": "(eur)"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "q2",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "query": ".*"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "q3",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "query": "[x]"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "q4",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "query": "a+b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {},
+            {
+              "tool_call_id": "q1",
+              "content": "{\"query\": \"(eur)\", \"content\": \"38: row 038\\n39: row 039\\n40: cost (eur) = 2.5\\n41: row 041\\n42: row 042\", \"total_matches\": 1, \"matches_returned\": 1, \"has_more\": false, \"next_offset\": null}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {},
+            {},
+            {
+              "tool_call_id": "q2",
+              "content": "{\"query\": \".*\", \"content\": \"78: row 078\\n79: row 079\\n80: glob a.*b kept\\n81: row 081\\n82: row 082\", \"total_matches\": 1, \"matches_returned\": 1, \"has_more\": false, \"next_offset\": null}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {},
+            {},
+            {},
+            {
+              "tool_call_id": "q3",
+              "content": "{\"query\": \"[x]\", \"content\": \"98: row 098\\n99: row 099\\n100: pick [x] here\\n101: row 101\\n102: row 102\", \"total_matches\": 1, \"matches_returned\": 1, \"has_more\": false, \"next_offset\": null}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {},
+            {},
+            {},
+            {},
+            {
+              "tool_call_id": "q4",
+              "content": "{\"query\": \"a+b\", \"content\": \"118: row 118\\n119: row 119\\n120: sum a+b total\\n121: row 121\\n122: row 122\", \"total_matches\": 1, \"matches_returned\": 1, \"has_more\": false, \"next_offset\": null}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

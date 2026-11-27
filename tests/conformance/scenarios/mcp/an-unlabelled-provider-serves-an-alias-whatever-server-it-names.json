@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp/an-unlabelled-provider-serves-an-alias-whatever-server-it-names",
+  "title": "A provider without a label, first in its agent's chain, serves an alias that names the labelled server after it; in a chain whose providers are all labelled, an alias runs on the server it names, whatever the order",
+  "rules": [
+    "§21.2",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-21.2-014"
+  ],
+  "notes": "Python: tools/mcp.py (an unlabelled provider's handler takes any mcp__<server>__<tool> whose tool it serves); tests/test_mcp_alias_policy.py::test_an_unlabelled_provider_serves_an_alias_naming_any_server. The unlabelled provider declares nothing; the labelled crm declares its tool under its alias. The second agent's chain, crm then archive, both labelled, runs mcp__archive__lookup on the archive.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "mcp_servers": [
+          {
+            "declare": "none",
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "returns": "unlabelled: found"
+              }
+            ]
+          },
+          {
+            "label": "crm",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "returns": "crm: found"
+              }
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "mcp__crm__lookup",
+                  "arguments": {
+                    "q": "acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "labelled",
+        "type": "ai",
+        "mcp_servers": [
+          {
+            "label": "crm",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "returns": "crm: found"
+              }
+            ]
+          },
+          {
+            "label": "archive",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "returns": "archive: found"
+              }
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "mcp__archive__lookup",
+                  "arguments": {
+                    "q": "acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "labelled",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "mcp__crm__lookup": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "unlabelled: found",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "labelled": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": "archive: found",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

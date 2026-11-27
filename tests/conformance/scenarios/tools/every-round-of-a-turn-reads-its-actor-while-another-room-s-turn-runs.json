@@ -1,0 +1,224 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/every-round-of-a-turn-reads-its-actor-while-another-room-s-turn-runs",
+  "title": "A handler called on each round of a turn's loop reads that turn's actor, Alice's on both her rounds, while Bob's turn on the same agent in another room runs its own rounds between them and reads Bob on each",
+  "rules": [
+    "§21.4"
+  ],
+  "requirements": [
+    "RK-21.4-040"
+  ],
+  "notes": "Python: tools/context.py (the turn's context, copied into each round's tasks); roomkit-rs: roomkit-ai tools/context.rs. Alice's first round holds in its wait tool while Bob's turn runs its three rounds; her second round then calls whoami again. Not observed: the room a handler reads, which no handler script returns.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "whoami",
+            "description": "The turn's actor.",
+            "returns_actor": true
+          },
+          {
+            "name": "wait",
+            "description": "The wait tool",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "waited",
+            "gate": "alice-held"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "a1",
+                  "name": "whoami"
+                },
+                {
+                  "id": "aw",
+                  "name": "wait"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "b1",
+                  "name": "whoami"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "b2",
+                  "name": "whoami"
+                }
+              ]
+            },
+            {
+              "text": "Bob done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "a2",
+                  "name": "whoami"
+                }
+              ]
+            },
+            {
+              "text": "Alice done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "alice-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "bob-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "alice-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Who am I?"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "alice-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "bob-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Who am I?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "alice-held"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "b1",
+              "content": "\"bob\"",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "b1",
+              "content": "\"bob\""
+            },
+            {
+              "tool_call_id": "b2",
+              "content": "\"bob\"",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "a1",
+              "content": "\"alice\"",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "aw",
+              "content": "waited"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "a1",
+              "content": "\"alice\""
+            },
+            {
+              "tool_call_id": "aw"
+            },
+            {
+              "tool_call_id": "a2",
+              "content": "\"alice\"",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

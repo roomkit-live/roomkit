@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/a-listing-that-pages-on-without-anything-new-stops",
+  "title": "A tools listing whose server hands out a cursor it handed out before, or an empty page that still carries a cursor, ends there: the provider asks no further page and keeps the tools it was given",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-027"
+  ],
+  "notes": "Python: tools/mcp.py _list_tools (a page with no tool, or a cursor seen before, ends the listing); tests/test_mcp_listing.py::test_a_listing_that_pages_without_end_stops. The peer answers only the requests it scripts: a third page asked would fail the session. Not observed: the bound of pages past which a listing ends (the RFC gives no number), and the warning naming the server, a log no step reads.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": [
+                {
+                  "name": "first",
+                  "description": "first",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "nextCursor": "again"
+            }
+          },
+          {
+            "method": "tools/list",
+            "params": {
+              "cursor": "again"
+            },
+            "result": {
+              "tools": [
+                {
+                  "name": "second",
+                  "description": "second",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "nextCursor": "again"
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "first",
+                "second"
+              ]
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "tools/list",
+              "params": {
+                "cursor": "again"
+              }
+            }
+          ],
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"again\"}}]"
+        }
+      }
+    },
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": [
+                {
+                  "name": "first",
+                  "description": "first",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "nextCursor": "2"
+            }
+          },
+          {
+            "method": "tools/list",
+            "params": {
+              "cursor": "2"
+            },
+            "result": {
+              "tools": [],
+              "nextCursor": "4"
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "first"
+              ]
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "tools/list",
+              "params": {
+                "cursor": "2"
+              }
+            }
+          ],
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"2\"}}]"
+        }
+      }
+    }
+  ]
+}

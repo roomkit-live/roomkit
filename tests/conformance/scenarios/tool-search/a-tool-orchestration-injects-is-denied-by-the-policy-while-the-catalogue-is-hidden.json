@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-orchestration-injects-is-denied-by-the-policy-while-the-catalogue-is-hidden",
+  "title": "While Tool Search hides the catalogue, a delegation tool the policy denies is not declared, and the model's call to it is refused with the policy's text: no worker is asked",
+  "rules": [
+    "§21.1",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-21.1-066"
+  ],
+  "notes": "Python: channels/_ai_tools.py (an injected tool kept declared, always, then filtered by _policy_allows); roomkit-rs: roomkit-ai tool_search. The other half of RK-21.1-066, skill gating, is tool-search/a-tool-orchestration-injects-is-gated-by-a-skill-while-the-catalogue-is-hidden. Not observed: the other tools orchestration injects (a handoff tool, a strategy's own), observed here on a delegation tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "tool_search": true,
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_policy": {
+          "deny": [
+            "delegate_to_*"
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "room-1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            },
+            "find_tools": {
+              "$present": true
+            },
+            "widget_0": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'delegate_to_researcher' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ],
+      "researcher": []
+    }
+  }
+}
