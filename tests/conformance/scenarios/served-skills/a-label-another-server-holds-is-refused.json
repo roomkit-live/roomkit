@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-label-another-server-holds-is-refused",
+  "title": "A label one server holds is refused to another, whose skills never take its names",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-015",
+    "RK-24.7-034"
+  ],
+  "notes": "The rival server is refused before it is listed, so none of its skills is named docs:<path>: docs:guide stays the first server's. RK-24.7-034 is cited in part: its served half (a served skill never shadows another server's) is observed; a host's own skill never holding ':' needs a local registration operation, which the session does not have.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "rival": {
+          "replies": []
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "add_mcp_server",
+          "server": "rival",
+          "label": "docs"
+        },
+        {
+          "method": "origin",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "error",
+              "error": "SkillValidationError",
+              "message": "Label 'docs' already names another MCP server"
+            },
+            {
+              "status": "ok",
+              "result": {
+                "label": "docs",
+                "server": "remote"
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "uri": "skill://guide/SKILL.md",
+                "origin": "docs"
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ],
+            "rival": []
+          }
+        }
+      }
+    }
+  ]
+}

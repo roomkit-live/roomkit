@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-lookup-the-server-refuses-answers-that-it-serves-no-such-skill",
+  "title": "A name the server refuses to look up is answered as a skill it does not serve",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-059"
+  ],
+  "notes": "The lookup is asked of the server under the label the registry holds, as for any name its listing did not hold (RK-24.7-057); the server's own error text does not reach the model. Cited in part: the unit's last sentence, a skill the server's own instructions point to reached by that lookup, is not observed, the session scripting no server instructions.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://missing/SKILL.md"
+              },
+              "error": "no such skill"
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://missing/SKILL.md"
+              },
+              "error": "no such skill"
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:missing"
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "activate",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:missing"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "error",
+              "error": "SkillDiscoveryError",
+              "message": "Skill 'docs:missing' not found on its server"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://missing/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://missing/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "name": "activate_skill",
+              "content": "{\"error\": \"Skill 'docs:missing' not found on its server\", \"available_skills\": [\"docs:guide\"]}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

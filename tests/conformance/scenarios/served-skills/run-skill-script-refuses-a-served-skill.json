@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/run-skill-script-refuses-a-served-skill",
+  "title": "run_skill_script refuses a loaded served skill, and its executor runs nothing",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-071"
+  ],
+  "notes": "The entry lists scripts/build.sh, so the refusal is not a missing script. The skill is loaded through the registry, not activated in the conversation, so no approval of code run is asked (RK-24.7-072): the call reaches run_skill_script itself. The host's script executor is never handed the served skill: no file of it is written anywhere to be run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      },
+                      {
+                        "uri": "skill://guide/scripts/build.sh",
+                        "digest": "sha256:4b8c488f3f5dc8ceb7337696039e542757dbb28d1a6291cd6ed7163b59533bab",
+                        "size": 11
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "run",
+                      "name": "run_skill_script",
+                      "arguments": {
+                        "skill_name": "docs:guide",
+                        "script_name": "build.sh"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                }
+              ]
+            },
+            "script_executor": {}
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "has_scripts": false,
+                "references": [
+                  "scripts/build.sh"
+                ]
+              }
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "run",
+              "name": "run_skill_script",
+              "content": "{\"error\": \"Skill 'docs:guide' is served by an MCP server: it runs nothing\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "script_executors": {
+      "agent": {
+        "calls": []
+      }
+    }
+  }
+}

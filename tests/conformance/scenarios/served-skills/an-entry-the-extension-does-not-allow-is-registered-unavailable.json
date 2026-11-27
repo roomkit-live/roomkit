@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/an-entry-the-extension-does-not-allow-is-registered-unavailable",
+  "title": "An entry whose name, own file, directory or files break the rules is unavailable",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-026",
+    "RK-24.7-027",
+    "RK-24.7-028",
+    "RK-24.7-081"
+  ],
+  "notes": "Each refused entry breaks one rule and is otherwise well formed: #1's frontmatter name is not its directory's, #2 does not list its own SKILL.md, #3 lists a file of another skill's directory, #4 lists its SKILL.md twice. An entry the registry cannot name is named <label>:#<position in the listing>, with the reason the model is given.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://notes/SKILL.md",
+                    "frontmatter": {
+                      "name": "other",
+                      "description": "Read notes"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://notes/SKILL.md",
+                        "digest": "sha256:8dec62a23fb4526891a9b976c5883c1d31b216e65fb6a1ac50128dd88bdb0cb3",
+                        "size": 52
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://tips/SKILL.md",
+                    "frontmatter": {
+                      "name": "tips",
+                      "description": "Read tips"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://tips/extra.txt",
+                        "digest": "sha256:65110ea3b8b62b0c09742c368bf1527f0978b06dff7a1371ef7b4c98e244d91a",
+                        "size": 6
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://help/SKILL.md",
+                    "frontmatter": {
+                      "name": "help",
+                      "description": "Read help"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://help/SKILL.md",
+                        "digest": "sha256:88a2e1e45241abb4aa9d18b3fa8ded16cf73dd7cc72332ebb52b891dddad5dd6",
+                        "size": 49
+                      },
+                      {
+                        "uri": "skill://guide/notes.txt",
+                        "digest": "sha256:444e0fffbd825e9610ff5b199485707a0c895339ae80c15cc8a8aee41b106fda",
+                        "size": 6
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://faq/SKILL.md",
+                    "frontmatter": {
+                      "name": "faq",
+                      "description": "Read faq"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://faq/SKILL.md",
+                        "digest": "sha256:d32dba737649604ff58e969510b36d53137feba430e9a58640397a61cf1833e0",
+                        "size": 46
+                      },
+                      {
+                        "uri": "skill://faq/SKILL.md",
+                        "digest": "sha256:d32dba737649604ff58e969510b36d53137feba430e9a58640397a61cf1833e0",
+                        "size": 46
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:guide"
+                ],
+                "unavailable_skills": {
+                  "docs:#1": "its server's entry is malformed",
+                  "docs:#2": "its server's entry is malformed",
+                  "docs:#3": "its server's entry is malformed",
+                  "docs:#4": "its server's entry is malformed"
+                }
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

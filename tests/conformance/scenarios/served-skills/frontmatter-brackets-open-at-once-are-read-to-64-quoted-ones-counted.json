@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/frontmatter-brackets-open-at-once-are-read-to-64-quoted-ones-counted",
+  "title": "64 brackets open at once load; 65 fail the check, though they are quoted",
+  "rules": [
+    "§24.1",
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.1-005",
+    "RK-24.1-007"
+  ],
+  "notes": "Both frontmatters hold their brackets in a quoted text, which YAML reads as a plain string with no nesting: only the count of brackets open at once, quoted ones counted, refuses 'past'. RK-24.1-007 is cited in part: its served half (the content fails its check) is observed; its local half (a host's own SKILL.md past the bound cannot be parsed) needs a local skill written from raw frontmatter, which the local skill fixture does not write.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://at/SKILL.md",
+                    "frontmatter": {
+                      "name": "at",
+                      "description": "Brackets at",
+                      "mark": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://at/SKILL.md",
+                        "digest": "sha256:8a2a699a1c6c92e815249ee68ea2cf17dd20423ca13a9760bbbe2e596e76d48a",
+                        "size": 130
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://past/SKILL.md",
+                    "frontmatter": {
+                      "name": "past",
+                      "description": "Brackets past",
+                      "mark": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://past/SKILL.md",
+                        "digest": "sha256:8c4292eca25f3aee03e0a421a9827bd88dc9c4daa8d57b0a0d4c8564514dc57f",
+                        "size": 137
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://at/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://at/SKILL.md",
+                    "text": "---\nname: at\ndescription: Brackets at\nmark: \"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\"\n---\n\nAt the bound.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://past/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://past/SKILL.md",
+                    "text": "---\nname: past\ndescription: Brackets past\nmark: \"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[\"\n---\n\nPast the bound.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://past/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://past/SKILL.md",
+                  "frontmatter": {
+                    "name": "past",
+                    "description": "Brackets past",
+                    "mark": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://past/SKILL.md",
+                      "digest": "sha256:8c4292eca25f3aee03e0a421a9827bd88dc9c4daa8d57b0a0d4c8564514dc57f",
+                      "size": 137
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:at"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:past"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "At the bound.",
+                "uri": "skill://at/SKILL.md",
+                "origin": "docs"
+              }
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:past' changed on its server or could not be verified"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://at/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://past/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://past/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

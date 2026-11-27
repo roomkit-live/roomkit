@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-dynamic-skill-a-host-allows-is-taken-unverified",
+  "title": "A dynamic skill a host allows loads and reads its files with nothing to verify",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-032"
+  ],
+  "notes": "Cited in part: the content is taken with no digest or size to check, and a file the entry could not list is read. The 16 MiB bound on what is read of such a skill is not observed: reaching it takes 16 MiB of scripted content.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://live/SKILL.md",
+                    "frontmatter": {
+                      "name": "live",
+                      "description": "Live notes"
+                    },
+                    "resources": "dynamic"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://live/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://live/SKILL.md",
+                    "text": "---\nname: live\ndescription: Live notes\n---\n\nToday's notes.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://live/today.txt"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://live/today.txt",
+                    "text": "generated now"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs",
+          "allow_dynamic": true
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:live"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:live",
+          "filename": "today.txt"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Today's notes.",
+                "uri": "skill://live/SKILL.md",
+                "references": [],
+                "read_total": 59
+              }
+            },
+            {
+              "status": "ok",
+              "result": "generated now"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://live/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://live/today.txt"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

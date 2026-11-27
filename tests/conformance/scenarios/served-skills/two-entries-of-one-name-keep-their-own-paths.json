@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/two-entries-of-one-name-keep-their-own-paths",
+  "title": "Two entries sharing a frontmatter name keep distinct paths and load their own file",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-035"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://team-a/guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Team A guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://team-a/guide/SKILL.md",
+                        "digest": "sha256:cf4dcb773bc4f2ba502a2bec42624c064e5e7bf7d85c1c87e9fd1673bdb3f07a",
+                        "size": 61
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://team-b/guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Team B guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://team-b/guide/SKILL.md",
+                        "digest": "sha256:ae5194a7cdfc9454c1792fccf21e397feaaab96874eece7c11637fa1bc616fe2",
+                        "size": 61
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://team-b/guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://team-b/guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Team B guide\n---\n\nTeam B steps.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://team-a/guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://team-a/guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Team A guide\n---\n\nTeam A steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "snapshot"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:team-b/guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:team-a/guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": {
+                  "$unordered": [
+                    "docs:team-a/guide",
+                    "docs:team-b/guide"
+                  ]
+                }
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Team B steps.",
+                "uri": "skill://team-b/guide/SKILL.md"
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Team A steps.",
+                "uri": "skill://team-a/guide/SKILL.md"
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://team-b/guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://team-a/guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

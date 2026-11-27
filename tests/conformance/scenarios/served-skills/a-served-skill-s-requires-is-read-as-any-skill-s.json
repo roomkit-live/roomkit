@@ -1,0 +1,290 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-served-skill-s-requires-is-read-as-any-skill-s",
+  "title": "A served skill's requires refuses its activation as a host's skill's does",
+  "rules": [
+    "§24.3",
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-038"
+  ],
+  "notes": "Each frontmatter writes requires as a list of texts. Both skills are loaded first, so that no activation reads its SKILL.md, whichever comes first of the read and the prerequisite check, which the RFC does not order. docs:calendar needs a tool the conversation does not offer and its activation is refused as a host skill's is; docs:planner's tool is offered, and it is activated.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://calendar/SKILL.md",
+                    "frontmatter": {
+                      "name": "calendar",
+                      "description": "Calendar rules",
+                      "requires": [
+                        "calendar_read"
+                      ]
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://calendar/SKILL.md",
+                        "digest": "sha256:fe7a5f9e6b9b32dcec318a3d745c69c955c1e67403e705741168fb82f9786b27",
+                        "size": 100
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://planner/SKILL.md",
+                    "frontmatter": {
+                      "name": "planner",
+                      "description": "Planner rules",
+                      "requires": [
+                        "calendar_write"
+                      ]
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://planner/SKILL.md",
+                        "digest": "sha256:513c2cdd86eafa905a9dbde0ed96377b51f4954fbe6cf4fef1f4196be56404c8",
+                        "size": 98
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://calendar/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://calendar/SKILL.md",
+                    "text": "---\nname: calendar\ndescription: Calendar rules\nrequires:\n  - calendar_read\n---\n\nRules for calendar.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://planner/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://planner/SKILL.md",
+                    "text": "---\nname: planner\ndescription: Planner rules\nrequires:\n  - calendar_write\n---\n\nRules for planner.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:calendar"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:planner"
+        },
+        {
+          "method": "snapshot"
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "c1",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:calendar"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "calls": [
+                    {
+                      "id": "c2",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:planner"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                }
+              ]
+            },
+            "tools": [
+              {
+                "name": "calendar_write",
+                "returns": "written"
+              }
+            ]
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Rules for calendar."
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Rules for planner."
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "metadata": {
+                  "$unordered": [
+                    {
+                      "name": "docs:calendar",
+                      "extra_metadata": {
+                        "requires": "calendar_read"
+                      }
+                    },
+                    {
+                      "name": "docs:planner",
+                      "extra_metadata": {
+                        "requires": "calendar_write"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://calendar/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://planner/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Required tools not available: calendar_read\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c2",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

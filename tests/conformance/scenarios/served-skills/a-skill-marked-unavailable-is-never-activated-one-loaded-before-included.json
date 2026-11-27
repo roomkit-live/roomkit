@@ -1,0 +1,266 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-skill-marked-unavailable-is-never-activated-one-loaded-before-included",
+  "title": "An activation keeps what it loaded, and a skill marked unavailable never loads",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-055"
+  ],
+  "notes": "The second listing offers another entry for docs:guide: the loaded skill stays the one first read, with no new read. Once marked unavailable, it is neither loaded nor activated.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the new guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a75e11eaa1193153cdd4c02c38294c410afb7043147060661531a2bd7ccaf5b3",
+                        "size": 64
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "mark_unavailable",
+          "name": "docs:guide",
+          "reason": "withdrawn for review"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "activate",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:guide"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "uri": "skill://guide/SKILL.md",
+                "read_total": 67
+              }
+            },
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "uri": "skill://guide/SKILL.md",
+                "read_total": 67
+              }
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "content": "{\"error\": \"Skill 'docs:guide' is unavailable in this context: withdrawn for review\", \"available_skills\": []}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

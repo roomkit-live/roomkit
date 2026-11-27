@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-served-skill-s-read-never-reaches-another-server",
+  "title": "A served skill's content naming another server's skill causes no read there",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-066"
+  ],
+  "notes": "The other server serves a skill at the same URI as docs:guide, and a file of the same name: docs:guide's SKILL.md and file are read from docs:guide's own server. Its body points to the other server's skill tips by its URI and by a path; neither read leaves its own skill's directory, and the other server is asked nothing after its listing.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:8ca08a16f7dbdcce468c36a82c031d79365a433ecf7fce66b139e7cdad9d5499",
+                        "size": 97
+                      },
+                      {
+                        "uri": "skill://guide/notes.txt",
+                        "digest": "sha256:444e0fffbd825e9610ff5b199485707a0c895339ae80c15cc8a8aee41b106fda",
+                        "size": 6
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nSee skill://tips/SKILL.md and ../tips/SKILL.md.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/notes.txt"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/notes.txt",
+                    "text": "notes\n"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "other": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://tips/SKILL.md",
+                    "frontmatter": {
+                      "name": "tips",
+                      "description": "Read the tips"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://tips/SKILL.md",
+                        "digest": "sha256:91517681f151fc5bc500891c04cf133fa86da1658d04ca05f175c5e3317cd9ba",
+                        "size": 53
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Another guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:db68fc84e20062d609e30c58d2d7069df7b795975b66ac0226b1a0a65117f692",
+                        "size": 61
+                      },
+                      {
+                        "uri": "skill://guide/notes.txt",
+                        "digest": "sha256:0c4b835213b02446019d26432527e601c4e78f1cc7c2460d90ddb00ec20fa881",
+                        "size": 12
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "add_mcp_server",
+          "server": "other",
+          "label": "other"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:guide",
+          "filename": "notes.txt"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:guide",
+          "filename": "../tips/SKILL.md"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:guide",
+          "filename": "skill://tips/SKILL.md"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "See skill://tips/SKILL.md and ../tips/SKILL.md.",
+                "origin": "docs"
+              }
+            },
+            {
+              "status": "ok",
+              "result": "notes\n"
+            },
+            {
+              "status": "error",
+              "error": "SkillPathError",
+              "message": "Not a path inside the skill: '../tips/SKILL.md'"
+            },
+            {
+              "status": "error",
+              "error": "SkillPathError",
+              "message": "Not a path inside the skill: 'skill://tips/SKILL.md'"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/notes.txt"
+                }
+              }
+            ],
+            "other": [
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,560 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/frontmatter-nesting-is-read-to-64-levels-and-no-deeper",
+  "title": "A frontmatter nesting 64 collections loads; one nesting 65 fails its check",
+  "rules": [
+    "§24.1",
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.1-004",
+    "RK-24.1-007"
+  ],
+  "notes": "The YAML mapping of the frontmatter counts as the first level: 'at' nests 64 collections in block style (no bracket), 'past' 65. Each entry's frontmatter is what its SKILL.md reads as, so only the bound refuses 'past'. RK-24.1-007 is cited in part: its served half (the content fails its check) is observed; its local half (a host's own SKILL.md past the bound cannot be parsed) needs a local skill written from raw frontmatter, which the local skill fixture does not write.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://at/SKILL.md",
+                    "frontmatter": {
+                      "name": "at",
+                      "description": "Nested at",
+                      "nest": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "a": {
+                                        "a": {
+                                          "a": {
+                                            "a": {
+                                              "a": {
+                                                "a": {
+                                                  "a": {
+                                                    "a": {
+                                                      "a": {
+                                                        "a": {
+                                                          "a": {
+                                                            "a": {
+                                                              "a": {
+                                                                "a": {
+                                                                  "a": {
+                                                                    "a": {
+                                                                      "a": {
+                                                                        "a": {
+                                                                          "a": {
+                                                                            "a": {
+                                                                              "a": {
+                                                                                "a": {
+                                                                                  "a": {
+                                                                                    "a": {
+                                                                                      "a": {
+                                                                                        "a": {
+                                                                                          "a": {
+                                                                                            "a": {
+                                                                                              "a": {
+                                                                                                "a": {
+                                                                                                  "a": {
+                                                                                                    "a": {
+                                                                                                      "a": {
+                                                                                                        "a": {
+                                                                                                          "a": {
+                                                                                                            "a": {
+                                                                                                              "a": {
+                                                                                                                "a": {
+                                                                                                                  "a": {
+                                                                                                                    "a": {
+                                                                                                                      "a": {
+                                                                                                                        "a": {
+                                                                                                                          "a": {
+                                                                                                                            "a": {
+                                                                                                                              "a": {
+                                                                                                                                "a": {
+                                                                                                                                  "a": {
+                                                                                                                                    "a": {
+                                                                                                                                      "a": {
+                                                                                                                                        "a": {
+                                                                                                                                          "a": {
+                                                                                                                                            "a": {
+                                                                                                                                              "a": {
+                                                                                                                                                "a": {
+                                                                                                                                                  "a": {
+                                                                                                                                                    "a": "end"
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://at/SKILL.md",
+                        "digest": "sha256:b2380d85feeb4ebe6e15b50c7c59d6a2f82c3584c5e7db7a20e55ee31d13b9b8",
+                        "size": 4286
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://past/SKILL.md",
+                    "frontmatter": {
+                      "name": "past",
+                      "description": "Nested past",
+                      "nest": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "a": {
+                                        "a": {
+                                          "a": {
+                                            "a": {
+                                              "a": {
+                                                "a": {
+                                                  "a": {
+                                                    "a": {
+                                                      "a": {
+                                                        "a": {
+                                                          "a": {
+                                                            "a": {
+                                                              "a": {
+                                                                "a": {
+                                                                  "a": {
+                                                                    "a": {
+                                                                      "a": {
+                                                                        "a": {
+                                                                          "a": {
+                                                                            "a": {
+                                                                              "a": {
+                                                                                "a": {
+                                                                                  "a": {
+                                                                                    "a": {
+                                                                                      "a": {
+                                                                                        "a": {
+                                                                                          "a": {
+                                                                                            "a": {
+                                                                                              "a": {
+                                                                                                "a": {
+                                                                                                  "a": {
+                                                                                                    "a": {
+                                                                                                      "a": {
+                                                                                                        "a": {
+                                                                                                          "a": {
+                                                                                                            "a": {
+                                                                                                              "a": {
+                                                                                                                "a": {
+                                                                                                                  "a": {
+                                                                                                                    "a": {
+                                                                                                                      "a": {
+                                                                                                                        "a": {
+                                                                                                                          "a": {
+                                                                                                                            "a": {
+                                                                                                                              "a": {
+                                                                                                                                "a": {
+                                                                                                                                  "a": {
+                                                                                                                                    "a": {
+                                                                                                                                      "a": {
+                                                                                                                                        "a": {
+                                                                                                                                          "a": {
+                                                                                                                                            "a": {
+                                                                                                                                              "a": {
+                                                                                                                                                "a": {
+                                                                                                                                                  "a": {
+                                                                                                                                                    "a": {
+                                                                                                                                                      "a": "end"
+                                                                                                                                                    }
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://past/SKILL.md",
+                        "digest": "sha256:c0d29bece19ef1a163e9202f37338ecb537b2eb0ef0072b1466b85fc362eb528",
+                        "size": 4423
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://at/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://at/SKILL.md",
+                    "text": "---\nname: at\ndescription: Nested at\nnest:\n  a:\n    a:\n      a:\n        a:\n          a:\n            a:\n              a:\n                a:\n                  a:\n                    a:\n                      a:\n                        a:\n                          a:\n                            a:\n                              a:\n                                a:\n                                  a:\n                                    a:\n                                      a:\n                                        a:\n                                          a:\n                                            a:\n                                              a:\n                                                a:\n                                                  a:\n                                                    a:\n                                                      a:\n                                                        a:\n                                                          a:\n                                                            a:\n                                                              a:\n                                                                a:\n                                                                  a:\n                                                                    a:\n                                                                      a:\n                                                                        a:\n                                                                          a:\n                                                                            a:\n                                                                              a:\n                                                                                a:\n                                                                                  a:\n                                                                                    a:\n                                                                                      a:\n                                                                                        a:\n                                                                                          a:\n                                                                                            a:\n                                                                                              a:\n                                                                                                a:\n                                                                                                  a:\n                                                                                                    a:\n                                                                                                      a:\n                                                                                                        a:\n                                                                                                          a:\n                                                                                                            a:\n                                                                                                              a:\n                                                                                                                a:\n                                                                                                                  a:\n                                                                                                                    a:\n                                                                                                                      a:\n                                                                                                                        a:\n                                                                                                                          a:\n                                                                                                                            a:\n                                                                                                                              a: end\n---\n\nAt the bound.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://past/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://past/SKILL.md",
+                    "text": "---\nname: past\ndescription: Nested past\nnest:\n  a:\n    a:\n      a:\n        a:\n          a:\n            a:\n              a:\n                a:\n                  a:\n                    a:\n                      a:\n                        a:\n                          a:\n                            a:\n                              a:\n                                a:\n                                  a:\n                                    a:\n                                      a:\n                                        a:\n                                          a:\n                                            a:\n                                              a:\n                                                a:\n                                                  a:\n                                                    a:\n                                                      a:\n                                                        a:\n                                                          a:\n                                                            a:\n                                                              a:\n                                                                a:\n                                                                  a:\n                                                                    a:\n                                                                      a:\n                                                                        a:\n                                                                          a:\n                                                                            a:\n                                                                              a:\n                                                                                a:\n                                                                                  a:\n                                                                                    a:\n                                                                                      a:\n                                                                                        a:\n                                                                                          a:\n                                                                                            a:\n                                                                                              a:\n                                                                                                a:\n                                                                                                  a:\n                                                                                                    a:\n                                                                                                      a:\n                                                                                                        a:\n                                                                                                          a:\n                                                                                                            a:\n                                                                                                              a:\n                                                                                                                a:\n                                                                                                                  a:\n                                                                                                                    a:\n                                                                                                                      a:\n                                                                                                                        a:\n                                                                                                                          a:\n                                                                                                                            a:\n                                                                                                                              a:\n                                                                                                                                a: end\n---\n\nPast the bound.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://past/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://past/SKILL.md",
+                  "frontmatter": {
+                    "name": "past",
+                    "description": "Nested past",
+                    "nest": {
+                      "a": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "a": {
+                                        "a": {
+                                          "a": {
+                                            "a": {
+                                              "a": {
+                                                "a": {
+                                                  "a": {
+                                                    "a": {
+                                                      "a": {
+                                                        "a": {
+                                                          "a": {
+                                                            "a": {
+                                                              "a": {
+                                                                "a": {
+                                                                  "a": {
+                                                                    "a": {
+                                                                      "a": {
+                                                                        "a": {
+                                                                          "a": {
+                                                                            "a": {
+                                                                              "a": {
+                                                                                "a": {
+                                                                                  "a": {
+                                                                                    "a": {
+                                                                                      "a": {
+                                                                                        "a": {
+                                                                                          "a": {
+                                                                                            "a": {
+                                                                                              "a": {
+                                                                                                "a": {
+                                                                                                  "a": {
+                                                                                                    "a": {
+                                                                                                      "a": {
+                                                                                                        "a": {
+                                                                                                          "a": {
+                                                                                                            "a": {
+                                                                                                              "a": {
+                                                                                                                "a": {
+                                                                                                                  "a": {
+                                                                                                                    "a": {
+                                                                                                                      "a": {
+                                                                                                                        "a": {
+                                                                                                                          "a": {
+                                                                                                                            "a": {
+                                                                                                                              "a": {
+                                                                                                                                "a": {
+                                                                                                                                  "a": {
+                                                                                                                                    "a": {
+                                                                                                                                      "a": {
+                                                                                                                                        "a": {
+                                                                                                                                          "a": {
+                                                                                                                                            "a": {
+                                                                                                                                              "a": {
+                                                                                                                                                "a": {
+                                                                                                                                                  "a": {
+                                                                                                                                                    "a": "end"
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://past/SKILL.md",
+                      "digest": "sha256:c0d29bece19ef1a163e9202f37338ecb537b2eb0ef0072b1466b85fc362eb528",
+                      "size": 4423
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:at"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:past"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "At the bound.",
+                "uri": "skill://at/SKILL.md",
+                "origin": "docs"
+              }
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:past' changed on its server or could not be verified"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://at/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://past/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://past/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

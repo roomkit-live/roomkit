@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/metadata-keeps-license-compatibility-and-every-other-key-as-text",
+  "title": "A skill's license, compatibility and other keys are kept, the other keys as text",
+  "rules": [
+    "§24.2",
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.2-003",
+    "RK-24.2-008",
+    "RK-24.2-009"
+  ],
+  "notes": "The metadata is a served skill's, read from its entry's frontmatter (RFC §24.7); the local skill fixture writes no license or compatibility. The manifest shows the license and the compatibility of the skill that has them, and neither line for the one that has none; each of the two snapshots checks one skill's block, the RFC fixing no order between skills. A list's items are joined by commas; the space after each is not asserted.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide",
+                      "license": "MIT",
+                      "compatibility": "Needs network access",
+                      "version": 2,
+                      "tags": [
+                        "alpha",
+                        "beta"
+                      ],
+                      "owner": "docs-team"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://plain/SKILL.md",
+                    "frontmatter": {
+                      "name": "plain",
+                      "description": "Plain notes"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://plain/SKILL.md",
+                        "digest": "sha256:85521a4f932d4c1566a2f8d0177f3043e955e209e03f4c099dead5ce4761bbdd",
+                        "size": 53
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "snapshot"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "metadata": {
+                  "$unordered": [
+                    {
+                      "name": "docs:guide",
+                      "description": "Read the guide",
+                      "license": "MIT",
+                      "compatibility": "Needs network access",
+                      "allowed_tools": null,
+                      "extra_metadata": {
+                        "version": "2",
+                        "tags": {
+                          "$contains": [
+                            "alpha",
+                            ",",
+                            "beta"
+                          ]
+                        },
+                        "owner": "docs-team"
+                      }
+                    },
+                    {
+                      "name": "docs:plain",
+                      "description": "Plain notes",
+                      "license": null,
+                      "compatibility": null,
+                      "allowed_tools": null,
+                      "extra_metadata": {}
+                    }
+                  ]
+                },
+                "manifest": {
+                  "$contains": "  <skill name=\"docs:guide\" origin=\"docs\">\n    <description>“Read the guide”</description>\n    <license>“MIT”</license>\n    <compatibility>“Needs network access”</compatibility>\n  </skill>"
+                }
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "manifest": {
+                  "$contains": "  <skill name=\"docs:plain\" origin=\"docs\">\n    <description>“Plain notes”</description>\n  </skill>"
+                }
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

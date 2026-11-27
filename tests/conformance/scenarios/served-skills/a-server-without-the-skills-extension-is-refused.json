@@ -1,0 +1,58 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-server-without-the-skills-extension-is-refused",
+  "title": "Registering a server that does not declare the skills extension raises",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-016"
+  ],
+  "notes": "The server declares another extension only; nothing is asked of it.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "plain": {
+          "extensions": {
+            "io.example/other": {}
+          },
+          "replies": []
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "plain",
+          "label": "docs"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "error",
+              "error": "SkillDiscoveryError",
+              "message": "MCP server 'docs' does not declare the skills extension"
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_count": 0,
+                "has_served": false,
+                "has_entries": false,
+                "manifest": ""
+              }
+            }
+          ],
+          "requests": {
+            "plain": []
+          }
+        }
+      }
+    }
+  ]
+}

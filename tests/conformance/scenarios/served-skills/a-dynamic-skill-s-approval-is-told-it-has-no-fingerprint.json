@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-dynamic-skill-s-approval-is-told-it-has-no-fingerprint",
+  "title": "The approval asked for a dynamic skill is told it has no fingerprint",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-077"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://live/SKILL.md",
+                    "frontmatter": {
+                      "name": "live",
+                      "description": "Live notes"
+                    },
+                    "resources": "dynamic"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://live/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://live/SKILL.md",
+                    "text": "---\nname: live\ndescription: Live notes\n---\n\nToday's notes.\n"
+                  }
+                ]
+              }
+            }
+          ],
+          "approvals": [
+            true
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs",
+          "allow_dynamic": true,
+          "execution_tools": [
+            "host_*"
+          ]
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "activate",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:live"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "calls": [
+                    {
+                      "id": "run",
+                      "name": "host_run",
+                      "arguments": {}
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                }
+              ]
+            },
+            "tools": [
+              {
+                "name": "host_run",
+                "returns": "host ran"
+              }
+            ]
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://live/SKILL.md"
+                }
+              }
+            ]
+          },
+          "approvals": {
+            "remote": [
+              {
+                "name": "docs:live",
+                "label": "docs",
+                "uri": "skill://live/SKILL.md",
+                "fingerprint": null,
+                "room_id": "room-1",
+                "tool": "host_run"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "run",
+              "name": "host_run",
+              "content": "host ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

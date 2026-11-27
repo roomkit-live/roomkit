@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/registering-a-server-again-retires-what-it-no-longer-offers-everywhere",
+  "title": "Registering a server again retires the skills it drops or offers in a refused form",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-020"
+  ],
+  "notes": "The second listing drops docs:extra and offers docs:guide, loaded before, as a dynamic skill this host does not take: neither is served any more, in the registry that registered the server again nor in its copy.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://extra/SKILL.md",
+                    "frontmatter": {
+                      "name": "extra",
+                      "description": "Extra notes"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://extra/SKILL.md",
+                        "digest": "sha256:eb7daf72e8c15c6150400014118cd17d2e9ec5482f0694cc9e3090caea669b13",
+                        "size": 53
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": "dynamic"
+                  },
+                  {
+                    "uri": "skill://fresh/SKILL.md",
+                    "frontmatter": {
+                      "name": "fresh",
+                      "description": "Fresh notes"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://fresh/SKILL.md",
+                        "digest": "sha256:8467d57e9c1aefdc8c6d19b884dcf243092bde67fd8862ee1bcb8958989a8446",
+                        "size": 53
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "copy",
+          "target": "peer"
+        },
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:extra"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide",
+          "registry": "peer"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide",
+          "registry": "peer"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:extra",
+          "registry": "peer"
+        },
+        {
+          "method": "snapshot"
+        },
+        {
+          "method": "snapshot",
+          "registry": "peer"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps."
+              }
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:fresh"
+                ],
+                "unavailable_skills": {
+                  "docs:guide": "its server generates its content, so nothing of it can be verified, and this host does not take such skills"
+                }
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [],
+                "unavailable_skills": {
+                  "docs:guide": "its server generates its content, so nothing of it can be verified, and this host does not take such skills"
+                }
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-copy-without-the-names-its-source-marks-unavailable-never-asks-for-them",
+  "title": "A copy made without the unavailable names never asks the server for them",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-024"
+  ],
+  "notes": "The copy takes the server whole, so it asks the server for a name its listing did not hold (docs:other); docs:guide, which its source marks unavailable, it never asks for.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://other/SKILL.md"
+              },
+              "error": "no such skill"
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "mark_unavailable",
+          "name": "docs:guide",
+          "reason": "not in this context"
+        },
+        {
+          "method": "copy",
+          "target": "bare",
+          "marks": false
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide",
+          "registry": "bare"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide",
+          "registry": "bare"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:other",
+          "registry": "bare"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "error",
+              "error": "SkillValidationError",
+              "message": "Skill 'docs:guide' not found"
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "error",
+              "error": "SkillDiscoveryError",
+              "message": "Skill 'docs:other' not found on its server"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://other/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

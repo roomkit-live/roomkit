@@ -1,0 +1,291 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-skill-md-inside-a-served-skill-is-one-of-its-files",
+  "title": "A SKILL.md within a served skill's directory is read as a file, never activated",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-070"
+  ],
+  "notes": "The nested SKILL.md reaches the model as a file's text, its frontmatter unread, and the registry holds no skill for it. The two later turns' prompts carry the active skill's body (the fourth request's prompt holds docs:guide's, the fifth's lacks the nested file's): one matcher reads each prompt.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:b587e48e891ad4e99ef38dc988fe470b6e1078b44d4b4853b9e0d38c87dd586f",
+                        "size": 67
+                      },
+                      {
+                        "uri": "skill://guide/inner/SKILL.md",
+                        "digest": "sha256:960158a2194f8902e13fb0e09cf93133ac9f08dc9a8fc1b456d879eae324779b",
+                        "size": 59
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the guide.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/inner/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/inner/SKILL.md",
+                    "text": "---\nname: inner\ndescription: Inner skill\n---\n\nInner rules.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "install_channel",
+          "channel": {
+            "id": "agent",
+            "type": "ai",
+            "model": {
+              "rounds": [
+                {
+                  "calls": [
+                    {
+                      "id": "activate",
+                      "name": "activate_skill",
+                      "arguments": {
+                        "name": "docs:guide"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "calls": [
+                    {
+                      "id": "read",
+                      "name": "read_skill_reference",
+                      "arguments": {
+                        "skill_name": "docs:guide",
+                        "filename": "inner/SKILL.md"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "text": "done"
+                },
+                {
+                  "text": "again"
+                },
+                {
+                  "text": "once more"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "attach_channel",
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Hello"
+              }
+            }
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Again"
+              }
+            }
+          }
+        },
+        {
+          "method": "room_call",
+          "action": {
+            "call": "process_inbound",
+            "room_id": "room-1",
+            "message": {
+              "channel_id": "ws",
+              "sender_id": "ada",
+              "content": {
+                "type": "text",
+                "body": "Once more"
+              }
+            }
+          }
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:guide"
+                ]
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/inner/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "is_error": false,
+              "content": {
+                "$contains": "Follow the guide."
+              }
+            },
+            {
+              "tool_call_id": "read",
+              "content": "{\"filename\": \"inner/SKILL.md\", \"content\": \"---\\nname: inner\\ndescription: Inner skill\\n---\\n\\nInner rules.\\n\", \"origin\": \"docs\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$contains": "Follow the guide."
+          }
+        },
+        {
+          "system_prompt": {
+            "$lacks": "Inner rules."
+          }
+        }
+      ]
+    }
+  }
+}
