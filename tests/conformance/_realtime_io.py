@@ -181,7 +181,7 @@ def parked_send_workers(channel: RealtimeVoiceChannel) -> tuple[set[asyncio.Task
 IO_ARGUMENTS = {
     "realtime.transcribe": {"channel_id", "text", "role", "is_final"},
     "realtime.speech": {"channel_id", "edge"},
-    "realtime.audio": {"channel_id", "source", "frames"},
+    "realtime.audio": {"channel_id", "source", "frames", "room_id"},
     "realtime.response": {"channel_id", "edge"},
     "realtime.wait_idle": {"channel_id", "room_id", "timeout_ms"},
 }
@@ -207,6 +207,10 @@ async def io_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> An
         case "realtime.response":
             await _response(provider, session, spec["edge"])
         case "realtime.audio":
+            # The session of the room the call names, the channel's first
+            # when it names none (README, ``realtime.audio``).
+            if "room_id" in spec:
+                session = fixture.session_in(spec["room_id"])
             await _audio(fixture.channel, provider, session, spec)
         case "realtime.wait_idle":
             return await _went_idle(fixture.channel, spec)
