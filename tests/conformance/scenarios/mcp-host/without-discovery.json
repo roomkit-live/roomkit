@@ -66,11 +66,14 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             }
           ],
           "results_json": "[{\"result\":false},{\"result\":null},{\"result\":true},{\"result\":[]},{\"result\":{}},{\"result\":null},{\"result\":false}]",
-          "requests_json": "[{\"method\":\"initialize\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
         }
       }
     }

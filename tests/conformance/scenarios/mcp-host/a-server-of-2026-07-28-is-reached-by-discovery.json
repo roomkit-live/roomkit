@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/a-server-of-2026-07-28-is-reached-by-discovery",
+  "title": "A server of MCP 2026-07-28 is reached by its discovery, without a handshake: what it says of itself and its extensions are read from that result",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-008",
+    "RK-21.2-034"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer of MCP 2026-07-28 (era): it answers server/discover, takes no initialize and keeps no session; it checks, then leaves out of the observation, the protocol _meta entries each request carries. Python: tools/mcp.py _negotiate (the SDK client's auto mode); tests/test_mcp_discovery.py.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "era": "2026-07-28",
+        "server_info": {
+          "name": "modern",
+          "version": "2",
+          "vendor": {
+            "revision": 7
+          },
+          "optional": null
+        },
+        "extensions": {
+          "io.example/ext": {
+            "level": 1
+          }
+        },
+        "replies": [
+          {
+            "method": "tools/list",
+            "result": {
+              "tools": [
+                {
+                  "name": "lookup",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ],
+              "resultType": "complete",
+              "ttlMs": 0,
+              "cacheScope": "private"
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "modern",
+                "version": "2",
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "io.example/ext": {
+                  "level": 1
+                }
+              }
+            },
+            {
+              "result": [
+                "lookup"
+              ]
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "server/discover"
+            },
+            {
+              "method": "tools/list"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"name\":\"modern\",\"vendor\":{\"revision\":7},\"version\":\"2\"}},{\"result\":{\"io.example/ext\":{\"level\":1}}},{\"result\":[\"lookup\"]},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"tools/list\"}]"
+        }
+      }
+    }
+  ]
+}

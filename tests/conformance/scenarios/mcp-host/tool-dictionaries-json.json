@@ -178,6 +178,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -191,7 +194,7 @@
             }
           ],
           "results_json": "[{\"error\":\"not_connected\"},{\"result\":null},{\"result\":[{\"changes_state\":false,\"defer_loading\":false,\"description\":\"Find records\",\"name\":\"search\",\"parameters\":{\"properties\":{\"q\":{\"default\":null,\"type\":\"string\"}},\"type\":\"object\"},\"tags\":[\"crm\",\"lookup\"]},{\"changes_state\":false,\"defer_loading\":false,\"description\":\"\",\"name\":\"plain\",\"parameters\":{},\"tags\":[]}]},{\"result\":[{\"changes_state\":false,\"defer_loading\":false,\"description\":\"Find records\",\"name\":\"search\",\"parameters\":{\"properties\":{\"q\":{\"default\":null,\"type\":\"string\"}},\"type\":\"object\"},\"tags\":[\"crm\",\"lookup\"]},{\"changes_state\":false,\"defer_loading\":false,\"description\":\"\",\"name\":\"plain\",\"parameters\":{},\"tags\":[]}]},{\"result\":null},{\"error\":\"not_connected\"}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"next\"}}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"next\"}}]"
         }
       }
     }

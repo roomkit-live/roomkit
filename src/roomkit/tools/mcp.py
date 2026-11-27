@@ -9,8 +9,8 @@ import logging
 import os
 import re
 import warnings
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
@@ -57,6 +57,24 @@ larger one is left out (RFC §21.2)."""
 
 _TOOL_LIMIT = 512
 """The most tools a server's listing keeps (RFC §21.2)."""
+
+_NEGOTIATION = frozenset({"server/discover", "initialize"})
+"""The requests a connection agrees on the protocol with: the result kept is
+the one of whichever the server answered."""
+
+
+@asynccontextmanager
+async def _opened(read: Any, write: Any) -> AsyncGenerator[tuple[Any, Any]]:
+    """A transport already open, as the SDK's client enters one: its streams."""
+    yield read, write
+
+
+def _leaf(failures: BaseExceptionGroup[Any]) -> BaseException:
+    """The first failure inside *failures*, out of every group around it."""
+    failure: BaseException = failures
+    while isinstance(failure, BaseExceptionGroup):
+        failure = failure.exceptions[0]
+    return failure
 
 
 def _definition(tool: Any, target: str) -> AITool | None:
@@ -207,14 +225,27 @@ def _retrieved(task: asyncio.Task[Any]) -> None:
         task.exception()
 
 
-def _empty_listing(_result: dict[str, Any]) -> dict[str, Any]:
+_ENVELOPE = {"resultType": "complete", "ttlMs": 0, "cacheScope": "private"}
+"""The members MCP 2026-07-28 requires of a cacheable result, which the SDK
+checks on a 2026-07-28 connection (its earlier revisions drop them)."""
+
+
+def _enveloped(result: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """*body* with *result*'s envelope, as the SDK reads it in place of
+    *result*: the server's own ``resultType``, ``ttlMs`` and ``cacheScope``,
+    or the plainest ones where it sent none (the provider reads *result*
+    itself)."""
+    return body | {name: result.get(name, plain) for name, plain in _ENVELOPE.items()}
+
+
+def _empty_listing(result: dict[str, Any]) -> dict[str, Any]:
     """What the SDK reads in place of a ``tools/list`` page."""
-    return {"tools": []}
+    return _enveloped(result, {"tools": []})
 
 
-def _empty_read(_result: dict[str, Any]) -> dict[str, Any]:
+def _empty_read(result: dict[str, Any]) -> dict[str, Any]:
     """What the SDK reads in place of a ``resources/read`` result."""
-    return {"contents": []}
+    return _enveloped(result, {"contents": []})
 
 
 _MESSAGE_LIMIT = 4 * 1024 * 1024
@@ -518,7 +549,7 @@ class MCPToolProvider:
 
     async def __aenter__(self) -> MCPToolProvider:
         try:
-            from mcp import ClientSession
+            from mcp import Client
         except ImportError:
             raise ImportError(
                 "MCPToolProvider requires the 'mcp' package. "
@@ -528,20 +559,15 @@ class MCPToolProvider:
             raise RuntimeError("MCPToolProvider is already connected; exit it before re-entering")
 
         # Everything entered goes on one stack, so a failure half-way (a server
-        # that exits, an initialize that errors) still closes what was opened:
+        # that exits, a negotiation that errors) still closes what was opened:
         # for stdio, that is the server process.
         stack = AsyncExitStack()
         bound = asyncio.timeout(self._connect_timeout)
         try:
             async with bound:
                 capture = WireCapture()
-                read_stream, write_stream = capture.streams(*await self._open_transport(stack))
-                session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-                # The SDK runs its own handshake on a copy it can parse; the
-                # provider keeps the server's result as it sent it.
-                with capture.ticket(compatible_handshake) as handshake:
-                    await session.initialize()
-                init = handshake.taken()
+                streams = capture.streams(*await self._open_transport(stack))
+                session, init = await self._negotiate(Client, streams, stack, capture)
                 # Inside the try: a listing the catalogue cannot read releases
                 # what was opened, the stdio server included (RFC §21.2).
                 if self._discover:
@@ -567,9 +593,43 @@ class MCPToolProvider:
         )
         return self
 
+    async def _negotiate(
+        self,
+        client: Callable[..., Any],
+        streams: tuple[Any, Any],
+        stack: AsyncExitStack,
+        capture: WireCapture,
+    ) -> tuple[Any, dict[str, Any]]:
+        """Agree on the protocol with the server over *streams*; return the
+        session and the result the server agreed with, as it sent it (RFC
+        §21.2).
+
+        The provider probes ``server/discover`` and speaks MCP 2026-07-28 with
+        a server that answers it; one that refuses the probe, or leaves it
+        unanswered within the SDK's own probe bound, is reached through the
+        ``initialize`` handshake (the SDK client's ``auto`` mode). The legacy
+        HTTP+SSE transport, which 2026-07-28 does not define, goes straight
+        to the handshake. The SDK negotiates on a copy it can parse.
+        """
+        mode = "legacy" if self._transport == "sse" else "auto"
+        # The transport is open already, on *stack*: the client is handed its
+        # streams, and lists through the session, off the wire, not its cache.
+        connected = client(_opened(*streams), mode=mode, cache=None)
+        with capture.ticket(compatible_handshake, methods=_NEGOTIATION) as handshake:
+            try:
+                await stack.enter_async_context(connected)
+            except BaseExceptionGroup as failures:
+                # The client negotiates inside its session's task group: the
+                # caller gets the failure (an MCPError, a closed connection),
+                # not the group around it, as from a session entered alone.
+                # Re-chained to its own cause, so what lies under survives.
+                first = _leaf(failures)
+                raise first from first.__cause__
+        return connected.session, handshake.taken()
+
     def _keep_handshake(self, init: dict[str, Any]) -> None:
-        """Keep what the server's ``initialize`` result says of it, as it sent
-        it (RFC §21.2)."""
+        """Keep what the server's ``initialize`` or ``server/discover`` result
+        says of it, as it sent it (RFC §21.2)."""
         self._server_extensions = server_extensions(init)
         instructions = init.get("instructions")
         self._instructions = instructions if isinstance(instructions, str) else None
@@ -793,8 +853,8 @@ class MCPToolProvider:
     @property
     def instructions(self) -> str | None:
         """What the server published, when it connected, on how to use its
-        tools (``InitializeResult.instructions``); ``None`` when it published
-        nothing (RFC §21.2).
+        tools (the ``instructions`` of its discovery or handshake result);
+        ``None`` when it published nothing (RFC §21.2).
 
         The server's text, as it sent it: hand it to a channel's
         ``server_instructions``, which sets it apart and bounds it, rather than
@@ -805,8 +865,10 @@ class MCPToolProvider:
 
     @property
     def server_info(self) -> dict[str, Any]:
-        """What the server said of itself when it connected (``serverInfo``:
-        ``name``, ``version``...), as it sent it (RFC §21.2).
+        """What the server said of itself when it connected (``name``,
+        ``version``...: its handshake's ``serverInfo``, or the
+        ``io.modelcontextprotocol/serverInfo`` of its discovery's ``_meta``),
+        as it sent it (RFC §21.2).
 
         The server's own words, not a name for it: a host names a server by a
         label of its own (``server_instructions``, ``add_mcp_server``).

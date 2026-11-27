@@ -48,6 +48,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -55,7 +58,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":[]},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
         }
       }
     }

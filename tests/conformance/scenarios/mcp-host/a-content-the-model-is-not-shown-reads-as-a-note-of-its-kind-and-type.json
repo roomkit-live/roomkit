@@ -267,6 +267,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {

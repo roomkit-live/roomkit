@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/a-request-on-2026-07-28-carries-the-protocol-s-own-metadata",
+  "title": "On a 2026-07-28 connection every host request carries the protocol's own _meta entries, which the caller's _meta does not replace; the rest goes as written and the result comes back as sent",
+  "rules": [
+    "§21.2"
+  ],
+  "requirements": [
+    "RK-21.2-046"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer of MCP 2026-07-28 (era): it answers server/discover, takes no initialize and keeps no session; it checks, then leaves out of the observation, the protocol _meta entries each request carries. The third request's caller names its own protocol revision: the peer sees 2026-07-28 there, and the caller's other entries as written.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "era": "2026-07-28",
+        "replies": [
+          {
+            "method": "vendor/read",
+            "result": {
+              "value": 0,
+              "resultType": "complete",
+              "ttlMs": 0,
+              "cacheScope": "private"
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "nested": {
+                "value": 1
+              },
+              "_meta": {
+                "custom": "kept"
+              }
+            },
+            "result": {
+              "value": 1
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "_meta": {
+                "custom": null
+              }
+            },
+            "result": {
+              "value": 2
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "nested": {
+              "value": 1
+            },
+            "_meta": {
+              "custom": "kept"
+            }
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "_meta": {
+              "io.modelcontextprotocol/protocolVersion": "host-version",
+              "custom": null
+            }
+          }
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "value": 0,
+                "resultType": "complete",
+                "ttlMs": 0,
+                "cacheScope": "private"
+              }
+            },
+            {
+              "result": {
+                "value": 1
+              }
+            },
+            {
+              "result": {
+                "value": 2
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "server/discover"
+            },
+            {
+              "method": "vendor/read"
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "nested": {
+                  "value": 1
+                },
+                "_meta": {
+                  "custom": "kept"
+                }
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "_meta": {
+                  "custom": null
+                }
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"cacheScope\":\"private\",\"resultType\":\"complete\",\"ttlMs\":0,\"value\":0}},{\"result\":{\"value\":1}},{\"result\":{\"value\":2}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":\"kept\"},\"nested\":{\"value\":1}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null}}}]"
+        }
+      }
+    }
+  ]
+}

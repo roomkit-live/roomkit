@@ -185,6 +185,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -219,7 +222,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"contents\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"tools\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"skills\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"content\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"_meta\":{\"inner\":null},\"inner\":{\"optional\":null},\"items\":[null]}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{\"index\":0}},{\"method\":\"vendor/read\",\"params\":{\"index\":1}},{\"method\":\"vendor/read\",\"params\":{\"index\":2}},{\"method\":\"vendor/read\",\"params\":{\"index\":3}},{\"method\":\"vendor/read\",\"params\":{\"index\":4}}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{\"index\":0}},{\"method\":\"vendor/read\",\"params\":{\"index\":1}},{\"method\":\"vendor/read\",\"params\":{\"index\":2}},{\"method\":\"vendor/read\",\"params\":{\"index\":3}},{\"method\":\"vendor/read\",\"params\":{\"index\":4}}]"
         }
       }
     }

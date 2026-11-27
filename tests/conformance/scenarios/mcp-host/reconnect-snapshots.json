@@ -148,10 +148,16 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
               "method": "tools/list"
+            },
+            {
+              "method": "server/discover"
             },
             {
               "method": "initialize"
@@ -161,7 +167,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"name\":\"first\",\"version\":\"1\"}},{\"result\":{\"vendor/first\":{\"on\":true}}},{\"result\":{\"board\":{\"ui\":{\"csp\":\"self\",\"resourceUri\":\"ui://board/view.html\"}}}},{\"result\":null},{\"result\":null},{\"result\":{\"name\":\"second\",\"version\":\"2\"}},{\"result\":{}},{\"result\":{}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"},{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"tools/list\"}]"
         }
       }
     }

@@ -40,12 +40,23 @@ class Ticket:
     """One request whose result is read off the wire: the result, once it came.
 
     ``own_trace`` holds the trace keys the caller itself wrote in the
-    request's ``_meta``, which it keeps as written."""
+    request's ``_meta``, which it keeps as written. ``methods``, when given,
+    makes the ticket follow each request of those methods sent in its block,
+    not only the first: a negotiation that probes ``server/discover`` and
+    falls back to ``initialize`` is read from whichever was answered."""
 
     shown: Shown
     own_trace: dict[str, Any] = field(default_factory=dict)
+    methods: frozenset[str] | None = None
     result: dict[str, Any] | None = None
     request_id: Any = field(default=None, repr=False)
+
+    def follows(self, method: str) -> bool:
+        """Whether a request of *method* sent in the ticket's block is the
+        one its result is read from."""
+        if self.methods is None:
+            return self.request_id is None
+        return method in self.methods
 
     def taken(self) -> dict[str, Any]:
         """The result read off the wire, once the session's call returned.
@@ -80,12 +91,13 @@ class WireCapture:
 
     def __init__(self) -> None:
         from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
+        from mcp.types import JSONRPCError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse
 
         self._message = SessionMessage
         self._request = JSONRPCRequest
         self._notification = JSONRPCNotification
         self._response = JSONRPCResponse
+        self._error = JSONRPCError
         self._sent: dict[Any, Ticket] = {}
 
     def streams(self, read: Any, write: Any) -> tuple[Any, Any]:
@@ -94,10 +106,13 @@ class WireCapture:
         return _Incoming(read, self), _Outgoing(write, self)
 
     @contextmanager
-    def ticket(self, shown: Shown, meta: Any = None) -> Generator[Ticket]:
+    def ticket(
+        self, shown: Shown, meta: Any = None, *, methods: frozenset[str] | None = None
+    ) -> Generator[Ticket]:
         """Read off the wire the result of the first request sent in this
-        block, the session reading ``shown(result)`` in its place. *meta* is
-        the ``_meta`` its caller wrote, whose trace keys the request keeps.
+        block (with *methods*, of the last request of one of them sent in it),
+        the session reading ``shown(result)`` in its place. *meta* is the
+        ``_meta`` its caller wrote, whose trace keys the request keeps.
 
         The block is the one task that sends the request: the SDK's session
         writes a request from its caller's task.
@@ -107,7 +122,7 @@ class WireCapture:
             if isinstance(meta, dict)
             else {}
         )
-        ticket = Ticket(shown, own)
+        ticket = Ticket(shown, own, methods)
         token = _TICKET.set(ticket)
         try:
             yield ticket
@@ -122,9 +137,13 @@ class WireCapture:
         ticket = _TICKET.get()
         message = getattr(item, "message", None)
         binds = (
-            ticket is not None and ticket.request_id is None and isinstance(message, self._request)
+            ticket is not None
+            and isinstance(message, self._request)
+            and ticket.follows(message.method)
         )
         if binds and ticket is not None:
+            if ticket.request_id is not None:
+                self._sent.pop(ticket.request_id, None)
             ticket.request_id = _correlated(message.id)
             self._sent[ticket.request_id] = ticket
         if isinstance(message, (self._request, self._notification)):
@@ -146,6 +165,10 @@ class WireCapture:
 
     def _incoming(self, item: Any) -> Any:
         message = getattr(item, "message", None)
+        if isinstance(message, self._error):
+            # An error answers the request: no result to read for it.
+            self._sent.pop(_correlated(message.id), None)
+            return item
         if not isinstance(message, self._response):
             return item
         ticket = self._sent.pop(_correlated(message.id), None)

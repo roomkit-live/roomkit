@@ -108,6 +108,11 @@ _RECORDING_SERVER = textwrap.dedent(
         log.write(line)
         log.flush()
         message = json.loads(line)
+        if message.get("method") == "server/discover":
+            error = {"code": -32601, "message": "Method not found"}
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], "error": error}))
+            sys.stdout.write("\\n")
+            sys.stdout.flush()
         if message.get("method") == "initialize":
             result = {
                 "protocolVersion": "2025-11-25",
@@ -140,7 +145,7 @@ async def test_a_call_given_no_time_sends_nothing(call: str, tmp_path: Path) -> 
             else:
                 await provider.read_resource("file:///a", timeout=0)
     received = [json.loads(line)["method"] for line in log.read_text().splitlines()]
-    assert received == ["initialize", "notifications/initialized"]
+    assert received == ["server/discover", "initialize", "notifications/initialized"]
 
 
 async def test_a_listing_is_read_by_its_wire_names_only() -> None:

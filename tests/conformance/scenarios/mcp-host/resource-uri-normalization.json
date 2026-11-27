@@ -69,6 +69,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -79,7 +82,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"contents\":[{\"_meta\":null,\"mimeType\":null,\"text\":\"normalized\",\"uri\":\"https://example.com/a%20b\"}]}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"https://example.com/a%20b\"}}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"https://example.com/a%20b\"}}]"
         }
       }
     }

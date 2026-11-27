@@ -64,6 +64,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -74,7 +77,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/next\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/next\"}]"
         }
       }
     }

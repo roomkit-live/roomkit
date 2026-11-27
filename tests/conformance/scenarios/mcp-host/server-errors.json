@@ -70,6 +70,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -83,7 +86,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"mcp_error\",\"message\":\"unknown skill\"},{\"error\":\"mcp_error\",\"message\":\"unknown resource\"},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://missing\"}}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://missing\"}}]"
         }
       }
     }

@@ -139,10 +139,19 @@ def compatible_handshake(result: Mapping[str, Any]) -> dict[str, Any]:
     return parsable
 
 
+SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo"
+"""Where a ``server/discover`` result (MCP 2026-07-28) says what the server
+is: its ``_meta``, where an ``initialize`` result has a ``serverInfo``."""
+
+
 def server_info(handshake: Mapping[str, Any]) -> dict[str, Any]:
-    """What the server said of itself in its handshake, as it sent it, but for
-    the members it sent as ``null`` (in it and in each of its icons)."""
+    """What the server said of itself in its handshake or its discovery
+    result, as it sent it, but for the members it sent as ``null`` (in it and
+    in each of its icons)."""
     info = handshake.get("serverInfo")
+    meta = handshake.get("_meta")
+    if info is None and isinstance(meta, dict):
+        info = meta.get(SERVER_INFO_META_KEY)
     if not isinstance(info, dict):
         return {}
     kept = {name: copy.deepcopy(value) for name, value in info.items() if value is not None}

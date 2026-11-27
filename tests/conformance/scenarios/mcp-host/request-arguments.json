@@ -184,6 +184,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -221,7 +224,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"value\":0}},{\"result\":{\"value\":1}},{\"result\":{\"value\":2}},{\"result\":{\"value\":3}},{\"result\":{\"value\":4}},{\"result\":{\"value\":5}},{\"error\":\"validation_error\"},{\"result\":{\"value\":7}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\",\"params\":{\"nested\":{\"value\":3}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null,\"io.modelcontextprotocol/protocolVersion\":\"host-version\",\"progressToken\":\"host-token\"}}},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\",\"params\":{\"nested\":{\"value\":3}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null,\"io.modelcontextprotocol/protocolVersion\":\"host-version\",\"progressToken\":\"host-token\"}}},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"}]"
         }
       }
     }

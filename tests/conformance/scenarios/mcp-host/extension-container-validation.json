@@ -110,20 +110,32 @@
           ],
           "requests": [
             {
-              "method": "initialize"
+              "method": "server/discover"
             },
             {
               "method": "initialize"
             },
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
+            },
+            {
+              "method": "server/discover"
+            },
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "server/discover"
             },
             {
               "method": "initialize"
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"initialize\"},{\"method\":\"initialize\"},{\"method\":\"initialize\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
         }
       }
     }

@@ -8,6 +8,17 @@ import json
 from contextlib import suppress
 from typing import Any
 
+_MODERN = "2026-07-28"
+"""The MCP revision a peer with this ``era`` speaks: discovery, no handshake,
+no session."""
+
+_PROTOCOL_KEYS = (
+    "io.modelcontextprotocol/protocolVersion",
+    "io.modelcontextprotocol/clientInfo",
+    "io.modelcontextprotocol/clientCapabilities",
+)
+"""The ``_meta`` entries every request of a 2026-07-28 connection carries."""
+
 
 class MCPPeer:
     """Serve scripted JSON-RPC replies without replacing the client's SDK."""
@@ -90,8 +101,14 @@ class MCPPeer:
         if not 0 < length <= 4 * 1024 * 1024:
             raise ValueError("MCP fixture needs a bounded JSON body")
         message = json.loads(await reader.readexactly(length))
+        if self.modern:
+            named = next(
+                (v.strip() for k, v in headers.items() if k.lower() == b"mcp-method"), None
+            )
+            if named != message.get("method", "").encode():
+                self.problems.append(f"MCP request {message.get('method')} named {named!r}")
         if "id" not in message:
-            await self._send(writer, 202, b"")
+            await self._send(writer, 202, b"", session=not self.modern)
             return
         reply = self._reply(message)
         if reply is None:
@@ -99,16 +116,23 @@ class MCPPeer:
             return
         encoded = json.dumps(reply, ensure_ascii=False).encode()
         if self.spec.get("framing", "json") == "sse":
-            await self._send(writer, 200, b"event: message\ndata: " + encoded + b"\n\n", sse=True)
+            body = b"event: message\ndata: " + encoded + b"\n\n"
+            await self._send(writer, 200, body, sse=True, session=not self.modern)
         else:
-            await self._send(writer, 200, encoded)
+            await self._send(writer, 200, encoded, session=not self.modern)
+
+    @property
+    def modern(self) -> bool:
+        """Whether the peer is a server of MCP 2026-07-28 (``era``)."""
+        return self.spec.get("era") == _MODERN
 
     def _reply(self, message: dict[str, Any]) -> dict[str, Any] | None:
         method = message["method"]
         response = {"jsonrpc": "2.0", "id": message["id"]}
-        if method == "initialize":
-            self.requests.append({"method": method})
-            return response | {"result": self._initialization(message)}
+        if method in ("initialize", "server/discover"):
+            return self._negotiation(method, message, response)
+        if self.modern:
+            message = self._without_protocol_meta(message)
         observed = {"method": method}
         if "params" in message:
             observed["params"] = message["params"]
@@ -141,6 +165,55 @@ class MCPPeer:
         field = "error" if "error" in scripted else "result"
         return response | {field: scripted[field]}
 
+    def _negotiation(
+        self, method: str, message: dict[str, Any], response: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The answer to a request that negotiates the protocol, recorded by
+        its method only: a server of an earlier revision knows no discovery
+        and the client falls back to the handshake; a 2026-07-28 server
+        answers discovery and takes no handshake."""
+        self.requests.append({"method": method})
+        if method == "server/discover" and self.modern:
+            return response | {"result": self._discovery()}
+        if method == "initialize" and not self.modern:
+            return response | {"result": self._initialization(message)}
+        if method == "initialize":
+            self.problems.append("MCP 2026-07-28 peer received an initialize")
+        return response | {"error": {"code": -32601, "message": "Method not found"}}
+
+    def _discovery(self) -> dict[str, Any]:
+        result = self._initialization({})
+        meta = {"io.modelcontextprotocol/serverInfo": result.pop("serverInfo")}
+        del result["protocolVersion"]
+        return result | {
+            "supportedVersions": [_MODERN],
+            "resultType": "complete",
+            "ttlMs": 0,
+            "cacheScope": "private",
+            "_meta": meta,
+        }
+
+    def _without_protocol_meta(self, message: dict[str, Any]) -> dict[str, Any]:
+        """*message* without the ``_meta`` entries every 2026-07-28 request
+        carries, which the peer checks: its revision, the client's identity
+        and capabilities. A ``_meta`` or ``params`` left empty goes too."""
+        message = copy.deepcopy(message)
+        params = message.get("params")
+        meta = params.get("_meta") if isinstance(params, dict) else None
+        if not isinstance(meta, dict) or meta.get(_PROTOCOL_KEYS[0]) != _MODERN:
+            self.problems.append(f"MCP request {message['method']} names no 2026-07-28 revision")
+            return message
+        for key in _PROTOCOL_KEYS[1:]:
+            if not isinstance(meta.get(key), dict):
+                self.problems.append(f"MCP request {message['method']} carries no {key}")
+        for key in _PROTOCOL_KEYS:
+            meta.pop(key, None)
+        if not meta:
+            del params["_meta"]
+        if not params:
+            del message["params"]
+        return message
+
     def _initialization(self, message: dict[str, Any]) -> dict[str, Any]:
         spec = self.spec
         if "initializations" in spec:
@@ -163,13 +236,19 @@ class MCPPeer:
 
     @staticmethod
     async def _send(
-        writer: asyncio.StreamWriter, status: int, body: bytes, *, sse: bool = False
+        writer: asyncio.StreamWriter,
+        status: int,
+        body: bytes,
+        *,
+        sse: bool = False,
+        session: bool = True,
     ) -> None:
         kind = "text/event-stream" if sse else "application/json"
+        # A 2026-07-28 server keeps no session.
+        held = "Mcp-Session-Id: conformance-session\r\n" if session else ""
         headers = (
             f"HTTP/1.1 {status} Response\r\nContent-Type: {kind}\r\n"
-            f"Content-Length: {len(body)}\r\nConnection: close\r\n"
-            "Mcp-Session-Id: conformance-session\r\n\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n{held}\r\n"
         )
         writer.write(headers.encode() + body)
         await writer.drain()

@@ -130,6 +130,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -152,7 +155,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"result\":{\"ok\":true}},{\"result\":{\"_meta\":{\"nested\":null},\"ok\":true}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"},{\"method\":\"vendor/read\"}]"
         }
       }
     }

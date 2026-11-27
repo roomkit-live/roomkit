@@ -97,11 +97,14 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             }
           ],
           "results_json": "[{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"result\":null},{\"result\":null},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"}]",
-          "requests_json": "[{\"method\":\"initialize\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
         }
       }
     }

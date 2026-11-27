@@ -2830,8 +2830,9 @@ policy admits: with the archive first in the chain and kept out, a bare
 
 #### Server instructions
 
-A server may publish, when it connects, how to use its tools
-(`InitializeResult.instructions`). `mcp.instructions` keeps that text (`None`
+A server may publish, when it connects, how to use its tools (the
+`instructions` of its discovery result, MCP 2026-07-28, or of its `initialize`
+result). `mcp.instructions` keeps that text (`None`
 when the server sent none) and `mcp.server_info` what the server says of itself
 (`name`, `version`). Hand the instructions to the channel, under a label of
 your own for each server:

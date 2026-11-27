@@ -90,10 +90,13 @@
           "results_json": "[{\"result\":null},{\"result\":{\"description\":{\"vendor\":true},\"icons\":[{\"nested\":{\"keep\":null},\"src\":\"https://example.invalid/icon.png\"},{\"src\":\"icon.png\",\"theme\":\"vendor-theme\"}],\"name\":\"host-test\",\"vendor\":{\"keep\":null},\"version\":\"1\"}},{\"result\":null}]",
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             }
           ],
-          "requests_json": "[{\"method\":\"initialize\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
         }
       }
     }

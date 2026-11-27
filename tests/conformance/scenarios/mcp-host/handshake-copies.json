@@ -119,11 +119,14 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             }
           ],
           "results_json": "[{\"result\":null},{\"result\":{\"name\":\"host-test\",\"vendor\":{\"revision\":99},\"version\":\"1\"}},{\"result\":{\"name\":\"host-test\",\"vendor\":{\"revision\":7},\"version\":\"1\"}},{\"result\":{\"io.modelcontextprotocol/skills\":{\"directoryRead\":true,\"nested\":{\"unchanged\":false}}}},{\"result\":{\"io.modelcontextprotocol/skills\":{\"directoryRead\":true,\"nested\":{\"unchanged\":true}}}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"}]"
         }
       }
     }

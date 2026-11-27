@@ -80,6 +80,9 @@
           ],
           "requests": [
             {
+              "method": "server/discover"
+            },
+            {
               "method": "initialize"
             },
             {
@@ -93,7 +96,7 @@
             }
           ],
           "results_json": "[{\"result\":null},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
-          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\"}]"
+          "requests_json": "[{\"method\":\"server/discover\"},{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\"}]"
         }
       }
     }
