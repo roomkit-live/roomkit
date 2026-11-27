@@ -178,6 +178,8 @@ TELEGRAM_CAPABILITIES = ChannelCapabilities(
         ChannelMediaType.LOCATION,
     ],
     max_length=4096,
+    # The provider sends a message's buttons as an inline keyboard (RFC §6.3).
+    supports_buttons=True,
     supports_edit=True,
     supports_delete=True,
     supports_reactions=True,

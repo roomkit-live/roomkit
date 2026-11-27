@@ -40,9 +40,19 @@ class TestTelegramChannel:
         assert len(provider.sent) == 1
 
     async def test_capabilities(self) -> None:
+        # RFC §6.3, the channel's row: its media types, and buttons (its
+        # provider sends them as an inline keyboard), edit and delete.
         ch = TelegramChannel("tg1")
         caps = ch.capabilities()
-        assert ChannelMediaType.LOCATION in caps.media_types
+        assert set(caps.media_types) == {
+            ChannelMediaType.TEXT,
+            ChannelMediaType.RICH,
+            ChannelMediaType.MEDIA,
+            ChannelMediaType.AUDIO,
+            ChannelMediaType.VIDEO,
+            ChannelMediaType.LOCATION,
+        }
+        assert caps.supports_buttons is True
         assert caps.supports_edit is True
         assert caps.supports_delete is True
         assert caps.supports_reactions is True
