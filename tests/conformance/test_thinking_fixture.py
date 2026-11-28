@@ -38,6 +38,7 @@ from tests.conformance._thinking import ScriptedThinker, ThinkingFailedError
         {"llm": {}},
         {"llm": {"model": {"rounds": []}, "timeout_ms": "1"}},
         {"llm": {"model": {"rounds": []}, "max_tokens": 1.5}},
+        {"llm": {"model": {"rounds": []}, "max_tokens": -1}},
         {"llm": {"model": {"rounds": []}, "misspelled": 1}},
         {"llm": {"model": {"rounds": []}}, "thoughts": [{"thought": {}}]},
     ],

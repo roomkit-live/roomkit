@@ -58,6 +58,9 @@ _CLASSIFIER = {"classifier": {"calls": [{"answers": {}}]}, "agent_name": "Nova"}
         {**_CLASSIFIER, "composition": {"decision": {"mode": "speak"}, "misspelled": 1}},
         {"answer_only": {"people": []}, **_SPEAK},
         {"answer_only": ["alice"], **_SPEAK},
+        {**_CLASSIFIER, "questions": {"pick": {"instructions": "?", "options": {"a": ""}}}},
+        {**_CLASSIFIER, "questions": {"level": {"instructions": "?", "levels": "abc"}}},
+        {**_CLASSIFIER, "questions": {"hush": {"instructions": "?", "yes": 1}}},
     ],
 )
 def test_invalid_policy_is_refused_before_product_execution(policy: Any) -> None:
@@ -171,3 +174,26 @@ async def test_a_scripted_answer_the_question_cannot_take_is_a_problem_not_a_fal
     with pytest.raises(ClassifierError):
         await classifier.classify("state", questions)
     assert len(problems) == 1
+
+
+@pytest.mark.parametrize(
+    "dispatch",
+    [
+        {"classifier": {"calls": [{"answers": {}}]}, "max_agents": 1.5},
+        {"classifier": {"calls": [{"answers": {}}]}, "recent": True},
+        {"classifier": {"calls": [{"answers": {}}]}, "threshold": "0.5"},
+        {"classifier": {"calls": []}},
+        {"classifier": {"calls": [{"answers": {}}]}, "decisions": [["dev"]]},
+    ],
+)
+def test_a_malformed_classifier_dispatch_is_refused_before_the_discussion_runs(
+    dispatch: dict[str, Any],
+) -> None:
+    """A failure in deciding is the discussion's fallback: a malformed control
+    would read as the product's behaviour."""
+    scenario = {
+        "setup": {
+            "strategies": [{"id": "d", "discussion": {"agents": ["a"], "dispatch": dispatch}}]
+        }
+    }
+    assert any("dispatch" in problem for problem in unknown_members(scenario))
