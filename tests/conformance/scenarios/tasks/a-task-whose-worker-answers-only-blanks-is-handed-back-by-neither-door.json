@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-task-whose-worker-answers-only-blanks-is-handed-back-by-neither-door",
+  "title": "A task whose worker answers only blanks completes with nothing to say: neither a relayed nor a posted hand-back reaches the notified agent, nor one to a transport the room, while a task with something to say is relayed",
+  "rules": [
+    "§23.3 step 8"
+  ],
+  "requirements": [
+    "RK-23.3-055",
+    "RK-23.3-068"
+  ],
+  "notes": "A worker that answers only blanks (a space, a newline, a tab) completes its task (an empty answer fails it, empty_response: tasks/a-failed-task-with-nothing-to-say-is-handed-back-as-failed, which shows that a task that did not complete is still handed back). Its output says nothing, so a relayed hand-back opens no turn of the notified agent, a posted one posts nothing (RK-23.3-068), and one to a transport delivers nothing through it. The last task, whose worker says something, is relayed: the notified agent's one turn is that task's, its instruction its own record (RK-23.3-057), which carries the task's result, its answer the room's. Cited in part: for RK-23.3-055, a channel hosting a realtime model notified is not observed (no realtime feature here), its hand-back going through the same check; for RK-23.3-068, a task the notified agent cancelled itself, which posts nothing either, is not observed here. Decided in HITL 33fc95c5 (option A): an output of blanks is nothing to say, on both doors. Python: core/mixins/delegation.py _deliver_delegation_result, tasks/posting.py posted_text.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "blank-worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": " \n\t "
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "lead",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Here it is."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "lead",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "blank-worker",
+      "task": "Relay me.",
+      "notify": "lead",
+      "as": "relayed"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$relayed",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": " \n\t "
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "blank-worker",
+      "task": "Post me.",
+      "notify": "lead",
+      "as": "posted",
+      "hand_back": "post"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$posted",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": " \n\t "
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "blank-worker",
+      "task": "Tell the phone.",
+      "notify": "sms",
+      "as": "told"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$told",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": " \n\t "
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "notify": "lead",
+      "as": "spoken"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$spoken",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Found it."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "lead": [
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "lead"
+          },
+          "content": {
+            "body": {
+              "$contains": "Found it."
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "lead"
+          },
+          "content": {
+            "type": "text",
+            "body": "Here it is."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "source": {
+              "channel_id": "lead"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
