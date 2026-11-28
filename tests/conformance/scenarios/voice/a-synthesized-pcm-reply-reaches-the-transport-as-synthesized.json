@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-synthesized-pcm-reply-reaches-the-transport-as-synthesized",
+  "title": "With no outbound stage, a reply synthesized as PCM reaches the transport chunk for chunk with the samples its synthesizer produced",
+  "rules": [
+    "§17.6",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-17.6-030"
+  ],
+  "notes": "The scripted synthesizer gives a chunk per word, the bytes of mock-audio-<word> padded to an even length, 16 kHz pcm_s16le: the two words' chunks differ, so their order and every byte are read. voice/an-encoded-tts-chunk-never-reaches-the-transport shows the other half of the unit's voice path, an encoded chunk refused before the transport.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "tts": {}
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Hi there."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Hi there."
+          ],
+          "chunks": {
+            "alice": [
+              {
+                "data": "bW9jay1hdWRpby1IaQA=",
+                "sample_rate": 16000,
+                "format": "pcm_s16le"
+              },
+              {
+                "data": "bW9jay1hdWRpby10aGVyZS4A",
+                "sample_rate": 16000,
+                "format": "pcm_s16le"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
