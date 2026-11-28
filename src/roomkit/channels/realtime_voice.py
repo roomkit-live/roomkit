@@ -897,7 +897,7 @@ class RealtimeVoiceChannel(
 
         with self._state_lock:
             parent = self._session_spans.get(session_id)
-        token = set_current_span(parent) if parent else None
+        token = set_current_span(parent, telemetry=self._telemetry_provider) if parent else None
         return parent, token
 
     def _propagate_telemetry(self) -> None:

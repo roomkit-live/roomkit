@@ -507,6 +507,7 @@ class HelpersMixin:
             index,
             parent_span_id=parent_id,
             parent_span_ctx=parent_ctx,
+            parent_span_telemetry=self._telemetry,
             room_created_at=await self._room_created_at(room_id),
         )
 

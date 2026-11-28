@@ -335,6 +335,7 @@ class InjectedEventsMixin(HelpersMixin):
             plan = _injected_plan(committed, ready, planned, targets, mutation_hook)
             plan.parent_span_id = parent_id
             plan.parent_span_ctx = parent_ctx
+            plan.parent_span_telemetry = self._telemetry
             return plan
 
         stored = await self._commit_to_lane(

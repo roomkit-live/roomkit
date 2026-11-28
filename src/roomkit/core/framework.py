@@ -1846,7 +1846,9 @@ class RoomKit(
             channel_id=channel_id,
             attributes={"event_type": str(event.type)},
         )
-        token = set_current_span(span_id, telemetry_ctx=telemetry.get_span_context(span_id))
+        token = set_current_span(
+            span_id, telemetry_ctx=telemetry.get_span_context(span_id), telemetry=telemetry
+        )
         cascade = self._cascades.new(room_id, reentry_budget=entry.budget)
         try:
             result, handed = await self._injection_section(event, entry, cascade, deadline)

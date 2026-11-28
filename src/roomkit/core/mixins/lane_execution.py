@@ -658,7 +658,7 @@ class LaneExecutionMixin(HelpersMixin):
         )
 
         async def _consume() -> None:
-            with restored_span(parent_id, telemetry_ctx=parent_ctx):
+            with restored_span(parent_id, telemetry_ctx=parent_ctx, telemetry=telemetry):
                 await cascade.wait_detached()
                 if not cascade.streams or cascade.cancelled is not None:
                     return
@@ -847,7 +847,11 @@ class LaneExecutionMixin(HelpersMixin):
     async def _write_dropped_side_effects(self, plan: DeliveryPlan) -> None:
         """:meth:`_store_dropped_side_effects`'s write, under the planner's
         span, as a set's aftermath runs."""
-        with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
+        with restored_span(
+            plan.parent_span_id,
+            telemetry_ctx=plan.parent_span_ctx,
+            telemetry=plan.parent_span_telemetry,
+        ):
             await self._persist_side_effects(
                 plan.event.room_id,
                 list(plan.hook_tasks),

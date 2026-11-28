@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
     from roomkit.models.task import Observation, Task
     from roomkit.store.base import ConversationStore
+    from roomkit.telemetry.base import TelemetryProvider
 
 logger = logging.getLogger("roomkit.lanes")
 
@@ -120,12 +121,13 @@ class DeliveryPlan:
     # its own (RFC §9.4).
     fire_after_broadcast: bool = True
     # Trace continuity across the lane boundary: the caller's current span
-    # (and its backend context), captured at plan time. The lane executor
-    # runs on a fresh contextvars context, so without these the broadcast
-    # span, the post-plan hook spans and the reentry pass's plan would be
-    # orphans instead of children of the inbound span.
+    # (its backend context, its provider), captured at plan time. The lane
+    # executor runs on a fresh contextvars context, so without these the
+    # broadcast span, the post-plan hook spans and the reentry pass's plan
+    # would be orphans instead of children of the inbound span.
     parent_span_id: str | None = None
     parent_span_ctx: Any = None
+    parent_span_telemetry: TelemetryProvider | None = None
     # True on the root pass of an inbound/send_event call: emits
     # ``event_processed`` once the delivery set has executed.
     emit_processed: bool = False
@@ -617,14 +619,16 @@ class CursorEntry:
     nothing. Every committed index MUST reach its lane as exactly one entry —
     a missing one is a permanent hole the gap policy will eventually skip.
 
-    ``parent_span_id`` / ``parent_span_ctx`` are the span of the call that
-    committed it, as a plan's: the cursor write at its turn stays in that
-    call's trace. ``room_created_at`` is the room's, as an :class:`ExecEntry`'s.
+    ``parent_span_id`` / ``parent_span_ctx`` / ``parent_span_telemetry`` are
+    the span of the call that committed it, as a plan's: the cursor write at
+    its turn stays in that call's trace. ``room_created_at`` is the room's,
+    as an :class:`ExecEntry`'s.
     """
 
     index: int
     parent_span_id: str | None = None
     parent_span_ctx: Any = None
+    parent_span_telemetry: TelemetryProvider | None = None
     room_created_at: datetime | None = None
 
 
@@ -635,9 +639,12 @@ def _in_trace_of(entry: ExecEntry | CursorEntry | None) -> contextlib.AbstractCo
     context, which holds no span."""
     if entry is None:
         return contextlib.nullcontext()
-    if isinstance(entry, ExecEntry):
-        return restored_span(entry.plan.parent_span_id, telemetry_ctx=entry.plan.parent_span_ctx)
-    return restored_span(entry.parent_span_id, telemetry_ctx=entry.parent_span_ctx)
+    traced = entry.plan if isinstance(entry, ExecEntry) else entry
+    return restored_span(
+        traced.parent_span_id,
+        telemetry_ctx=traced.parent_span_ctx,
+        telemetry=traced.parent_span_telemetry,
+    )
 
 
 def _keep_side_effects(host: LaneHost, entry: ExecEntry) -> None:
@@ -1460,7 +1467,11 @@ class RoomDeliveryLane:
 
     async def _finish_effects(self, entry: ExecEntry, result: Any) -> None:
         plan = entry.plan
-        with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
+        with restored_span(
+            plan.parent_span_id,
+            telemetry_ctx=plan.parent_span_ctx,
+            telemetry=plan.parent_span_telemetry,
+        ):
             await self._host._post_plan_effects(plan, result, entry.cascade)
             if entry.cascade.cancelled is None:
                 await self._host._reentry_commit_pass(self.room_id, plan, result, entry.cascade)
@@ -1537,12 +1548,20 @@ class RoomLaneRegistry:
         *,
         parent_span_id: str | None = None,
         parent_span_ctx: Any = None,
+        parent_span_telemetry: TelemetryProvider | None = None,
         room_created_at: datetime | None = None,
     ) -> None:
         """Record a committed index with no delivery set (cursor no-op) of
         the room whose ``created_at`` is *room_created_at*, the span of the
         call that committed it carried with it."""
-        self.enqueue(room_id, CursorEntry(index, parent_span_id, parent_span_ctx, room_created_at))
+        entry = CursorEntry(
+            index,
+            parent_span_id,
+            parent_span_ctx,
+            parent_span_telemetry,
+            room_created_at=room_created_at,
+        )
+        self.enqueue(room_id, entry)
 
     def _try_retire(self, lane: RoomDeliveryLane) -> bool:
         """Idle-timeout retirement; no await between the check and the drop."""

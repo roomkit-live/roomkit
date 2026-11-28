@@ -206,7 +206,7 @@ class RoomTurns:
         context = room_as_asked(asked, now, channel.channel_id)
         telemetry = self._telemetry
         telemetry_ctx = telemetry.get_span_context(span_id) if telemetry and span_id else None
-        with restored_span(span_id, telemetry_ctx=telemetry_ctx):
+        with restored_span(span_id, telemetry_ctx=telemetry_ctx, telemetry=telemetry):
             output = await self._react(channel, event, binding, context)
         _refuse_unstreamed(channel, output)
         return output

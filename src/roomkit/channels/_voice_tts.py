@@ -674,7 +674,11 @@ class VoiceTTSMixin:
             return
         from roomkit.telemetry.context import reset_span, set_current_span
 
-        _tok = set_current_span(parent_span) if parent_span else None
+        _tok = (
+            set_current_span(parent_span, telemetry=getattr(self, "_telemetry", None))
+            if parent_span
+            else None
+        )
         try:
             with within_turn(chain_depth):
                 await self._framework.hook_engine.run_async_hooks(
@@ -1312,7 +1316,11 @@ class VoiceTTSMixin:
         from roomkit.telemetry.context import reset_span, set_current_span
 
         _parent = getattr(self, "_voice_session_spans", {}).get(session.id)
-        _tok = set_current_span(_parent) if _parent else None
+        _tok = (
+            set_current_span(_parent, telemetry=getattr(self, "_telemetry", None))
+            if _parent
+            else None
+        )
         try:
             final_text = text
 

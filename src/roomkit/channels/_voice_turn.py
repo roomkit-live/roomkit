@@ -446,7 +446,11 @@ class VoiceTurnMixin:
         )
         # Set voice session span as parent so INBOUND_PIPELINE is a child
         session_span = getattr(self, "_voice_session_spans", {}).get(session.id)
-        token = set_current_span(session_span) if session_span else None
+        token = (
+            set_current_span(session_span, telemetry=getattr(self, "_telemetry", None))
+            if session_span
+            else None
+        )
         try:
             # Deferred, so the user's message is committed before the turn can be
             # superseded: resuming speech cancels the delivery, never the commit.

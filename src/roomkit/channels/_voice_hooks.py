@@ -55,7 +55,11 @@ class VoiceHooksMixin:
     def _voice_span_ctx(self, session: VoiceSession) -> Generator[None, None, None]:
         """Set the voice session span as current for child spans."""
         parent = getattr(self, "_voice_session_spans", {}).get(session.id)
-        token = set_current_span(parent) if parent else None
+        token = (
+            set_current_span(parent, telemetry=getattr(self, "_telemetry", None))
+            if parent
+            else None
+        )
         try:
             yield
         finally:

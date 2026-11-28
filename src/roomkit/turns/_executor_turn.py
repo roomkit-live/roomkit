@@ -359,7 +359,7 @@ class ExecutorTurn:
             # it and whatever its context holds: its work reads the broadcast
             # as current, in the owner's trace (RFC §10.6.9, §15.7).
             remote = self._telemetry.extract_context(trace) if self._telemetry else None
-            context.run(set_current_span, span_id, telemetry_ctx=remote)
+            context.run(set_current_span, span_id, telemetry_ctx=remote, telemetry=self._telemetry)
         self._work = asyncio.get_running_loop().create_task(
             work, context=context, name=f"roomkit-turn-{self._request.turn_id}-work"
         )

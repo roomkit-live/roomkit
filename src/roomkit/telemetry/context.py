@@ -5,7 +5,10 @@ from __future__ import annotations
 import contextvars
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from roomkit.telemetry.base import TelemetryProvider
 
 _parent_span: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "roomkit_parent_span", default=None
@@ -19,6 +22,13 @@ _parent_span: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # to any key/instance mismatch across async boundaries.
 _parent_telemetry_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "roomkit_parent_telemetry_ctx", default=None
+)
+
+# The provider of the current span: the kit's, whose spans its telemetry
+# names to another process (``inject_context``) for a request the code under
+# the span sends elsewhere, an MCP server's (RK-21.2-057).
+_parent_telemetry: contextvars.ContextVar[TelemetryProvider | None] = contextvars.ContextVar(
+    "roomkit_parent_telemetry", default=None
 )
 
 
@@ -37,8 +47,20 @@ def get_current_telemetry_ctx() -> Any:
     return _parent_telemetry_ctx.get()
 
 
+def current_telemetry() -> TelemetryProvider | None:
+    """The provider the current span was set with, which names it to
+    another process (:meth:`~roomkit.telemetry.TelemetryProvider.inject_context`);
+    ``None`` when none was given. :func:`set_current_span` keeps it past
+    the span, so read it with :func:`get_current_span`. Internal, as
+    roomkit-rs's ``current_telemetry`` is hidden from its API."""
+    return _parent_telemetry.get()
+
+
 def set_current_span(
-    span_id: str | None, *, telemetry_ctx: Any = None
+    span_id: str | None,
+    *,
+    telemetry_ctx: Any = None,
+    telemetry: TelemetryProvider | None = None,
 ) -> contextvars.Token[str | None]:
     """Set the current span ID in context. Returns a token for reset.
 
@@ -46,9 +68,14 @@ def set_current_span(
         span_id: The roomkit span ID string.
         telemetry_ctx: Optional backend-specific context for direct parent
             propagation (e.g. OTel Context, Datadog span context).
+        telemetry: The provider that started the span, read back by
+            :func:`current_telemetry`. Like *telemetry_ctx*, kept as it was
+            when ``None``, and never reset by :func:`reset_span`.
     """
     if telemetry_ctx is not None:
         _parent_telemetry_ctx.set(telemetry_ctx)
+    if telemetry is not None:
+        _parent_telemetry.set(telemetry)
     return _parent_span.set(span_id)
 
 
@@ -59,24 +86,30 @@ def reset_span(token: contextvars.Token[str | None]) -> None:
 
 @contextmanager
 def restored_span(
-    span_id: str | None, *, telemetry_ctx: Any = None
+    span_id: str | None,
+    *,
+    telemetry_ctx: Any = None,
+    telemetry: TelemetryProvider | None = None,
 ) -> Generator[None, None, None]:
     """Make a captured span the current one for the duration of the block.
 
     For work that runs on a fresh :mod:`contextvars` context — a delivery
     lane executor, a detached stream consumer — and must attach the spans it
-    opens to the caller that planned it. Both variables are set
-    unconditionally and both are reset on exit: :func:`set_current_span`
-    keeps the previous backend context when handed ``None`` and
-    :func:`reset_span` never touches it, so restoring through that pair
-    would leave a stale backend context behind for the next span the task
-    opens. ``telemetry_ctx`` is whatever the provider's ``get_span_context``
-    returned for ``span_id`` (``None`` for providers that carry none).
+    opens to the caller that planned it. The span, its backend context and
+    its provider are set unconditionally and reset on exit:
+    :func:`set_current_span` keeps the previous backend context and provider
+    when handed ``None`` and :func:`reset_span` never touches them, so
+    restoring through that pair would leave stale ones behind for the next
+    span the task opens. ``telemetry_ctx`` is whatever the provider's
+    ``get_span_context`` returned for ``span_id`` (``None`` for providers
+    that carry none), and ``telemetry`` that provider.
     """
     span_token = _parent_span.set(span_id)
     ctx_token = _parent_telemetry_ctx.set(telemetry_ctx)
+    provider_token = _parent_telemetry.set(telemetry)
     try:
         yield
     finally:
+        _parent_telemetry.reset(provider_token)
         _parent_telemetry_ctx.reset(ctx_token)
         _parent_span.reset(span_token)

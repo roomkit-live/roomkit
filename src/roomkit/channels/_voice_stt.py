@@ -1314,7 +1314,11 @@ class VoiceSTTMixin:
             from roomkit.telemetry.context import reset_span, set_current_span
 
             _vs_parent = getattr(self, "_voice_session_spans", {}).get(session.id)
-            _vs_token = set_current_span(_vs_parent) if _vs_parent else None
+            _vs_token = (
+                set_current_span(_vs_parent, telemetry=getattr(self, "_telemetry", None))
+                if _vs_parent
+                else None
+            )
 
             with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
@@ -1587,7 +1591,11 @@ class VoiceSTTMixin:
         from roomkit.telemetry.context import reset_span, set_current_span
 
         _vs_parent = getattr(self, "_voice_session_spans", {}).get(session.id)
-        _vs_token = set_current_span(_vs_parent) if _vs_parent else None
+        _vs_token = (
+            set_current_span(_vs_parent, telemetry=getattr(self, "_telemetry", None))
+            if _vs_parent
+            else None
+        )
         # Whether this segment settled the response it held (RFC §12.3.12).
         settled = False
         try:

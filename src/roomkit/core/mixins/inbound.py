@@ -367,7 +367,9 @@ class InboundMixin(HelpersMixin):
         inbound_span_id = open_span()
         # Propagate backend-specific context for robust parent linking
         token = set_current_span(
-            inbound_span_id, telemetry_ctx=telemetry.get_span_context(inbound_span_id)
+            inbound_span_id,
+            telemetry_ctx=telemetry.get_span_context(inbound_span_id),
+            telemetry=telemetry,
         )
         _inbound_result: InboundResult | None = None
         try:

@@ -590,6 +590,7 @@ class EventRouter:
             exclude_delivery=exclude_delivery,
             parent_span_id=parent_span_id,
             parent_span_ctx=parent_span_ctx,
+            parent_span_telemetry=self._telemetry,
             defers_solicitation=self._defers is not None and self._defers(event.room_id),
         )
 
@@ -627,7 +628,9 @@ class EventRouter:
         parent_token = None
         if plan.parent_span_id is not None:
             parent_token = set_current_span(
-                plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx
+                plan.parent_span_id,
+                telemetry_ctx=plan.parent_span_ctx,
+                telemetry=plan.parent_span_telemetry,
             )
         span_id = telemetry.start_span(
             SpanKind.BROADCAST,
@@ -639,7 +642,7 @@ class EventRouter:
         )
         # Propagate backend-specific context for robust parent linking
         broadcast_token = set_current_span(
-            span_id, telemetry_ctx=telemetry.get_span_context(span_id)
+            span_id, telemetry_ctx=telemetry.get_span_context(span_id), telemetry=telemetry
         )
 
         result = BroadcastResult()

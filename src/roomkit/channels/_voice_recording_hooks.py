@@ -96,7 +96,11 @@ class VoiceRecordingHooksMixin:
     @contextmanager
     def _recording_span_ctx(self, session: VoiceSession) -> Generator[None, None, None]:
         parent = self._recording_span(session)
-        token = set_current_span(parent) if parent else None
+        token = (
+            set_current_span(parent, telemetry=getattr(self, "_telemetry", None))
+            if parent
+            else None
+        )
         try:
             yield
         finally:

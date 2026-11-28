@@ -448,8 +448,8 @@ class RealtimeToolsMixin:
         with self._state_lock:
             session_span = self._session_spans.get(session_id)
             parent = self._turn_spans.get(session_id) or session_span
-        token = set_current_span(session_span) if session_span else None
         telemetry = self._telemetry_provider
+        token = set_current_span(session_span, telemetry=telemetry) if session_span else None
         span_id = telemetry.start_span(
             kind,
             f"{prefix}:{call.name}",
