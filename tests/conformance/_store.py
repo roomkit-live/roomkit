@@ -18,12 +18,13 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import RoomStatus
 from roomkit.models.identity import Identity
 from roomkit.models.room import Room
-from roomkit.models.store_filter import EventFilter
+from roomkit.models.store_filter import EventFilter, RoomFilter
 from roomkit.models.verification import Verification, VerificationRequest
 from tests.conformance._calls import Call, read
 from tests.conformance._script import (
     SYSTEM_SOURCE,
     complete_event,
+    complete_observation,
     complete_participant,
     complete_task,
 )
@@ -55,8 +56,16 @@ def _event(template: Mapping[str, Any], spec: Mapping[str, Any]) -> Any:
     return complete_event(template, room_id, SYSTEM_SOURCE)
 
 
-def _event_filter(value: Mapping[str, Any], spec: Mapping[str, Any]) -> EventFilter:
-    return EventFilter.model_validate(value)
+def _event_filter(value: Mapping[str, Any] | None, spec: Mapping[str, Any]) -> EventFilter | None:
+    return None if value is None else EventFilter.model_validate(value)
+
+
+def _room_filter(value: Mapping[str, Any] | None, spec: Mapping[str, Any]) -> RoomFilter | None:
+    return None if value is None else RoomFilter.model_validate(value)
+
+
+def _observation(template: Mapping[str, Any], spec: Mapping[str, Any]) -> Any:
+    return complete_observation(template, template["room_id"], template["channel_id"])
 
 
 def _task(template: Mapping[str, Any], spec: Mapping[str, Any]) -> Any:
@@ -93,7 +102,9 @@ _RECORDS: dict[str, Callable[[Any, Mapping[str, Any]], Any]] = {
     "event": _event,
     "target": _event,
     "event_filter": _event_filter,
+    "room_filter": _room_filter,
     "task": _task,
+    "observation": _observation,
     "verification": _verification,
     "request": _verification_request,
     "identity": _identity,
@@ -151,7 +162,40 @@ STORE_ARGUMENTS: dict[str, set[str]] = {
     "store.create_verification_request": {"request"},
     "store.get_verification_request": {"request_id"},
     "store.update_verification_request": {"request"},
+    "store.update_room": {"room"},
+    "store.list_rooms": {"offset", "limit"},
+    "store.find_rooms": {"organization_id", "status", "metadata_filter", "limit", "offset"},
+    "store.load_room_context": {"room_id"},
+    "store.get_conversation": {"room_id", "limit", "after_index"},
+    "store.get_delivered_index": {"room_id"},
+    "store.advance_delivered_index": {"room_id", "index", "force"},
+    "store.get_private_state": {"room_id", "key"},
+    "store.set_private_state": {"room_id", "key", "value"},
+    "store.find_room_id_by_binding": {
+        "channel_id",
+        "participant_id",
+        "identity_id",
+        "room_filter",
+        "recipient_key",
+    },
+    "store.find_room_id_by_participant": {
+        "channel_id",
+        "participant_id",
+        "identity_id",
+        "room_filter",
+    },
+    "store.get_event_count": {"room_id", "event_filter"},
+    "store.get_binding": {"room_id", "channel_id"},
+    "store.list_bindings": {"room_id"},
+    "store.delete_participant": {"room_id", "participant_id"},
+    "store.list_participants": {"room_id"},
+    "store.add_observation": {"observation"},
+    "store.list_observations": {"room_id"},
 }
+
+# The store calls whose room may leave out its ``created_at``, which the
+# stored room's then gives (README, "Calls on the store").
+_WHOLE_ROOM_WRITES = {"store.update_room", "store.update_room_if"}
 
 # The kit's calls on a room's read markers (README, "Calls"), beside
 # `organization_id`.
@@ -186,12 +230,14 @@ async def _kept_created_at(store: ConversationStore, spec: Mapping[str, Any]) ->
 async def _store_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     operation = spec["call"].removeprefix("store.")
     store = harness.store_of(kit)
-    if spec["call"] == "store.update_room_if":
+    if spec["call"] in _WHOLE_ROOM_WRITES:
         spec = await _kept_created_at(store, spec)
     arguments = {
         name: _argument(name, spec) for name in STORE_ARGUMENTS[spec["call"]] if name in spec
     }
-    return await getattr(store, operation)(**arguments)
+    result = await getattr(store, operation)(**arguments)
+    # load_room_context's (room, bindings, participants), read as a list.
+    return list(result) if isinstance(result, tuple) else result
 
 
 async def _read_marker_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
