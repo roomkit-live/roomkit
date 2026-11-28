@@ -7,7 +7,8 @@
     "§6.4"
   ],
   "requirements": [
-    "RK-21.5-017"
+    "RK-21.5-017",
+    "RK-6.4-265"
   ],
   "notes": "The first turn runs in the run's own kit: lookup's result passes the threshold, is stored as evicted_c1, and the model reads its placeholder. The second turn runs in p2, a kit started over the same store, as the agent is after a restart: its result store holds nothing. The history it replays offers no id that store no longer holds: c1's placeholder reads as its size alone, the same text on both sides (the third and fourth requests), and a read of evicted_c1 finds nothing. roomkit-rs replayed 'evicted_c1' before RMK-2191.",
   "setup": {

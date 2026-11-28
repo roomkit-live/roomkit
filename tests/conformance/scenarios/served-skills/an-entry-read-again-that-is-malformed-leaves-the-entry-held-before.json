@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/an-entry-read-again-that-is-malformed-leaves-the-entry-held-before",
+  "title": "An entry read again that is malformed leaves the entry held before, as a server that does not answer does: the skill stays available and its next activation reads it again",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-051"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\nx"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "other",
+                    "description": "Read the guide"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://guide/SKILL.md",
+                      "digest": "sha256:6fcaa413b7edda2156378747fb4109fe50b92bb9dc6fd5c681bc77833d1b00d6",
+                      "size": 68
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\nx"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "other",
+                    "description": "Read the guide"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://guide/SKILL.md",
+                      "digest": "sha256:6fcaa413b7edda2156378747fb4109fe50b92bb9dc6fd5c681bc77833d1b00d6",
+                      "size": 68
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError"
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError"
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:guide"
+                ],
+                "unavailable_skills": {}
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "notes": "docs:guide's SKILL.md fails its check, and the entry skills/get returns names another skill (its frontmatter name is not its URI's), one Entries refuses. The registry keeps the entry it held, as for a server that does not answer: the skill stays available, and its next activation reads its SKILL.md and the entry again, and fails as the first did. An entry the host does not take is shown by served-skills/an-entry-read-again-in-a-form-the-host-does-not-take-leaves-the-skill-unavailable. Python: skills/mcp/catalog.py refresh; roomkit-rs: roomkit-ai skills/served/loading.rs refresh."
+}

@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-stored-without-outcome-is-read-by-its-status-and-dropped-under-a-name-vendors-refuse",
+  "title": "An agent's earlier call stored without its outcome is read by its status, and dropped from the replay under a name vendors refuse, as a refused call under such a name is",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-069"
+  ],
+  "notes": "The three pairs of rows are committed outside the pipeline (§10.5) without an outcome, as rows written before the outcome existed. lookup ended completed and search failed, under names vendors take: each is replayed, read by its status (search's result an error). orders.lookup ended completed under a name outside [A-Za-z0-9_-]{1,128}: it is not replayed, as a refused call under such a name is not (RK-6.4-266), since a vendor would refuse every later request that names it. Python: channels/_tool_history.py _answered. roomkit-rs: roomkit-core rules/transcript/rounds.rs answered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "All three are known."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "websocket",
+          "direction": "inbound",
+          "participant_id": "alice"
+        },
+        "content": {
+          "type": "text",
+          "body": "Where are my orders?"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "c1",
+          "arguments": {},
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_end",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "c1",
+          "result": "order 42 shipped",
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "orders.lookup",
+          "tool_id": "c2",
+          "arguments": {},
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_end",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "orders.lookup",
+          "tool_id": "c2",
+          "result": "order 43 pending",
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "search",
+          "tool_id": "c3",
+          "arguments": {},
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_end",
+        "source": {
+          "channel_id": "agent",
+          "channel_type": "ai",
+          "direction": "outbound"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "search",
+          "tool_id": "c3",
+          "result": "search is down",
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "order 42 shipped",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "search",
+              "content": "search is down",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

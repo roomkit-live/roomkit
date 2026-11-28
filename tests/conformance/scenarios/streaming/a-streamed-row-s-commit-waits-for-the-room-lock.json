@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-s-commit-waits-for-the-room-lock",
+  "title": "A streamed answer's row takes the room lock for its commit: while another message holds the lock, the finished row waits for it and commits after that message",
+  "rules": [
+    "§13.5",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-13.5-007",
+    "RK-9.5.1-067"
+  ],
+  "notes": "ws takes the agent's answer as a stream. The model holds its first answer at model-held while Other is processed: Other's BEFORE_BROADCAST hook, which needs the lock, holds at other-held, under the room lock. The answer then runs to its commit, which waits for that lock (wait_for_lock): Other commits at index 1 once released, the row after it at index 2. A row committed without the lock would take index 1, Other still held. The hooks of a streamed row, which run without the lock, are shown by streaming/a-streamed-row-s-hooks-run-without-the-room-lock. Python: core/mixins/_streaming_segments.py runs a row's hooks off the lock and commits it under the room lock (_lane); roomkit-rs: roomkit-core ops/inbound/stream.rs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Streamed answer",
+              "gate": "model-held"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "other",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Other"
+            },
+            "gate": "other-held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Ask"
+        }
+      },
+      "background": true,
+      "as": "ask"
+    },
+    {
+      "wait_for": "model-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Other"
+        }
+      },
+      "defer_delivery": true,
+      "background": true,
+      "as": "other"
+    },
+    {
+      "wait_for": "other-held"
+    },
+    {
+      "open": "model-held"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "other-held"
+    },
+    {
+      "await": "other",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "await": "ask",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "other",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Ask"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Other"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Streamed answer"
+          },
+          "index": 2,
+          "source": {
+            "channel_id": "agent"
+          },
+          "responds_to": "room-1#0"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second answer"
+          },
+          "index": 3,
+          "source": {
+            "channel_id": "agent"
+          },
+          "responds_to": "room-1#1"
+        }
+      ]
+    }
+  }
+}

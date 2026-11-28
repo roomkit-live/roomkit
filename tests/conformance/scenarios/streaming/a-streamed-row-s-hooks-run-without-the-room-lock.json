@@ -10,7 +10,7 @@
   "requirements": [
     "RK-13.5-007"
   ],
-  "notes": "ws takes the agent's answer as a stream. The row of the first answer is held at its BEFORE_BROADCAST hook, a hook that needs the lock; meanwhile Other is processed and committed at index 1, its delivery deferred, which it could not be if the row's hooks held the lock. The row then commits after it. Cited in part: RK-13.5-007 says the row's commit runs without the lock too, which no step observes, and which RK-9.5.1-067 contradicts (the row takes the lock for its commit).",
+  "notes": "ws takes the agent's answer as a stream. The row of the first answer is held at its BEFORE_BROADCAST hook, a hook that needs the lock; meanwhile Other is processed and committed at index 1, its delivery deferred, which it could not be if the row's hooks held the lock. The row then commits after it. The row's commit, which takes the lock, is shown by streaming/a-streamed-row-s-commit-waits-for-the-room-lock.",
   "setup": {
     "channels": [
       {

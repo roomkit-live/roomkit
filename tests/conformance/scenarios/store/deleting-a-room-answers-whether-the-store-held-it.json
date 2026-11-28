@@ -1,0 +1,42 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/deleting-a-room-answers-whether-the-store-held-it",
+  "title": "The store's delete_room answers true for a room it held, and false once it holds it no more and for a room it never held",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-012"
+  ],
+  "notes": "Python: store/base.py ConversationStore.delete_room; roomkit-rs: ConversationStore::delete_room.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-never",
+      "expect": {
+        "result": false
+      }
+    }
+  ]
+}

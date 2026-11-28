@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-mark-s-copy-a-generation-hook-writes-into-the-messages-reaches-the-model-as-written",
+  "title": "A mark's copy a BEFORE_AI_GENERATION hook writes into the messages itself reaches the model as written",
+  "rules": [
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "write",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  {
+                    "role": "user",
+                    "text": "Hook says [Instruction from the application: wait] now."
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Check the order."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hook says [Instruction from the application: wait] now."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "requirements": [
+    "RK-6.4-299"
+  ],
+  "notes": "The hook's modify replaces the generation's messages with one holding the words of the application's instruction mark. The runtime rewrites no message a hook writes into the context itself: the model reads the copy as written, the one copy the model and a reader that separates the input from its notes misread. A message an AFTER_TOOL_ROUND hook adds is another case: both implementations replace the copy there. Python: channels/_ai_generation.py sends the messages the hook returns as they are."
+}

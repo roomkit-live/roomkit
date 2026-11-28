@@ -1,0 +1,226 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/an-entry-read-again-in-a-form-the-host-does-not-take-leaves-the-skill-unavailable",
+  "title": "An entry read again that the host does not take leaves its skill unavailable",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-051"
+  ],
+  "notes": "Each skill's SKILL.md fails its check, and its entry read again is one this host does not take: docs:guide's is dynamic while the host does not allow them, docs:tips's holds 16 MiB and a byte. Each skill is then unavailable with the reason a listed entry would have, and never read again.",
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://tips/SKILL.md",
+                    "frontmatter": {
+                      "name": "tips",
+                      "description": "Read the tips"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://tips/SKILL.md",
+                        "digest": "sha256:91517681f151fc5bc500891c04cf133fa86da1658d04ca05f175c5e3317cd9ba",
+                        "size": 53
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\nx"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "guide",
+                    "description": "Read the guide"
+                  },
+                  "resources": "dynamic"
+                }
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://tips/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://tips/SKILL.md",
+                    "text": "---\nname: tips\ndescription: Read the tips\n---\n\nTips.\nx"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://tips/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://tips/SKILL.md",
+                  "frontmatter": {
+                    "name": "tips",
+                    "description": "Read the tips"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://tips/SKILL.md",
+                      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                      "size": 1
+                    },
+                    {
+                      "uri": "skill://tips/data.bin",
+                      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                      "size": 16777216
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:tips"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:tips"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 2
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:guide' changed on its server or could not be verified"
+            },
+            {
+              "status": "error",
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:tips' changed on its server or could not be verified"
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [],
+                "unavailable_skills": {
+                  "docs:guide": "its server generates its content, so nothing of it can be verified, and this host does not take such skills",
+                  "docs:tips": "it is past the limits of a skill served over MCP: its files hold 16777217 bytes, past 16777216"
+                }
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://tips/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://tips/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

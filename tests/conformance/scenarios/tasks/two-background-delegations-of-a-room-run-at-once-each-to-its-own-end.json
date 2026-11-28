@@ -10,7 +10,8 @@
   "requirements": [
     "RK-23.1-004",
     "RK-23.2-002",
-    "RK-23.3-005"
+    "RK-23.3-005",
+    "RK-23.1-002"
   ],
   "notes": "Python: tests/tasks/test_integration.py::TestDelegateIntegration::test_parallel_delegation; tasks/memory.py InMemoryTaskRunner, one run per task id. Both tasks are delegated before either is waited for.",
   "setup": {

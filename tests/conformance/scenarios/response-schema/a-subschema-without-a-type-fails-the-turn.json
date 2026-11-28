@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-subschema-without-a-type-fails-the-turn",
+  "title": "A binding's response schema whose subschema gives no type fails the turn before its model is asked",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "requirements": [
+    "RK-6.7-070"
+  ],
+  "notes": "The type row is REQUIRED on every subschema: when, which carries a description and no type, is refused as the binding's schema is read with the turn's settings, before the model is asked, as a type outside the subset is (response-schema/a-subschema-whose-type-is-no-single-portable-word-fails-the-turn). Python: providers/ai/json_schema.py check_portable_schema (_check reads the type of every subschema); tests/test_channels/test_ai_response_schema.py TestResolution.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"name\": \"Alice\", \"count\": 2, \"share\": 0.5, \"paid\": true, \"tags\": [\"billing\"], \"card\": {\"last4\": \"4242\"}}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-none",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "object",
+                "properties": {
+                  "when": {
+                    "description": "When it happened."
+                  }
+                },
+                "required": [
+                  "when"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-none",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "Value error, $.when: 'type' must be one of object, array, string, number, integer, boolean, as a single string"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-none": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

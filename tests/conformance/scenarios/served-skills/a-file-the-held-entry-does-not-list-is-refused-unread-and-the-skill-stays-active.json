@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/a-file-the-held-entry-does-not-list-is-refused-unread-and-the-skill-stays-active",
+  "title": "A file the held entry does not list is refused as a path outside the skill's files, with nothing read from the server, and the skill stays active",
+  "rules": [
+    "§24.7"
+  ],
+  "requirements": [
+    "RK-24.7-062"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      },
+                      {
+                        "uri": "skill://guide/notes.txt",
+                        "digest": "sha256:444e0fffbd825e9610ff5b199485707a0c895339ae80c15cc8a8aee41b106fda",
+                        "size": 6
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/notes.txt"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/notes.txt",
+                    "text": "notes\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:guide",
+          "filename": "other.txt"
+        },
+        {
+          "method": "read_file",
+          "name": "docs:guide",
+          "filename": "notes.txt"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "references": [
+                  "notes.txt"
+                ]
+              }
+            },
+            {
+              "status": "error",
+              "error": "SkillPathError"
+            },
+            {
+              "status": "ok",
+              "result": "notes\n"
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/notes.txt"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "notes": "docs:guide's entry lists SKILL.md and notes.txt. A read of other.txt, which the entry does not list, is refused as a path outside the skill's files (SkillPathError), with nothing asked of the server; the skill stays active, so notes.txt is read next, from the same server. Python: skills/mcp/catalog.py; roomkit-rs: roomkit-ai skills/served/loading.rs."
+}
