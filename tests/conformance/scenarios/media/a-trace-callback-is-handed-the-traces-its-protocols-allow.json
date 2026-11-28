@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/a-trace-callback-is-handed-the-traces-its-protocols-allow",
+  "title": "A trace callback registered with no protocols is handed every trace its channel emits; one registered with a list of protocols, only the traces of those protocols",
+  "rules": [
+    "§15.6"
+  ],
+  "requirements": [
+    "RK-15.6-010"
+  ],
+  "notes": "Python: channels/base.py Channel.on_trace, emit_trace. The callbacks are the integrator's, registered on the channel beside the framework handler, which routes every trace to the room's hooks. A protocol filter is a set of names: a trace of a protocol it lists is handed over, any other is not.",
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "every",
+      "protocols": null
+    },
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "only_scripted",
+      "protocols": [
+        "scripted"
+      ]
+    },
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "both",
+      "protocols": [
+        "other",
+        "scripted"
+      ]
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "room-1",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "Offer accepted"
+      }
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "room-1",
+        "direction": "outbound",
+        "protocol": "other",
+        "summary": "Keepalive"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "trace_callbacks": {
+      "every": [
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "inbound",
+          "protocol": "scripted",
+          "summary": "Offer accepted"
+        },
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "outbound",
+          "protocol": "other",
+          "summary": "Keepalive"
+        }
+      ],
+      "only_scripted": [
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "inbound",
+          "protocol": "scripted",
+          "summary": "Offer accepted"
+        }
+      ],
+      "both": [
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "inbound",
+          "protocol": "scripted",
+          "summary": "Offer accepted"
+        },
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "outbound",
+          "protocol": "other",
+          "summary": "Keepalive"
+        }
+      ]
+    }
+  }
+}

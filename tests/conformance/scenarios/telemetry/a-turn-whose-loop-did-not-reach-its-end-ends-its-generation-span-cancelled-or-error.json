@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "telemetry/a-turn-whose-loop-did-not-reach-its-end-ends-its-generation-span-cancelled-or-error",
+  "title": "A turn whose model fails before any round, and one cut from outside after a round of calls, each end their llm.generate span cancelled or error, never ok nor left open, the second carrying what its round used",
+  "rules": [
+    "§6.4",
+    "§15.7"
+  ],
+  "requirements": [
+    "RK-6.4-423"
+  ],
+  "notes": "RFC §6.4, A turn that did not complete: neither turn reaches its end, so no ON_AI_RESPONSE reports it and its span holds what its rounds used; the unit lets either end cancelled or error, so each is read as not ok. The first raises before a round; the second is held in its second generation, and its delivery is cancelled from outside (a task cancelled from outside). Python: channels/_ai_streaming.py _end_unfinished_turn, _turn_span_attributes. roomkit-rs: roomkit-ai tool_loop/spans.rs.",
+  "setup": {
+    "kit": {
+      "telemetry": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "broken",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me",
+              "fails": "the model is down"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cut",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "gate": "second",
+              "text": "Never."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "broken",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "cut",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "defer_delivery": true,
+      "as": "d"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "d"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "llm.generate",
+      "expect": {
+        "result": [
+          {
+            "name": "llm.generate",
+            "channel_id": "broken",
+            "room_id": "room-1",
+            "status": {
+              "$lacks": "ok"
+            },
+            "attributes": {
+              "llm.tool_count": 0
+            }
+          },
+          {
+            "name": "llm.generate",
+            "channel_id": "cut",
+            "room_id": "room-2",
+            "status": {
+              "$lacks": "ok"
+            },
+            "attributes": {
+              "llm.tool_count": 1,
+              "llm.input_tokens": 100,
+              "llm.output_tokens": 10
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": []
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auditor-creates-the-missing-directories-of-its-file",
+  "title": "A tool auditor and a session auditor whose files lie under directories that do not exist create them and write each entry there",
+  "rules": [
+    "§15.8.3"
+  ],
+  "requirements": [
+    "RK-15.8.3-003"
+  ],
+  "notes": "setup.audit_files.nested puts each file under directories of its own that do not exist yet; the runner reads each file after the run and finds one line per entry. Python: orchestration/tool_audit.py and session_audit.py, the auditors' constructors. roomkit-rs: orchestration/tool_audit.rs create_parent.",
+  "setup": {
+    "audit_files": {
+      "nested": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "roomkit"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up roomkit."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "session_audit.record",
+      "entry": {
+        "ts": "2026-01-01T00:00:00+00:00",
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "tool_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "agent_id": "agent",
+        "tool_name": "lookup",
+        "arguments": {
+          "q": "roomkit"
+        },
+        "result": "found",
+        "status": "ok",
+        "duration_ms": {
+          "$present": true
+        },
+        "metadata": {}
+      }
+    ],
+    "session_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      }
+    ]
+  }
+}

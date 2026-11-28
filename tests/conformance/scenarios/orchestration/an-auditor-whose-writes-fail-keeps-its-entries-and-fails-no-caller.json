@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auditor-whose-writes-fail-keeps-its-entries-and-fails-no-caller",
+  "title": "When every write of an auditor's file fails, the audited call still answers the model, the application's record still returns, and each auditor keeps its entries in memory",
+  "rules": [
+    "§15.8.3",
+    "§15.8.1",
+    "§15.8.2"
+  ],
+  "requirements": [
+    "RK-15.8.3-004"
+  ],
+  "notes": "setup.audit_files.unwritable makes each file's path a directory. In part: the failure is to be logged, and no scenario reads a log. Python: orchestration/tool_audit.py and session_audit.py record. roomkit-rs: orchestration/tool_audit.rs append_line.",
+  "setup": {
+    "audit_files": {
+      "unwritable": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "roomkit"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up roomkit."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "session_audit.record",
+      "entry": {
+        "ts": "2026-01-01T00:00:00+00:00",
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "tool_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "agent_id": "agent",
+        "tool_name": "lookup",
+        "arguments": {
+          "q": "roomkit"
+        },
+        "result": "found",
+        "status": "ok",
+        "duration_ms": {
+          "$present": true
+        },
+        "metadata": {}
+      }
+    ],
+    "session_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      }
+    ],
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "found",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

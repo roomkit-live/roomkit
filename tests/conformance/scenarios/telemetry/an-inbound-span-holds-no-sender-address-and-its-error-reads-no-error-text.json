@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "telemetry/an-inbound-span-holds-no-sender-address-and-its-error-reads-no-error-text",
+  "title": "With the default telemetry configuration, no framework.inbound span carries a sender's address, and a call that failed ends its span error with a message that reads no text of the failure, the same for two failures whose texts differ",
+  "rules": [
+    "§15.7"
+  ],
+  "requirements": [
+    "RK-15.7-009"
+  ],
+  "notes": "TelemetryConfig.record_sensitive_data is off by default. Each parse failure's text names its sender's address, as the error both implementations hand the caller does; the two spans' error_message are equal, so neither reads its text. In part: the delivery span's recipient and provider error (a transport channel over a scripted provider, feature transport_provider, not in the suite yet) and a provider handed alone are not read. Python: telemetry/base.py sensitive, span_error. roomkit-rs: telemetry/open.rs sender_attributes, fail_error.",
+  "setup": {
+    "kit": {
+      "telemetry": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Again."
+            },
+            "fail": "cannot read what alice@example.org sent"
+          },
+          {
+            "when": {
+              "text": "Hi."
+            },
+            "fail": "cannot read what bob@example.org sent"
+          }
+        ]
+      },
+      {
+        "id": "out",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "out"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice@example.org",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice@example.org",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      },
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob@example.org",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "framework.inbound",
+      "name": "framework.inbound",
+      "expect": {
+        "result": [
+          {
+            "status": "ok",
+            "error_message": null,
+            "attributes": {
+              "sender_id": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "status": "error",
+            "error_message": {
+              "$as": "failure"
+            },
+            "attributes": {
+              "sender_id": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "status": "error",
+            "error_message": {
+              "$as": "failure"
+            },
+            "attributes": {
+              "sender_id": {
+                "$absent": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "framework.inbound",
+      "attributes": {
+        "sender_id": "alice@example.org"
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "framework.inbound",
+      "attributes": {
+        "sender_id": "bob@example.org"
+      },
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {}
+}

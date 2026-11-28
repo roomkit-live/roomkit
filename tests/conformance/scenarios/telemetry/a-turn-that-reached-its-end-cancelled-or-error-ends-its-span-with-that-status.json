@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "telemetry/a-turn-that-reached-its-end-cancelled-or-error-ends-its-span-with-that-status",
+  "title": "A turn a steering Cancel ends between rounds and one its provider interrupts after a round both reach their end, and each ends its llm.generate span with the status it ended with, cancelled or error, never ok",
+  "rules": [
+    "§6.4",
+    "§15.7"
+  ],
+  "requirements": [
+    "RK-6.4-424"
+  ],
+  "notes": "RFC §6.4: both turns reach their end, so ON_AI_RESPONSE reports each with its reason, and the span reads the same. Python: channels/_ai_streaming.py _finish_streaming_tool_turn (turn_span_status). roomkit-rs: roomkit-ai tool_loop/spans.rs.",
+  "setup": {
+    "kit": {
+      "telemetry": true
+    },
+    "channels": [
+      {
+        "id": "live",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "steered",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "gate": "second",
+              "text": "Never."
+            }
+          ]
+        }
+      },
+      {
+        "id": "failing",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "search"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Partial ",
+                "answer"
+              ],
+              "fails": "the provider broke"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "live"
+          },
+          {
+            "channel_id": "steered",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "failing",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "live",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "call": "steer",
+      "channel_id": "steered",
+      "room_id": "room-1",
+      "directive": {
+        "type": "cancel"
+      }
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "llm.generate",
+      "expect": {
+        "result": [
+          {
+            "name": "llm.generate",
+            "channel_id": "steered",
+            "status": "cancelled"
+          },
+          {
+            "name": "llm.generate",
+            "channel_id": "failing",
+            "status": "error"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "steered",
+            "loop_end_reason": "cancelled"
+          }
+        },
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-2",
+          "response": {
+            "channel_id": "failing",
+            "loop_end_reason": "error"
+          }
+        }
+      ]
+    }
+  }
+}

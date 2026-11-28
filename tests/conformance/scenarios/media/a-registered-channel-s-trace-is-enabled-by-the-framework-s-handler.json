@@ -1,0 +1,55 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/a-registered-channel-s-trace-is-enabled-by-the-framework-s-handler",
+  "title": "A registered channel reads trace_enabled true before any callback of its own, the framework's handler registered, and still true once one is",
+  "rules": [
+    "§15.6"
+  ],
+  "requirements": [
+    "RK-15.6-011"
+  ],
+  "notes": "Python: channels/base.py Channel.trace_enabled; core/mixins/channel_ops.py register_channel sets the framework handler. In part: every channel of a scenario is registered, so neither a channel holding a user callback alone, without the framework's handler, nor one holding no handler, which reads false, is read.",
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel.trace_enabled",
+      "channel_id": "wire",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "observer"
+    },
+    {
+      "call": "channel.trace_enabled",
+      "channel_id": "wire",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {}
+}

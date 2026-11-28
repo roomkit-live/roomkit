@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/an-async-trace-callback-runs-as-a-task-and-holds-up-no-emitter",
+  "title": "A sync trace callback is called with each trace as it is emitted; an async one runs as a task of its own: an emit returns while that task is held, and the task records the trace once let go",
+  "rules": [
+    "§15.6"
+  ],
+  "requirements": [
+    "RK-15.6-014"
+  ],
+  "notes": "Python: channels/base.py _safe_invoke schedules a coroutine a callback returns as a task. The async callback holds at its gate before it records: the second emit returns while the first trace's task is held there, so neither emit waited for it.",
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "sync_observer"
+    },
+    {
+      "call": "channel.on_trace",
+      "channel_id": "wire",
+      "callback": "async_observer",
+      "async": true,
+      "gate": "held"
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "room-1",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "First"
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "room-1",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "Second"
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "trace_callbacks": {
+      "sync_observer": [
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "inbound",
+          "protocol": "scripted",
+          "summary": "First"
+        },
+        {
+          "channel_id": "wire",
+          "room_id": "room-1",
+          "direction": "inbound",
+          "protocol": "scripted",
+          "summary": "Second"
+        }
+      ],
+      "async_observer": {
+        "$unordered": [
+          {
+            "channel_id": "wire",
+            "room_id": "room-1",
+            "direction": "inbound",
+            "protocol": "scripted",
+            "summary": "First"
+          },
+          {
+            "channel_id": "wire",
+            "room_id": "room-1",
+            "direction": "inbound",
+            "protocol": "scripted",
+            "summary": "Second"
+          }
+        ]
+      }
+    }
+  }
+}

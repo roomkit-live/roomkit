@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auditor-appends-after-the-lines-its-file-already-holds",
+  "title": "A tool auditor and a session auditor over files that already hold lines keep those lines and write their own entries after them",
+  "rules": [
+    "§15.8.3"
+  ],
+  "requirements": [
+    "RK-15.8.3-005"
+  ],
+  "notes": "setup.audit_files.lines writes each file before the run; the runner then finds those lines first and the auditor's entries after them. The auditors' entries in memory are this run's alone. Python: orchestration/tool_audit.py and session_audit.py open their file to append. roomkit-rs: orchestration/tool_audit.rs append_line.",
+  "setup": {
+    "audit_files": {
+      "lines": {
+        "tool_audit": [
+          {
+            "ts": "2025-12-31T23:59:00+00:00",
+            "agent_id": "earlier",
+            "tool_name": "lookup",
+            "arguments": {},
+            "result": "kept",
+            "status": "ok",
+            "duration_ms": 1.5,
+            "metadata": {}
+          }
+        ],
+        "session_audit": [
+          {
+            "ts": "2025-12-31T23:59:00+00:00",
+            "type": "error",
+            "role": "system",
+            "content": "An entry an earlier run wrote.",
+            "duration_ms": null,
+            "metadata": {}
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "roomkit"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up roomkit."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "session_audit.record",
+      "entry": {
+        "ts": "2026-01-01T00:00:00+00:00",
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "tool_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "agent_id": "agent",
+        "tool_name": "lookup",
+        "arguments": {
+          "q": "roomkit"
+        },
+        "result": "found",
+        "status": "ok",
+        "duration_ms": {
+          "$present": true
+        },
+        "metadata": {}
+      }
+    ],
+    "session_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "error",
+        "role": "system",
+        "content": "The payment service did not answer.",
+        "duration_ms": null,
+        "metadata": {
+          "code": "timeout"
+        }
+      }
+    ]
+  }
+}

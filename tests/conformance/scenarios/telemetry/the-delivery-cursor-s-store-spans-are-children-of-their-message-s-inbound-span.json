@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "telemetry/the-delivery-cursor-s-store-spans-are-children-of-their-message-s-inbound-span",
+  "title": "The spans a store records for the reads and writes of a room's delivery cursor, made to deliver each of two messages, are children of that message's framework.inbound span, never trace roots",
+  "rules": [
+    "§15.7",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-15.7-008"
+  ],
+  "notes": "The run's store records a store.query span over each cursor operation under the span current when it is called (setup.kit.store_spans), as a store that traces its queries does; the spans the setup made (a room's creation advances its cursor past its own records) are forgotten first; how many reads a delivery makes is the implementation's, so the call reads each name and parent once. In part: a skip past a hole, and a delivery run on another worker, are not reached. Python: tests/test_telemetry.py TestStoreQuerySpan. roomkit-rs: crates/roomkit/tests/telemetry_cursor.rs.",
+  "setup": {
+    "kit": {
+      "telemetry": true,
+      "store_spans": true
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "out",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "out"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "telemetry.reset",
+      "site": "owner"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "framework.inbound",
+      "name": "framework.inbound",
+      "expect": {
+        "result": [
+          {
+            "span_id": {
+              "$as": "first"
+            }
+          },
+          {
+            "span_id": {
+              "$as": "second"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "telemetry.spans",
+      "site": "owner",
+      "kind": "store.query",
+      "distinct": [
+        "name",
+        "parent_id"
+      ],
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "name": "store.get_delivered_index",
+              "parent_id": {
+                "$as": "first"
+              }
+            },
+            {
+              "name": "store.advance_delivered_index",
+              "parent_id": {
+                "$as": "first"
+              }
+            },
+            {
+              "name": "store.get_delivered_index",
+              "parent_id": {
+                "$as": "second"
+              }
+            },
+            {
+              "name": "store.advance_delivered_index",
+              "parent_id": {
+                "$as": "second"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
