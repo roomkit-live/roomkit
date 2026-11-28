@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `MCPToolProvider(protocol="auto")`, on `from_url` and `from_command` too: how a connection agrees on the MCP revision (RFC §21.2, RMK-664). `"auto"` probes `server/discover` and falls back to the `initialize` handshake; `"legacy"` goes straight to the handshake, for a server that fails on the probe (a Python server on `mcp` 1.9.3 or earlier crashes on it) or leaves it unanswered.
 
-- `MCPToolProvider(propagate_trace_context=False)`, on `from_url` and `from_command` too (RFC §21.2, RMK-664): `True` carries the host's trace context (W3C `traceparent`, `tracestate`, `baggage`, from the current OpenTelemetry span) on each request's `_meta`; a caller who writes a trace context of its own there sends it whole instead.
+- `MCPToolProvider(propagate_trace_context=False)`, on `from_url` and `from_command` too (RFC §21.2, RMK-664): `True` carries on each request's `_meta` the trace context of the kit's current span, as the kit's telemetry provider names it to another process (its `inject_context`, W3C `traceparent`, `tracestate` and `baggage` only), as roomkit-rs's does; the application's OpenTelemetry context is never what goes out. A caller who writes a trace context of its own there sends it whole instead.
 
 - `roomkit.telemetry.get_current_telemetry_ctx()` is public: the current span's context as its provider gave it, under which a telemetry provider written outside RoomKit starts its spans, in the current span's trace (RMK-2011). It was the private reader of RoomKit's own `OpenTelemetryProvider`, which a provider in another package could not reach. The same name as roomkit-rs's.
 
@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A request an MCP provider gives up on, past its timeout or cancelled, now tells the server (RMK-663), as the MCP SDK 2 does: with `notifications/cancelled`, or on a 2026-07-28 Streamable HTTP connection by aborting the request's POST; the caller returns at its deadline, the notification going out once the transport's writer can send it.
 
-- An MCP request carries the trace context of the host's telemetry (`traceparent`, `tracestate`, `baggage`) only where its caller wrote it in `_meta` (RMK-663), as roomkit-rs's do: the MCP SDK 2 writes it into every request whenever the host has a current span, and the provider takes it out.
+- An MCP request carries a trace context (`traceparent`, `tracestate`, `baggage`) only where its caller wrote it in `_meta` (RMK-663), or the kit's with `propagate_trace_context=True`, as roomkit-rs's do: the MCP SDK 2 writes the application's OpenTelemetry context into every request, and the provider always takes it out.
 
 - A Streamable HTTP MCP connection reads an SSE event of up to 4 MiB, roomkit-rs's bound on any MCP message (RMK-663); a larger one fails the request it answers with an `MCPError`.
 

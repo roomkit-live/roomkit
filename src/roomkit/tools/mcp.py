@@ -528,12 +528,16 @@ class MCPToolProvider:
                 fails on the probe (a Python server on ``mcp`` 1.9.3 or
                 earlier) or leaves it unanswered. The ``sse`` transport,
                 which 2026-07-28 does not define, always takes the handshake.
-            propagate_trace_context: Carry the host's trace context on each
-                request (W3C ``traceparent``, ``tracestate``, ``baggage`` in
-                its ``_meta``, from the current OpenTelemetry span), unless a
-                :meth:`request`'s caller writes a trace context of its own
-                there, which goes whole instead. ``False`` (the default) sends
-                only the trace keys a caller writes itself.
+            propagate_trace_context: Carry on each request the trace
+                context of the kit's current span, as the kit's telemetry
+                provider names it to another process (its
+                :meth:`~roomkit.telemetry.TelemetryProvider.inject_context`:
+                W3C ``traceparent``, ``tracestate``, ``baggage`` in the
+                request's ``_meta``), unless a :meth:`request`'s caller writes
+                a trace context of its own there, which goes whole instead.
+                The application's OpenTelemetry context never goes out.
+                ``False`` (the default) sends only the trace keys a caller
+                writes itself.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
@@ -593,8 +597,8 @@ class MCPToolProvider:
                 :class:`TimeoutError`.
             protocol: How the connection agrees on the MCP revision; see
                 :meth:`from_url`.
-            propagate_trace_context: Carry the host's trace context on each
-                request; see :meth:`from_url`.
+            propagate_trace_context: Carry the trace context of the kit's
+                current span on each request; see :meth:`from_url`.
 
         Returns:
             An MCPToolProvider instance (not yet connected).

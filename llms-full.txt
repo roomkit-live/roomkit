@@ -2764,9 +2764,12 @@ that answers it; a server of an earlier revision, which refuses the probe or
 leaves it unanswered for 10 seconds, is reached through the `initialize`
 handshake. `protocol="legacy"` goes straight to the handshake, for a server that
 fails on the probe (a Python server on `mcp` 1.9.3 or earlier); the legacy `sse`
-transport always does. `propagate_trace_context=True` carries the trace context
-of the current OpenTelemetry span on each request; without it a request carries
-only the trace keys written in its `_meta`.
+transport always does. `propagate_trace_context=True` carries on each request
+the trace context of the kit's current span, as the kit's telemetry provider
+names it to another process (`traceparent`, `tracestate`, `baggage`), not the
+application's OpenTelemetry context; a trace context written in a request's
+`_meta` goes whole instead. Without it a request carries only the trace keys
+written in its `_meta`.
 
 `from_url` refuses at construction (`ValueError`) what its transport cannot
 send as given: a URL that is not HTTP(S), names no host, or carries credentials

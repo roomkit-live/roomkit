@@ -14,11 +14,13 @@ the session's own write does, so a request abandoned before the transport
 takes it is still never sent.
 
 The capture also takes out of each message the W3C trace context the SDK
-writes into its ``_meta`` (``traceparent``, ``tracestate``, ``baggage``)
-whenever the host has a current span: a request carries the trace keys its
-caller wrote, and no other, as roomkit-rs's do. A connection that propagates
-the trace context (``propagate_trace_context``) keeps the SDK's, unless the
-caller wrote a trace context of its own, which goes whole in its place.
+writes into its ``_meta`` (``traceparent``, ``tracestate``, ``baggage``) from
+the application's OpenTelemetry context: a request carries the trace keys its
+caller wrote, and no other. A connection that propagates the trace context
+(``propagate_trace_context``) writes in their place the kit's current span,
+as the kit's telemetry names it to another process, unless the caller wrote
+a trace context of its own, which goes whole instead (RK-21.2-057). roomkit-rs
+does the same (``roomkit-mcp``'s ``trace.rs``).
 """
 
 from __future__ import annotations
@@ -29,12 +31,26 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit.telemetry.context import current_telemetry, get_current_span
+
 Shown = Callable[[dict[str, Any]], dict[str, Any]]
 """What the session reads in place of a ticket's result, given that result."""
 
 
 _TRACE_KEYS = ("traceparent", "tracestate", "baggage")
-"""The ``_meta`` keys the SDK writes a host's trace context into (SEP-414)."""
+"""The ``_meta`` keys a W3C trace context travels under (SEP-414)."""
+
+
+def _host_trace() -> dict[str, str]:
+    """The kit's current span's trace context, as the kit's telemetry
+    provider names it to another process (W3C keys only); empty under no
+    span, or with a provider that names none. Read in the caller's task,
+    where the span is current."""
+    telemetry, span_id = current_telemetry(), get_current_span()
+    if telemetry is None or not span_id:
+        return {}
+    carrier = telemetry.inject_context(span_id)
+    return {key: carrier[key] for key in _TRACE_KEYS if key in carrier}
 
 
 @dataclass
@@ -140,9 +156,10 @@ class WireCapture:
                 self._sent.pop(request_id, None)
 
     def _outgoing(self, item: Any) -> Any:
-        """*item* as it goes out: the SDK's trace keys taken out (unless the
-        connection propagates the trace context), and a request made under a
-        ticket bound to it."""
+        """*item* as it goes out: the SDK's trace keys taken out, the
+        caller's own put back, or the kit's when the connection propagates
+        the trace context; and a request made under a ticket bound to it.
+        Runs in the task that writes *item*: the caller's, for a request."""
         ticket = _TICKET.get()
         message = getattr(item, "message", None)
         binds = (
@@ -154,21 +171,22 @@ class WireCapture:
             ticket.request_id = _correlated(message.id)
             ticket.bound.append(ticket.request_id)
             self._sent[ticket.request_id] = ticket
-        if isinstance(message, (self._request, self._notification)):
-            return self._untraced(item, message, ticket.own_trace if binds and ticket else {})
+        if isinstance(message, self._request):
+            own = ticket.own_trace if binds and ticket is not None else {}
+            return self._traced(item, message, own or (_host_trace() if self._propagate else {}))
+        if isinstance(message, self._notification):
+            return self._traced(item, message, {})
         return item
 
-    def _untraced(self, item: Any, message: Any, own: dict[str, Any]) -> Any:
-        params = message.params
-        meta = params.get("_meta") if isinstance(params, dict) else None
-        if not isinstance(meta, dict) or not any(key in meta for key in _TRACE_KEYS):
+    def _traced(self, item: Any, message: Any, trace: dict[str, Any]) -> Any:
+        """*item* with *trace* as its message's whole trace context: one W3C
+        context, never the caller's traceparent with the host's tracestate."""
+        params = message.params if isinstance(message.params, dict) else {}
+        meta = params.get("_meta")
+        meta = meta if isinstance(meta, dict) else {}
+        kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | trace
+        if kept == meta:
             return item
-        if self._propagate and not own:
-            # The SDK's context of the host's span.
-            return item
-        # The caller's own trace context, whole, or none: one W3C context,
-        # never the caller's traceparent with the host's tracestate.
-        kept = {key: value for key, value in meta.items() if key not in _TRACE_KEYS} | own
         rest = {key: value for key, value in params.items() if key != "_meta"}
         params = rest | {"_meta": kept} if kept else rest
         fields = message.model_dump(exclude={"params"}, exclude_unset=True)
