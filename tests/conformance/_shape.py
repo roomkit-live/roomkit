@@ -24,6 +24,7 @@ from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._addressing import ADDRESSING_ARGUMENTS
+from tests.conformance._audits import AUDIT_ARGUMENTS
 from tests.conformance._av import AV_ARGUMENTS
 from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
 from tests.conformance._capture import CAPTURE_ARGUMENTS, CAPTURE_SOURCE
@@ -91,6 +92,7 @@ from tests.conformance._strategies import (
 )
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._thinking import channel_problems as thinking_problems
+from tests.conformance._traces import TRACE_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 from tests.conformance._video import VIDEO_ARGUMENTS
 from tests.conformance._voice import VOICE_ARGUMENTS
@@ -118,6 +120,7 @@ SETUP = {
     "identities",
     "strategies",
     "session_auditor",
+    "audit_files",
     "processes",
     "executors",
     "event_handlers",
@@ -172,6 +175,7 @@ KIT = {
     "persistence_policy",
     "turn_timeouts",
     "store_faults",
+    "store_spans",
     "store_owner",
     "shared_realtime",
     "turn_backend_faults",
@@ -545,6 +549,8 @@ EXPECT = {
     "media_resolver",
     "tool_audit",
     "session_audit",
+    "own_audit",
+    "trace_callbacks",
     "executors",
     "turn_ends",
     "killed_owner_frames",
@@ -685,6 +691,7 @@ CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
 CALLS |= HOST_ARGUMENTS
 CALLS |= SOURCE_ARGUMENTS | CAPTURE_ARGUMENTS
+CALLS |= TRACE_ARGUMENTS | AUDIT_ARGUMENTS
 STEPS = {
     "await": {"await", "expect"},
     "concurrent": {"concurrent"},

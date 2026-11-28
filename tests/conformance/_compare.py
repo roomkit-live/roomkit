@@ -158,9 +158,12 @@ class _Comparison:
             actual = self.observed.script_executors.get(channel_id, MISSING)
             self._check(expected, actual, f"script_executors.{channel_id}")
         self.sandbox_executors()
-        for kind in ("tool_audit", "session_audit"):
+        for kind in ("tool_audit", "session_audit", "own_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
+        for name, expected in self.expect.get("trace_callbacks", {}).items():
+            actual = self.observed.trace_callbacks.get(name, MISSING)
+            self._check(expected, actual, f"trace_callbacks.{name}")
 
     def executors(self) -> None:
         """What the run's executors did, and what its turn backend's fixtures

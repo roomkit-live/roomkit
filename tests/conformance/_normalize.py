@@ -100,6 +100,8 @@ class Observed:
     requests: list[str] = field(default_factory=list)
     tool_audit: list[Any] = field(default_factory=list)
     session_audit: list[Any] = field(default_factory=list)
+    own_audit: list[Any] = field(default_factory=list)
+    trace_callbacks: dict[str, list[Any]] = field(default_factory=dict)
 
 
 class Normalizer:

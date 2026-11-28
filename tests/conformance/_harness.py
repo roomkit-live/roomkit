@@ -9,7 +9,6 @@ scenario's expectations.
 from __future__ import annotations
 
 import asyncio
-import base64
 import re
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from contextlib import ExitStack
@@ -62,7 +61,7 @@ from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._addressing import ADDRESSING_CALLS
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
-from tests.conformance._audits import Auditors
+from tests.conformance._audits import AUDIT_CALLS, Auditors
 from tests.conformance._av import AV_CALLS
 from tests.conformance._below_kit import BELOW_KIT_CALLS
 from tests.conformance._calls import (
@@ -128,6 +127,7 @@ from tests.conformance._sources import SOURCE_CALLS, attach_sources
 from tests.conformance._speaking import decision_record
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._store_faults import FaultingStore, StoreFaults
+from tests.conformance._store_spans import trace_cursor
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
     kit_orchestration,
@@ -136,6 +136,7 @@ from tests.conformance._strategies import (
 from tests.conformance._subscriptions import SUBSCRIPTION_CALLS
 from tests.conformance._tasks import TASK_CALLS
 from tests.conformance._thinking import thought_record
+from tests.conformance._traces import TRACE_CALLS, TraceCallbacks, trace_record
 from tests.conformance._verification import (
     VERIFICATION_CALLS,
     VERIFICATION_EVENTS,
@@ -330,6 +331,9 @@ class Harness:
         self.acp_context: dict[str, ScriptedContextContributor] = {}
         self.acp_transports: dict[str, ScriptedACPTransport] = {}
         self.auditors = Auditors()
+        # The callbacks a step registered with a channel's on_trace (README,
+        # ``channel.on_trace``).
+        self.trace_callbacks = TraceCallbacks(self.gates.hold)
         self.mcp = MCPServers()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
@@ -345,6 +349,8 @@ class Harness:
         # The clock the media paths read (README, Setup ``virtual_clock``).
         self.clock = VirtualClock() if setup.get("virtual_clock") else None
         self.kit = RoomKit(**self._kit_arguments(setup.get("kit", {}), store))
+        if setup.get("kit", {}).get("store_spans"):
+            trace_cursor(self.kit.store)
         self._publications = Publications()
         self._publications.watch(self.kit)
         # The other processes of `setup.processes`, by id, and the kits closed.
@@ -556,20 +562,7 @@ class Harness:
         if isinstance(payload, RealtimeDelegationEvent):
             call["delegation"] = {"delegation_id": payload.delegation_id, "target": payload.target}
         if isinstance(payload, ProtocolTrace):
-            raw = payload.raw
-            call["trace"] = {
-                "channel_id": payload.channel_id,
-                "room_id": payload.room_id,
-                "session_id": payload.session_id,
-                "direction": payload.direction,
-                "protocol": payload.protocol,
-                "summary": payload.summary,
-                "raw": {"base64": base64.b64encode(raw).decode("ascii")}
-                if isinstance(raw, bytes)
-                else raw,
-                "metadata": dict(payload.metadata),
-                "timestamp": payload.timestamp.isoformat(),
-            }
+            call["trace"] = trace_record(payload)
         if isinstance(payload, ToolCallEvent):
             call["tool_call"] = tool_call_record(payload)
         if isinstance(payload, DeliveryStatus):
@@ -774,7 +767,7 @@ class Harness:
         recorded += LOCK_EVENTS + VOICE_EVENTS + MEDIA_EVENTS
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
-        self.auditors.set_up(setup.get("session_auditor"), self.kit)
+        self.auditors.set_up(setup.get("session_auditor"), setup.get("audit_files"), self.kit)
         await self.mcp.connect(setup.get("channels", []))
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
@@ -1025,7 +1018,7 @@ class Harness:
         calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS | SOURCE_CALLS
         calls |= BELOW_KIT_CALLS | VOICE_CALLS | VIDEO_CALLS | RECORDING_CALLS
-        calls |= AV_CALLS | CAPTURE_CALLS | CLOCK_CALLS
+        calls |= AV_CALLS | CAPTURE_CALLS | CLOCK_CALLS | TRACE_CALLS | AUDIT_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)
@@ -1293,6 +1286,9 @@ class Harness:
         self._collect_executors()
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
+        self.observed.own_audit = self.auditors.own_entries()
+        self._problems.extend(problems)
+        self.observed.trace_callbacks, problems = await self.trace_callbacks.observe()
         self._problems.extend(problems)
 
     def _collect_executors(self) -> None:

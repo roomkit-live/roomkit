@@ -23,7 +23,7 @@ from roomkit.channels.base import Channel
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.scoring import MockScorer, ScoringHook
-from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry import Span, SpanKind
 from roomkit.telemetry.config import TelemetryConfig
 from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.turns import (
@@ -604,16 +604,45 @@ async def _channel_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
 
 
 async def _spans(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """The completed spans of a kind at a site, those the call selects, in the
+    order they ended (README, ``telemetry.spans``)."""
     spans = harness.executors.telemetry[spec["site"]].get_spans(SpanKind(spec["kind"]))
     attributes = spec.get("attributes", {})
-    return [
-        {"name": span.name, "span_id": span.id, "parent_id": span.parent_id}
+    selected = [
+        _span_record(span)
         for span in spans
-        if all(
+        if spec.get("name", span.name) == span.name
+        and all(
             key in span.attributes and span.attributes[key] == value
             for key, value in attributes.items()
         )
     ]
+    if "distinct" not in spec:
+        return selected
+    answered: list[dict[str, Any]] = []
+    for record in selected:
+        kept = {member: record[member] for member in spec["distinct"]}
+        if kept not in answered:
+            answered.append(kept)
+    return answered
+
+
+async def _reset_spans(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    """The site's recorder forgets the spans it recorded (README, ``telemetry.reset``)."""
+    harness.executors.telemetry[spec["site"]].reset()
+
+
+def _span_record(span: Span) -> dict[str, Any]:
+    return {
+        "name": span.name,
+        "span_id": span.id,
+        "parent_id": span.parent_id,
+        "room_id": span.room_id,
+        "channel_id": span.channel_id,
+        "status": span.status,
+        "attributes": dict(span.attributes),
+        "error_message": span.error_message,
+    }
 
 
 async def _release_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
@@ -677,6 +706,7 @@ async def _fault(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Non
 
 EXECUTOR_CALLS: dict[str, Call] = {
     "telemetry.spans": _spans,
+    "telemetry.reset": _reset_spans,
     "turn_backend.fault": _fault,
     "executor.start": _start,
     "executor.close": _close,
@@ -696,7 +726,8 @@ EXECUTOR_CALLS: dict[str, Call] = {
 
 # Each call's arguments, beside `call` and `organization_id`.
 EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
-    "telemetry.spans": {"site", "kind", "attributes"},
+    "telemetry.spans": {"site", "kind", "attributes", "name", "distinct"},
+    "telemetry.reset": {"site"},
     "turn_backend.fault": {"operation", "enabled", "gate"},
     "executor.start": {"executor"},
     "executor.close": {"executor"},
