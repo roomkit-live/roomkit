@@ -1,0 +1,535 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/the-words-a-cut-mark-quotes-follow-the-share-played-or-eleven-letters-a-second",
+  "title": "With no word timed, the words a cut answer's mark quotes are taken by their letters at the share of its audio played less two words, or at 11 letters a second, and too little played quotes none",
+  "rules": [
+    "§6.4",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-209"
+  ],
+  "notes": "Five rooms, each holding the record of the agent's first answer cut by a barge-in, written as a voice channel of the room writes it. r1: 40% of its audio played, 5.06 s: 37.2 of its 93 letters reach the word 'fishing', less two words: up to 'was a'. r2: no share, 3 s: 33 letters at 11 a second, up to 'small'. r3: no share, 0.2 s: too little to quote. r4: 5% played: its first word is all, less two words is none. r5: no share, 3.5 s: 38.5 letters at 11 a second, up to 'fishing'.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+            },
+            {
+              "text": "Go on."
+            },
+            {
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+            },
+            {
+              "text": "Go on."
+            },
+            {
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+            },
+            {
+              "text": "Go on."
+            },
+            {
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+            },
+            {
+              "text": "Go on."
+            },
+            {
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+            },
+            {
+              "text": "Go on."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Tell me a story."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 5060,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r1#0",
+          "played_percentage": 40.0
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hm?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Tell me a story."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r2",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 3000,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r2#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hm?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Tell me a story."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r3",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r3#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hm?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Tell me a story."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r4",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 300,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r4#0",
+          "played_percentage": 5.0
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hm?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Tell me a story."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r5",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 3500,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r5#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hm?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town.\n[The person cut you off during this answer, 5.1 s in: they heard it up to “Sure! Long ago, the harbour was a” and not the rest.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town.\n[The person cut you off during this answer, 3.0 s in: they heard it up to “Sure! Long ago, the harbour was a small” and not the rest.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town.\n[The person cut you off during this answer, 0.2 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town.\n[The person cut you off during this answer, 0.3 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Sure! Long ago, the harbour was a small fishing village called Northcove. In 1630, the first settlers built the town.\n[The person cut you off during this answer, 3.5 s in: they heard it up to “Sure! Long ago, the harbour was a small fishing” and not the rest.]"
+            },
+            {}
+          ]
+        }
+      ]
+    }
+  }
+}

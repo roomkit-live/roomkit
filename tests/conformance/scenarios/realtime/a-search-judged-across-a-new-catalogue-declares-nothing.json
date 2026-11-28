@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-search-judged-across-a-new-catalogue-declares-nothing",
+  "title": "A find_tools call judged while a reconfiguration gave the session another catalogue declares nothing of its matches",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-6.4-230",
+    "RK-6.4-237"
+  ],
+  "notes": "An ON_TOOL_CALL hook holds the served find_tools call at a gate while the session is reconfigured with another catalogue holding the same names, Tool Search hiding them again. The call belonged to the connection the reconfiguration replaced: the provider reports it abandoned, its result never goes out, and the new catalogue declares none of its matches, found in the catalogue that left: a call from an earlier catalogue reveals no tool into its replacement. Cited in part: the runners' provider abandons every outstanding call at a reconfiguration, so a result that still went out after the catalogue changed is not observed; the first half of RK-6.4-230, the declaration once the result went out, is realtime/a-search-s-matches-are-declared-once-its-result-went-out, and RK-6.4-237 is cited in part as realtime/a-called-tool-stays-declared-for-the-session-s-catalogue says.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "news": {
+              "result": "calm"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 2
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "judge",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "gate": "judging"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "find_tools",
+      "arguments": {
+        "query": "weather"
+      },
+      "background": true,
+      "as": "search"
+    },
+    {
+      "wait_for": "judging"
+    },
+    {
+      "call": "realtime.reconfigure",
+      "channel_id": "rt",
+      "tools": [
+        "weather",
+        "news",
+        "lookup"
+      ]
+    },
+    {
+      "open": "judging"
+    },
+    {
+      "await": "search"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": []
+        }
+      }
+    }
+  ]
+}

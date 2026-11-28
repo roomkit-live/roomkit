@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-agent-reads-the-first-turn-of-a-conference-participant-under-their-name",
+  "title": "A conference keeps the roster: an agent in a meeting where one person speaks while another listens reads the first turn labelled",
+  "rules": [
+    "§6.4",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-6.4-368"
+  ],
+  "notes": "Alice and Bob join the conference, which keeps them on the room's roster; only Alice publishes and speaks. The agent's first turn reads her words labelled with her name, Bob listening. Cited in part: a meeting carried through one stream, written by its integration, is voice/a-meeting-bridged-into-one-stream-reads-its-first-speaker-s-turn-under-their-name.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Yes, we hear you."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "vad": [
+        null,
+        {
+          "type": "speech_start"
+        },
+        null,
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "results": [
+              {
+                "text": "Can everyone hear me?"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "display_name": "Alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "bob",
+      "display_name": "Bob"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA=",
+        "AwA=",
+        "BAA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "r1": {
+        "$unordered": [
+          {
+            "id": "alice"
+          },
+          {
+            "id": "bob"
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "Alice: \"Can everyone hear me?\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

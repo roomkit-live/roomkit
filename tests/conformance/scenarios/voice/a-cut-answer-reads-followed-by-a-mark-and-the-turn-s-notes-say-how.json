@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-cut-answer-reads-followed-by-a-mark-and-the-turn-s-notes-say-how",
+  "title": "An answer a barge-in cut reads, in the agent's next turns, followed by a mark saying when it was cut and how far it was heard, while the turn's notes say how one reads",
+  "rules": [
+    "§6.4",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-207",
+    "RK-6.4-211"
+  ],
+  "notes": "A voice channel of the room (a scripted channel of type voice) holds the record of the agent's first answer cut 1.2 s in, written as the voice channel writes it (internal, no participant, interrupted, naming the answer by its channel and the event it responds to), with no share of its audio. The agent's next turn reads that answer followed by the mark, quoting at 11 letters a second (RK-6.4-209), and the turn's notes say that an answer without the mark was heard to its end. The answer after it, heard whole, reads without a mark in the third turn, whose notes still say so while the history holds the cut answer. The note's wording is the implementation's; the scenario matches the clause the RFC gives it.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Rain in the evening, then sun."
+            },
+            {
+              "text": "No, not this time."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r1#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Sorry, go on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "And this time, did I cut you off?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$lacks": "every answer of yours without one was heard to its end"
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What's the weather tomorrow?"
+            },
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer, 1.2 s in: they heard it up to “Tomorrow in” and not the rest.]"
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Sorry, go on.",
+                  "followed by a mark that says how far they heard it",
+                  "every answer of yours without one was heard to its end"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What's the weather tomorrow?"
+            },
+            {
+              "role": "assistant",
+              "text": {
+                "$starts_with": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer"
+              }
+            },
+            {
+              "role": "user",
+              "text": "Sorry, go on."
+            },
+            {
+              "role": "assistant",
+              "text": "Rain in the evening, then sun."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "And this time, did I cut you off?",
+                  "followed by a mark that says how far they heard it",
+                  "every answer of yours without one was heard to its end"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

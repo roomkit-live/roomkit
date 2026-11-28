@@ -1,0 +1,717 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-malformed-cut-record-fails-no-turn",
+  "title": "A cut record whose answer is named by neither a string nor nothing is skipped, and one whose played time is not a non-negative number reads as cut at 0: no turn fails",
+  "rules": [
+    "§6.4",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-217"
+  ],
+  "notes": "Six rooms, each holding a record a voice channel of the room would write, naming the agent's first answer as cut, one member malformed. r1, r2: answer_responds_to a number, an object: skipped, the answer reads with no mark. r3 to r6: played_ms a string, a negative number, a boolean, absent: it reads as 0, the mark saying the answer was cut 0.0 s in and heard little or none of it (a boolean read as 1 ms would show the same: r5 shows only that its turn runs). Every room's next turn runs and its answer is delivered.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r6",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": 7
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r2",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": {
+            "event": "r2#0"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r3",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": "1200",
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r3#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r4",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": -5,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r4#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r5",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": true,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r5#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r6",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r6#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok great, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer, 0.0 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer, 0.0 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer, 0.0 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        },
+        {},
+        {
+          "messages": [
+            {},
+            {
+              "role": "assistant",
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer, 0.0 s in: they heard little or none of it.]"
+            },
+            {}
+          ]
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      },
+      "r2": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      },
+      "r3": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      },
+      "r4": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      },
+      "r5": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      },
+      "r6": {
+        "ws": [
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

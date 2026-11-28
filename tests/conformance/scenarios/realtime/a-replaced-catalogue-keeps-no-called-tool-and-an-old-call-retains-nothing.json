@@ -1,0 +1,214 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-replaced-catalogue-keeps-no-called-tool-and-an-old-call-retains-nothing",
+  "title": "A realtime session's new catalogue keeps no tool called in the one it replaced, and a call from that one retains nothing in it",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-6.4-237"
+  ],
+  "notes": "Tool Search hides the channel's tools past its threshold. The model calls weather, recovered at call time and served: the session declares it. A reconfiguration gives the session another catalogue holding the same names, Tool Search hiding them again: the retained weather is discarded, and a find_tools for news then declares news without it. A call of news, made in that catalogue, holds in its handler across a second replacement, which abandons it: it retains nothing in the catalogue that replaced its own. Cited in part: the runners' provider abandons every outstanding call at a reconfiguration, so a call whose result still went out after its catalogue was replaced is not observed, nor are the names a session's end discards (realtime/a-called-tool-stays-declared-for-the-session-s-catalogue).",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "news": {
+              "result": "calm",
+              "gate": "reading"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 2
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "weather"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.reconfigure",
+      "channel_id": "rt",
+      "tools": [
+        "weather",
+        "news",
+        "lookup"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1b",
+      "name": "find_tools",
+      "arguments": {
+        "query": "news"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "news",
+      "background": true,
+      "as": "news"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "call": "realtime.reconfigure",
+      "channel_id": "rt",
+      "tools": [
+        "lookup",
+        "weather",
+        "news"
+      ]
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "await": "news"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$present": true
+              },
+              "news": {
+                "$absent": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$present": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "sunny"
+            },
+            {
+              "call_id": "c1b",
+              "result": {
+                "$contains": "\"news\""
+              }
+            }
+          ],
+          "handlers": [
+            {
+              "name": "weather",
+              "outcome": "returned"
+            },
+            {
+              "name": "news",
+              "outcome": "interrupted"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

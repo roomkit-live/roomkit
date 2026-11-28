@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-voice-and-a-realtime-channel-bind-as-transports-of-audio-and-text",
+  "title": "A voice channel and a realtime voice channel each bind as a transport of their type, carrying audio and text",
+  "rules": [
+    "§6.2",
+    "§6.3",
+    "§12.2",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-6.2-003",
+    "RK-6.3-004"
+  ],
+  "notes": "The implementation's own voice channel (voice.open) and realtime voice channel (a realtime_voice channel with realtime), each bound with no category, so that the binding takes the channel's own. Their bindings show the VOICE and REALTIME_VOICE rows of the §6.2 table (a transport) and the Voice and Realtime Voice rows of the §6.3 table (audio and text), the media types matched in any order, which the RFC does not fix. RK-6.2-003 is cited in part: video/a-video-an-audio-video-and-a-conference-channel-bind-as-transports-of-their-media shows the VIDEO, AUDIO_VIDEO and CONFERENCE rows, and no fixture builds a realtime audio and video channel (REALTIME_AUDIO_VIDEO). The Key Features column describes what the channel does, which the scenarios of §12.2 and §12.4 observe.",
+  "requires_features": [
+    "voice",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "phone": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "category": "transport",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "audio",
+                "text"
+              ]
+            }
+          }
+        },
+        "rt": {
+          "channel_id": "rt",
+          "channel_type": "realtime_voice",
+          "category": "transport",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "audio",
+                "text"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

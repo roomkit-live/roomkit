@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-video-an-audio-video-and-a-conference-channel-bind-as-transports-of-their-media",
+  "title": "A video channel, an audio and video channel and a conference channel each bind as a transport of their type, carrying their media",
+  "rules": [
+    "§6.2",
+    "§6.3",
+    "§12.8",
+    "§12.10"
+  ],
+  "requirements": [
+    "RK-6.2-003",
+    "RK-6.3-006"
+  ],
+  "notes": "The implementation's own video channel (video.open), audio and video channel (av.open) and conference channel (conference.open). Their bindings show the VIDEO, AUDIO_VIDEO and CONFERENCE rows of the §6.2 table (a transport) and the Video, Audio/Video and Conference rows of the §6.3 table, the media types matched in any order, which the RFC does not fix. Cited in part: no fixture builds a realtime audio and video channel, the REALTIME_AUDIO_VIDEO row of §6.2 and the Realtime Audio/Video row of §6.3; voice/a-voice-and-a-realtime-channel-bind-as-transports-of-audio-and-text shows the VOICE and REALTIME_VOICE rows. The Key Features column describes what the channel does, which the scenarios of §12.8 and §12.10 observe.",
+  "requires_features": [
+    "video",
+    "voice",
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "channel_id": "cam",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "av.open",
+      "channel_id": "call",
+      "room_id": "r1",
+      "participants": [
+        "bob"
+      ],
+      "video": [
+        "bob"
+      ]
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "cam": {
+          "channel_type": "video",
+          "category": "transport",
+          "capabilities": {
+            "media_types": [
+              "video"
+            ]
+          }
+        },
+        "call": {
+          "channel_type": "audio_video",
+          "category": "transport",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "audio",
+                "video",
+                "text"
+              ]
+            }
+          }
+        },
+        "conf": {
+          "channel_type": "conference",
+          "category": "transport",
+          "capabilities": {
+            "media_types": [
+              "audio"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

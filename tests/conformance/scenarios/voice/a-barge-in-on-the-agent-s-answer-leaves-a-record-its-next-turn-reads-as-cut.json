@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-barge-in-on-the-agent-s-answer-leaves-a-record-its-next-turn-reads-as-cut",
+  "title": "A barge-in on the agent's spoken answer leaves in the room a record naming that answer, holding the text handed to speech and how long it played, which the agent's next turn reads as cut",
+  "rules": [
+    "§6.4",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-205",
+    "RK-6.4-207",
+    "RK-6.4-215"
+  ],
+  "notes": "The agent answers Alice over the implementation's own voice channel; the playback holds at the transport, and Alice barges in. The room holds a record of the cut: no participant, internal, naming the answer by its channel and the event it responds to, keeping the whole text handed to speech and how long it played, which the scenario does not fix (the time the playback took). Alice speaks again: the agent's next turn reads its answer followed by the mark, estimated there. RK-6.4-215 is cited in part: the share of the audio, written only when the utterance's length is known, is not observed (the synthesis is held before its end). RK-6.4-207 is cited in full by voice/a-cut-answer-reads-followed-by-a-mark-and-the-turn-s-notes-say-how.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Sure."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        },
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "What's the weather tomorrow?",
+        "Ok great, thanks."
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "What's the weather tomorrow?"
+            },
+            "source": {
+              "channel_id": "phone",
+              "participant_id": "alice"
+            }
+          },
+          {
+            "content": {
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            "source": {
+              "channel_id": "agent"
+            }
+          },
+          {
+            "visibility": "internal",
+            "content": {
+              "type": "text",
+              "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            "source": {
+              "channel_id": "phone",
+              "participant_id": {
+                "$absent": true
+              }
+            },
+            "metadata": {
+              "interrupted": true,
+              "played_ms": {
+                "$present": true
+              },
+              "answer_channel_id": "agent",
+              "answer_responds_to": "r1#0"
+            }
+          },
+          {
+            "content": {
+              "body": "Ok great, thanks."
+            },
+            "source": {
+              "channel_id": "phone",
+              "participant_id": "alice"
+            }
+          },
+          {
+            "content": {
+              "body": "Sure."
+            },
+            "source": {
+              "channel_id": "agent"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What's the weather tomorrow?"
+            },
+            {
+              "role": "assistant",
+              "text": {
+                "$contains": [
+                  "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.\n[The person cut you off during this answer",
+                  " s in: they heard"
+                ]
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Ok great, thanks.",
+                  "every answer of yours without one was heard to its end"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

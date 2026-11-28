@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-search-s-matches-are-declared-once-its-result-went-out",
+  "title": "A realtime session declares what a served find_tools call revealed only once its result went out",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-6.4-230"
+  ],
+  "notes": "Tool Search hides the channel's tools past its threshold. The provider's submission of the find_tools result holds at a gate: while it is held, the session's declaration is still the one it connected with, the match undeclared; once the result went out, a reconfiguration declares it. Cited in part: the other half, a reconfiguration while the call was judged, is realtime/a-search-judged-across-a-new-catalogue-declares-nothing.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "news": {
+              "result": "calm"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 2,
+          "submit_gate": "submitting"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "find_tools",
+      "arguments": {
+        "query": "weather"
+      },
+      "background": true,
+      "as": "search"
+    },
+    {
+      "wait_for": "submitting"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": []
+        }
+      }
+    },
+    {
+      "open": "submitting"
+    },
+    {
+      "await": "search"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$absent": true
+              },
+              "news": {
+                "$absent": true
+              }
+            },
+            {
+              "find_tools": {
+                "$present": true
+              },
+              "weather": {
+                "$present": true
+              },
+              "news": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "\"weather\""
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
