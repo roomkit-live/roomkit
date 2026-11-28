@@ -721,6 +721,22 @@ def _scripted_model(
     )
 
 
+def _thinker_model(
+    spec: Mapping[str, Any],
+    gates: Gates,
+    labelled: Callable[[Any], Any] | None,
+    shared: Mapping[str, ScriptedModel],
+) -> ScriptedModel | None:
+    """The scripted model an LLM thinker asks (README, "Scripted agents",
+    ``thinker.llm``), whose requests ``expect.models`` holds under
+    ``<agent>/thinker``; None for another thinker."""
+    thinker = spec.get("thinker")
+    if not isinstance(thinker, Mapping) or not isinstance(thinker.get("llm"), Mapping):
+        return None
+    key = f"{spec['id']}/thinker"
+    return shared.get(key) or _scripted_model(thinker["llm"]["model"], gates, labelled)
+
+
 def scripted_agent(
     spec: Mapping[str, Any],
     gates: Gates,
@@ -739,6 +755,7 @@ def scripted_agent(
     speak_turns: dict[str, list[Any]] | None = None,
     thinker_calls: dict[str, list[Any]] | None = None,
     host_handler: bool = True,
+    classifier_calls: dict[str, list[Any]] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -758,8 +775,11 @@ def scripted_agent(
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
-    kwargs.update(speaking_options(spec, gates, speak_turns))
-    kwargs.update(thinking_options(spec, gates, thinker_calls, thinking_context))
+    kwargs.update(speaking_options(spec, gates, speak_turns, classifier_calls))
+    thinker_model = _thinker_model(spec, gates, labelled, shared)
+    if thinker_model is not None:
+        models[f"{spec['id']}/thinker"] = thinker_model
+    kwargs.update(thinking_options(spec, gates, thinker_calls, thinking_context, thinker_model))
     kwargs.update(_external_handler_options(spec, external_handlers, gates))
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])

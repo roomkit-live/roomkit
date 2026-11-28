@@ -81,6 +81,7 @@ class Observed:
     continuations: dict[str, list[str]] = field(default_factory=dict)
     speak_turns: dict[str, list[Any]] = field(default_factory=dict)
     thinker_calls: dict[str, list[Any]] = field(default_factory=dict)
+    classifier_calls: dict[str, list[Any]] = field(default_factory=dict)
     ai_routes: dict[str, list[Any]] = field(default_factory=dict)
     acp_wire: dict[str, list[Any]] = field(default_factory=dict)
     acp_handlers: dict[str, list[Any]] = field(default_factory=dict)

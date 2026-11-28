@@ -1,4 +1,5 @@
-"""A scripted public SpeakPolicy and observations taken when it is called."""
+"""A scripted public SpeakPolicy, the implementation's classifier and answer-only
+policies, and observations taken when they are called."""
 
 from __future__ import annotations
 
@@ -6,7 +7,22 @@ import dataclasses
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit.speaking import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
+from roomkit.classifiers import Answers, Classifier
+from roomkit.speaking import (
+    AnswerOnly,
+    ClassifierSpeakPolicy,
+    CutReply,
+    SpeakDecision,
+    SpeakDecisionEvent,
+    SpeakPolicy,
+    SpeakTurn,
+)
+from tests.conformance._classifier import (
+    ScriptedClassifier,
+    classifier_problems,
+    question,
+    question_problems,
+)
 from tests.conformance._thinking import thought_value
 
 if TYPE_CHECKING:
@@ -52,10 +68,76 @@ def decision_problems(value: Any) -> list[str]:
     return found
 
 
+_CLASSIFIER_POLICY = frozenset(
+    {
+        "classifier",
+        "agent_name",
+        "agent_role",
+        "questions",
+        "languages",
+        "history",
+        "proactivity",
+        "composition",
+    }
+)
+"""The members of the implementation's classifier policy (README, ``speak_policy``)."""
+
+
+def _answer_only_problems(value: Any) -> list[str]:
+    if not isinstance(value, Mapping) or set(value) != {"people"}:
+        return ["answer_only must be an object of people alone"]
+    people = value["people"]
+    if not isinstance(people, list) or not people or any(not isinstance(p, str) for p in people):
+        return ["answer_only.people must be a nonempty array of strings"]
+    return []
+
+
+def _classifier_policy_problems(value: Mapping[str, Any]) -> list[str]:
+    found = classifier_problems(value["classifier"])
+    if "decisions" in value:
+        found.append("decisions and classifier are two policies: give one")
+    for key in ("agent_name", "agent_role"):
+        if key in value and not isinstance(value[key], str):
+            found.append(f"{key} must be a string")
+    if "agent_name" not in value:
+        found.append("a classifier policy needs agent_name")
+    questions = value.get("questions", {})
+    if not isinstance(questions, Mapping):
+        found.append("questions must map names to questions")
+    else:
+        for name, asked in questions.items():
+            found.extend(question_problems(asked, f"questions.{name}"))
+    languages = value.get("languages", {})
+    if not isinstance(languages, Mapping) or any(
+        not isinstance(v, str) for v in languages.values()
+    ):
+        found.append("languages must map names to strings")
+    if "history" in value and (
+        not isinstance(value["history"], int) or isinstance(value["history"], bool)
+    ):
+        found.append("history must be an integer")
+    proactivity = value.get("proactivity", 0.5)
+    if not isinstance(proactivity, (int, float)) or isinstance(proactivity, bool):
+        found.append("proactivity must be a number")
+    if "composition" in value:
+        composition = value["composition"]
+        if not isinstance(composition, Mapping) or set(composition) != {"decision"}:
+            found.append("composition must be an object of decision alone")
+        else:
+            found.extend(decision_problems(composition["decision"]))
+    return found
+
+
 def policy_problems(value: Any) -> list[str]:
     if not isinstance(value, Mapping):
         return ["expected an object"]
-    found = [f"unknown member {key}" for key in value if key != "decisions"]
+    allowed = {"decisions", "answer_only", *_CLASSIFIER_POLICY}
+    found = [f"unknown member {key}" for key in value if key not in allowed]
+    if "answer_only" in value:
+        found.extend(_answer_only_problems(value["answer_only"]))
+    if "classifier" in value:
+        return [*found, *_classifier_policy_problems(value)]
+    found.extend(f"{key} needs classifier" for key in value if key in _CLASSIFIER_POLICY)
     entries = value.get("decisions")
     if not isinstance(entries, list) or not entries:
         return [*found, "decisions must be a nonempty array"]
@@ -136,19 +218,64 @@ class ScriptedSpeakPolicy(SpeakPolicy):
         return decision(entry["decision"])
 
 
+class _HostComposition(ClassifierSpeakPolicy):
+    """The classifier policy with its host's composition (README,
+    ``speak_policy.composition``): every turn it judged is decided so."""
+
+    def __init__(self, classifier: Classifier, decided: SpeakDecision, **options: Any) -> None:
+        super().__init__(classifier, **options)
+        self._decided = decided
+
+    def decision(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
+        return self._decided
+
+
+def classifier_policy(spec: Mapping[str, Any], classifier: Classifier) -> ClassifierSpeakPolicy:
+    """The implementation's classifier policy *spec* describes, over *classifier*."""
+    options: dict[str, Any] = {
+        key: spec[key]
+        for key in ("agent_name", "agent_role", "history", "proactivity")
+        if key in spec
+    }
+    if "questions" in spec:
+        options["questions"] = {name: question(q) for name, q in spec["questions"].items()}
+    if "languages" in spec:
+        options["languages"] = dict(spec["languages"])
+    if "composition" in spec:
+        return _HostComposition(classifier, decision(spec["composition"]["decision"]), **options)
+    return ClassifierSpeakPolicy(classifier, **options)
+
+
+def _policy(
+    spec: Mapping[str, Any], gates: Gates, calls: list[Any], classified: list[Any]
+) -> SpeakPolicy:
+    """The policy *spec* describes, answer-only around it when it says so."""
+    if "classifier" in spec:
+        policy: SpeakPolicy = classifier_policy(
+            spec, ScriptedClassifier(spec["classifier"], gates, classified)
+        )
+    else:
+        policy = ScriptedSpeakPolicy(spec, gates, calls)
+    if "answer_only" in spec:
+        return AnswerOnly(policy, spec["answer_only"]["people"])
+    return policy
+
+
 def speaking_options(
     channel: Mapping[str, Any],
     gates: Gates,
     observations: dict[str, list[Any]] | None,
+    classifier_calls: dict[str, list[Any]] | None = None,
 ) -> dict[str, Any]:
     if problems := channel_problems(channel, "channel"):
         raise ValueError("; ".join(problems))
     options: dict[str, Any] = {}
     calls = observations.setdefault(channel["id"], []) if observations is not None else None
     if "speak_policy" in channel:
-        if calls is None:
+        if calls is None or classifier_calls is None:
             raise AssertionError("speak_policy: no observation sink")
-        options["speak_policy"] = ScriptedSpeakPolicy(channel["speak_policy"], gates, calls)
+        classified = classifier_calls.setdefault(channel["id"], [])
+        options["speak_policy"] = _policy(channel["speak_policy"], gates, calls, classified)
     if "speak_timeout_ms" in channel:
         options["speak_timeout"] = channel["speak_timeout_ms"] / 1000
     return options
@@ -162,7 +289,13 @@ def turn_record(turn: SpeakTurn) -> dict[str, Any]:
         "channel_id": turn.channel_id,
         "speakers": dict(turn.speakers),
         "thought": thought_value(turn.thought) if turn.thought is not None else None,
+        "cut": cut_record(turn.cut) if turn.cut is not None else None,
     }
+
+
+def cut_record(cut: CutReply) -> dict[str, Any]:
+    """The turn's cut answer as ``expect.speak_turns`` reads it (README)."""
+    return {"text": cut.text, "played_ms": cut.played_ms, "at": cut.at.isoformat()}
 
 
 def decision_record(report: SpeakDecisionEvent) -> dict[str, Any]:

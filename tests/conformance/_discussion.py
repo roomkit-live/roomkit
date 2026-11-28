@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit import Agent, RoomKit
 from roomkit.channels.declared import id_of
 from roomkit.orchestration import (
+    ClassifierDispatchPolicy,
     Discussion,
     DispatchDecision,
     DispatchDecisionEvent,
@@ -24,6 +25,7 @@ from roomkit.orchestration import (
     SpeakQueue,
     SpeakQueueEvent,
 )
+from tests.conformance._classifier import ScriptedClassifier
 
 if TYPE_CHECKING:
     from tests.conformance._calls import Call
@@ -72,11 +74,28 @@ def _dispatch_options(
 ) -> dict[str, Any]:
     """The ``dispatch`` and ``dispatch_timeout`` a discussion *spec* gives."""
     options: dict[str, Any] = {}
-    if "dispatch" in spec:
+    if "dispatch" in spec and "classifier" in spec["dispatch"]:
+        options["dispatch"] = _classifier_dispatch(spec["dispatch"], harness, strategy_id)
+    elif "dispatch" in spec:
         options["dispatch"] = ScriptedDispatch(spec["dispatch"], harness, strategy_id)
     if "dispatch_timeout_ms" in spec:
         options["dispatch_timeout"] = spec["dispatch_timeout_ms"] / 1000
     return options
+
+
+def _classifier_dispatch(
+    spec: Mapping[str, Any], harness: Harness, strategy_id: str | None
+) -> ClassifierDispatchPolicy:
+    """A setup strategy's classifier dispatch (README, "Setup"): the
+    implementation's policy over a scripted classifier, whose calls
+    ``expect.classifier_calls`` reads under ``<strategy>/dispatch``."""
+    if strategy_id is None:
+        raise ValueError("dispatch.classifier: only a setup strategy's dispatch takes one")
+    calls = harness.observed.classifier_calls.setdefault(f"{strategy_id}/dispatch", [])
+    return ClassifierDispatchPolicy(
+        ScriptedClassifier(spec["classifier"], harness.gates, calls),
+        **{key: spec[key] for key in CLASSIFIER_DISPATCH_MEMBERS - {"classifier"} if key in spec},
+    )
 
 
 def dispatch_turn_record(turn: DispatchTurn) -> dict[str, Any]:
@@ -226,6 +245,9 @@ DISCUSSION_MEMBERS = {
 
 DISPATCH_MEMBERS = {"decisions", "delay_ms", "error", "gate"}
 """The members a scripted dispatch policy may give."""
+
+CLASSIFIER_DISPATCH_MEMBERS = frozenset({"classifier", "threshold", "max_agents", "recent"})
+"""The members a classifier dispatch policy may give."""
 
 DISCUSSION_ARGUMENTS: dict[str, set[str]] = {
     "speak_queue": {"room_id", "organization_id"},

@@ -34,6 +34,12 @@ from tests.conformance._thinking import ScriptedThinker, ThinkingFailedError
         {"thoughts": [{"thought": {}, "gate": None}]},
         {"thoughts": [{"thought": {}, "misspelled": 1}]},
         {"thoughts": [{"thought": {}}], "misspelled": 1},
+        {"llm": None},
+        {"llm": {}},
+        {"llm": {"model": {"rounds": []}, "timeout_ms": "1"}},
+        {"llm": {"model": {"rounds": []}, "max_tokens": 1.5}},
+        {"llm": {"model": {"rounds": []}, "misspelled": 1}},
+        {"llm": {"model": {"rounds": []}}, "thoughts": [{"thought": {}}]},
     ],
 )
 def test_invalid_thinker_is_refused_before_product_execution(spec: Any) -> None:

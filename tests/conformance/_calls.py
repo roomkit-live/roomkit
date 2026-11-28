@@ -615,6 +615,7 @@ def scripted_channel(
                 continuation_calls=harness.observed.continuations,
                 speak_turns=harness.observed.speak_turns,
                 thinker_calls=harness.observed.thinker_calls,
+                classifier_calls=harness.observed.classifier_calls,
                 external_handlers=harness.external_handlers,
                 skills=skills,
                 sandbox_executors=harness.observed.sandbox_executors,

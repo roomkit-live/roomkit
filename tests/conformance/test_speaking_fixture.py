@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
 
+from roomkit.classifiers import ClassifierError, ScoreQuestion, YesNoQuestion
 from roomkit.speaking import SpeakDecision, SpeakDecisionEvent, SpeakTurn
+from tests.conformance._classifier import ScriptedClassifier
 from tests.conformance._script import Gates
 from tests.conformance._shape import unknown_members
 from tests.conformance._speaking import (
@@ -15,6 +18,9 @@ from tests.conformance._speaking import (
     patched_decision,
 )
 from tests.conftest import make_event
+
+_SPEAK = {"decisions": [{"decision": {"mode": "speak"}}]}
+_CLASSIFIER = {"classifier": {"calls": [{"answers": {}}]}, "agent_name": "Nova"}
 
 
 @pytest.mark.parametrize(
@@ -37,6 +43,21 @@ from tests.conftest import make_event
         {"decisions": [{"decision": {"mode": "silent", "misspelled": 1}}]},
         {"decisions": [{"fail": "failed", "misspelled": 1}]},
         {"decisions": [{"fail": "failed"}], "misspelled": 1},
+        {"classifier": {"calls": []}, "agent_name": "Nova"},
+        {"classifier": {"calls": [{"answers": []}]}, "agent_name": "Nova"},
+        {"classifier": {"calls": [{"answers": {"hush": True}}]}, "agent_name": "Nova"},
+        {"classifier": {"calls": [{"answers": {}, "fail": "down"}]}, "agent_name": "Nova"},
+        {"classifier": {"calls": [{"answers": {}, "misspelled": 1}]}, "agent_name": "Nova"},
+        {"classifier": {"calls": [{"answers": {}}]}},
+        {"classifier": {"calls": [{"answers": {}}]}, "agent_name": "Nova", **_SPEAK},
+        {"agent_name": "Nova", **_SPEAK},
+        {**_CLASSIFIER, "questions": {"hush": {"instructions": 1}}},
+        {**_CLASSIFIER, "questions": {"hush": {"instructions": "?", "options": {}, "levels": []}}},
+        {**_CLASSIFIER, "languages": {"French": 1}},
+        {**_CLASSIFIER, "composition": {"decision": {"mode": "maybe"}}},
+        {**_CLASSIFIER, "composition": {"decision": {"mode": "speak"}, "misspelled": 1}},
+        {"answer_only": {"people": []}, **_SPEAK},
+        {"answer_only": ["alice"], **_SPEAK},
     ],
 )
 def test_invalid_policy_is_refused_before_product_execution(policy: Any) -> None:
@@ -95,3 +116,32 @@ def test_invalid_decision_patch_is_refused_before_a_hook_can_swallow_it(patch: A
         }
     }
     assert unknown_members(scenario)
+
+
+async def test_a_scripted_classifier_records_each_call_before_its_gate_or_failure() -> None:
+    """Each call is recorded with its state and questions, takes the next
+    entry (the last repeating), and answers as the public mock does."""
+    calls: list[Any] = []
+    gates = Gates()
+    classifier = ScriptedClassifier(
+        {"calls": [{"answers": {"hush": 0.9}, "gate": "held"}, {"fail": "down"}]}, gates, calls
+    )
+    questions = {"hush": YesNoQuestion("Quiet?"), "level": ScoreQuestion("How?", ("a", "b"))}
+    held = asyncio.ensure_future(classifier.classify({"said": "hi"}, questions))
+    await gates.wait_for("held")
+    assert calls == [
+        {
+            "state": {"said": "hi"},
+            "questions": {
+                "hush": {"instructions": "Quiet?", "yes": None, "no": None},
+                "level": {"instructions": "How?", "levels": ["a", "b"]},
+            },
+        }
+    ]
+    gates.open("held")
+    answers = await held
+    assert (answers.yes("hush"), answers.score("level")) == (0.9, 0.0)
+    for _ in range(2):
+        with pytest.raises(ClassifierError, match="down"):
+            await classifier.classify("again", questions)
+    assert len(calls) == 3

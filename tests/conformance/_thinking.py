@@ -6,10 +6,10 @@ import dataclasses
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit.speaking import Thinker, Thought, ThoughtEvent
+from roomkit.speaking import LLMThinker, Thinker, Thought, ThoughtEvent
 
 if TYPE_CHECKING:
-    from roomkit.providers.ai import AIContext
+    from roomkit.providers.ai import AIContext, AIProvider
     from tests.conformance._script import Gates
 
 
@@ -35,9 +35,35 @@ def thought_problems(value: Any) -> list[str]:
     return found
 
 
+def llm_problems(value: Any) -> list[str]:
+    """What is wrong with an LLM thinker's controls (README, ``thinker.llm``)."""
+    if not isinstance(value, Mapping):
+        return ["thinker.llm must be an object"]
+    found = [f"unknown thinker.llm member {key}" for key in value if key not in _LLM_MEMBERS]
+    if not isinstance(value.get("model"), Mapping):
+        found.append("thinker.llm.model must be a scripted model")
+    for key, kind in (("instructions", str), ("reasoning_effort", str)):
+        if key in value and not isinstance(value[key], kind):
+            found.append(f"thinker.llm.{key} must be a string")
+    if "max_tokens" in value and (
+        not isinstance(value["max_tokens"], int) or isinstance(value["max_tokens"], bool)
+    ):
+        found.append("thinker.llm.max_tokens must be an integer")
+    timeout = value.get("timeout_ms", 0)
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+        found.append("thinker.llm.timeout_ms must be a number")
+    return found
+
+
+_LLM_MEMBERS = frozenset({"model", "instructions", "max_tokens", "reasoning_effort", "timeout_ms"})
+
+
 def thinker_problems(value: Any) -> list[str]:
     if not isinstance(value, Mapping):
         return ["thinker must be an object"]
+    if "llm" in value:
+        found = [f"unknown thinker member {key}" for key in value if key != "llm"]
+        return found + llm_problems(value["llm"])
     found = [f"unknown thinker member {key}" for key in value if key != "thoughts"]
     entries = value.get("thoughts")
     if not isinstance(entries, list) or not entries:
@@ -102,17 +128,34 @@ class ScriptedThinker(Thinker):
         return Thought(**{**thought, "want_to_say": tuple(thought.get("want_to_say", ()))})
 
 
+def llm_thinker(spec: Mapping[str, Any], model: AIProvider) -> LLMThinker:
+    """The implementation's LLM thinker over *model* (README, ``thinker.llm``)."""
+    options: dict[str, Any] = {
+        key: spec[key] for key in ("instructions", "max_tokens", "reasoning_effort") if key in spec
+    }
+    if "timeout_ms" in spec:
+        options["timeout"] = spec["timeout_ms"] / 1000
+    return LLMThinker(model, **options)
+
+
 def thinking_options(
     channel: Mapping[str, Any],
     gates: Gates,
     observations: dict[str, list[Any]] | None,
     context_record: Callable[[AIContext], dict[str, Any]],
+    model: AIProvider | None = None,
 ) -> dict[str, Any]:
+    """The thinker and its wait a channel *spec* gives: a scripted thinker, or
+    the LLM thinker over *model*, its scripted model."""
     if problems := channel_problems(channel, "channel"):
         raise ValueError("; ".join(problems))
     options: dict[str, Any] = {}
     calls = observations.setdefault(channel["id"], []) if observations is not None else None
-    if "thinker" in channel:
+    if "llm" in channel.get("thinker", {}):
+        if model is None:
+            raise AssertionError("thinker.llm: no scripted model")
+        options["thinker"] = llm_thinker(channel["thinker"]["llm"], model)
+    elif "thinker" in channel:
         if calls is None:
             raise AssertionError("thinker: no observation sink")
         options["thinker"] = ScriptedThinker(channel["thinker"], gates, calls, context_record)
