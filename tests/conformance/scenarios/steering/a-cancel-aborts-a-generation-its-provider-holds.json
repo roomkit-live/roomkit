@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-cancel-aborts-a-generation-its-provider-holds",
+  "title": "A steering Cancel aborts the agent's current generation immediately: a generation its provider holds before it streams anything ends while the provider still holds it, and its answer is never stored",
+  "rules": [
+    "§21.3",
+    "§10.6.8"
+  ],
+  "requirements": [
+    "RK-21.3-004"
+  ],
+  "notes": "The agent's only round is held at the gate held before it writes anything, as a provider that has not answered yet; the Cancel comes while it holds, and the turn ends while the gate is still closed, which opens only after the turn is awaited. Red before RMK-2191 in both implementations: process_inbound did not return within 10 s, the Cancel read only at the provider's next event. Template: steering/a-cancel-for-a-channel-without-steering-cuts-its-turn, where the agent is a scripted channel with no steering of its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "held"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "steer",
+      "room_id": "r1",
+      "channel_id": "agent",
+      "directive": {
+        "type": "cancel",
+        "reason": "Alice pressed stop"
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        }
+      ]
+    }
+  }
+}

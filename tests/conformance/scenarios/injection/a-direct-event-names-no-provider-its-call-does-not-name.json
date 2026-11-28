@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-direct-event-names-no-provider-its-call-does-not-name",
+  "title": "An event injected directly from a channel whose provider has a name carries no provider when its call names none",
+  "rules": [
+    "§5.2",
+    "§6.1",
+    "§10.5"
+  ],
+  "requirements": [
+    "RK-10.5-015"
+  ],
+  "notes": "The agent's AI channel wraps its scripted model, whose name (model.provider, 'scripted' by default) is the channel's provider_name in both implementations. §5.2 asks a provider only of what a provider or backend received, and §10.5 names the event's source as the channel the call names: the injected event carries the provider its call names, none when it names none, as Python's send_event writes it (core/framework.py _direct_source). roomkit-rs wrote the channel's provider_name there before RMK-2191 ('scripted' is present). Not observed: the channel's provider_name itself (RK-6.1-016), which no step reads.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "unused"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "content": {
+        "type": "text",
+        "body": "A reminder"
+      },
+      "expect": {
+        "result": {
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound",
+            "provider": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "A reminder"
+          },
+          "source": {
+            "channel_id": "agent",
+            "provider": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-message-whose-deadline-passes-while-its-room-is-created-starts-no-session",
+  "title": "A message whose process_timeout passes while step 2 creates its room starts no session: the room is completed and its channel attached, and the message is refused process_timeout before its session starts",
+  "rules": [
+    "§13.6",
+    "§10.1 step 2"
+  ],
+  "requirements": [
+    "RK-10.1-025",
+    "RK-13.6-025"
+  ],
+  "notes": "The message names room-new, which no store holds: step 2 creates it, and its ON_ROOM_CREATED hook holds at creating, which no deadline bounds. Meanwhile a message to room-2, held at late by its BEFORE_BROADCAST hook, runs to its own process_timeout, 300 ms, as the clock: room-new's message is past its deadline by then. Once creating opens, the room is completed and sms attached, and the message, expired, is refused process_timeout before its session starts: no session_started, no ON_SESSION_STARTED hook. roomkit started the session first on the in-memory store before RMK-2191 (RMK-2175): the deadline fell only at the call's next suspension, which a store that never suspends reached after it; roomkit-rs started it too.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "creating",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-new"
+            },
+            "gate": "creating"
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "slow"
+            },
+            "gate": "late"
+          }
+        ]
+      },
+      {
+        "name": "session",
+        "trigger": "on_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-new",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "background": true,
+      "as": "caller"
+    },
+    {
+      "wait_for": "creating"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "slow"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout"
+        }
+      }
+    },
+    {
+      "open": "late"
+    },
+    {
+      "open": "creating"
+    },
+    {
+      "await": "caller",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-new": []
+    },
+    "framework_events": {
+      "room-new": [
+        "room_created",
+        "room_channel_attached",
+        {
+          "event": "process_timeout"
+        }
+      ]
+    },
+    "bindings": {
+      "room-new": {
+        "sms": {
+          "channel_id": "sms"
+        }
+      }
+    },
+    "hooks": {
+      "session": []
+    }
+  }
+}

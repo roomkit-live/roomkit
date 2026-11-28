@@ -1,15 +1,17 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "rooms/a-room-step-2-creates-is-completed-when-its-caller-leaves",
-  "title": "A room the inbound pipeline creates for a message is completed though the message's caller leaves while it is created: its ON_ROOM_CREATED hooks run and its channel is attached, while the message, undecided, is not stored",
+  "title": "A room the inbound pipeline creates for a message is completed though the message's caller leaves while it is created: its ON_ROOM_CREATED hooks run and its channel is attached, while the message, undecided and expired, starts no session and is not stored",
   "rules": [
     "§13.6",
     "§10.1 step 2"
   ],
   "requirements": [
-    "RK-13.6-025"
+    "RK-13.6-025",
+    "RK-13.6-022",
+    "RK-10.1-025"
   ],
-  "notes": "The message names room-new, which no store holds: step 2 creates it. Its first ON_ROOM_CREATED hook holds at creating; the caller leaves meanwhile. Once the gate opens, the second hook runs and sms is attached: the room stands, empty. Not observed: a code reply's attempt at step 5b and its completion, which identity verification runs; and whether the message, once its caller left, still starts a session in the room: roomkit starts none, roomkit-rs starts one by an earlier decision (gap G-068), a question put to the maintainer.",
+  "notes": "The message names room-new, which no store holds: step 2 creates it. Its first ON_ROOM_CREATED hook holds at creating; the caller leaves meanwhile. Once the gate opens, the second hook runs and sms is attached: the room stands, empty. The message expired as its caller left (§13.6), so it starts no session: no session_started, no ON_SESSION_STARTED hook, and no process_timeout event since no deadline passed. roomkit-rs started the session before RMK-2191, by decision 1 of step 2b (gap G-068), which the maintainer reversed on 2026-11-27 (HITL 972aa960). Not observed: a code reply's attempt at step 5b and its completion, which identity verification runs.",
   "setup": {
     "channels": [
       {
@@ -35,6 +37,11 @@
         "trigger": "on_room_created",
         "execution": "async",
         "priority": 1
+      },
+      {
+        "name": "session",
+        "trigger": "on_session_started",
+        "execution": "async"
       }
     ]
   },
@@ -70,6 +77,12 @@
     "timeline": {
       "room-new": []
     },
+    "framework_events": {
+      "room-new": [
+        "room_created",
+        "room_channel_attached"
+      ]
+    },
     "bindings": {
       "room-new": {
         "sms": {
@@ -89,7 +102,8 @@
           "trigger": "on_room_created",
           "room_id": "room-new"
         }
-      ]
+      ],
+      "session": []
     },
     "rooms": {
       "room-new": {

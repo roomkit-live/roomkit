@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-kit-started-again-offers-no-id-its-store-no-longer-holds",
+  "title": "A summary a turn rebuilds from the stored history after a restart offers no id its result store no longer holds: the placeholder of a result an earlier process stored reads as its size alone",
+  "rules": [
+    "§21.5",
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-21.5-017"
+  ],
+  "notes": "The first turn runs in the run's own kit: lookup's result passes the threshold, is stored as evicted_c1, and the model reads its placeholder. The second turn runs in p2, a kit started over the same store, as the agent is after a restart: its result store holds nothing. The history it replays offers no id that store no longer holds: c1's placeholder reads as its size alone, the same text on both sides (the third and fourth requests), and a read of evicted_c1 finds nothing. roomkit-rs replayed 'evicted_c1' before RMK-2191.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Stored."
+            },
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "offset": 0,
+                    "limit": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Nothing there."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "CAROL-RECORD iban=FR76-3000-6000\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\nrow 006\nrow 007\nrow 008\nrow 009\nrow 010\nrow 011\nrow 012\nrow 013\nrow 014\nrow 015\nrow 016\nrow 017\nrow 018\nrow 019\nrow 020\nrow 021\nrow 022\nrow 023\nrow 024\nrow 025\nrow 026\nrow 027\nrow 028\nrow 029\nrow 030\nrow 031\nrow 032\nrow 033\nrow 034\nrow 035\nrow 036\nrow 037\nrow 038\nrow 039\nrow 040\nrow 041\nrow 042\nrow 043\nrow 044\nrow 045\nrow 046\nrow 047\nrow 048\nrow 049\nrow 050\nrow 051\nrow 052\nrow 053\nrow 054\nrow 055\nrow 056\nrow 057\nrow 058\nrow 059\nrow 060\nrow 061\nrow 062\nrow 063\nrow 064\nrow 065\nrow 066\nrow 067\nrow 068\nrow 069\nrow 070\nrow 071\nrow 072\nrow 073\nrow 074\nrow 075\nrow 076\nrow 077\nrow 078\nrow 079\nrow 080\nrow 081\nrow 082\nrow 083\nrow 084\nrow 085\nrow 086\nrow 087\nrow 088\nrow 089\nrow 090\nrow 091\nrow 092\nrow 093\nrow 094\nrow 095\nrow 096\nrow 097\nrow 098\nrow 099\nrow 100\nrow 101\nrow 102\nrow 103\nrow 104\nrow 105\nrow 106\nrow 107\nrow 108\nrow 109\nrow 110\nrow 111\nrow 112\nrow 113\nrow 114\nrow 115\nrow 116\nrow 117\nrow 118\nrow 119\nrow 120\nrow 121\nrow 122\nrow 123\nrow 124\nrow 125\nrow 126\nrow 127\nrow 128\nrow 129\nrow 130\nrow 131\nrow 132\nrow 133\nrow 134\nrow 135\nrow 136\nrow 137\nrow 138\nrow 139\nrow 140\nrow 141\nrow 142\nrow 143\nrow 144\nrow 145\nrow 146\nrow 147\nrow 148\nrow 149\nrow 150\nrow 151\nrow 152\nrow 153\nrow 154\nrow 155\nrow 156\nrow 157\nrow 158\nrow 159"
+          }
+        ],
+        "evict_threshold_tokens": 300
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Look up my record."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "kit": "p2",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Read result evicted_c1."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "Result too large (327 tokens), the rest is not shown here: call the tool again for it."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "Result too large (327 tokens), the rest is not shown here: call the tool again for it."
+            },
+            {
+              "tool_call_id": "r1",
+              "name": "read_stored_result",
+              "content": {
+                "$contains": "\"available\": []"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
