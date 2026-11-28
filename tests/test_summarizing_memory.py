@@ -11,8 +11,17 @@ from roomkit.memory._summary import is_summary, summary_message
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.summarizing import SummarizingMemory
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.event import (
+    CompositeContent,
+    EventSource,
+    LocationContent,
+    RichContent,
+    RoomEvent,
+    TemplateContent,
+    TextContent,
+    ToolCallContent,
+)
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import (
     AIMessage,
@@ -390,6 +399,63 @@ class TestTier2Summarization:
         prompt = ai_provider.calls[0].messages[0].content
         assert "[user]:" in prompt
         assert "[assistant]:" in prompt
+
+    async def test_a_summary_reads_each_content_by_its_text_form_a_tool_call_whole(self) -> None:
+        """RFC §6.6 (RK-6.6-029): a memory's summary reads every content by its
+        text form, a location and a template included, as a composite's parts
+        in order; a tool call's row keeps the whole rendering the memory gives
+        it, so the summary keeps what the call did."""
+
+        def said(content: Any, event_id: str, type_: EventType = EventType.MESSAGE) -> RoomEvent:
+            return RoomEvent(
+                id=event_id,
+                room_id="room-1",
+                type=type_,
+                source=EventSource(channel_id="ch-1", channel_type=ChannelType.SMS),
+                content=content,
+            )
+
+        events = [
+            said(LocationContent(latitude=45.5, longitude=-73.6, label="Office"), "e-loc"),
+            said(TemplateContent(template_id="welcome", body="Welcome aboard"), "e-tpl"),
+            said(TemplateContent(template_id="reminder"), "e-tpl2"),
+            said(
+                CompositeContent(
+                    parts=[
+                        TextContent(body="Meet"),
+                        LocationContent(latitude=45.0, longitude=-73.6),
+                    ]
+                ),
+                "e-comp",
+            ),
+            said(RichContent(body="**Bold** news", plain_text="Bold news"), "e-rich"),
+            said(
+                ToolCallContent(tool_name="lookup", tool_id="c1", result="order 42 shipped"),
+                "e-tool",
+                EventType.TOOL_CALL_END,
+            ),
+            *[_make_event(f"pad {i}" * 200, event_id=f"e-pad{i}") for i in range(8)],
+        ]
+        ai_provider = MockAIProvider(responses=["ok"])
+        sm = SummarizingMemory(
+            StubInnerMemory(events=events),
+            ai_provider,
+            max_context_tokens=100,
+            tier1_ratio=0.01,
+            tier2_ratio=0.02,
+            min_events=2,
+        )
+
+        await sm.retrieve("room-1", _make_event("current"), _make_context())
+
+        lines = ai_provider.calls[0].messages[0].content.splitlines()
+        assert "[user]: “[Location: Office (45.5, -73.6)]”" in lines
+        assert "[user]: “Welcome aboard”" in lines
+        assert "[user]: “[Template: reminder]”" in lines
+        assert "[user]: “Meet [Location: (45.0, -73.6)]”" in lines
+        assert "[user]: “Bold news”" in lines
+        tool_line = next(line for line in lines if "lookup" in line)
+        assert "order 42 shipped" in tool_line
 
     async def test_cache_eviction_when_full(self) -> None:
         """Cache should evict oldest entry when it exceeds max size."""

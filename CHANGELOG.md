@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A memory's summary reads every content by its text form (RFC §6.6, RMK-2241): the summarizer read a location as its fields' internal representation (`type='location' latitude=45.5 …`), a template without a body likewise, a rich text as its markup, and a composite's location or template part not at all; it now reads `[Location: Office (45.5, -73.6)]`, a template's body or `[Template: <id>]`, a rich text's plain text, a composite's parts in order, an edit as `Correction: …` and a delete as `[Message deleted]`, while a tool call's row keeps its arguments and result.
+
 - A background task whose worker answered only blanks no longer wakes the notified agent (RFC §23.3 step 8, RMK-2219): it completed with nothing to say, which a relayed hand-back read as something to say, so the agent was handed a blank result and opened a turn on it, while a posted one already posted nothing. Both now skip it. The same in roomkit-rs.
 
 - A voice session's join and leave each announce it once, `voice_session_started` and `voice_session_ended` (RFC §8.2, RMK-2226), where `kit.join()` and `kit.leave()` emitted each twice: once from the kit and once as the channel bound or unbound the session, so a handler of either event ran twice per call. The kit's own stays, when it came: `voice_session_started` before `join()` returns, `voice_session_ended` once the transport stopped listening and disconnected the session; a session the transport itself hands in or ends is announced once by the channel, its event now carrying `participant_id` and its `channel_id` too

@@ -85,8 +85,9 @@ def extract_event_text(event: RoomEvent) -> str:
     with two differences: a media reads as its label and a composite as its
     parts, never a ``data:`` URI or a reference (RFC §6.6); other content that
     carries no text, a location, a tool call, is rendered with ``str()``
-    rather than dropped, because it still costs tokens and still belongs in a
-    summary.
+    rather than dropped, because it still costs tokens. A summary reads
+    every content but a tool call's row by its text form instead, and a tool
+    call's row by this rendering (:func:`roomkit.memory._summary.summary_text`).
     """
     text = _transport_text(event)
     if text or isinstance(event.content, TextContent):

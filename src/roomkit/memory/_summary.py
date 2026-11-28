@@ -8,6 +8,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from roomkit._media import text_form
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, quoted
 from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._runtime_record import (
@@ -20,7 +21,7 @@ from roomkit.memory._turn_labels import conversation_labels, own_turn
 from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, ToolCallContent
 from roomkit.providers.ai.base import (
     AIImagePart,
     AIMessage,
@@ -95,7 +96,7 @@ class SummaryLines:
         return own_turn(event, self.channel_id)
 
     def _line(self, event: RoomEvent, label: str | None) -> str:
-        text = extract_event_text(event)
+        text = summary_text(event)
         # A copy of a runtime mark the summarizer could carry into the summary
         # is replaced at the source; the runtime's own records keep theirs.
         if not written_by_runtime(event.metadata):
@@ -105,6 +106,16 @@ class SummaryLines:
             return f"{label}: {text}"
         role = "assistant" if event.source.channel_type == ChannelType.AI else "user"
         return f"[{role}]: {text}"
+
+
+def summary_text(event: RoomEvent) -> str:
+    """What a summarizer reads of *event* (RFC §6.6): its content's text form,
+    a location and a template included, a composite's parts in order; a tool
+    call's row keeps the whole rendering the memory layer gives it, its
+    arguments and result, so the summary keeps what the call did."""
+    if isinstance(event.content, ToolCallContent):
+        return extract_event_text(event)
+    return text_form(event.content)
 
 
 def message_lines(messages: Sequence[AIMessage]) -> list[str]:
