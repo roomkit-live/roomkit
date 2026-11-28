@@ -20,11 +20,13 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import Access, ChannelType, EventType
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.voice import AudioPipelineConfig
 from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.base import VoiceSession
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 from tests.conference.test_conference_realtime import until
@@ -41,6 +43,44 @@ def _started(kit: RoomKit) -> list[SessionStartedEvent]:
         seen.append(event)
 
     return seen
+
+
+class _SlowToHangUp(MockVoiceBackend):
+    """A transport whose hang-up yields to the loop before the call ends, as
+    one that waits on its peer does."""
+
+    async def disconnect(self, session: VoiceSession) -> None:
+        for _ in range(3):
+            await asyncio.sleep(0)
+        await super().disconnect(session)
+
+
+async def _announcing_kit(backend: MockVoiceBackend) -> tuple[RoomKit, str, list[FrameworkEvent]]:
+    """A kit with a voice channel attached to a room, and the voice session
+    announcements it emits, in order."""
+    kit = RoomKit(voice=backend)
+    kit.register_channel(VoiceChannel("voice-1", backend=backend))
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "voice-1")
+    seen: list[FrameworkEvent] = []
+
+    @kit.on("voice_session_started")
+    async def started(event: FrameworkEvent) -> None:
+        seen.append(event)
+
+    @kit.on("voice_session_ended")
+    async def ended(event: FrameworkEvent) -> None:
+        seen.append(event)
+
+    return kit, room.id, seen
+
+
+def _assert_announces(event: FrameworkEvent, session: VoiceSession, room_id: str) -> None:
+    assert event.room_id == room_id
+    assert event.channel_id == "voice-1"
+    assert event.data["session_id"] == session.id
+    assert event.data["channel_id"] == "voice-1"
+    assert event.data["participant_id"] == "user-1"
 
 
 class TestVoiceSessionStarted:
@@ -239,6 +279,46 @@ class TestVoiceSessionStarted:
         assert evt.channel_type == "voice"
         assert evt.participant_id == "user-1"
         assert evt.session is session
+
+    async def test_a_join_announces_its_voice_session_once_before_it_returns(self) -> None:
+        """RFC §8.2: ``voice_session_started`` is emitted once, with the
+        session, room, channel and participant, and has been by the time the
+        kit's join() returns."""
+        backend = MockVoiceBackend()
+        kit, room_id, seen = await _announcing_kit(backend)
+
+        session = await kit.join(room_id, "voice-1", participant_id="user-1")
+        at_return = [event.type for event in seen]
+        await kit.close()  # a second announcement would have run by now
+
+        assert at_return == ["voice_session_started"]
+        assert [event.type for event in seen] == ["voice_session_started"]
+        _assert_announces(seen[0], session, room_id)
+
+    async def test_a_leave_announces_its_voice_session_once_the_transport_let_it_go(
+        self,
+    ) -> None:
+        """RFC §8.2: ``voice_session_ended`` is emitted once, after the
+        transport disconnected the session, and has been by the time the
+        kit's leave() returns; a hang-up that yields to the loop first does
+        not move it before."""
+        backend = _SlowToHangUp()
+        kit, room_id, seen = await _announcing_kit(backend)
+        hung_up: list[int] = []
+
+        @kit.on("voice_session_ended")
+        async def ended(event: FrameworkEvent) -> None:
+            hung_up.append([call.method for call in backend.calls].count("disconnect"))
+
+        session = await kit.join(room_id, "voice-1", participant_id="user-1")
+        await kit.leave(session)
+        at_return = [event.type for event in seen]
+        await kit.close()  # a second announcement would have run by now
+
+        assert at_return == ["voice_session_started", "voice_session_ended"]
+        assert [event.type for event in seen] == ["voice_session_started", "voice_session_ended"]
+        assert hung_up == [1]
+        _assert_announces(seen[1], session, room_id)
 
 
 class TestSendGreeting:

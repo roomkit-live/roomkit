@@ -77,8 +77,10 @@ class VoiceHooksMixin:
             await self._framework._emit_framework_event(
                 "voice_session_started",
                 room_id=room_id,
+                channel_id=self.channel_id,
                 data={
                     "session_id": session.id,
+                    "participant_id": session.participant_id,
                     "channel_id": self.channel_id,
                 },
             )
@@ -92,8 +94,10 @@ class VoiceHooksMixin:
             await self._framework._emit_framework_event(
                 "voice_session_ended",
                 room_id=room_id,
+                channel_id=self.channel_id,
                 data={
                     "session_id": session.id,
+                    "participant_id": session.participant_id,
                     "channel_id": self.channel_id,
                 },
             )

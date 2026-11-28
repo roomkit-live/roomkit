@@ -67,7 +67,7 @@ class Bench:
 
     def sessions_started(self) -> set[str]:
         """The sessions announced in ``r1`` (a door may announce one twice:
-        as voice and as video, or from the bind and from the join)."""
+        as voice and as video)."""
         return {e.data["session_id"] for e in self.started if e.room_id == "r1"}
 
     def sessions_bound(self) -> list[str]:

@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A voice session's join and leave each announce it once, `voice_session_started` and `voice_session_ended` (RFC §8.2, RMK-2226), where `kit.join()` and `kit.leave()` emitted each twice: once from the kit and once as the channel bound or unbound the session, so a handler of either event ran twice per call. The kit's own stays, when it came: `voice_session_started` before `join()` returns, `voice_session_ended` once the transport stopped listening and disconnected the session; a session the transport itself hands in or ends is announced once by the channel, its event now carrying `participant_id` and its `channel_id` too
+
 - A discussion turn that ends as its driver stops still announces `TURN_ENDED`, once (RFC §19.7.5 rules 6 and 17, RMK-2191), where the announcement was lost when the stop (the discussion uninstalled, here or in another process, or the kit closing) landed while the driver let the turn's watch unwind or recorded the turn's end: a hook following `ON_SPEAK_QUEUE` never saw the turn end. Since a steering `Cancel` cuts a generation at once, an uninstall that cuts a turn meets its end there more often.
 
 - A message whose `process_timeout` passed while step 2 created its room starts no session (RFC §10.1 step 2, §13.6, RMK-2175), where on the in-memory store it fired `session_started` and the `ON_SESSION_STARTED` hooks before it was refused `process_timeout`: the deadline fell only at the call's next suspension, which a store that does not suspend reached after the session started. The room is still completed, as the room's state; the message is refused at once, as it already was on SQLite and PostgreSQL.

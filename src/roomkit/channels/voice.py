@@ -477,6 +477,10 @@ class VoiceChannel(
         # Dual-signal session ready: tracks sessions where the backend
         # has signalled ready but bind_session() hasn't run yet.
         self._session_ready_pending: set[str] = set()
+        # Sessions whose voice_session_started or voice_session_ended the kit's
+        # join() or leave() announces itself, where it awaits them (RFC §8.2):
+        # the bind or the unbind under way then emits neither.
+        self._announced_by_kit: set[str] = set()
         # Outbound audio taps (e.g. room-level recording, avatar lip-sync)
         self._outbound_audio_taps: list[Callable[..., None]] = []
         # Audio bridge for session-to-session forwarding
@@ -1344,8 +1348,9 @@ class VoiceChannel(
         # Start continuous STT if enabled (no local VAD)
         if self._continuous_stt:
             self._start_continuous_stt(session)
-        # Emit voice_session_started framework event
-        if self._framework:
+        # Emit voice_session_started framework event, unless the kit's join()
+        # announces it once it has bound the session
+        if self._framework and session.id not in self._announced_by_kit:
             self._schedule(
                 self._emit_session_started(session, room_id),
                 name=f"session_started:{session.id}",
@@ -1358,6 +1363,36 @@ class VoiceChannel(
                 name=f"session_started:{session.id}",
                 kit_work=True,
             )
+
+    def _bind_for_kit(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        binding: ChannelBinding,
+        *,
+        backend: VoiceBackend | None = None,
+    ) -> None:
+        """:meth:`bind_session` for the kit's join(), which announces
+        ``voice_session_started`` itself before it returns (RFC §8.2)."""
+        self._announced_by_kit.add(session.id)
+        try:
+            self.bind_session(session, room_id, binding, backend=backend)
+        finally:
+            self._announced_by_kit.discard(session.id)
+
+    def _unbind_for_kit(self, session: VoiceSession) -> bool:
+        """:meth:`unbind_session` for the kit's leave(), which announces
+        ``voice_session_ended`` itself once the transport let the session go
+        (RFC §8.2); whether the session was bound, so that a session the
+        transport already unbound is announced once."""
+        with self._state_lock:
+            bound = session.id in self._session_bindings
+        self._announced_by_kit.add(session.id)
+        try:
+            self.unbind_session(session)
+        finally:
+            self._announced_by_kit.discard(session.id)
+        return bound
 
     async def connect_session(
         self,
@@ -1481,8 +1516,9 @@ class VoiceChannel(
             # Flush immediately — VOICE_SESSION is the trace root and long-lived;
             # without this, BatchSpanProcessor may not export it before shutdown.
             telemetry.flush()
-        # Emit voice_session_ended framework event
-        if self._framework:
+        # Emit voice_session_ended framework event, unless the kit's leave()
+        # announces it once the transport let the session go
+        if self._framework and session.id not in self._announced_by_kit:
             room_id, _ = binding_info
             self._schedule(
                 self._emit_session_ended(session, room_id),

@@ -230,7 +230,8 @@ class VoiceOpsMixin(HelpersMixin):
             raise RuntimeError("Voice session was not created by the backend")
 
         try:
-            channel.bind_session(session, room_id, binding, backend=backend)
+            # The kit announces the session below, once, before join() returns.
+            channel._bind_for_kit(session, room_id, binding, backend=backend)
         except Exception:
             # A refused bind leaves nothing bound (a full bridge refuses first,
             # RFC §12.7.2); a session the kit made for this join is hung up,
@@ -377,13 +378,17 @@ class VoiceOpsMixin(HelpersMixin):
         # The session's own transport (one added with add_backend() serves
         # its sessions), resolved before unbinding forgets it.
         backend = channel._resolve_session_backend(session)
-        channel.unbind_session(session)
+        # The kit announces the end below, once the transport let the session
+        # go; a session the transport already unbound was announced then.
+        was_bound = channel._unbind_for_kit(session)
 
         if backend:
             if hasattr(backend, "stop_listening"):
                 await backend.stop_listening(session)  # ty: ignore[call-non-callable]
             await backend.disconnect(session)
 
+        if not was_bound:
+            return
         await self._emit_framework_event(
             "voice_session_ended",
             room_id=session.room_id,
