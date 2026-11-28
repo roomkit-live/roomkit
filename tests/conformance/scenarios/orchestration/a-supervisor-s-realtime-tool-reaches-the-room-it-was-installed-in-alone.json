@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-realtime-tool-reaches-the-room-it-was-installed-in-alone",
+  "title": "A Supervisor installed in one room adds its delegate_workers tool to that room's realtime session alone: the channel's session in another room declares it not and its call there runs no team",
+  "rules": [
+    "§19.7",
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-19.7-008",
+    "RK-19.7-010"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The steps' tool call is the channel's first session's, r2's. The undeclared call's answer is RK-19.7-011's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Facts.",
+              "gate": "working"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "async_delivery": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "delegate_workers",
+      "arguments": {
+        "task": "Find the facts."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r2"
+            },
+            {
+              "room_id": "r1"
+            }
+          ],
+          "declared": [
+            {
+              "delegate_workers": {
+                "$absent": true
+              }
+            },
+            {
+              "delegate_workers": {
+                "$present": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$lacks": "dispatched"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "researcher": []
+    }
+  }
+}

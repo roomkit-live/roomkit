@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-agent-with-nothing-to-set-speaks-with-the-channel-s-prompt-and-keeps-it-through-a-language-change",
+  "title": "A pipeline agent with neither a prompt nor an identity block gives its session the channel's prompt, at the start and when a handoff makes it active again, and a language change of the room reconfigures nothing; another room's handoff leaves the channel's prompt for a later session",
+  "rules": [
+    "§19.5"
+  ],
+  "requirements": [
+    "RK-19.5-022",
+    "RK-19.5-023",
+    "RK-19.5-024"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "plain sets identity_in_prompt false: a language alone would otherwise give it an identity block. The handoff back to plain follows guide's, so the channel's prompt replaces guide's, never kept as its predecessor's. r2's session starts once r1 handed off to guide: it connects with the channel's prompt, which the handoff did not change. A handoff call's own result is not read: the reconfiguration it makes reports the call abandoned (Scripted realtime sessions); the reconfiguration is what shows it was accepted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt"
+        }
+      },
+      {
+        "id": "plain",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "name": "plain",
+          "identity_in_prompt": false
+        }
+      },
+      {
+        "id": "guide",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Guide prompt",
+        "agent": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "plain",
+          "next": "two"
+        },
+        {
+          "phase": "two",
+          "agent_id": "guide",
+          "can_return_to": [
+            "intake"
+          ]
+        }
+      ],
+      "agents": [
+        "plain",
+        "guide"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "guide",
+        "reason": "r",
+        "summary": "s"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "plain",
+        "reason": "r",
+        "summary": "s"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "handoff.set_language",
+      "handler": "p",
+      "room_id": "r1",
+      "language": "French"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Channel prompt"
+            },
+            {
+              "room_id": "r2",
+              "system_prompt": "Channel prompt"
+            }
+          ],
+          "reconfigures": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Guide prompt"
+            },
+            {
+              "room_id": "r1",
+              "system_prompt": "Channel prompt"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

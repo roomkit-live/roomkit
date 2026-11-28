@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-pipeline-session-declares-the-channel-s-tools-as-they-are-the-agent-s-and-the-handoff",
+  "title": "A pipeline session declares the channel's tools as they are when it starts or a handoff lands, the active agent's own tools, and the handoff tool, never another agent's",
+  "rules": [
+    "§19.5"
+  ],
+  "requirements": [
+    "RK-19.5-025",
+    "RK-19.5-026"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The channel is configured after the install with lookup and forecast in place of its three tools: both declarations read that configuration, under each agent. A handoff call's own result is not read: the reconfiguration it makes reports the call abandoned (Scripted realtime sessions); the reconfiguration is what shows it was accepted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            },
+            "forecast": {
+              "result": "rain"
+            }
+          }
+        }
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Sales prompt",
+        "agent": {},
+        "tools": [
+          {
+            "name": "book",
+            "description": "Books",
+            "returns": "booked"
+          }
+        ]
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Support prompt",
+        "agent": {},
+        "tools": [
+          {
+            "name": "refund",
+            "description": "Refunds",
+            "returns": "refunded"
+          }
+        ]
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "sales",
+          "next": "support"
+        },
+        {
+          "phase": "support",
+          "agent_id": "support"
+        }
+      ],
+      "agents": [
+        "sales",
+        "support"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.configure",
+      "channel_id": "rt",
+      "tools": [
+        "lookup",
+        "forecast"
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "support",
+        "reason": "r",
+        "summary": "s"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": 0,
+              "forecast": 1,
+              "book": 2,
+              "handoff_conversation": 3,
+              "weather": {
+                "$absent": true
+              },
+              "refund": {
+                "$absent": true
+              }
+            },
+            {
+              "lookup": 0,
+              "forecast": 1,
+              "refund": 2,
+              "handoff_conversation": 3,
+              "weather": {
+                "$absent": true
+              },
+              "book": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

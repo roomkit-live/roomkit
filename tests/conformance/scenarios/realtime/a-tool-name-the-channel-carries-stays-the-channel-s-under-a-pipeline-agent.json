@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-tool-name-the-channel-carries-stays-the-channel-s-under-a-pipeline-agent",
+  "title": "A pipeline agent's tool under a name the channel's tools carry is neither declared nor served: the channel's serves the call, and once the channel drops its tool, a session declares none of that name",
+  "rules": [
+    "§19.5",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-19.5-028"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Not observed: the warning that names the agent's tool at the install (a log line), the schema the name is declared with (realtime.read names each declared tool by its position alone), and a call of that name once the channel dropped its tool (the steps call from the channel's first session, which still declares it).",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "the channel's"
+            }
+          }
+        }
+      },
+      {
+        "id": "guide",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Guide prompt",
+        "agent": {},
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The agent's lookup",
+            "returns": "the agent's"
+          }
+        ]
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "guide"
+        }
+      ],
+      "agents": [
+        "guide"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.configure",
+      "channel_id": "rt",
+      "tools": []
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": 0,
+              "handoff_conversation": 1
+            },
+            {
+              "handoff_conversation": 0,
+              "lookup": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "the channel's"
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-realtime-pipeline-refuses-an-agent-held-by-its-declaration-alone",
+  "title": "A realtime pipeline's install refuses an agent the kit holds by its declaration alone, invalid_argument, and takes a live agent",
+  "rules": [
+    "§19.5",
+    "§10.6.2"
+  ],
+  "requirements": [
+    "RK-19.5-036"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Not observed: an intelligence channel that is not an agent. The runner names a pipeline's agents by their ids, and a strategy refuses an id that names such a channel before the realtime rule, whatever its host (a type error, which no error name of the suite maps).",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "held",
+        "type": "ai",
+        "declared": true,
+        "agent": {
+          "name": "held"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "live",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Live prompt",
+        "agent": {
+          "name": "live"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "held"
+        }
+      ],
+      "agents": [
+        "held"
+      ],
+      "voice_channel_id": "rt",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "live"
+        }
+      ],
+      "agents": [
+        "live"
+      ],
+      "voice_channel_id": "rt"
+    }
+  ]
+}

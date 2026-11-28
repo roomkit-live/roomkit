@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-speech-to-speech-transcript-is-neither-labelled-nor-held",
+  "title": "A speech-to-speech session's transcript of an identified, unverified participant is stored neither labelled nor held, though that participant's text message was both",
+  "rules": [
+    "§11.7.3",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-11.7.3-019"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "required",
+        "trigger": "on_verification_required"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Move the money."
+        }
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice-id"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Move it now.",
+      "role": "user"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Move the money."
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Move it now."
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "rt",
+            "participant_id": "alice-id",
+            "verification": {
+              "$absent": true
+            }
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "required": [
+        {
+          "trigger": "on_verification_required",
+          "event": {
+            "content": {
+              "body": "Move the money."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -7,7 +7,8 @@
     "§19"
   ],
   "requirements": [
-    "RK-12.4.1-074"
+    "RK-12.4.1-074",
+    "RK-19.5-035"
   ],
   "notes": "An agent registered with a kit, a human-input handler, a sandbox, planning and an external handler are not shown.",
   "requires_features": [

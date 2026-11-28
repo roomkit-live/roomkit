@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-realtime-tool-runs-once-per-room-and-answers-the-session-that-asked",
+  "title": "A Supervisor's background delegate_workers serves one run per room across two realtime channels: the second channel's call while the run works reads already_running, and the outcome reaches the session that made the call alone",
+  "rules": [
+    "§19.7.3"
+  ],
+  "requirements": [
+    "RK-19.7.3-016",
+    "RK-19.7.3-017"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "rtb's session makes the first call although rta is bound first. Not observed: two sessions of one channel in one room, which the fixture does not start (one session per room on a channel).",
+  "setup": {
+    "channels": [
+      {
+        "id": "rta",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "rtb",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Facts.",
+              "gate": "working"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rta"
+          },
+          {
+            "channel_id": "rtb"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "async_delivery": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rta",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rtb",
+      "room_id": "r1",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rtb",
+      "call_id": "c1",
+      "name": "delegate_workers",
+      "arguments": {
+        "task": "Find the facts."
+      }
+    },
+    {
+      "wait_for": "working"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rta",
+      "call_id": "c2",
+      "name": "delegate_workers",
+      "arguments": {
+        "task": "Find them again."
+      }
+    },
+    {
+      "open": "working"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rtb",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "\"status\": \"dispatched\""
+              }
+            }
+          ],
+          "injections": [
+            {
+              "text": {
+                "$contains": "Facts."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rta",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c2",
+              "result": {
+                "$contains": "\"status\": \"already_running\""
+              }
+            }
+          ],
+          "injections": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "researcher": [
+        {}
+      ]
+    }
+  }
+}

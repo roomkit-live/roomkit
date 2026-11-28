@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-pipeline-session-s-prompt-ends-with-its-agent-s-identity",
+  "title": "A realtime pipeline's session connects with its active agent's prompt, the agent's identity block at its end",
+  "rules": [
+    "§19.1",
+    "§19.5"
+  ],
+  "requirements": [
+    "RK-19.1-012"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt"
+        }
+      },
+      {
+        "id": "guide",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Guide prompt",
+        "agent": {
+          "role": "Guide",
+          "description": "Shows the way",
+          "scope": "Opening hours",
+          "language": "English"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "guide"
+        }
+      ],
+      "agents": [
+        "guide"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Guide prompt\n--- Agent Identity ---\nRole: Guide\nDescription: Shows the way\nScope: Opening hours\nLanguage: Always respond in English"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

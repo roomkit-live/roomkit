@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-pipeline-call-is-judged-by-the-agent-the-room-talks-to-when-it-arrives",
+  "title": "A pipeline session's call is judged by the agent the room talks to when it reaches the gate: served under the first agent, refused with the next one's policy words once a handoff made it active",
+  "rules": [
+    "§19.5",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-19.5-032"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Before the handoff sales serves secret; after it, support's policy refuses the same call with its words, which is the gate's judgement and not an undeclared tool's refusal. Not observed: a declaration the provider still holds once the room's agent changed, since the scripted provider takes each reconfiguration's tools as it is asked. A handoff call's own result is not read: the reconfiguration it makes reports the call abandoned (Scripted realtime sessions).",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            }
+          }
+        }
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Sales prompt",
+        "agent": {}
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Support prompt",
+        "agent": {},
+        "tool_policy": {
+          "deny": [
+            "secret"
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "sales",
+          "next": "support"
+        },
+        {
+          "phase": "support",
+          "agent_id": "support"
+        }
+      ],
+      "agents": [
+        "sales",
+        "support"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "support",
+        "reason": "r",
+        "summary": "s"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c3",
+      "name": "secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": "$any",
+              "secret": "$any",
+              "handoff_conversation": "$any"
+            },
+            {
+              "lookup": "$any",
+              "handoff_conversation": "$any",
+              "secret": {
+                "$absent": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": "s3cret"
+            },
+            {
+              "call_id": "c3",
+              "result": {
+                "$contains": "Tool 'secret' is not permitted by the agent's tool policy."
+              }
+            }
+          ],
+          "handlers": [
+            {
+              "name": "secret",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

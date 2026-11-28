@@ -1,0 +1,258 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-handoff-reconfigures-its-room-s-session-alone-and-a-language-change-the-active-agent-s",
+  "title": "On a realtime pipeline, a session's handoff call is the room's active agent's: it reconfigures that room's session with the next agent's prompt, and the handler's language change with the active agent's; a session starts with its room's active agent, and another room's session and a later room's start keep theirs",
+  "rules": [
+    "§19.5",
+    "§19.6",
+    "§19.7"
+  ],
+  "requirements": [
+    "RK-19.5-022",
+    "RK-19.6-042",
+    "RK-19.6-043",
+    "RK-19.7-006",
+    "RK-19.7-014"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The second handoff, to closing, is a transition billing's stage allows and triage's does not: the session's call is accepted because its caller is the room's active agent, billing, not the pipeline's first. r3's active agent is set by the host before its session starts, which connects with it; r4's, set by nobody, is the pipeline's first, whatever r1 handed off. The rule of a room held for a human does not hold on a realtime session yet (§19.6): nothing of it is asserted. Every agent here has a prompt of its own, so that the channel's configuration for later sessions is observed in realtime/an-agent-with-nothing-to-set-speaks-with-the-channel-s-prompt-and-keeps-it-through-a-language-change. A handoff call's own result is not read: the reconfiguration it makes reports the call abandoned (Scripted realtime sessions); the reconfiguration is what shows it was accepted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Channel prompt"
+        }
+      },
+      {
+        "id": "triage",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Triage prompt",
+        "agent": {
+          "role": "Triage"
+        }
+      },
+      {
+        "id": "billing",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Billing prompt",
+        "agent": {
+          "role": "Billing"
+        }
+      },
+      {
+        "id": "closing",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Closing prompt",
+        "agent": {
+          "role": "Closer"
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "triage",
+          "next": "billing"
+        },
+        {
+          "phase": "billing",
+          "agent_id": "billing",
+          "next": "closing"
+        },
+        {
+          "phase": "closing",
+          "agent_id": "closing"
+        }
+      ],
+      "agents": [
+        "triage",
+        "billing",
+        "closing"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "billing",
+        "reason": "billing question",
+        "summary": "Asks about a bill."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "handoff_conversation",
+      "arguments": {
+        "target": "closing",
+        "reason": "paid",
+        "summary": "The bill is paid."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "handoff.set_language",
+      "handler": "p",
+      "room_id": "r1",
+      "language": "French"
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "p",
+      "room_id": "r3",
+      "calling_agent_id": "triage",
+      "arguments": {
+        "target": "billing",
+        "reason": "r",
+        "summary": "s"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "billing"
+        }
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r3",
+      "participant_id": "carol"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r4",
+      "participant_id": "dave"
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Triage prompt\n--- Agent Identity ---\nRole: Triage"
+            },
+            {
+              "room_id": "r2",
+              "system_prompt": "Triage prompt\n--- Agent Identity ---\nRole: Triage"
+            },
+            {
+              "room_id": "r3",
+              "system_prompt": "Billing prompt\n--- Agent Identity ---\nRole: Billing"
+            },
+            {
+              "room_id": "r4",
+              "system_prompt": "Triage prompt\n--- Agent Identity ---\nRole: Triage"
+            }
+          ],
+          "reconfigures": [
+            {
+              "room_id": "r1",
+              "system_prompt": "Billing prompt\n--- Agent Identity ---\nRole: Billing"
+            },
+            {
+              "room_id": "r1",
+              "system_prompt": "Closing prompt\n--- Agent Identity ---\nRole: Closer"
+            },
+            {
+              "room_id": "r1",
+              "system_prompt": "Closing prompt\n--- Agent Identity ---\nRole: Closer\nLanguage: Always respond in French"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

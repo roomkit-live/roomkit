@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-reasoning-backend-s-agent-is-refused-for-what-a-session-never-serves",
+  "title": "A realtime channel whose reasoning backend is an agent with a human-input handler, an external tool handler, a sandbox or planning is refused at its registration, as a pipeline's agent is; one with none of them is registered",
+  "rules": [
+    "§19.5",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-19.5-035"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Not observed: the instructions of the agent's MCP servers, which reach the backend's own model (the scripted MCP servers carry none). The tools of its own and the skill registry are realtime/an-agent-with-tools-of-its-own-is-refused-as-a-backend.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt2",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "human_input": {
+                "tool_names": [
+                  "ask_person"
+                ],
+                "tools": [
+                  {
+                    "name": "ask_person"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt3",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "external_tool_handler": {}
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt5",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "sandbox": {}
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt6",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              },
+              "enable_planning": true
+            }
+          }
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "rt4",
+        "type": "realtime_voice",
+        "realtime": {
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "x"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

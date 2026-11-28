@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/the-channel-s-and-the-active-agent-s-policies-both-hold-on-a-pipeline-session-for-its-participant",
+  "title": "On a pipeline session, a tool the channel's policy or the active agent's denies, each read for the session's participant, is not declared, is not among the names a handler reads, and its call is refused with the policy's words; another participant's session keeps both",
+  "rules": [
+    "§19.5",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-19.5-030"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Tool Search's listing is realtime/tool-search-on-a-pipeline-session-lists-no-tool-either-policy-denies.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_policy": {
+            "role_overrides": {
+              "observer": {
+                "deny": [
+                  "secret"
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "guide",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "system_prompt": "Guide prompt",
+        "agent": {},
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "weather"
+              ]
+            }
+          }
+        },
+        "tools": [
+          {
+            "name": "names",
+            "description": "Lists the allowed names",
+            "returns_allowed_names": true
+          }
+        ]
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "r1",
+            "role": "observer",
+            "channel_id": "src"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "p",
+      "stages": [
+        {
+          "phase": "one",
+          "agent_id": "guide"
+        }
+      ],
+      "agents": [
+        "guide"
+      ],
+      "voice_channel_id": "rt"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "weather"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c3",
+      "name": "names"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "declared": [
+            {
+              "lookup": {
+                "$present": true
+              },
+              "names": {
+                "$present": true
+              },
+              "handoff_conversation": {
+                "$present": true
+              },
+              "secret": {
+                "$absent": true
+              },
+              "weather": {
+                "$absent": true
+              }
+            },
+            {
+              "lookup": {
+                "$present": true
+              },
+              "secret": {
+                "$present": true
+              },
+              "weather": {
+                "$present": true
+              },
+              "names": {
+                "$present": true
+              },
+              "handoff_conversation": {
+                "$present": true
+              }
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "Tool 'secret' is not permitted by the agent's tool policy."
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": {
+                "$contains": "Tool 'weather' is not permitted by the agent's tool policy."
+              }
+            },
+            {
+              "call_id": "c3",
+              "result": "[\"handoff_conversation\", \"lookup\", \"names\"]"
+            }
+          ],
+          "handlers": []
+        }
+      }
+    }
+  ]
+}
