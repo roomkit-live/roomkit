@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-unknown-name-under-tool-search-reads-that-no-such-tool-exists-on-every-entry",
+  "title": "Under Tool Search a realtime session answers a name no tool carries with its absence and the hint to search, whether the model calls it, carries it through call_tool or asks list_tools for it",
+  "rules": [
+    "§21.1",
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-21.1-046"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The live session is reconfigured as Tool Search reveals; the fixed one reaches its tools through list_tools and call_tool. The hint's words are the implementation's: its presence is read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "live",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 1
+        }
+      },
+      {
+        "id": "fixed",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "weather": {
+              "result": "sunny"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 1,
+          "supports_mid_session_reconfigure": false
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "live"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "fixed"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "live",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "fixed",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "live",
+      "call_id": "c1",
+      "name": "ghost",
+      "arguments": {}
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "fixed",
+      "call_id": "c2",
+      "name": "call_tool",
+      "arguments": {
+        "name": "ghost",
+        "arguments_json": "{}"
+      }
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "fixed",
+      "call_id": "c3",
+      "name": "list_tools",
+      "arguments": {
+        "name": "ghost"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "live",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": [
+                  "{\"error\": \"No tool named 'ghost' exists.\"",
+                  "\"hint\": \""
+                ]
+              }
+            }
+          ],
+          "handlers": []
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "fixed",
+      "expect": {
+        "result": {
+          "results": {
+            "$unordered": [
+              {
+                "call_id": "c2",
+                "result": {
+                  "$contains": [
+                    "{\"error\": \"No tool named 'ghost' exists.\"",
+                    "\"hint\": \""
+                  ]
+                }
+              },
+              {
+                "call_id": "c3",
+                "result": {
+                  "$contains": [
+                    "{\"error\": \"No tool named 'ghost' exists.\"",
+                    "\"hint\": \""
+                  ]
+                }
+              }
+            ]
+          },
+          "handlers": []
+        }
+      }
+    }
+  ]
+}

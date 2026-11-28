@@ -6,7 +6,10 @@
     "§12.4"
   ],
   "requirements": [
-    "RK-12.4-052"
+    "RK-12.4-052",
+    "RK-22.1-089",
+    "RK-22.1-091",
+    "RK-22.1-101"
   ],
   "requires_features": [
     "realtime"

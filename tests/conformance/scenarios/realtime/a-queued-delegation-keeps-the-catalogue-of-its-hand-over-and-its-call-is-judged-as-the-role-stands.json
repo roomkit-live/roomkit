@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-queued-delegation-keeps-the-catalogue-of-its-hand-over-and-its-call-is-judged-as-the-role-stands",
+  "title": "A role changed during a session holds for the catalogue of the delegations handed over after it; a delegation the backend queues behind another keeps the catalogue it was handed, its call judged at the gate as the role then stands",
+  "rules": [
+    "§21.1",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-21.1-050",
+    "RK-21.1-051"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The member override replaces the base rules, which deny secret. The first delegation, handed over before alice is a member, is offered no secret and holds at its model's gate; the second, handed over once she is one, is offered secret and queued behind the first by the agent backend. Alice is an observer, a role with no override, before the first ends: the second's model, offered secret as it was handed over, calls it, and the gate refuses it. The store's read of the participant at the second hand-over is held once it answered, so that the role changes again only after it. RK-21.1-050: the role read at each hand-over.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ],
+            "role_overrides": {
+              "member": {
+                "mode": "replace"
+              }
+            }
+          },
+          "reasoning": {
+            "agent": {
+              "id": "reasoner",
+              "type": "ai",
+              "model": {
+                "rounds": [
+                  {
+                    "text": "First answer.",
+                    "gate": "first"
+                  },
+                  {
+                    "calls": [
+                      {
+                        "id": "k1",
+                        "name": "secret"
+                      }
+                    ]
+                  },
+                  {
+                    "text": "Second answer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "store_faults": true
+    }
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "add_member",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "alice",
+      "role": "member"
+    },
+    {
+      "store_fault": "get_participant",
+      "room_id": "r1",
+      "gate": "handed"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "handed"
+    },
+    {
+      "open": "handed"
+    },
+    {
+      "call": "store.update_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "r1",
+        "channel_id": "src",
+        "role": "observer"
+      }
+    },
+    {
+      "open": "first"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "handlers": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "reasoner": [
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "secret": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "secret": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "k1",
+              "content": {
+                "$contains": "Tool 'secret' is not permitted by the agent's tool policy."
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

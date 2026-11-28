@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-missing-skill-s-hint-on-a-fixed-session-points-to-call-tool",
+  "title": "On a session whose declaration is fixed, an activation of a skill that does not exist, under a name the session's tools match, names those tools and says they are reached through call_tool",
+  "rules": [
+    "§24.4",
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-24.4-024"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The session's one declaration stays as it opened: nothing is revealed by reconfiguring it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "player_play": {
+              "result": "ok"
+            },
+            "player_pause": {
+              "result": "ok"
+            },
+            "player_search": {
+              "result": "ok"
+            },
+            "x5": {
+              "result": "ok"
+            },
+            "widget_0": {
+              "result": "ok"
+            },
+            "widget_1": {
+              "result": "ok"
+            },
+            "widget_2": {
+              "result": "ok"
+            }
+          },
+          "tool_search": true,
+          "tool_search_threshold": 1,
+          "supports_mid_session_reconfigure": false,
+          "skills": [
+            {
+              "name": "music",
+              "description": "The music procedure",
+              "instructions": "Rules for music."
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "player"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "player_pause"
+              }
+            }
+          ],
+          "declared": [
+            {
+              "call_tool": {
+                "$present": true
+              },
+              "player_play": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$contains": "player_play"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$contains": "call_tool"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

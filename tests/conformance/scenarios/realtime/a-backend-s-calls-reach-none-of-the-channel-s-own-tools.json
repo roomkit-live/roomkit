@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-s-calls-reach-none-of-the-channel-s-own-tools",
+  "title": "The tools a channel serves itself escape its policy on the provider's door alone: a reasoning backend is offered none of them, and its call of one is refused, the policy that would deny them leaving the provider's calls alone",
+  "rules": [
+    "§21.1",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-21.1-019"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The policy allows lookup_* alone, which would deny list_tools and activate_skill were they not the channel's own. The provider calls both: served. The backend's calls of the same names are refused, worded as the gate that refuses them words it (matched up to the name: the declared check or the policy, the RFC's order deciding). Part of RK-21.1-019: the door of a call recovered from speech is not observed apart, nor skill gating on these doors, which never reaches a name the channel serves.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup_order": {
+              "result": "order 42"
+            }
+          },
+          "tool_policy": {
+            "allow": [
+              "lookup_*"
+            ]
+          },
+          "tool_search": true,
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care."
+            }
+          ],
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "list_tools"
+                },
+                {
+                  "call": "activate_skill",
+                  "arguments": {
+                    "name": "billing"
+                  }
+                },
+                {
+                  "call": "lookup_order"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "list_tools",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "lookup_order"
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": {
+                "$contains": "billing"
+              }
+            }
+          ],
+          "backend_requests": [
+            {
+              "tools": {
+                "lookup_order": {
+                  "$present": true
+                },
+                "list_tools": {
+                  "$absent": true
+                },
+                "find_tools": {
+                  "$absent": true
+                },
+                "activate_skill": {
+                  "$absent": true
+                }
+              }
+            }
+          ],
+          "backend_calls": [
+            {
+              "name": "list_tools",
+              "text": {
+                "$starts_with": "{\"error\": \"Tool '"
+              },
+              "refused": true
+            },
+            {
+              "name": "activate_skill",
+              "text": {
+                "$starts_with": "{\"error\": \"Tool '"
+              },
+              "refused": true
+            },
+            {
+              "name": "lookup_order",
+              "text": "order 42",
+              "refused": false
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup_order",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

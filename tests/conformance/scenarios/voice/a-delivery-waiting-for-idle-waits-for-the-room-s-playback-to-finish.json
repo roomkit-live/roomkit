@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-delivery-waiting-for-idle-waits-for-the-room-s-playback-to-finish",
+  "title": "A delivery waiting for idle on a voice channel goes in only once the room's TTS playback has finished, not merely once its buffer passed",
+  "rules": [
+    "§22.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-22.2-006",
+    "RK-22.2-015"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "notes": "The reply's playback holds at its gate. A delivery waiting for idle into a second voice channel's room, with nothing playing, is sent once its buffer passed; the first is still waiting then, and is sent once the playback ended.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing"
+    },
+    {
+      "call": "voice.open",
+      "channel_id": "desk",
+      "room_id": "r2",
+      "participants": [
+        "bob"
+      ]
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "One moment please.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your order shipped.",
+      "channel_id": "phone",
+      "strategy": "wait_for_idle",
+      "background": true,
+      "as": "held"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "Your order shipped.",
+      "channel_id": "desk",
+      "strategy": "wait_for_idle",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "wait_for": "playing",
+      "pending": "held"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          }
+        }
+      ]
+    }
+  }
+}

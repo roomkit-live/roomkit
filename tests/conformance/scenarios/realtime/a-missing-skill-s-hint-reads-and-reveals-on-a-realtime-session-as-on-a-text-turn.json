@@ -1,0 +1,320 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-missing-skill-s-hint-reads-and-reveals-on-a-realtime-session-as-on-a-text-turn",
+  "title": "An activation of a skill that does not exist, under a name the session's tools match, answers a realtime session as it answers a text turn, and reveals those tools to the session as find_tools reveals its matches",
+  "rules": [
+    "§24.4",
+    "§6.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-24.4-023"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The text agent and the realtime channel hold the same tools, Tool Search with player_search pinned, and the same skill: both doors' answers are one text. The session's next declaration holds player_play and player_pause, player_search still declared, as the text turn's next round declares them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "player_play": {
+              "result": "ok"
+            },
+            "player_pause": {
+              "result": "ok"
+            },
+            "player_search": {
+              "result": "ok"
+            },
+            "x5": {
+              "result": "ok"
+            },
+            "widget_0": {
+              "result": "ok"
+            },
+            "widget_1": {
+              "result": "ok"
+            },
+            "widget_2": {
+              "result": "ok"
+            }
+          },
+          "tool_search": true,
+          "tool_search_pinned": [
+            "player_search"
+          ],
+          "skills": [
+            {
+              "name": "music",
+              "description": "The music procedure",
+              "instructions": "Rules for music."
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": true,
+        "tool_search_pinned": [
+          "player_search"
+        ],
+        "skills": [
+          {
+            "name": "music",
+            "description": "The music procedure",
+            "instructions": "Rules for music."
+          }
+        ],
+        "tools": [
+          {
+            "name": "player_play",
+            "description": "player_play",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "player_pause",
+            "description": "player_pause",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "player_search",
+            "description": "player_search",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "x5",
+            "description": "x5",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "widget_0",
+            "description": "widget_0",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "widget_1",
+            "description": "widget_1",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "widget_2",
+            "description": "widget_2",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "player"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "player"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$as": "answer"
+              }
+            }
+          ],
+          "declared": [
+            {
+              "player_play": {
+                "$absent": true
+              },
+              "player_pause": {
+                "$absent": true
+              },
+              "player_search": {
+                "$present": true
+              }
+            },
+            {
+              "player_play": {
+                "$present": true
+              },
+              "player_pause": {
+                "$present": true
+              },
+              "player_search": {
+                "$present": true
+              },
+              "x5": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$contains": "player_play"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "player_play": {
+              "$absent": true
+            },
+            "player_pause": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "player_play": {
+              "$present": true
+            },
+            "player_pause": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": {
+                "$as": "answer"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

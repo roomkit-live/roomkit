@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-realtime-session-carries-no-task-notes",
+  "title": "A realtime session, which builds no turn, carries no task notes: neither the prompt it connects with nor what it is told names the room's tasks, which an agent's turn in the same room reads",
+  "rules": [
+    "§23.4",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-23.4-066"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "system_prompt": "Be brief."
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "It is still counting."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "status.post",
+      "agent_id": "counter",
+      "action": "task",
+      "status": "pending",
+      "detail": "count 20 s",
+      "metadata": {
+        "room_id": "r1",
+        "task_id": "t1",
+        "child_room_id": "r1::t1"
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "How far is the counter?",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "system_prompt": {
+                "$lacks": "The background tasks of this conversation"
+              }
+            }
+          ],
+          "injections": [
+            {
+              "text": {
+                "$contains": "It is still counting."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$lacks": "The background tasks of this conversation"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "The background tasks of this conversation"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

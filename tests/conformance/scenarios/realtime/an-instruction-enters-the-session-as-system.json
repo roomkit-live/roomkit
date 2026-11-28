@@ -7,7 +7,8 @@
     "§22.1"
   ],
   "requirements": [
-    "RK-12.4-105"
+    "RK-12.4-105",
+    "RK-22.1-047"
   ],
   "requires_features": [
     "realtime"

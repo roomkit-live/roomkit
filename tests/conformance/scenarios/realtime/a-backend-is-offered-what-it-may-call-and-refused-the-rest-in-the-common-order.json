@@ -1,0 +1,351 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-backend-is-offered-what-it-may-call-and-refused-the-rest-in-the-common-order",
+  "title": "A reasoning backend is offered only the session's tools it may call, the others handed over with their causes; its calls are refused in the order and the words of the provider's door, a skill's in words for a model that cannot activate one",
+  "rules": [
+    "§21.1",
+    "§12.4.1",
+    "§24.2"
+  ],
+  "requirements": [
+    "RK-21.1-029",
+    "RK-21.1-030",
+    "RK-21.1-043",
+    "RK-21.1-049"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The same five calls on both doors: a name no tool carries, which the policy denies too, so it reads the declared check's words, a tool the policy denies that a skill gates too, a tool a skill gates, a missing argument, a call that passes. Each reads the cause the order picks first, never the arguments of a tool refused for access, and only the last reaches BEFORE_TOOL_USE and its handler. The backend's request names secret and refund unavailable with the words its calls then read. Part of RK-21.1-029 and RK-21.1-030: a call cut short and a tool withdrawn for the turn, the first two causes, are not staged.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            },
+            "secret": {
+              "result": "s3cret",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            },
+            "refund": {
+              "result": "refunded",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret",
+              "ghost"
+            ]
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund",
+                "secret"
+              ]
+            }
+          ],
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "ghost"
+                },
+                {
+                  "call": "secret"
+                },
+                {
+                  "call": "refund"
+                },
+                {
+                  "call": "lookup"
+                },
+                {
+                  "call": "lookup",
+                  "arguments": {
+                    "city": "Paris"
+                  }
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "p1",
+      "name": "ghost",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "p2",
+      "name": "secret",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "p3",
+      "name": "refund",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "p4",
+      "name": "lookup",
+      "arguments": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "p5",
+      "name": "lookup",
+      "arguments": {
+        "city": "Paris"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "rt",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "p1",
+              "result": "{\"error\": \"Tool 'ghost' is not declared.\"}"
+            },
+            {
+              "call_id": "p2",
+              "result": "{\"error\": \"Tool 'secret' is not permitted by the agent's tool policy.\"}"
+            },
+            {
+              "call_id": "p3",
+              "result": "{\"error\": \"Tool 'refund' is gated by a skill. Activate the skill first using activate_skill.\"}"
+            },
+            {
+              "call_id": "p4",
+              "result": {
+                "$contains": "Invalid arguments for 'lookup': missing required argument 'city'"
+              }
+            },
+            {
+              "call_id": "p5",
+              "result": "found"
+            }
+          ],
+          "backend_requests": [
+            {
+              "tools": {
+                "lookup": {
+                  "$present": true
+                },
+                "secret": {
+                  "$absent": true
+                },
+                "refund": {
+                  "$absent": true
+                }
+              },
+              "unavailable": {
+                "secret": "Tool 'secret' is not permitted by the agent's tool policy.",
+                "refund": "Tool 'refund' is gated by a skill the conversation has not activated."
+              }
+            }
+          ],
+          "backend_calls": [
+            {
+              "name": "ghost",
+              "text": "{\"error\": \"Tool 'ghost' is not declared.\"}",
+              "is_error": true,
+              "refused": true
+            },
+            {
+              "name": "secret",
+              "text": "{\"error\": \"Tool 'secret' is not permitted by the agent's tool policy.\"}",
+              "is_error": true,
+              "refused": true
+            },
+            {
+              "name": "refund",
+              "text": "{\"error\": \"Tool 'refund' is gated by a skill the conversation has not activated.\"}",
+              "is_error": true,
+              "refused": true
+            },
+            {
+              "name": "lookup",
+              "text": {
+                "$contains": "Invalid arguments for 'lookup': missing required argument 'city'"
+              },
+              "is_error": true
+            },
+            {
+              "name": "lookup",
+              "text": "found",
+              "is_error": false,
+              "refused": false
+            }
+          ],
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            },
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$lacks": "city"
+              }
+            },
+            {
+              "result": {
+                "$lacks": "city"
+              }
+            },
+            {
+              "result": {
+                "$lacks": "city"
+              }
+            },
+            "$any",
+            "$any"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "tool_call": {
+            "name": "lookup",
+            "arguments": {
+              "city": "Paris"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "name": "lookup",
+            "arguments": {
+              "city": "Paris"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

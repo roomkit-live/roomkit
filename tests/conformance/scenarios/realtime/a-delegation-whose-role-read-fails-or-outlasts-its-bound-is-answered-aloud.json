@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-delegation-whose-role-read-fails-or-outlasts-its-bound-is-answered-aloud",
+  "title": "The participant's role is read when a delegation is handed over and inside its bound: a read that fails, or that outlasts the bound, is answered by the spoken fallback, and the backend is handed nothing",
+  "rules": [
+    "§21.1",
+    "§12.4.1"
+  ],
+  "requirements": [
+    "RK-21.1-050"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The store's read of the participant fails on one channel and holds past the delegation's 200 ms bound on the other. Part of RK-21.1-050: the room's agent, read with the role on a realtime pipeline, is not observed; the role as it stands at the hand-over is observed by realtime/a-queued-delegation-keeps-the-catalogue-of-its-hand-over-and-its-call-is-judged-as-the-role-stands.",
+  "setup": {
+    "channels": [
+      {
+        "id": "fails",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                },
+                {
+                  "say": "Found it.",
+                  "final": true
+                }
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "id": "slow",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          },
+          "reasoning": {
+            "runs": [
+              [
+                {
+                  "call": "lookup"
+                },
+                {
+                  "say": "Found it.",
+                  "final": true
+                }
+              ]
+            ]
+          },
+          "reasoning_timeout_ms": 200
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "fails"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "slow"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "store_faults": true
+    }
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "fails",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "slow",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "store_fault": "get_participant",
+      "room_id": "r1",
+      "fail": "the store is down"
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "fails",
+      "delegation_id": "d1",
+      "target": "integrator"
+    },
+    {
+      "idle": true
+    },
+    {
+      "store_fault": "get_participant",
+      "room_id": "r2",
+      "gate": "reading",
+      "in_place": true
+    },
+    {
+      "call": "realtime.delegate",
+      "channel_id": "slow",
+      "delegation_id": "d2",
+      "target": "integrator"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "fails",
+      "expect": {
+        "result": {
+          "backend_requests": [],
+          "backend_calls": [],
+          "delegation_outputs": [
+            {
+              "delegation_id": "d1",
+              "text": {
+                "$present": true
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "slow",
+      "expect": {
+        "result": {
+          "backend_requests": [],
+          "backend_calls": [],
+          "delegation_outputs": [
+            {
+              "delegation_id": "d2",
+              "text": {
+                "$present": true
+              },
+              "spoken": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "reading"
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-repeated-keyed-injection-reuses-its-outcome-unless-nothing-was-sent-and-retry-is-allowed",
+  "title": "A keyed injection repeated reuses its recorded outcome without injecting again, a sent one, an uncertain one and a not_sent one the provider did not let retry alike; only a retryable not_sent is attempted again",
+  "rules": [
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-22.1-076"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "A not_sent result submitted nothing, so realtime.read's injections leave it out: the outcome's duplicate flag says whether the provider was asked again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sent",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "busy",
+        "type": "realtime_voice",
+        "realtime": {
+          "inject_result": {
+            "status": "not_sent",
+            "reason": "provider_busy",
+            "retryable": true
+          }
+        }
+      },
+      {
+        "id": "refused",
+        "type": "realtime_voice",
+        "realtime": {
+          "inject_result": {
+            "status": "not_sent",
+            "reason": "no_connection"
+          }
+        }
+      },
+      {
+        "id": "unsure",
+        "type": "realtime_voice",
+        "realtime": {
+          "inject_result": {
+            "status": "unknown",
+            "reason": "queued_locally"
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "sent"
+          },
+          {
+            "channel_id": "busy"
+          },
+          {
+            "channel_id": "refused"
+          },
+          {
+            "channel_id": "unsure"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "sent",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "busy",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "refused",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "unsure",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "sent",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "sent",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "busy",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "reason": "provider_busy",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "busy",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "reason": "provider_busy",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "refused",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "reason": "no_connection",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "refused",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "reason": "no_connection",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "unsure",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "unknown",
+          "reason": "queued_locally",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "unsure",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "unknown",
+          "reason": "queued_locally",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "sent",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": "Your table is ready."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "unsure",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": "Your table is ready."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

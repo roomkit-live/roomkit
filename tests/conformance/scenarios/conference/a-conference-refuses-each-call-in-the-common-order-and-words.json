@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-refuses-each-call-in-the-common-order-and-words",
+  "title": "A conference refuses a call in the order and the words every door uses: a name it does not declare as undeclared, though its policy denies it too, a denied tool in the policy's words, both before BEFORE_TOOL_USE sees them",
+  "rules": [
+    "§21.1",
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-21.1-075"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "Part of RK-21.1-075: the declared check before the policy, the policy before BEFORE_TOOL_USE, each in the common words. Not observed: a call cut short and a tool withdrawn for the turn (no conference step stages them), skill gating (a conference holds no skills), and the arguments' check (the runner declares each conference tool with an open object schema).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "lookup": "found",
+        "erase": "erased"
+      },
+      "tool_policy": {
+        "deny": [
+          "erase",
+          "ghost"
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c1",
+      "name": "ghost",
+      "expect": {
+        "result": {
+          "error": "Tool 'ghost' is not declared."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c2",
+      "name": "erase",
+      "expect": {
+        "result": {
+          "error": "Tool 'erase' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c3",
+      "name": "lookup",
+      "expect": {
+        "result": "found"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "tool_call": {
+            "tool_call_id": "c3",
+            "name": "lookup"
+          }
+        }
+      ],
+      "reports": {
+        "$unordered": [
+          {
+            "tool_call": {
+              "tool_call_id": "c1",
+              "name": "ghost",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c2",
+              "name": "erase",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c3",
+              "name": "lookup",
+              "refused": false
+            }
+          }
+        ]
+      }
+    }
+  }
+}

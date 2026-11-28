@@ -1,0 +1,235 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-activation-on-a-realtime-session-checks-its-requires-against-the-declared-tools",
+  "title": "An activation on a realtime session checks the skill's requires against every tool the session declares, the channel's own included, once its policy applied and skill gating aside, as on a text turn",
+  "rules": [
+    "§24.3",
+    "§21.1"
+  ],
+  "requirements": [
+    "RK-24.3-029"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "The policy denies secret. billing requires a declared tool, refunds a tool it gates itself, reading the channel's own reference reader: all three activate. audit requires the denied tool and planning one the session lacks: both are refused, naming what is missing. Part of RK-24.3-029: a tool orchestration set up for the session's room, which the rule counts too, is not staged.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            },
+            "secret": {
+              "result": "s3cret"
+            },
+            "refund": {
+              "result": "refunded"
+            }
+          },
+          "tool_policy": {
+            "deny": [
+              "secret"
+            ]
+          },
+          "skills": [
+            {
+              "name": "billing",
+              "description": "Billing work",
+              "instructions": "Bill with care.",
+              "requires": [
+                "lookup"
+              ]
+            },
+            {
+              "name": "audit",
+              "description": "Audit work",
+              "instructions": "Audit with care.",
+              "requires": [
+                "secret"
+              ]
+            },
+            {
+              "name": "planning",
+              "description": "Planning work",
+              "instructions": "Plan with care.",
+              "requires": [
+                "missing"
+              ]
+            },
+            {
+              "name": "refunds",
+              "description": "Refund work",
+              "instructions": "Refund with care.",
+              "allowed_tools": [
+                "refund"
+              ],
+              "requires": [
+                "refund"
+              ]
+            },
+            {
+              "name": "reading",
+              "description": "Reading work",
+              "instructions": "Read with care.",
+              "requires": [
+                "read_skill_reference"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "billing"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c2",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "audit"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c3",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "planning"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c4",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "refunds"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c5",
+      "name": "activate_skill",
+      "arguments": {
+        "name": "reading"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$lacks": "Required tools not available"
+              }
+            },
+            {
+              "call_id": "c2",
+              "result": "{\"error\": \"Required tools not available: secret\"}"
+            },
+            {
+              "call_id": "c3",
+              "result": "{\"error\": \"Required tools not available: missing\"}"
+            },
+            {
+              "call_id": "c4",
+              "result": {
+                "$lacks": "Required tools not available"
+              }
+            },
+            {
+              "call_id": "c5",
+              "result": {
+                "$lacks": "Required tools not available"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": {
+                "$contains": "billing"
+              }
+            },
+            "$any",
+            "$any",
+            {
+              "result": {
+                "$contains": "refunds"
+              }
+            },
+            {
+              "result": {
+                "$contains": "reading"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

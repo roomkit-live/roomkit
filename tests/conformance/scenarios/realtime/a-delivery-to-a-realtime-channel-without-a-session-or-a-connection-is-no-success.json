@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-delivery-to-a-realtime-channel-without-a-session-or-a-connection-is-no-success",
+  "title": "A delivery into a realtime channel with no session reports no success, nor does one whose provider has no connection, and neither is published to the room",
+  "rules": [
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-22.1-054",
+    "RK-22.1-090"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Part of RK-22.1-054 and RK-22.1-090: an injection error raised by the provider and a provider that does not support injection are not staged (the scripted provider reports a result, here not_sent for want of a connection).",
+  "setup": {
+    "channels": [
+      {
+        "id": "idle",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "offline",
+        "type": "realtime_voice",
+        "realtime": {
+          "inject_result": {
+            "status": "not_sent",
+            "reason": "no_connection"
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "idle"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "offline"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "offline",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Hello",
+      "channel_id": "idle",
+      "expect": {
+        "result": {
+          "status": {
+            "$lacks": "sent"
+          },
+          "reason": {
+            "$present": true
+          },
+          "event_id": null
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "Hello",
+      "channel_id": "offline",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "reason": "no_connection",
+          "event_id": null
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "offline",
+      "expect": {
+        "result": {
+          "injections": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [],
+      "r2": []
+    }
+  }
+}

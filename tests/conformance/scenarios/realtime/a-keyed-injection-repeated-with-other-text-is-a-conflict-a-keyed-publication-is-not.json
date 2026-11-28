@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-keyed-injection-repeated-with-other-text-is-a-conflict-a-keyed-publication-is-not",
+  "title": "A keyed injection repeated with other text is refused as an idempotency conflict and injects nothing more, while a keyed text publication repeated with other text is still the same publication",
+  "rules": [
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-22.1-077"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is ready.",
+      "channel_id": "rt",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Your table is not ready.",
+      "channel_id": "rt",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": "Your table is ready."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "Your table is ready.",
+      "channel_id": "src",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "Your table is not ready.",
+      "channel_id": "src",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "duplicate": true
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your table is ready."
+          }
+        }
+      ]
+    }
+  }
+}

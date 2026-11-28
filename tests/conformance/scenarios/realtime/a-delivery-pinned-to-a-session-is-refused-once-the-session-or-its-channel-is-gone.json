@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-delivery-pinned-to-a-session-is-refused-once-the-session-or-its-channel-is-gone",
+  "title": "A delivery waiting for idle stays an injection into the session it pinned: once that session ended, or its channel left the room, before it goes out, it is refused, reports no success, and nothing is published to the room instead",
+  "rules": [
+    "§22.1",
+    "§22.2"
+  ],
+  "requirements": [
+    "RK-22.1-052",
+    "RK-22.1-053",
+    "RK-22.1-054"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "Each delivery waits for its model's answer to end. In r1 the session ends first; in r2 the channel is detached first. Part of RK-22.1-052 and RK-22.1-054: a session replaced by another in the same room is not staged (the fixture starts one session per room on a channel), the ended session standing for it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ended",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "left",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ended"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "left"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "ended",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "left",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "ended",
+      "edge": "start"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "left",
+      "edge": "start"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Next item.",
+      "channel_id": "ended",
+      "strategy": "wait_for_idle",
+      "background": true,
+      "as": "d1"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "Next item.",
+      "channel_id": "left",
+      "strategy": "wait_for_idle",
+      "background": true,
+      "as": "d2"
+    },
+    {
+      "call": "realtime.end",
+      "channel_id": "ended"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "left"
+    },
+    {
+      "call": "realtime.response",
+      "channel_id": "left",
+      "edge": "end"
+    },
+    {
+      "await": "d1",
+      "expect": {
+        "result": {
+          "status": {
+            "$lacks": "sent"
+          },
+          "session_ids": [],
+          "event_id": null
+        }
+      }
+    },
+    {
+      "await": "d2",
+      "expect": {
+        "result": {
+          "status": {
+            "$lacks": "sent"
+          },
+          "session_ids": [],
+          "event_id": null
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "ended",
+      "expect": {
+        "result": {
+          "injections": []
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "left",
+      "expect": {
+        "result": {
+          "injections": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [],
+      "r2": []
+    }
+  }
+}

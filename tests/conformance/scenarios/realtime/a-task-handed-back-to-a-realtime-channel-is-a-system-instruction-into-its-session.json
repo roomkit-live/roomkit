@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-task-handed-back-to-a-realtime-channel-is-a-system-instruction-into-its-session",
+  "title": "A delegation that notifies a channel hosting a realtime model hands its result back as an instruction, injected with the system intent into the channel's one session, with no line telling a turn to give that result only, and nothing published to the room",
+  "rules": [
+    "§23.3 step 8",
+    "§22.1",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-23.3-042",
+    "RK-23.3-044",
+    "RK-23.3-053"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "BEFORE_DELIVER sees the hand-back as an instruction. Part of RK-23.3-044: the delegation is made outside a call, so the channel's one session takes it; the session whose tool call delegated is not staged (no realtime handler script delegates).",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Order 42 shipped."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_deliver",
+        "execution": "sync"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "delegate",
+      "room_id": "r1",
+      "agent_id": "worker",
+      "task": "Find the order.",
+      "notify": "rt",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": [
+                  "Find the order.",
+                  "Order 42 shipped."
+                ]
+              },
+              "role": "system"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$lacks": "This turn only gives this task's result"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "before": [
+        {
+          "event": {
+            "type": "instruction"
+          }
+        }
+      ],
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "r1"
+        }
+      ]
+    },
+    "timeline": {
+      "r1": []
+    }
+  }
+}

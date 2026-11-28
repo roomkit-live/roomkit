@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-addressed-delivery-takes-the-text-pipeline-not-the-session",
+  "title": "A delivery addressed to an agent in a room with a live realtime session is published through the text pipeline and answered by the agent; the session hears the agent's answer, never the delivered text injected directly",
+  "rules": [
+    "§22.1",
+    "§19.3"
+  ],
+  "requirements": [
+    "RK-22.1-056"
+  ],
+  "requires_features": [
+    "realtime"
+  ],
+  "notes": "A delivery naming no channel and no address injects into the room's session (RK-22.1-055, a MAY); with an address, the agent's turn reads the stored message and its answer is what the session takes.",
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "The order is on its way."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "Check the order.",
+      "addressed_to": [
+        "agent"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "The order is on its way."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Check the order."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Check the order."
+          },
+          "addressed_to": [
+            "agent"
+          ]
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "The order is on its way."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-serves-no-reader-of-its-own-and-its-policy-governs-every-name",
+  "title": "A conference serves none of the tools that only read or unlock, so its policy governs every name: a host tool under one of those names is neither declared nor run once the policy leaves it out",
+  "rules": [
+    "§21.1",
+    "§12.10.12"
+  ],
+  "requirements": [
+    "RK-21.1-018"
+  ],
+  "requires_features": [
+    "conference",
+    "realtime"
+  ],
+  "notes": "The conference's tools carry the five names a channel that serves them exempts (find_tools, list_tools, activate_skill, read_skill_reference, read_stored_result), here host tools; the policy allows lookup alone. The model is declared lookup alone, and each call of the other names reads the policy's refusal, no handler run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reports",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "tools": {
+        "find_tools": "find_tools ran",
+        "list_tools": "list_tools ran",
+        "activate_skill": "activate_skill ran",
+        "read_skill_reference": "read_skill_reference ran",
+        "read_stored_result": "read_stored_result ran",
+        "lookup": "found"
+      },
+      "tool_policy": {
+        "allow": [
+          "lookup"
+        ]
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Connect the model."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c1",
+      "name": "find_tools",
+      "expect": {
+        "result": {
+          "error": "Tool 'find_tools' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c2",
+      "name": "list_tools",
+      "expect": {
+        "result": {
+          "error": "Tool 'list_tools' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c3",
+      "name": "activate_skill",
+      "expect": {
+        "result": {
+          "error": "Tool 'activate_skill' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c4",
+      "name": "read_skill_reference",
+      "expect": {
+        "result": {
+          "error": "Tool 'read_skill_reference' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c5",
+      "name": "read_stored_result",
+      "expect": {
+        "result": {
+          "error": "Tool 'read_stored_result' is not permitted by the agent's tool policy."
+        }
+      }
+    },
+    {
+      "call": "conference.tool_call",
+      "channel_id": "conf",
+      "call_id": "c6",
+      "name": "lookup",
+      "expect": {
+        "result": "found"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "model": {
+            "connects": [
+              {
+                "tools": [
+                  "lookup"
+                ]
+              }
+            ]
+          },
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reports": {
+        "$unordered": [
+          {
+            "tool_call": {
+              "tool_call_id": "c1",
+              "name": "find_tools",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c2",
+              "name": "list_tools",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c3",
+              "name": "activate_skill",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c4",
+              "name": "read_skill_reference",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c5",
+              "name": "read_stored_result",
+              "refused": true
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c6",
+              "name": "lookup",
+              "refused": false
+            }
+          }
+        ]
+      }
+    }
+  }
+}
