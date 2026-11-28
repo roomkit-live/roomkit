@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/the-kit-s-close-cuts-an-inline-task-and-a-background-one-and-waits-for-their-ends",
+  "title": "The kit's close cuts an inline task as it cuts a background one and waits for each end, its ON_TASK_COMPLETED included, before it releases the store: both end cancelled with no output, the hooks read the store while it is open, and the store the kit owns refuses a read once the close returned",
+  "rules": [
+    "§23.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-23.3-085"
+  ],
+  "notes": "Each worker holds its turn at a gate no step opens. The close cuts both tasks (RK-23.3-083); each task's ON_TASK_COMPLETED reads the room through the store the kit owns, which it closes once its shutdown ended (store_owner kit), so a read made after it would fail; the child rooms' recorded ends are read from the store once the steps ran. The background task's step 8, its hand-back to the agent it notifies, is skipped while the kit closes (RK-23.3-091): that agent is asked nothing. Python: tests/test_kit_close_doors.py::test_a_delegation_ends_cancelled_with_its_hook[inline-alone], [background-alone]; core/mixins/delegation.py, the inline run held as the background ones are.",
+  "setup": {
+    "kit": {
+      "store_owner": "kit"
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "inline-worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Inline."
+            },
+            "gate": "inline_working",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "background-worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Background."
+            },
+            "gate": "background_working",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "lead",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "It was cancelled."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "lead",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.get_room",
+                "room_id": "room-1",
+                "as": "read"
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "background-worker",
+      "task": "Background.",
+      "notify": "lead",
+      "as": "background"
+    },
+    {
+      "wait_for": "background_working"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "inline-worker",
+      "task": "Inline.",
+      "wait": true,
+      "background": true,
+      "as": "inline"
+    },
+    {
+      "wait_for": "inline_working"
+    },
+    {
+      "close_while_pending": "inline",
+      "as": "closing"
+    },
+    {
+      "await": "inline",
+      "expect": {
+        "result": {
+          "status": "cancelled",
+          "result": {
+            "status": "cancelled",
+            "output": null
+          }
+        }
+      }
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$background",
+      "expect": {
+        "result": {
+          "status": "cancelled",
+          "output": null
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "error": "store_failed"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "completed": {
+        "$unordered": [
+          {
+            "trigger": "on_task_completed",
+            "room_id": "room-1",
+            "event": {
+              "metadata": {
+                "task_status": "cancelled",
+                "agent_id": "background-worker"
+              }
+            }
+          },
+          {
+            "trigger": "on_task_completed",
+            "room_id": "room-1",
+            "event": {
+              "metadata": {
+                "task_status": "cancelled",
+                "agent_id": "inline-worker"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "lead": []
+    },
+    "actions": {
+      "read": [
+        {
+          "result": {
+            "id": "room-1"
+          }
+        },
+        {
+          "result": {
+            "id": "room-1"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_input": "Background.",
+          "task_status": "cancelled"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "task_input": "Inline.",
+          "task_status": "cancelled"
+        }
+      }
+    }
+  }
+}

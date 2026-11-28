@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-still-waiting-for-the-room-lock-at-its-process-timeout-writes-nothing",
+  "title": "A keyed delivery that waits for the room's lock past its process_timeout is blocked, reason process_timeout, and writes nothing: its retry once the lock is free is a first publication",
+  "rules": [
+    "§22.1",
+    "§13.6",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-22.1-065"
+  ],
+  "notes": "A room timer change holds the room's lock while its store write is held at a gate (a host's change under the lock, which no process_timeout bounds); the keyed delivery waits for that lock in the background, and its own process_timeout (300 ms) passes first. Nothing is stored under its key, so the retry publishes. Python: core/_delivery_targets.py deliver_to_channel (the lock's wait under asyncio.timeout(process_timeout), _refuse_on_timeout). This fixture explicitly uses the in-memory lock manager so wait_for_lock sees the delivery wait.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 300,
+      "store_faults": true,
+      "lock_manager": {
+        "kind": "memory"
+      }
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": "update_room",
+      "gate": "holding"
+    },
+    {
+      "call": "set_room_timers",
+      "room_id": "room-1",
+      "timers": {
+        "inactive_after_seconds": 3600
+      },
+      "background": true,
+      "as": "timers"
+    },
+    {
+      "wait_for": "holding"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "background": true,
+      "as": "late"
+    },
+    {
+      "wait_for_lock": "room-1"
+    },
+    {
+      "await": "late",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "process_timeout",
+          "event_id": null
+        }
+      }
+    },
+    {
+      "open": "holding"
+    },
+    {
+      "await": "timers"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          },
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

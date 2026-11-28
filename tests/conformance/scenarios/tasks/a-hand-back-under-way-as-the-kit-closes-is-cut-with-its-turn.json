@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-hand-back-under-way-as-the-kit-closes-is-cut-with-its-turn",
+  "title": "A hand-back whose turn is under way as the kit closes is cut with it: the notified agent's answer is kept as a cancelled response with what it had written, nothing more is stored, and the task's completion and its waiter still end",
+  "rules": [
+    "§23.3",
+    "§12.10.4",
+    "§12.2 step 13s"
+  ],
+  "requirements": [
+    "RK-23.3-092"
+  ],
+  "notes": "The task completes at once; its relayed hand-back opens the notified agent's turn, whose stream the room's transport holds once it was handed the first piece. The close cuts that turn: the text it was handed is stored marked cancelled, the rest of the answer never is. The hand-back instruction is the agent's own record, not the room's (RK-23.3-057): the room's timeline holds the record of the instruction the agent's turn read (§10.1.1), then the cut answer, and nothing after it. The task's completion is reported once, completed, and its waiter returns its result. Cited in part: that the completion callback is cut past the close's grace is not observed (it ends within it).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "hold_after": "Partial ",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "lead",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Partial ",
+                "more."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "lead",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "notify": "lead",
+      "as": "task"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$task",
+      "background": true,
+      "as": "waiter"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "waiter",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Found it."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "lead": [
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "lead"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "lead"
+          },
+          "content": {
+            "type": "text",
+            "body": "Partial "
+          },
+          "metadata": {
+            "cancelled": true
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "event": {
+            "metadata": {
+              "task_status": "completed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

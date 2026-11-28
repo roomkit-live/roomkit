@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-intelligence-channel-named-as-the-channel-leaves-the-call-s-address-as-it-is",
+  "title": "A delivery naming an intelligence channel as its channel is carried by the room's transport and keeps the address the call gives: another agent addressed is the one asked, an empty address asks none, and the agent the channel names is never asked in their place",
+  "rules": [
+    "§22.1",
+    "§19.3"
+  ],
+  "requirements": [
+    "RK-22.1-025"
+  ],
+  "notes": "The intelligence channel named as the channel is an alias for the room's transport, a MAY (RK-22.1-024) both implementations offer (delivery/an-intelligence-channel-named-is-carried-by-the-room-s-transport); with an explicit address the stored event keeps that address and only the agents it names are solicited. Python: core/_delivery_targets.py prepare_delivery (an intelligence channel resolves to the room's transport, the context's addressed_to untouched).",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "for b",
+      "channel_id": "a",
+      "addressed_to": [
+        "b"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "for nobody",
+      "channel_id": "a",
+      "addressed_to": [],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "for b"
+          },
+          "addressed_to": [
+            "b"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "for nobody"
+          },
+          "addressed_to": []
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [],
+        "b": [
+          {
+            "content": {
+              "type": "text",
+              "body": "for b"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

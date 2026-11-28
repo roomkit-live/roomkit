@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-after-deliver-hook-that-raises-leaves-the-queued-delivery-published-once",
+  "title": "An AFTER_DELIVER hook that raises changes nothing of a queued delivery's outcome: the worker publishes it once, as without the hook, and another observer still reads it sent",
+  "rules": [
+    "§22.3",
+    "§22.2"
+  ],
+  "requirements": [
+    "RK-22.3-006"
+  ],
+  "notes": "Hook observation is best-effort (§22.3): the worker acknowledges the item on its outcome, so an observer's failure, were it read as the delivery's, would be given back to retry and published a second time. Python: delivery/worker.py fire_delivery_hooks (AFTER_DELIVER started as async hooks, their failure their own).",
+  "setup": {
+    "kit": {
+      "delivery_backend": {
+        "retry_delay_ms": 100,
+        "max_retry_delay_ms": 400
+      }
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "broken",
+        "trigger": "after_deliver",
+        "execution": "async",
+        "reactions": [
+          {
+            "fail": "observer down",
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "name": "seen",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "broken": [
+        {
+          "trigger": "after_deliver"
+        }
+      ],
+      "seen": [
+        {
+          "trigger": "after_deliver",
+          "event": {
+            "status": "delivered",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "sent"
+              },
+              "error": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

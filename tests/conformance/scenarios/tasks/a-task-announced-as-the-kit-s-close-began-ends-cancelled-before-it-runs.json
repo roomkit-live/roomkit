@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-task-announced-as-the-kit-s-close-began-ends-cancelled-before-it-runs",
+  "title": "A task whose delegation was still being set up when the kit's close began is announced, then ends cancelled before it runs, its ON_TASK_COMPLETED fired: its worker is never asked",
+  "rules": [
+    "§23.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-23.3-087"
+  ],
+  "notes": "The delegation shares a transport into its child room, whose attach holds at a gate: the child room is made, the task not yet announced. The close starts meanwhile and gives that held work its grace; the gate opens within it, and the delegation announces its task while the close is still under way (its ON_TASK_DELEGATED held at a gate, the close pending), finds the close begun, and ends the task as the close ends a running one: cancelled with no output, its ON_TASK_COMPLETED fired, its worker's turn never started. Whether the call returns before or after that end is not asserted: the task's end is read through task.wait once the close returned. Python: tests/test_kit_close_doors.py::test_a_task_announced_as_the_kit_closes_ends_cancelled. Python: core/mixins/delegation.py delegate (_closed read once the task is announced, _end_inline_cancelled); roomkit-rs: kit/tasks.rs delegate_watched (is_closing once announced, end_now).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "room-1"
+            }
+          },
+          {
+            "gate": "preparing"
+          }
+        ]
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "announced"
+          }
+        ]
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "share_channels": [
+        "sms"
+      ],
+      "background": true,
+      "as": "late"
+    },
+    {
+      "wait_for": "preparing"
+    },
+    {
+      "close_while_pending": "late",
+      "as": "closing"
+    },
+    {
+      "wait_for": "preparing",
+      "pending": "closing"
+    },
+    {
+      "open": "preparing"
+    },
+    {
+      "wait_for": "announced",
+      "pending": "closing"
+    },
+    {
+      "open": "announced"
+    },
+    {
+      "await": "late",
+      "expect": {
+        "result": {
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "await": "closing",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$late",
+      "expect": {
+        "result": {
+          "status": "cancelled",
+          "output": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": []
+    },
+    "hooks": {
+      "delegated": [
+        {
+          "trigger": "on_task_delegated",
+          "room_id": "room-1"
+        }
+      ],
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "metadata": {
+              "task_status": "cancelled"
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_status": "cancelled"
+        }
+      }
+    }
+  }
+}

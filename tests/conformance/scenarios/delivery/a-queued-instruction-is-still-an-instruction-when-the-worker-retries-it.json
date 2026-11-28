@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-queued-instruction-is-still-an-instruction-when-the-worker-retries-it",
+  "title": "An instruction a delivery backend queues keeps its instruction flag in its item and across a retry: both attempts are seen as an INSTRUCTION by the delivery hooks, and the retry reaches the addressed agent as the application's direction, never as a participant's message",
+  "rules": [
+    "§22.2",
+    "§22.1",
+    "§10.1.1",
+    "§22.3"
+  ],
+  "requirements": [
+    "RK-22.2-032"
+  ],
+  "notes": "The first attempt finds no transport and is given back to retry (delivery/the-worker-retries-an-unavailable-destination); its retry is held at a BEFORE_DELIVER gate while the scenario attaches a transport. The worker rebuilds each attempt from the queued item, so what both attempts carry is what the item kept. Nothing stores an instruction as the room's (§10.1.1). Cited in part: the serialized item is not observed, since the in-memory delivery backend keeps the item itself; what a backend that serializes its items writes is that backend's own test.",
+  "setup": {
+    "kit": {
+      "delivery_backend": {
+        "retry_delay_ms": 200,
+        "max_retry_delay_ms": 1000
+      }
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "gate": "retry",
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      },
+      {
+        "name": "seen",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Tell the caller their order shipped.",
+      "addressed_to": [
+        "a"
+      ],
+      "instruction": true,
+      "expect": {
+        "result": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "wait_for": "retry"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "human"
+    },
+    {
+      "open": "retry"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "type": "instruction",
+            "content": {
+              "type": "text",
+              "body": "Tell the caller their order shipped."
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "hold": [
+        {
+          "event": {
+            "type": "instruction",
+            "addressed_to": [
+              "a"
+            ]
+          }
+        },
+        {
+          "event": {
+            "type": "instruction",
+            "addressed_to": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "seen": [
+        {
+          "event": {
+            "type": "instruction",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "unavailable",
+                "reason": "no_transport"
+              }
+            }
+          }
+        },
+        {
+          "event": {
+            "type": "instruction",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "sent"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-private-worker-s-tool-end-row-keeps-its-structured-copy-non-streaming",
+  "title": "A delegated worker that runs with no transport shared into its child room keeps its tool call's structured copy on the end row its private trace stores (non streaming)",
+  "rules": [
+    "§23.3 step 5",
+    "§21.4",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-23.3-018"
+  ],
+  "notes": "No transport is shared into the child room, so the worker's trace is committed there without crossing BEFORE_BROADCAST or a delivery lane (RK-23.3-017); its tool's handler writes a structured copy, which the end row keeps as a room's would (tool-structured/a-handler-copy-reaches-the-hook-and-row-non-streaming). Python: core/mixins/_child_execution.py, the trace writer of a delegated turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "It ships Tuesday."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Find an order.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "shipped",
+            "writes_structured_content": {
+              "order": "A-1",
+              "eta_days": 2
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Where is order A-1?",
+      "wait": true,
+      "expect": {
+        "result": {
+          "child_room_id": "$r1",
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "It ships Tuesday."
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "system"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "worker"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "worker"
+          },
+          "content": {
+            "tool_id": "c1",
+            "status": "completed",
+            "structured_content": {
+              "order": "A-1",
+              "eta_days": 2
+            },
+            "result": "shipped"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "worker"
+          },
+          "content": {
+            "type": "text",
+            "body": "It ships Tuesday."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-closing-kit-hands-a-cut-task-back-to-no-one-and-still-fires-its-completion",
+  "title": "A background task the kit's close cuts still fires its ON_TASK_COMPLETED, but its hand-back is skipped: the notified agent is asked nothing, and a transport notified is delivered nothing, nothing stored in the room",
+  "rules": [
+    "§23.3",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-23.3-091"
+  ],
+  "notes": "Each task's worker holds its turn at a gate no step opens; the close cuts both. A task cancelled from outside is otherwise handed back as cancelled (RK-23.3-088, tasks/the-kit-cancels-a-background-task-once): a closing framework starts no turn, so step 8 is skipped for both, the agent's and the transport's. Cited in part: the log line that names the skipped hand-back is not observed. Python: tests/tasks/test_cancelled_delegation.py::test_closing_the_kit_hands_nothing_back; tasks/handback.py hand_back (a closing kit hands nothing back).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "For the agent."
+            },
+            "gate": "agent_task",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "For the phone."
+            },
+            "gate": "phone_task",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "never"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "lead",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "It was cancelled."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "lead",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "For the agent.",
+      "notify": "lead",
+      "as": "for_agent"
+    },
+    {
+      "wait_for": "agent_task"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "For the phone.",
+      "notify": "sms",
+      "as": "for_phone"
+    },
+    {
+      "wait_for": "phone_task"
+    },
+    {
+      "call": "close",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "lead": []
+    },
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "hooks": {
+      "completed": {
+        "$unordered": [
+          {
+            "trigger": "on_task_completed",
+            "event": {
+              "metadata": {
+                "task_status": "cancelled",
+                "child_room_id": "$r1"
+              }
+            }
+          },
+          {
+            "trigger": "on_task_completed",
+            "event": {
+              "metadata": {
+                "task_status": "cancelled",
+                "child_room_id": "$r2"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

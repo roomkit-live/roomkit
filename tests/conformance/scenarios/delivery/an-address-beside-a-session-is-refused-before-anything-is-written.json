@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-address-beside-a-session-is-refused-before-anything-is-written",
+  "title": "A delivery that names a session and an intelligence address, a channel among its targets, is refused blocked invalid_session_target before anything is written, an empty address as well as one naming an agent, and AFTER_DELIVER observes the refusal",
+  "rules": [
+    "§22.1",
+    "§22.3"
+  ],
+  "requirements": [
+    "RK-22.1-057"
+  ],
+  "notes": "A non-null address takes the text pipeline, never a session (RK-22.1-056), so a session named beside one is an invalid target (RK-22.1-038), whatever the channel: the channel here hosts no realtime model, which would refuse the session as session_requires_realtime were no address given (delivery/an-intelligence-channel-named-is-carried-by-the-room-s-transport). Python: delivery/worker.py reject_invalid_delivery; roomkit-rs: delivery/execute.rs reject_invalid.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "hello",
+      "channel_id": "human",
+      "session_id": "s",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "invalid_session_target"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "hello",
+      "channel_id": "human",
+      "session_id": "s",
+      "addressed_to": [],
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "invalid_session_target"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "a": []
+      }
+    },
+    "hooks": {
+      "observe": [
+        {
+          "event": {
+            "status": "blocked",
+            "addressed_to": [
+              "a"
+            ],
+            "metadata": {
+              "delivery_outcome": {
+                "status": "blocked",
+                "reason": "invalid_session_target"
+              },
+              "session_id": "s"
+            }
+          }
+        },
+        {
+          "event": {
+            "status": "blocked",
+            "addressed_to": [],
+            "metadata": {
+              "delivery_outcome": {
+                "status": "blocked",
+                "reason": "invalid_session_target"
+              },
+              "session_id": "s"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
