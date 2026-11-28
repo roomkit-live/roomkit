@@ -6,7 +6,8 @@
     "§12.10.4"
   ],
   "requirements": [
-    "RK-12.10.4-108"
+    "RK-12.10.4-108",
+    "RK-A.15-016"
   ],
   "requires_features": [
     "conference"

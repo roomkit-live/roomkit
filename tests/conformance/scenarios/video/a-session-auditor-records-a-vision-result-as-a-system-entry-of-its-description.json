@@ -1,0 +1,62 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-session-auditor-records-a-vision-result-as-a-system-entry-of-its-description",
+  "title": "A session auditor attached to the kit records a frame's vision result as a vision entry, role system, whose content is the frame's description",
+  "rules": [
+    "§15.8.2",
+    "§12.8.4"
+  ],
+  "requirements": [
+    "RK-15.8.2-011"
+  ],
+  "notes": "The auditor's attach registers its ON_VISION_RESULT hook (RK-15.8.2-005); the frame's analysis fires it once. The entry's metadata is not asserted: the table's row names none. duration_ms is null: the entry's record gives a duration to timed events alone (RK-15.8.2-008).",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "session_auditor": {
+      "attached": true
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "a person waves at the camera"
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "session_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "vision",
+        "role": "system",
+        "content": "a person waves at the camera",
+        "duration_ms": null
+      }
+    ]
+  }
+}

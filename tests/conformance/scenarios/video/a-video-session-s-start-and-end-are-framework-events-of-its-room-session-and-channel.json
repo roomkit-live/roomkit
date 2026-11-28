@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-video-session-s-start-and-end-are-framework-events-of-its-room-session-and-channel",
+  "title": "A video session's join emits video_session_started and its end video_session_ended, each naming the room, the session and the channel",
+  "rules": [
+    "§8.2",
+    "Appendix A.12"
+  ],
+  "requirements": [
+    "RK-8.2-052",
+    "RK-8.2-053",
+    "RK-A.12-010",
+    "RK-A.12-011"
+  ],
+  "notes": "Two sessions one after the other: each start is emitted at its join and each end at its transport's disconnect, before the next step, and each pair names its own session, the two ids differing. The steps await the work the channel scheduled for each input, so the order of the four events is the order of the steps.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "video.disconnect",
+      "channel_id": "camera",
+      "participant_id": "alice"
+    },
+    {
+      "call": "video.join",
+      "channel_id": "camera",
+      "participant_id": "bob"
+    },
+    {
+      "call": "video.disconnect",
+      "channel_id": "camera",
+      "participant_id": "bob"
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "event": "video_session_started",
+          "room_id": "r1",
+          "channel_id": "camera",
+          "session_id": {
+            "$as": "alice"
+          }
+        },
+        {
+          "event": "video_session_ended",
+          "room_id": "r1",
+          "channel_id": "camera",
+          "session_id": {
+            "$as": "alice"
+          }
+        },
+        {
+          "event": "video_session_started",
+          "room_id": "r1",
+          "channel_id": "camera",
+          "session_id": {
+            "$as": "bob"
+          }
+        },
+        {
+          "event": "video_session_ended",
+          "room_id": "r1",
+          "channel_id": "camera",
+          "session_id": {
+            "$as": "bob"
+          }
+        }
+      ]
+    }
+  }
+}

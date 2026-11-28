@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/whether-recognition-and-recording-are-active-is-read-as-they-start-and-stop",
+  "title": "The channel's disclosure surface says at each read whether recognition and recording are active in the room: off before any track, on once a track is consumed, off again once each is unplugged",
+  "rules": [
+    "§17.7",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-17.7-008"
+  ],
+  "notes": "The channel holds the implementation's mock recognizer and a scripted recording. A frame reaches the track before recording is read active: the RFC leaves open whether a track's recording is active from its subscription or from its first frame, so the scenario reads it once a frame was recorded. Cited in part: the conference channel takes no vision provider (planned, RK-A.15-005), so vision is read only as not configured, never as active.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "recording": {}
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": true,
+            "recording_configured": true,
+            "vision_configured": false,
+            "rooms": {
+              "r1": {
+                "stt_active": false,
+                "recording_active": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "vision_configured": false,
+            "rooms": {
+              "r1": {
+                "active_lanes": 1,
+                "stt_active": true,
+                "recording_active": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "recording"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "recording_configured": false,
+            "vision_configured": false,
+            "rooms": {
+              "r1": {
+                "stt_active": true,
+                "recording_active": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "stt_configured": false,
+            "vision_configured": false,
+            "rooms": {
+              "r1": {
+                "stt_active": false,
+                "recording_active": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

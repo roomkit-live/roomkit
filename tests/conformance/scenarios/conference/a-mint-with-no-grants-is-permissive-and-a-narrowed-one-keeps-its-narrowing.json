@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-mint-with-no-grants-is-permissive-and-a-narrowed-one-keeps-its-narrowing",
+  "title": "A participant minted with no grants, on a channel with no default grants, holds ConferenceGrants' permissive defaults; one the caller narrows holds the narrowing, its other members at those defaults",
+  "rules": [
+    "§17.7",
+    "§12.10.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-17.7-004"
+  ],
+  "notes": "conference.open names no default_grants, so the channel's are ConferenceGrants' defaults (§12.10.2), read as the seven members of each mint. Cited in part: that narrowing is RECOMMENDED wherever a role does not publish is advice to the integrator, no behaviour of the implementation.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "conf"
+          },
+          {
+            "id": "viewer",
+            "channel_id": "conf"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "participant_id": "viewer",
+      "grants": {
+        "publish_audio": false,
+        "publish_video": false,
+        "publish_screen_share": false
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "participant_id": "alice",
+              "grants": {
+                "publish_audio": true,
+                "publish_video": true,
+                "publish_screen_share": true,
+                "publish_screen_share_audio": false,
+                "subscribe": true,
+                "moderate": false,
+                "hidden": false
+              }
+            },
+            {
+              "call": "mint_access",
+              "participant_id": "viewer",
+              "grants": {
+                "publish_audio": false,
+                "publish_video": false,
+                "publish_screen_share": false,
+                "publish_screen_share_audio": false,
+                "subscribe": true,
+                "moderate": false,
+                "hidden": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

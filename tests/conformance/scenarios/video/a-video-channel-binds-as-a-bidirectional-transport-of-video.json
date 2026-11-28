@@ -1,0 +1,49 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-video-channel-binds-as-a-bidirectional-transport-of-video",
+  "title": "The implementation's video channel binds as type video, category transport and direction bidirectional, its one media type video",
+  "rules": [
+    "Appendix A.12"
+  ],
+  "requirements": [
+    "RK-A.12-002"
+  ],
+  "notes": "video.open attaches the implementation's own video channel and names no category or direction, so the binding takes the channel's own.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ]
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "camera": {
+          "channel_id": "camera",
+          "channel_type": "video",
+          "category": "transport",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": [
+              "video"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

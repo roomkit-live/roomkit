@@ -1,0 +1,221 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/the-disclosure-surface-reports-the-bot-and-its-hidden-status-as-its-session-holds-them",
+  "title": "The channel's disclosure surface reports the bot's identity, its presence in each room and the hidden status in force on its session: a reveal still held on its way to the backend leaves the session reported hidden, the configuration already visible",
+  "rules": [
+    "§17.7",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-17.7-007"
+  ],
+  "notes": "The backend updates grants in place (bot_grant_update), so the reveal keeps the session (RK-12.10.4-209). While its update_bot_grants holds at the gate, the configuration (info.bot_hidden) already reads visible and the session (the room's bot_hidden) still hidden: the surface answers with the status in force on the session. The configuration is the setter's to replace before its change reaches the session, which is read from the configuration as a whole (RK-12.10.4-185). Unplugging the recognizer, the channel's one need, takes the bot out, and the room reports no bot. The paragraph leaving disclosure to the jurisdiction mandates no behaviour.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "bot_identity": "notetaker",
+      "capabilities": [
+        "bot_grant_update"
+      ],
+      "bot_grants": {
+        "subscribe": true,
+        "hidden": true
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "bot_identity": "notetaker",
+            "bot_hidden": true,
+            "rooms": {
+              "r1": {
+                "bot_present": false,
+                "bot_session_id": null,
+                "bot_hidden": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.ensure_bot",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "id": {
+            "$as": "bot"
+          },
+          "room_id": "r1",
+          "identity": "notetaker"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "identity": "notetaker",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "hidden": true
+              }
+            }
+          ],
+          "info": {
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "bot_session_id": {
+                  "$as": "bot"
+                },
+                "bot_hidden": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.fault",
+      "channel_id": "conf",
+      "method": "update_bot_grants",
+      "gate": "reveal"
+    },
+    {
+      "call": "conference.set_bot_grants",
+      "channel_id": "conf",
+      "grants": {
+        "subscribe": true,
+        "hidden": false
+      },
+      "background": true,
+      "as": "revealing"
+    },
+    {
+      "wait_for": "reveal"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "expect": {
+        "result": {
+          "info": {
+            "bot_hidden": false,
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "bot_session_id": {
+                  "$as": "bot"
+                },
+                "bot_hidden": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "reveal"
+    },
+    {
+      "await": "revealing"
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "update_bot_grants"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "update_bot_grants",
+              "session": {
+                "$as": "bot"
+              },
+              "grants": {
+                "hidden": false
+              }
+            }
+          ],
+          "info": {
+            "bot_hidden": false,
+            "rooms": {
+              "r1": {
+                "bot_present": true,
+                "bot_session_id": {
+                  "$as": "bot"
+                },
+                "bot_hidden": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.unplug",
+      "channel_id": "conf",
+      "kind": "stt"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "leave",
+              "session": {
+                "$as": "bot"
+              }
+            }
+          ],
+          "info": {
+            "bot_identity": "notetaker",
+            "rooms": {
+              "r1": {
+                "bot_present": false,
+                "bot_session_id": null,
+                "bot_hidden": null
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

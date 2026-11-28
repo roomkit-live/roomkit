@@ -7,7 +7,8 @@
   ],
   "requirements": [
     "RK-12.10.4-224",
-    "RK-12.10.4-225"
+    "RK-12.10.4-225",
+    "RK-A.15-013"
   ],
   "requires_features": [
     "conference"

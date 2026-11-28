@@ -10,7 +10,8 @@
   "requirements": [
     "RK-12.8.4-013",
     "RK-12.8.7-011",
-    "RK-12.8.7-012"
+    "RK-12.8.7-012",
+    "RK-A.12-013"
   ],
   "requires_features": [
     "video"

@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "video/a-published-vision-result-is-a-framework-event-carrying-its-analysis",
+  "title": "A vision result the channel publishes is a video_vision_result framework event naming the room, the session and the channel, with the description, labels, confidence, text, face count and elapsed time of the analysis",
+  "rules": [
+    "§8.2",
+    "Appendix A.12",
+    "§12.8.4",
+    "§12.8.11"
+  ],
+  "requirements": [
+    "RK-8.2-054",
+    "RK-A.12-012"
+  ],
+  "notes": "The scripted vision provider gives the description and the labels; the hook's modification gives the confidence, the text and two faces, so that each member the event carries differs from its default. The event carries the faces as their count. elapsed_ms is the analysis' duration, which no scenario can fix: only its presence is asserted.",
+  "requires_features": [
+    "video"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "annotate",
+        "trigger": "on_vision_result",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "confidence": 0.8,
+                "text": "EXIT",
+                "faces": [
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "confidence": 0.9
+                  },
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "confidence": 0.7
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "video.open",
+      "room_id": "r1",
+      "channel_id": "camera",
+      "participants": [
+        "alice"
+      ],
+      "vision": [
+        "a person waves"
+      ],
+      "vision_labels": [
+        [
+          "person",
+          "hand"
+        ]
+      ]
+    },
+    {
+      "call": "video.frame",
+      "channel_id": "camera",
+      "participant_id": "alice",
+      "sequence": 1,
+      "data": "AQID"
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "event": "video_session_started",
+          "session_id": {
+            "$as": "session"
+          }
+        },
+        {
+          "event": "video_vision_result",
+          "room_id": "r1",
+          "session_id": {
+            "$as": "session"
+          },
+          "channel_id": "camera",
+          "description": "a person waves",
+          "labels": [
+            "person",
+            "hand"
+          ],
+          "confidence": 0.8,
+          "text": "EXIT",
+          "faces": 2,
+          "elapsed_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

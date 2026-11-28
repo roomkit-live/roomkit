@@ -1,0 +1,50 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-channel-binds-as-a-bidirectional-transport-of-audio",
+  "title": "The implementation's conference channel binds as type conference, category transport and direction bidirectional, its one media type audio",
+  "rules": [
+    "Appendix A.15",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-A.15-002"
+  ],
+  "notes": "conference.open attaches the implementation's own conference channel and names no category or direction, so the binding takes the channel's own.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "conf": {
+          "channel_id": "conf",
+          "channel_type": "conference",
+          "category": "transport",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": [
+              "audio"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

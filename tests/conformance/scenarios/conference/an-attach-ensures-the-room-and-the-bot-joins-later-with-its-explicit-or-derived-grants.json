@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/an-attach-ensures-the-room-and-the-bot-joins-later-with-its-explicit-or-derived-grants",
+  "title": "An attach ensures the conference room and joins no bot; the bot joins once there is a need, with the explicit bot grants as given, or, without them, with grants derived to cover the channel's needs",
+  "rules": [
+    "Appendix A.15",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-A.15-009",
+    "RK-A.15-014"
+  ],
+  "notes": "Both channels hold the implementation's mock recognizer, a need that an arrival makes the bot join for (§12.10.4 step 1). told's explicit set does not cover that need (no subscribe), which the coverage rule allows of explicit grants alone (RK-12.10.4-202); derived grants cover it (RK-12.10.4-193). What derivation gives beside subscribe is §12.10.3's SHOULD, not asserted.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "told",
+      "room_id": "r1",
+      "bot_grants": {
+        "publish_audio": true,
+        "publish_video": false,
+        "publish_screen_share": false,
+        "subscribe": false,
+        "moderate": true,
+        "hidden": true
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "derived",
+      "room_id": "r2"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "told",
+      "calls": [
+        "ensure_room",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "derived",
+      "calls": [
+        "ensure_room",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "told",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "derived",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "told",
+      "calls": [
+        "ensure_room",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1"
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "grants": {
+                "publish_audio": true,
+                "publish_video": false,
+                "publish_screen_share": false,
+                "subscribe": false,
+                "moderate": true,
+                "hidden": true,
+                "publish_screen_share_audio": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "derived",
+      "calls": [
+        "ensure_room",
+        "join_as_bot"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r2"
+            },
+            {
+              "call": "join_as_bot",
+              "room_id": "r2",
+              "grants": {
+                "subscribe": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

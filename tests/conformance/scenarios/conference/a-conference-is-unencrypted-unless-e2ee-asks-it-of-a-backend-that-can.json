@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-conference-is-unencrypted-unless-e2ee-asks-it-of-a-backend-that-can",
+  "title": "A conference asks the backend for no encryption by default, even of a backend that can encrypt; with e2ee it asks for it, and a backend without the capability refuses",
+  "rules": [
+    "Appendix A.15",
+    "§12.10.2",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-A.15-011"
+  ],
+  "notes": "Each channel holds no recognizer (stt null), since an encrypted conference refuses recognition (§12.10.2); plain leaves e2ee to the implementation's default.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      },
+      {
+        "id": "r3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "plain",
+      "room_id": "r1",
+      "stt": null,
+      "capabilities": [
+        "e2ee"
+      ]
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "plain",
+      "calls": [
+        "ensure_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r1",
+              "e2ee": false
+            }
+          ],
+          "info": {
+            "e2ee": false
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "sealed",
+      "room_id": "r2",
+      "stt": null,
+      "e2ee": true,
+      "capabilities": [
+        "e2ee"
+      ]
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "sealed",
+      "calls": [
+        "ensure_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "ensure_room",
+              "room_id": "r2",
+              "e2ee": true
+            }
+          ],
+          "info": {
+            "e2ee": true
+          }
+        }
+      }
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "refused",
+      "room_id": "r3",
+      "stt": null,
+      "e2ee": true,
+      "expect": {
+        "error": {
+          "name": "capability_missing"
+        }
+      }
+    }
+  ]
+}

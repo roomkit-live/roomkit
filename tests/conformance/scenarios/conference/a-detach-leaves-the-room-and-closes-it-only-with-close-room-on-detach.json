@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-detach-leaves-the-room-and-closes-it-only-with-close-room-on-detach",
+  "title": "A detach makes the bot leave the conference room; it closes the room only on a channel built with close_room_on_detach, which is off by default",
+  "rules": [
+    "Appendix A.15",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-A.15-012",
+    "RK-A.15-018"
+  ],
+  "notes": "kept leaves close_room_on_detach to the implementation's default. The order of the leave and the close_room is not asserted: the RFC lists both under the detach (§12.10.4 step 5) without ordering them.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "kept",
+      "room_id": "r1"
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "closed",
+      "room_id": "r2",
+      "close_room_on_detach": true
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "kept",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "closed",
+      "participant_id": "bob"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "kept"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "closed"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "kept",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r1",
+              "session": {
+                "$as": "kept"
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "kept"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "kept",
+      "calls": [
+        "close_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": []
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "closed",
+      "calls": [
+        "join_as_bot",
+        "leave"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "join_as_bot",
+              "room_id": "r2",
+              "session": {
+                "$as": "closed"
+              }
+            },
+            {
+              "call": "leave",
+              "session": {
+                "$as": "closed"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "closed",
+      "calls": [
+        "close_room"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "close_room",
+              "room_id": "r2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
