@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import contextvars
 import functools
 import inspect
 import logging
@@ -113,7 +112,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.telemetry.base import Attr, SpanKind
-from roomkit.telemetry.context import reset_span
+from roomkit.telemetry.context import SpanToken, reset_span
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.tools._human_input_channel import ChannelHumanInput, warn_plain_handler
 from roomkit.tools.human_input import HumanInputToolHandler
@@ -885,9 +884,7 @@ class RealtimeVoiceChannel(
     def tool_handler(self, value: ToolHandler | None) -> None:
         self._tool_handler = value
 
-    def _rt_span_ctx(
-        self, session_id: str
-    ) -> tuple[str | None, contextvars.Token[str | None] | None]:
+    def _rt_span_ctx(self, session_id: str) -> tuple[str | None, SpanToken | None]:
         """Set the realtime session span as current for child spans.
 
         Returns (parent_id, token) — caller must reset via ``reset_span(token)``
