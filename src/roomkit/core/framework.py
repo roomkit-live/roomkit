@@ -636,8 +636,12 @@ class RoomKit(
             self._telemetry = telemetry.provider or NoopTelemetryProvider()
         else:
             self._telemetry = NoopTelemetryProvider()
-        # A turn's request names the span it runs under (RFC §10.6.9).
+        # A turn's request names the span it runs under (RFC §10.6.9), and the
+        # kit's own executor continues that span under the kit's telemetry
+        # wherever its work runs: across a backend, in a fresh context, the
+        # request's span alone would otherwise be current, named by none.
         self._turns.telemetry = self._telemetry
+        self.turn_executor._telemetry = self._telemetry
         suppressed = (
             telemetry.suppressed_hook_triggers
             if isinstance(telemetry, _TelemetryConfigCls)
