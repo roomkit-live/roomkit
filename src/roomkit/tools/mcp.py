@@ -535,7 +535,9 @@ class MCPToolProvider:
                 W3C ``traceparent``, ``tracestate``, ``baggage`` in the
                 request's ``_meta``), unless a :meth:`request`'s caller writes
                 a trace context of its own there, which goes whole instead.
-                The application's OpenTelemetry context never goes out.
+                The application's current span never goes out; with
+                ``OpenTelemetryProvider``, the baggage current at the request
+                goes with the kit's span, as its propagator writes it.
                 ``False`` (the default) sends only the trace keys a caller
                 writes itself.
 
