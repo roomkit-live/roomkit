@@ -10,7 +10,7 @@
     "RK-8.2-047",
     "RK-8.2-048"
   ],
-  "notes": "The track's withdrawal closes its recording. Where the recorder writes, and how much, are the scripted recorder's: only their presence is compared. The room's part of both rows is in recording/a-room-recording-announces-its-start-and-its-stop-with-their-data; a voice session's (its session_id) is not shown.",
+  "notes": "The track's withdrawal closes its recording. Where the recorder writes, and how much, are the scripted recorder's: only their presence is compared. The room's part of both rows is in recording/a-room-recording-announces-its-start-and-its-stop-with-their-data, a voice session's in voice/a-session-recording-announces-its-start-and-its-stop-with-its-session.",
   "requires_features": [
     "conference"
   ],

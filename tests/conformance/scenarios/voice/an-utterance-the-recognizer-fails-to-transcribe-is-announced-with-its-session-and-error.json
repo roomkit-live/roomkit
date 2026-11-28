@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-utterance-the-recognizer-fails-to-transcribe-is-announced-with-its-session-and-error",
+  "title": "An utterance the recognizer fails to transcribe is announced as stt_error, naming the session, the recognizer and its error",
+  "rules": [
+    "§8.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-8.2-049"
+  ],
+  "notes": "The recognizer's stream, opened at the speech start, fails; at the speech end the channel transcribes the utterance in one call instead, and that call fails too. The recognizer's name and the error's text are each implementation's: only their presence is compared. A recognizer stream kept across turns that fails, which the channel opens again (RK-12.2-063), is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "call-1"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "stt": {
+        "streams": [
+          {
+            "then": "fail"
+          },
+          {
+            "then": "fail"
+          }
+        ]
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "voice_session_started",
+              "session_id": "call-1"
+            },
+            {
+              "event": "voice_session_ready",
+              "session_id": "call-1"
+            }
+          ]
+        },
+        {
+          "event": "stt_error",
+          "session_id": "call-1",
+          "provider": {
+            "$present": true
+          },
+          "error": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

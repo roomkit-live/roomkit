@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-session-recording-announces-its-start-and-its-stop-with-its-session",
+  "title": "A voice session's recording announces its start and its stop, each naming the session, the stop its duration",
+  "rules": [
+    "§8.2",
+    "§12.3.7"
+  ],
+  "requirements": [
+    "RK-8.2-047",
+    "RK-8.2-048"
+  ],
+  "notes": "The pipeline's recorder (recorder) records the session from its start to its end; its handle's id is the recorder's own, compared only between the two events. Where the session's events fall against the recording's is not compared. The room's part of both rows is in recording/a-room-recording-announces-its-start-and-its-stop-with-their-data, a conference track's in conference/a-track-recording-announces-its-start-and-its-stop-with-its-track.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "call-1"
+      },
+      "recorder": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "voice_session_started",
+              "session_id": "call-1"
+            },
+            {
+              "event": "voice_session_ready",
+              "session_id": "call-1"
+            },
+            {
+              "event": "recording_started",
+              "room_id": "r1",
+              "session_id": "call-1",
+              "id": {
+                "$as": "recording"
+              }
+            }
+          ]
+        },
+        {
+          "$unordered": [
+            {
+              "event": "recording_stopped",
+              "room_id": "r1",
+              "session_id": "call-1",
+              "id": {
+                "$as": "recording"
+              },
+              "duration_seconds": {
+                "$present": true
+              }
+            },
+            {
+              "event": "voice_session_ended",
+              "session_id": "call-1"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -10,7 +10,7 @@
     "RK-8.2-047",
     "RK-8.2-048"
   ],
-  "notes": "The room's part of both rows: a recorder names its handle by its name and writes mock://<name>. A conference track's part is in conference/a-track-recording-announces-its-start-and-its-stop-with-its-track; a voice session's (its session_id) is not shown.",
+  "notes": "The room's part of both rows: a recorder names its handle by its name and writes mock://<name>. A conference track's part is in conference/a-track-recording-announces-its-start-and-its-stop-with-its-track, a voice session's in voice/a-session-recording-announces-its-start-and-its-stop-with-its-session.",
   "requires_features": [
     "recording"
   ],

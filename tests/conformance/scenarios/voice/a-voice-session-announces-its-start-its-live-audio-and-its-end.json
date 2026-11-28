@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-voice-session-announces-its-start-its-live-audio-and-its-end",
+  "title": "A voice session joined announces its start and its live audio path, and its leave its end, each with the session's data",
+  "rules": [
+    "§8.2",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-8.2-045",
+    "RK-8.2-046",
+    "RK-8.2-051"
+  ],
+  "notes": "The transport names the session (session_ids). The order of voice_session_started and voice_session_ready, which no rule fixes, is not compared; the end comes after the leave.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "call-1"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "voice_session_started",
+              "session_id": "call-1",
+              "room_id": "r1",
+              "channel_id": "phone"
+            },
+            {
+              "event": "voice_session_ready",
+              "session_id": "call-1",
+              "room_id": "r1",
+              "channel_id": "phone",
+              "participant_id": "alice"
+            }
+          ]
+        },
+        {
+          "event": "voice_session_ended",
+          "session_id": "call-1",
+          "room_id": "r1",
+          "channel_id": "phone"
+        }
+      ]
+    }
+  }
+}
