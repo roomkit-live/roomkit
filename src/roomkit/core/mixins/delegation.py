@@ -1135,12 +1135,13 @@ class DelegationMixin(HelpersMixin):
         answer is one deeper, so a cycle of delegation, result and delegation
         again ends at ``max_chain_depth``. A task that did not complete is
         handed back whatever it left, a failure says it failed (§23.3 step 8);
-        only a completed task with nothing to say is not. A realtime voice
+        only a completed task with nothing to say, its output empty or only
+        blanks as a posted result reads it, is not. A realtime voice
         channel is told in *session_id*, the session that delegated. The
         result names *task*, what was asked. An inline delegation never comes
         here: its caller presents the result itself.
         """
-        if result.status == TaskStatus.COMPLETED and not result.output:
+        if result.status == TaskStatus.COMPLETED and not (result.output or "").strip():
             return
         try:
             room = await self._store.get_room(result.parent_room_id)

@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A background task whose worker answered only blanks no longer wakes the notified agent (RFC §23.3 step 8, RMK-2219): it completed with nothing to say, which a relayed hand-back read as something to say, so the agent was handed a blank result and opened a turn on it, while a posted one already posted nothing. Both now skip it. The same in roomkit-rs.
+
 - A voice session's join and leave each announce it once, `voice_session_started` and `voice_session_ended` (RFC §8.2, RMK-2226), where `kit.join()` and `kit.leave()` emitted each twice: once from the kit and once as the channel bound or unbound the session, so a handler of either event ran twice per call. The kit's own stays, when it came: `voice_session_started` before `join()` returns, `voice_session_ended` once the transport stopped listening and disconnected the session; a session the transport itself hands in or ends is announced once by the channel, its event now carrying `participant_id` and its `channel_id` too
 
 - A discussion turn that ends as its driver stops still announces `TURN_ENDED`, once (RFC §19.7.5 rules 6 and 17, RMK-2191), where the announcement was lost when the stop (the discussion uninstalled, here or in another process, or the kit closing) landed while the driver let the turn's watch unwind or recorded the turn's end: a hook following `ON_SPEAK_QUEUE` never saw the turn end. Since a steering `Cancel` cuts a generation at once, an uninstall that cuts a turn meets its end there more often.

@@ -39,7 +39,7 @@ from roomkit.tasks import DelegateHandler, setup_delegation
 from roomkit.tasks.handback import RESULT_TURN_NOTE, hand_back
 from roomkit.tasks.models import TaskStatus
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
-from tests.test_framework import SimpleChannel
+from tests.test_framework import AILikeChannel, SimpleChannel
 from tests.tool_room import owner_tool_call_in, tool_call_in
 
 
@@ -497,6 +497,21 @@ def _injected(provider: MockRealtimeProvider) -> list[tuple[str, str]]:
         for c in provider.calls
         if c.method == "inject_text"
     ]
+
+
+async def test_a_completed_task_with_nothing_to_say_is_not_handed_back() -> None:
+    """RFC §23.3 step 8: a worker that answers only blanks completes its task
+    with nothing to say, so the notified agent is not woken, as a posted
+    result posts nothing. The hand-back runs before the task's waiters wake."""
+    kit, notified = await _kit("Findings.")
+    kit.register_channel(AILikeChannel("blank", response=" \n\t "))
+
+    task = await kit.delegate("call", "blank", "Count.", notify="assistant")
+    result = await task.wait(timeout=5)
+    await kit.close()
+
+    assert result.status == TaskStatus.COMPLETED
+    assert notified._provider.calls == []
 
 
 @pytest.mark.parametrize(
