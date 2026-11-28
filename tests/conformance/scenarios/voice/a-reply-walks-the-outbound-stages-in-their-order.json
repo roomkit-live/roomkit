@@ -22,7 +22,8 @@
     "RK-12.3.10-003",
     "RK-12.3.14-021",
     "RK-12.3.14-023",
-    "RK-12.3.14-024"
+    "RK-12.3.14-024",
+    "RK-A.10-016"
   ],
   "notes": "The transport reports no played block, as a network transport, so the pipeline feeds the AEC reference itself. The first postprocessor receives each chunk at the size the synthesis emitted it (14 and 18 bytes): re-chunking to a fixed size is a stage's own, not shown. Only the sample rate is converted on exit (the channel count and the codec stay those of the synthesis). The resampled samples are not compared.",
   "requires_features": [

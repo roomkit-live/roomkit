@@ -1,0 +1,265 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/an-agent-s-streamed-answer-is-synthesized-sentence-by-sentence",
+  "title": "An agent's streamed answer is piped to the voice channel's stream delivery: each sentence is synthesized as it completes and played through the outbound stages",
+  "rules": [
+    "Appendix A.10",
+    "§12.2",
+    "§12.2 step 12s"
+  ],
+  "requirements": [
+    "RK-A.10-015"
+  ],
+  "notes": "The agent streams its answer in three deltas whose boundaries fall inside the sentences: the channel splits the stream into its two sentences, each checked (BEFORE_TTS) then synthesized on its own. The scripted TTS makes one chunk per word, 13 in all, each processed by the postprocessor, whose bytes reach the transport.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Your table by the window ",
+                "is ready now. The kitchen ",
+                "closes at ten."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "sentence",
+        "trigger": "before_tts",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "postprocessors": [
+        {
+          "name": "post",
+          "output": "AQIDBA=="
+        }
+      ]
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "post"
+      ],
+      "calls": [
+        "process"
+      ],
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table by the window is ready now.",
+            "The kitchen closes at ten."
+          ],
+          "stages": [
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            }
+          ],
+          "chunks": {
+            "alice": [
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "sentence": [
+        {
+          "voice": {
+            "text": "Your table by the window is ready now."
+          }
+        },
+        {
+          "voice": {
+            "text": "The kitchen closes at ten."
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          }
+        },
+        {
+          "content": {
+            "body": "Your table by the window is ready now. The kitchen closes at ten."
+          },
+          "source": {
+            "channel_id": "agent"
+          }
+        }
+      ]
+    }
+  }
+}

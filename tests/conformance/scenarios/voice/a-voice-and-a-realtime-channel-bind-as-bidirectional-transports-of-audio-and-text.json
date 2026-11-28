@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-voice-and-a-realtime-channel-bind-as-bidirectional-transports-of-audio-and-text",
+  "title": "A voice channel and a realtime voice channel each bind as a bidirectional transport of audio and text: a text delivered to the one is spoken, to the other enters its session",
+  "rules": [
+    "Appendix A.10",
+    "Appendix A.11",
+    "§12.2",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-A.10-002",
+    "RK-A.11-002"
+  ],
+  "notes": "Both are bound with no category or direction, so that each binding takes the channel's own. The media types are matched in any order.",
+  "requires_features": [
+    "voice",
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "bob"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "carol",
+      "content": {
+        "type": "text",
+        "body": "Your table is ready."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Your table is ready."
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "Your table is ready."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "phone": {
+          "channel_type": "voice",
+          "category": "transport",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "audio",
+                "text"
+              ]
+            }
+          }
+        },
+        "rt": {
+          "channel_type": "realtime_voice",
+          "category": "transport",
+          "direction": "bidirectional",
+          "capabilities": {
+            "media_types": {
+              "$unordered": [
+                "audio",
+                "text"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

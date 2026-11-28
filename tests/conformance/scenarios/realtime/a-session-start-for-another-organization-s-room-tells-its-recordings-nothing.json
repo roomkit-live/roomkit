@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-start-for-another-organization-s-room-tells-its-recordings-nothing",
+  "title": "A session start acting for another organization finds no room: no session connects and the room's recording is told of no track",
+  "rules": [
+    "§17.2",
+    "§12.4",
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-17.2-005"
+  ],
+  "notes": "The room records (rec-a) before either start. The same start acting for the room's own organization is admitted, and its session's track reaches the recording. A framework join naming an organization is not shown: the runners' voice.join passes none. A conference's mint is in conference/a-mint-for-another-organization-s-room-finds-no-room.",
+  "requires_features": [
+    "realtime",
+    "recording"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "recording": true
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec-a",
+      "organization_id": "org-a"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [],
+          "state": null
+        }
+      }
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec-a",
+      "calls": [
+        "on_track_added"
+      ],
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice",
+      "organization_id": "org-a"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "recording.calls",
+      "recorder": "rec-a",
+      "calls": [
+        "on_track_added"
+      ],
+      "expect": {
+        "result": [
+          {
+            "call": "on_track_added",
+            "recording_id": "rec-a",
+            "track": {
+              "participant_id": "alice"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

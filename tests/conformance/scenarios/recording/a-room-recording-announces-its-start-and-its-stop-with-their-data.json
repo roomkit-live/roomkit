@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "recording/a-room-recording-announces-its-start-and-its-stop-with-their-data",
+  "title": "A room recording announces its start with its id and the room scope, and its stop with its duration and the file it wrote",
+  "rules": [
+    "§8.2",
+    "§12.11"
+  ],
+  "requirements": [
+    "RK-8.2-047",
+    "RK-8.2-048"
+  ],
+  "notes": "The room's part of both rows: a recorder names its handle by its name and writes mock://<name>. A conference track's part is in conference/a-track-recording-announces-its-start-and-its-stop-with-its-track; a voice session's (its session_id) is not shown.",
+  "requires_features": [
+    "recording"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "recording.start",
+      "room_id": "r1",
+      "recorder": "rec-a"
+    },
+    {
+      "call": "recording.stop",
+      "room_id": "r1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "event": "recording_started",
+          "room_id": "r1",
+          "id": "rec-a",
+          "scope": "room"
+        },
+        {
+          "event": "recording_stopped",
+          "room_id": "r1",
+          "id": "rec-a",
+          "scope": "room",
+          "url": "mock://rec-a",
+          "duration_seconds": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

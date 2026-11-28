@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-direct-injection-from-a-hook-or-a-turn-is-at-least-as-deep-as-that-work",
+  "title": "A text a hook's body or a turn injects into a model's session is at least as deep as that work: one short of the limit it enters silently",
+  "rules": [
+    "§8.3",
+    "§12.4",
+    "§9.5.1"
+  ],
+  "requirements": [
+    "RK-8.3-032"
+  ],
+  "notes": "The injections name no depth. An AFTER_BROADCAST hook's body is one deeper than its event (§8.3), and a turn's call is as deep as its response: on an event at depth 3, both inject at depth 4, at the default limit of 5; at depth 2, at 3, which asks an answer. A turn's injection and the delivery of its event run side by side, so their order in rt2's session is not compared. The tool-call door is in realtime/a-realtime-tool-call-is-as-deep-as-the-model-s-answer-and-so-is-what-its-hooks-post.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "rt2",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "on_event": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "realtime.inject",
+                "channel_id": "rt2",
+                "text": "turn note",
+                "role": "system"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt2"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "r1"
+            },
+            "repeat": true,
+            "do": [
+              {
+                "call": "realtime.inject",
+                "channel_id": "rt",
+                "text": "hook note",
+                "role": "system"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt2",
+      "room_id": "r2",
+      "participant_id": "carol"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "hook below"
+      },
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "hook one short"
+      },
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r2",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "turn below"
+      },
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r2",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "turn one short"
+      },
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "hook below"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "hook note"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "hook one short"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "hook note"
+              },
+              "silent": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt2",
+      "expect": {
+        "result": {
+          "injections": {
+            "$unordered": [
+              {
+                "text": {
+                  "$contains": "turn below"
+                },
+                "silent": false
+              },
+              {
+                "text": {
+                  "$contains": "turn note"
+                },
+                "silent": false
+              },
+              {
+                "text": {
+                  "$contains": "turn one short"
+                },
+                "silent": false
+              },
+              {
+                "text": {
+                  "$contains": "turn note"
+                },
+                "silent": true
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

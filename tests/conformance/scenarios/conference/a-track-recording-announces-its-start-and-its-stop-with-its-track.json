@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "conference/a-track-recording-announces-its-start-and-its-stop-with-its-track",
+  "title": "A conference track's recording announces its start and its stop, each naming the room, the channel, the track and its participant, the stop the file it wrote",
+  "rules": [
+    "§8.2",
+    "§12.10.8"
+  ],
+  "requirements": [
+    "RK-8.2-047",
+    "RK-8.2-048"
+  ],
+  "notes": "The track's withdrawal closes its recording. Where the recorder writes, and how much, are the scripted recorder's: only their presence is compared. The room's part of both rows is in recording/a-room-recording-announces-its-start-and-its-stop-with-their-data; a voice session's (its session_id) is not shown.",
+  "requires_features": [
+    "conference"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r1",
+      "recording": {}
+    },
+    {
+      "call": "conference.join",
+      "channel_id": "conf",
+      "participant_id": "alice"
+    },
+    {
+      "call": "conference.publish",
+      "channel_id": "conf",
+      "participant_id": "alice",
+      "track_id": "mic",
+      "kind": "audio"
+    },
+    {
+      "call": "conference.feed",
+      "channel_id": "conf",
+      "track_id": "mic",
+      "frames": [
+        "AQA=",
+        "AgA="
+      ]
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "call": "conference.unpublish",
+      "channel_id": "conf",
+      "track_id": "mic"
+    },
+    {
+      "call": "conference.settle",
+      "channel_id": "conf"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_events": {
+      "r1": [
+        {
+          "$unordered": [
+            {
+              "event": "conference_participant_joined",
+              "participant_id": "alice"
+            },
+            {
+              "event": "conference_started"
+            }
+          ]
+        },
+        {
+          "event": "recording_started",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "id": {
+            "$as": "recording"
+          },
+          "track_id": "mic",
+          "participant_id": "alice"
+        },
+        {
+          "event": "recording_stopped",
+          "room_id": "r1",
+          "channel_id": "conf",
+          "id": {
+            "$as": "recording"
+          },
+          "track_id": "mic",
+          "participant_id": "alice",
+          "url": {
+            "$present": true
+          },
+          "size_bytes": {
+            "$present": true
+          },
+          "duration_seconds": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

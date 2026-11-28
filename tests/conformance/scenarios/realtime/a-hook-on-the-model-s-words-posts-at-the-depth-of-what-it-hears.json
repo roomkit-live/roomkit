@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-hook-on-the-model-s-words-posts-at-the-depth-of-what-it-hears",
+  "title": "A hook on a speech-to-speech session's words posts at their depth, SYNC or ASYNC: the user's words open a chain, the model's are as deep as its answer",
+  "rules": [
+    "§8.3",
+    "§12.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-8.3-046"
+  ],
+  "notes": "Each post names no depth. The model's words answer the text at depth 2, so they are at depth 3, and so is what the hooks on them post. Partial words and a delegation are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inline",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "inline after the user"
+                }
+              }
+            ],
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "inline after the model"
+                }
+              }
+            ],
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      },
+      {
+        "name": "observer",
+        "trigger": "on_transcription",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "observer after the user"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "observer after the model"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Hello",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Let me check",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "Hello"
+            },
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "body": "inline after the user"
+            },
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "body": "observer after the user"
+            },
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "body": "question"
+            },
+            "chain_depth": 2
+          },
+          {
+            "content": {
+              "body": "Let me check"
+            },
+            "chain_depth": 3
+          },
+          {
+            "content": {
+              "body": "inline after the model"
+            },
+            "chain_depth": 3
+          },
+          {
+            "content": {
+              "body": "observer after the model"
+            },
+            "chain_depth": 3
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/speech-heard-while-an-answer-plays-opens-a-chain-of-its-own",
+  "title": "Speech a voice session hears while an agent's answer plays opens a chain of its own: its transcript is at depth 0, not at the answer's",
+  "rules": [
+    "§8.3",
+    "§12.2",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-8.3-047"
+  ],
+  "notes": "The question reaches the agent alone (visibility intelligence). The agent's answer, at depth 3, holds at the transport while Alice speaks; her speech cuts it (the channel's record of the cut is internal) and her words go to the room at depth 0, which the agent answers at depth 1.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Your table is ready."
+            },
+            {
+              "text": "Of course."
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gates": [
+        "playing"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "One more thing"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "visibility": "intelligence",
+      "chain_depth": 2,
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "asked"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "question"
+            },
+            "chain_depth": 2
+          },
+          {
+            "content": {
+              "body": "Your table is ready."
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 3
+          },
+          {
+            "visibility": "internal",
+            "source": {
+              "channel_id": "phone"
+            }
+          },
+          {
+            "content": {
+              "body": "One more thing"
+            },
+            "source": {
+              "channel_id": "phone",
+              "participant_id": "alice"
+            },
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "body": "Of course."
+            },
+            "source": {
+              "channel_id": "agent"
+            },
+            "chain_depth": 1
+          }
+        ]
+      }
+    }
+  }
+}

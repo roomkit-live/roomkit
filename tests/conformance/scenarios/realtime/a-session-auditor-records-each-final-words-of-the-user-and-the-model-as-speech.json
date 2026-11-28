@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-session-auditor-records-each-final-words-of-the-user-and-the-model-as-speech",
+  "title": "A session auditor attached to the kit records the user's and the model's transcribed words as speech entries, each with its role",
+  "rules": [
+    "§15.8.2",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-15.8.2-009"
+  ],
+  "notes": "The session's start is recorded first (RK-15.8.2-013, shown by orchestration/a-session-auditor-records-the-sessions-and-the-tool-calls). Partial words are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "session_auditor": {
+      "attached": true
+    },
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Book a table",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "For how many?",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "session_audit": [
+      {
+        "type": "session"
+      },
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "speech",
+        "role": "user",
+        "content": "Book a table"
+      },
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "speech",
+        "role": "assistant",
+        "content": "For how many?"
+      }
+    ]
+  }
+}

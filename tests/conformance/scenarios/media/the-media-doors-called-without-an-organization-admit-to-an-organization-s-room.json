@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/the-media-doors-called-without-an-organization-admit-to-an-organization-s-room",
+  "title": "Called without an organization, a framework join, a session start and a mint each admit to a room of an organization",
+  "rules": [
+    "§17.2",
+    "§12.2",
+    "§12.4",
+    "§12.10.4"
+  ],
+  "requirements": [
+    "RK-17.2-006"
+  ],
+  "notes": "voice.open joins its participants through the kit's join, naming no organization. Whether a start or a mint reads the room at all, which RK-17.2-006 says they do not, is not observed: each admits.",
+  "requires_features": [
+    "voice",
+    "realtime",
+    "conference"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "organization_id": "org-a",
+        "participants": [
+          {
+            "id": "carol",
+            "channel_id": "conf",
+            "display_name": "Carol"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "call-1"
+      }
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "bob"
+    },
+    {
+      "call": "conference.open",
+      "channel_id": "conf",
+      "room_id": "r2"
+    },
+    {
+      "call": "conference.mint",
+      "channel_id": "conf",
+      "room_id": "r2",
+      "participant_id": "carol"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "sessions": {
+            "alice": [
+              {
+                "session_id": "call-1",
+                "state": "active"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "connects": [
+            {
+              "room_id": "r1"
+            }
+          ],
+          "state": "active"
+        }
+      }
+    },
+    {
+      "call": "conference.read",
+      "channel_id": "conf",
+      "calls": [
+        "mint_access"
+      ],
+      "expect": {
+        "result": {
+          "calls": [
+            {
+              "call": "mint_access",
+              "room_id": "r2",
+              "participant_id": "carol"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

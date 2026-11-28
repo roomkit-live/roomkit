@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-model-s-transcribed-answer-names-no-event-it-responds-to",
+  "title": "A speech-to-speech model's transcribed answer is stored answering no event: its responds_to is null",
+  "rules": [
+    "§8.5",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-8.5-013"
+  ],
+  "notes": "The model's answer follows the user's words, which the room stored first: it still names none of them.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Book a table",
+      "role": "user"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "For how many?",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a table"
+          },
+          "responds_to": null
+        },
+        {
+          "content": {
+            "body": "For how many?"
+          },
+          "source": {
+            "channel_id": "rt"
+          },
+          "responds_to": null
+        }
+      ]
+    }
+  }
+}

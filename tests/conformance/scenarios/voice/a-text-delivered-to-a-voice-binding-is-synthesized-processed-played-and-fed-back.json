@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-text-delivered-to-a-voice-binding-is-synthesized-processed-played-and-fed-back",
+  "title": "A text event delivered to a voice binding is synthesized, walks the outbound stages, reaches the transport and feeds the echo canceller's reference",
+  "rules": [
+    "Appendix A.10",
+    "§12.2",
+    "§12.3.4"
+  ],
+  "requirements": [
+    "RK-A.10-013"
+  ],
+  "notes": "The scripted TTS makes a chunk per word; the postprocessor hands on its own bytes, which the transport receives and the canceller is fed as its reference: the transport reports no played block, as a network transport, so the pipeline feeds the reference itself.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "aec": {},
+      "postprocessors": [
+        {
+          "name": "post",
+          "output": "AQIDBA=="
+        }
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "Hi there."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "stages": [
+        "post",
+        "aec"
+      ],
+      "calls": [
+        "process",
+        "feed_reference"
+      ],
+      "expect": {
+        "result": {
+          "synthesized": [
+            "Hi there."
+          ],
+          "stages": [
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA=="
+              }
+            },
+            {
+              "stage": "post",
+              "call": "process",
+              "stream": "s-alice"
+            },
+            {
+              "stage": "aec",
+              "call": "feed_reference",
+              "stream": "s-alice",
+              "frame": {
+                "data": "AQIDBA=="
+              }
+            }
+          ],
+          "chunks": {
+            "alice": [
+              {
+                "data": "AQIDBA=="
+              },
+              {
+                "data": "AQIDBA=="
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

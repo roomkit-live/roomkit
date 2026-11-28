@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-context-s-text-is-the-transcript-the-room-stored",
+  "title": "A TTS context's turns hold the text the room stored: the user's transcript as its hook left it, and the agent's answer",
+  "rules": [
+    "§17.6",
+    "§12.2.2"
+  ],
+  "requirements": [
+    "RK-17.6-021"
+  ],
+  "notes": "The synchronous transcription hook redacts the words before the room stores them; the context's user turn holds the stored text, never the words heard. The agent's answer is spoken, then a sentence of the application's (say). The policies are shown by a transcription hook's redaction; a retention or persistence policy over the room's events is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Your table is ready."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "on_transcription",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "text": "Book a [redacted]"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table for Smith"
+      ],
+      "tts": {
+        "context_level": "text",
+        "word_ms": 20
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Anything else?"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "text": "Book a [redacted]"
+                }
+              ]
+            },
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "text": "Book a [redacted]"
+                },
+                {
+                  "role": "assistant",
+                  "text": "Your table is ready."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Book a [redacted]"
+          },
+          "source": {
+            "channel_id": "phone"
+          }
+        },
+        {
+          "content": {
+            "body": "Your table is ready."
+          },
+          "source": {
+            "channel_id": "agent"
+          }
+        }
+      ]
+    }
+  }
+}

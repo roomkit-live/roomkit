@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/at-the-depth-limit-a-broadcast-or-a-delivery-enters-the-session-silently",
+  "title": "At the depth limit a text reaches the model's session silently, whether a broadcast or a delivery brings it; one short of it asks an answer",
+  "rules": [
+    "§8.3",
+    "§12.4",
+    "§22.1"
+  ],
+  "requirements": [
+    "RK-8.3-031"
+  ],
+  "notes": "The kit's max_chain_depth is the default, 5: a text at depth 4 is at the limit. Neither silent text leaves a record. A pipeline's handoff greeting is not shown; a direct injection is in realtime/a-direct-injection-from-a-hook-or-a-turn-is-at-least-as-deep-as-that-work.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {}
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "broadcast below"
+      },
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "broadcast at the limit"
+      },
+      "chain_depth": 4
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "delivery below",
+      "channel_id": "rt",
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "delivery at the limit",
+      "channel_id": "rt",
+      "chain_depth": 4
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "broadcast below"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "broadcast at the limit"
+              },
+              "silent": true
+            },
+            {
+              "text": {
+                "$contains": "delivery below"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "delivery at the limit"
+              },
+              "silent": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "broadcast below"
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "broadcast at the limit"
+          },
+          "chain_depth": 4
+        }
+      ]
+    }
+  }
+}

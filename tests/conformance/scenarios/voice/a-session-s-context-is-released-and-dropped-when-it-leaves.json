@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-session-s-context-is-released-and-dropped-when-it-leaves",
+  "title": "A session that leaves has its TTS context released, and a session the participant joins next starts with none of its turns",
+  "rules": [
+    "§17.6",
+    "§12.2.2"
+  ],
+  "requirements": [
+    "RK-17.6-019"
+  ],
+  "notes": "The bounds of max_turns and max_audio_seconds are shown by voice/a-context-keeps-its-newest-turns-up-to-max-turns and voice/a-context-drops-its-oldest-audio-past-max-audio-seconds-and-keeps-its-text. A session unbound without leaving is not shown.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-1"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "tts": {
+        "context_level": "text",
+        "word_ms": 20
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.leave",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.join",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "session_id": "s-2"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Welcome back."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "context_id": {
+                "$as": "first"
+              },
+              "turns": [
+                {
+                  "role": "user",
+                  "text": "Book a table"
+                }
+              ]
+            },
+            {
+              "context_id": {
+                "$as": "second"
+              },
+              "turns": []
+            }
+          ],
+          "released_contexts": [
+            {
+              "$as": "first"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

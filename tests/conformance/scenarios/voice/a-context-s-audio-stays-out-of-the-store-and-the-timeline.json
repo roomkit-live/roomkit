@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-context-s-audio-stays-out-of-the-store-and-the-timeline",
+  "title": "The audio a TTS context keeps reaches the TTS alone: the room stores the session's words as a text event, with no audio in its metadata",
+  "rules": [
+    "§17.6",
+    "§12.2.2"
+  ],
+  "requirements": [
+    "RK-17.6-018"
+  ],
+  "notes": "Audio is kept (include_audio) and reaches the TTS; the room's one event is the transcript, a text. A recording and a log are not observed: what a recording of the session holds is the session's audio itself, which the context copies.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "s-alice"
+      },
+      "vad": [
+        {
+          "type": "speech_start"
+        },
+        {
+          "type": "speech_end"
+        }
+      ],
+      "transcripts": [
+        "Book a table"
+      ],
+      "tts": {
+        "context_level": "audio",
+        "word_ms": 1
+      },
+      "tts_context": {
+        "include_audio": true
+      }
+    },
+    {
+      "call": "voice.feed",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "frames": [
+        "AQI=",
+        "AQI="
+      ]
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "First reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Second reply."
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "tts_contexts": [
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "text": "Book a table",
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "turns": [
+                {
+                  "role": "user",
+                  "text": "Book a table",
+                  "audio": {
+                    "$present": true
+                  }
+                },
+                {
+                  "role": "assistant",
+                  "text": "First reply.",
+                  "audio": {
+                    "$present": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Book a table"
+          },
+          "metadata": {
+            "audio": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

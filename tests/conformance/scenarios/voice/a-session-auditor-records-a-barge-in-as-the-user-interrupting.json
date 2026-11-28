@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-session-auditor-records-a-barge-in-as-the-user-interrupting",
+  "title": "A session auditor attached to the kit records a barge-in on a reply as a barge_in entry of the user, User interrupted",
+  "rules": [
+    "§15.8.2",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-15.8.2-012"
+  ],
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "session_auditor": {
+      "attached": true
+    },
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "playback_gate": "playing"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.say",
+      "channel_id": "phone",
+      "participant_id": "alice",
+      "text": "Your table is ready.",
+      "background": true,
+      "as": "reply"
+    },
+    {
+      "wait_for": "playing"
+    },
+    {
+      "call": "voice.barge_in",
+      "channel_id": "phone",
+      "participant_id": "alice"
+    },
+    {
+      "open": "playing"
+    },
+    {
+      "await": "reply"
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "session_audit": [
+      {
+        "type": "session",
+        "metadata": {
+          "channel_id": "phone",
+          "participant_id": "alice"
+        }
+      },
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "barge_in",
+        "role": "user",
+        "content": "User interrupted"
+      }
+    ]
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-call-goes-to-the-channel-s-handler-first-and-to-on-tool-call-hooks-without-one",
+  "title": "A realtime tool call is answered by the channel's handler, which ON_TOOL_CALL then reports; on a channel with no handler the ON_TOOL_CALL hook serves it",
+  "rules": [
+    "Appendix A.11",
+    "§12.4",
+    "§21.4",
+    "§9.3"
+  ],
+  "requirements": [
+    "RK-A.11-008"
+  ],
+  "notes": "The hook leaves r1's call as the handler answered it, which it is handed; it answers r2's, which no handler serves (tool_handler false).",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "from the handler"
+            }
+          }
+        }
+      },
+      {
+        "id": "bare",
+        "type": "realtime_voice",
+        "realtime": {
+          "tool_handler": false
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "bare"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "fallback",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "r2"
+            },
+            "repeat": true,
+            "result": {
+              "action": "modify",
+              "event": {
+                "result": "from the hook"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "realtime.start",
+      "channel_id": "bare",
+      "room_id": "r2",
+      "participant_id": "bob"
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "bare",
+      "call_id": "c2",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "handlers": [
+            {
+              "name": "lookup",
+              "outcome": "returned"
+            }
+          ],
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "from the handler"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "bare",
+      "expect": {
+        "result": {
+          "handlers": [],
+          "results": [
+            {
+              "call_id": "c2",
+              "result": {
+                "$contains": "from the hook"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "fallback": [
+        {
+          "room_id": "r1",
+          "tool_call": {
+            "name": "lookup",
+            "result": {
+              "$contains": "from the handler"
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "tool_call": {
+            "name": "lookup"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/an-observer-s-post-at-the-limit-enters-the-session-silently-and-leaves-no-record",
+  "title": "A tool call's observer posting at the depth limit reaches the model's session silently and leaves no blocked record for it",
+  "rules": [
+    "§8.3",
+    "§12.4"
+  ],
+  "requirements": [
+    "RK-8.3-033"
+  ],
+  "notes": "The model's answer is at depth 4, at the default limit of 5, and so is its call and what its observer posts: the post enters the session silently, asks no answer, and the room holds no blocked record for the model. A scripted model answers nothing by itself: the steps make its answer and its call, so the loop's own end is shown by the silent injection alone.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tools": {
+            "lookup": {
+              "result": "found"
+            }
+          }
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "report note"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Let me check",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "injections": [
+            {
+              "text": {
+                "$contains": "question"
+              },
+              "silent": false
+            },
+            {
+              "text": {
+                "$contains": "report note"
+              },
+              "silent": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "question"
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "Let me check"
+          },
+          "chain_depth": 4
+        },
+        {
+          "content": {
+            "body": "report note"
+          },
+          "chain_depth": 4,
+          "status": {
+            "$lacks": "blocked"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/a-hook-that-posts-at-each-spoken-answer-ends-at-the-depth-limit",
+  "title": "A BEFORE_TTS observer telling the agent something at each answer it speaks does so at that answer's depth, so the loop of notes and answers ends at the limit",
+  "rules": [
+    "§8.3",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-8.3-046",
+    "RK-8.3-047"
+  ],
+  "notes": "The question and each note reach the agent alone (visibility intelligence), so that the voice channel speaks the agent's answers only. The ASYNC BEFORE_TTS hook sends a note, naming no depth, as each answer is spoken; the agent answers each note. The kit's max_chain_depth is the default, 5. The agent's answers reach the channel as streams; a reply the channel speaks whole (not streamed), a SYNC BEFORE_TTS hook's body and a conference's voice lane are not shown; AFTER_TTS is in voice/an-after-tts-hook-posts-at-the-depth-of-the-answer-it-spoke.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer one."
+            },
+            {
+              "text": "Answer two."
+            },
+            {
+              "text": "Answer three."
+            },
+            {
+              "text": "Answer four."
+            },
+            {
+              "text": "Answer five."
+            }
+          ]
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "speaking",
+        "trigger": "before_tts",
+        "execution": "async",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "r1",
+                "channel_id": "src",
+                "content": {
+                  "type": "text",
+                  "body": "note"
+                },
+                "visibility": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "visibility": "intelligence"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "question"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "body": "Answer one."
+          },
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "body": "note"
+          },
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "body": "Answer two."
+          },
+          "chain_depth": 2
+        },
+        {
+          "content": {
+            "body": "note"
+          },
+          "chain_depth": 2
+        },
+        {
+          "content": {
+            "body": "Answer three."
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "note"
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "body": "Answer four."
+          },
+          "chain_depth": 4
+        },
+        {
+          "content": {
+            "body": "note"
+          },
+          "chain_depth": 4
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "chain_depth": 5,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    }
+  }
+}

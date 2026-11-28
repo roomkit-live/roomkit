@@ -1,0 +1,277 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "realtime/a-realtime-tool-call-is-as-deep-as-the-model-s-answer-and-so-is-what-its-hooks-post",
+  "title": "A model's tool call is as deep as the answer that issued it: what its gate, the hook serving it and its observer post or inject is at least that deep, at the limit silent",
+  "rules": [
+    "§8.3",
+    "§12.4",
+    "§21.4",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-8.3-012",
+    "RK-8.3-032",
+    "RK-8.3-034",
+    "RK-8.3-046"
+  ],
+  "notes": "The channel has no tool handler: the SYNC ON_TOOL_CALL hook serves the call (§21.4). The model's answer to the text at depth 3 is at depth 4, at the default limit of 5, and so is its call. Each post and injection names no depth: each is at the call's depth, so every text they bring enters the session silently. An ASYNC observer of the gate (BEFORE_TOOL_USE) is not shown. The hooks on the model's words are in realtime/a-hook-on-the-model-s-words-posts-at-the-depth-of-what-it-hears; a conference's tool call and voice lane, the model's delegation and a call cut by an ending are not shown.",
+  "requires_features": [
+    "realtime"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "rt",
+        "type": "realtime_voice",
+        "realtime": {
+          "tool_handler": false
+        }
+      },
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "rt"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "execution": "sync",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "gate note"
+                }
+              }
+            ],
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      },
+      {
+        "name": "serve",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "serve note"
+                }
+              },
+              {
+                "call": "realtime.inject",
+                "channel_id": "rt",
+                "text": "serve inject",
+                "role": "system"
+              }
+            ],
+            "result": {
+              "action": "modify",
+              "event": {
+                "result": "found"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "report",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "post",
+                "room_id": "r1",
+                "content": {
+                  "type": "text",
+                  "body": "report note"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "realtime.start",
+      "channel_id": "rt",
+      "room_id": "r1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "text",
+        "body": "question"
+      },
+      "chain_depth": 3
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.transcribe",
+      "channel_id": "rt",
+      "text": "Let me check",
+      "role": "assistant"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.tool_call",
+      "channel_id": "rt",
+      "call_id": "c1",
+      "name": "lookup"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "realtime.read",
+      "channel_id": "rt",
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "call_id": "c1",
+              "result": {
+                "$contains": "found"
+              }
+            }
+          ],
+          "injections": {
+            "$unordered": [
+              {
+                "text": {
+                  "$contains": "question"
+                },
+                "silent": false
+              },
+              {
+                "text": {
+                  "$contains": "gate note"
+                },
+                "silent": true
+              },
+              {
+                "text": {
+                  "$contains": "serve note"
+                },
+                "silent": true
+              },
+              {
+                "text": {
+                  "$contains": "serve inject"
+                },
+                "silent": true
+              },
+              {
+                "text": {
+                  "$contains": "report note"
+                },
+                "silent": true
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "question"
+            },
+            "chain_depth": 3
+          },
+          {
+            "content": {
+              "body": "Let me check"
+            },
+            "chain_depth": 4
+          },
+          {
+            "content": {
+              "body": "gate note"
+            },
+            "chain_depth": 4
+          },
+          {
+            "content": {
+              "body": "serve note"
+            },
+            "chain_depth": 4
+          },
+          {
+            "content": {
+              "body": "report note"
+            },
+            "chain_depth": 4
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "gate": [
+        {
+          "tool_call": {
+            "name": "lookup"
+          }
+        }
+      ],
+      "serve": [
+        {
+          "tool_call": {
+            "name": "lookup"
+          }
+        }
+      ],
+      "report": [
+        {
+          "tool_call": {
+            "name": "lookup",
+            "result": {
+              "$contains": "found"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

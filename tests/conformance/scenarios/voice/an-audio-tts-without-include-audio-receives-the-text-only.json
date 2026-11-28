@@ -7,7 +7,8 @@
     "§12.2"
   ],
   "requirements": [
-    "RK-12.2.2-013"
+    "RK-12.2.2-013",
+    "RK-17.6-020"
   ],
   "requires_features": [
     "voice"

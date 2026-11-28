@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/a-trace-for-a-room-not-yet-created-reaches-its-observer-once-the-room-exists",
+  "title": "A trace emitted for a room the store does not hold yet is kept and reaches ON_PROTOCOL_TRACE once the room is created and the channel attached",
+  "rules": [
+    "§15.6",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-15.6-005"
+  ],
+  "notes": "The trace comes before any room of that id exists; it is delivered once, and the hook reading it finds the channel bound: it ran after the attach, not at the room's creation. The RFC's steps name an implementation's private members, which no scenario reads.",
+  "requires_features": [
+    "protocol_trace"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "capture",
+        "trigger": "on_protocol_trace",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "get_binding",
+                "room_id": "r-later",
+                "channel_id": "wire",
+                "expect": {
+                  "result": {
+                    "channel_id": "wire"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "room_id": "r-later",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "Offer accepted"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r-later"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r-later",
+      "channel_id": "wire"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "capture": [
+        {
+          "trigger": "on_protocol_trace",
+          "room_id": "r-later",
+          "trace": {
+            "channel_id": "wire",
+            "room_id": "r-later",
+            "summary": "Offer accepted"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "voice/other-content-delivered-to-a-voice-binding-is-not-spoken-and-fails-nothing",
+  "title": "A system event, a tool-call row and a composite that keeps a system part are not spoken to a voice binding, and their delivery fails nothing",
+  "rules": [
+    "Appendix A.10",
+    "§12.2"
+  ],
+  "requirements": [
+    "RK-A.10-014"
+  ],
+  "notes": "No delivery failure is recorded against the voice binding. Content transcoding leaves a system part unchanged (§6.6), so the composite keeps a part that is neither text nor audio.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "event_type": "system",
+      "content": {
+        "type": "system",
+        "body": "Recording paused",
+        "code": "notice"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "event_type": "tool_call_start",
+      "content": {
+        "type": "tool_call",
+        "tool_name": "lookup",
+        "tool_id": "t1",
+        "arguments": {
+          "q": "table"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "src",
+      "participant_id": "bob",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "Recording paused"
+          },
+          {
+            "type": "system",
+            "body": "paused",
+            "code": "notice"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "voice.settle",
+      "channel_id": "phone"
+    },
+    {
+      "call": "voice.read",
+      "channel_id": "phone",
+      "expect": {
+        "result": {
+          "synthesized": [],
+          "audio": {
+            "alice": []
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "system",
+          "delivery_results": {
+            "phone": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "delivery_results": {
+            "phone": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "type": "composite"
+          },
+          "delivery_results": {
+            "phone": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

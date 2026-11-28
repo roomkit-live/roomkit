@@ -7,7 +7,8 @@
     "§12.2"
   ],
   "requirements": [
-    "RK-12.2.2-012"
+    "RK-12.2.2-012",
+    "RK-17.6-019"
   ],
   "notes": "Each reply plays 2 ms of audio: the third brings the context to 6 ms, past the 5 ms bound.",
   "requires_features": [

@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "media/a-trace-naming-only-a-session-reaches-a-room-through-a-voice-channel-alone",
+  "title": "A trace naming only a session reaches no room through a channel that resolves no session, and its session's room through a voice channel",
+  "rules": [
+    "§15.6",
+    "§9.2"
+  ],
+  "requirements": [
+    "RK-15.6-012"
+  ],
+  "notes": "Neither trace names a room. The scripted channel resolves no session (the default), so its trace reaches no hook; the voice channel resolves its session to the room it is bound in.",
+  "requires_features": [
+    "protocol_trace",
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "capture",
+        "trigger": "on_protocol_trace",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "voice.open",
+      "channel_id": "phone",
+      "room_id": "r1",
+      "participants": [
+        "alice"
+      ],
+      "session_ids": {
+        "alice": "call-1"
+      }
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "wire",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "Frame on a session",
+        "session_id": "call-1"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "emit_protocol_trace",
+      "trace": {
+        "channel_id": "phone",
+        "direction": "inbound",
+        "protocol": "scripted",
+        "summary": "Offer on the call",
+        "session_id": "call-1"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "capture": [
+        {
+          "trigger": "on_protocol_trace",
+          "room_id": "r1",
+          "trace": {
+            "channel_id": "phone",
+            "summary": "Offer on the call",
+            "session_id": "call-1"
+          }
+        }
+      ]
+    }
+  }
+}

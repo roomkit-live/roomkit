@@ -10,7 +10,8 @@
   "requirements": [
     "RK-12.3-008",
     "RK-12.3.4-009",
-    "RK-12.3.14-023"
+    "RK-12.3.14-023",
+    "RK-A.10-016"
   ],
   "requires_features": [
     "voice"
