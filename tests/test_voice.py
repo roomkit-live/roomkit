@@ -482,10 +482,21 @@ class TestRoomKitVoiceIntegration:
         assert result.text == "Transcribed text"
 
     async def test_synthesize_uses_tts_provider(self) -> None:
-        tts = MockTTSProvider()
-        kit = RoomKit(tts=tts)
+        # The file comes back as the provider produced it, not rebuilt from its
+        # samples, so a mark its vendor put in the file survives (RFC §17.6).
+        produced: list[AudioContent] = []
+
+        class FileTTS(MockTTSProvider):
+            async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
+                audio = await super().synthesize(text, voice=voice)
+                produced.append(audio)
+                return audio
+
+        kit = RoomKit(tts=FileTTS())
         result = await kit.synthesize("Hello world")
         assert result.transcript == "Hello world"
+        assert result == produced[0]
+        await kit.close()
 
     async def test_transcribe_without_stt_raises(self) -> None:
         kit = RoomKit()
