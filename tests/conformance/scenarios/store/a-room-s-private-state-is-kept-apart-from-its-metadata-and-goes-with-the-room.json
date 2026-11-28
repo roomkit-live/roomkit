@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-s-private-state-is-kept-apart-from-its-metadata-and-goes-with-the-room",
+  "title": "A room's private state is kept under its key apart from the room's metadata, its write removing the metadata's copy, null removing the key, nothing written for an unknown room, and deleted with the room",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-023",
+    "RK-14.1-024"
+  ],
+  "notes": "Python: store/memory.py get_private_state and set_private_state; roomkit-rs InMemoryStore. The room is created holding a copy under the key in its metadata, as a room stored before the key moved holds one; the write removes it, and the room's other keys stay. The room created again under the same id after its deletion holds no private state. Not observed: for RK-14.1-023, that the value returned is the caller's copy (§14.4), which no step can change; for RK-14.1-024, that the write is made under the room lock, the caller's.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "topic": "billing",
+          "author_register": {
+            "legacy": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.set_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "value": {
+        "authors": [
+          "ann"
+        ]
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "expect": {
+        "result": {
+          "authors": [
+            "ann"
+          ],
+          "legacy": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "topic": "billing",
+            "author_register": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.set_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "value": null,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.set_private_state",
+      "room_id": "room-2",
+      "key": "author_register",
+      "value": {
+        "authors": [
+          "bob"
+        ]
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-2",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "room-2",
+      "key": "author_register",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.set_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "value": {
+        "authors": [
+          "cleo"
+        ]
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "room-1",
+      "key": "author_register",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

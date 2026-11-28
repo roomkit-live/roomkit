@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-delivered-index-reads-minus-one-until-a-compare-and-set-moves-it",
+  "title": "A room's delivered index reads -1 until a set ran, and moves only by a compare-and-set from the index before, or from any lower value when forced",
+  "rules": [
+    "§14.1",
+    "§13.5"
+  ],
+  "requirements": [
+    "RK-14.1-021",
+    "RK-14.1-022"
+  ],
+  "notes": "Python: store/memory.py get_delivered_index and advance_delivered_index; roomkit-rs InMemoryStore::advance_delivered_index. Each refused move leaves the index read after it as it was.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.get_delivered_index",
+      "room_id": "room-1",
+      "expect": {
+        "result": -1
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 1,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.get_delivered_index",
+      "room_id": "room-1",
+      "expect": {
+        "result": -1
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 0,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_delivered_index",
+      "room_id": "room-1",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 0,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 3,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 3,
+      "force": true,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_delivered_index",
+      "room_id": "room-1",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 2,
+      "force": true,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 4,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_delivered_index",
+      "room_id": "room-1",
+      "expect": {
+        "result": 4
+      }
+    }
+  ]
+}

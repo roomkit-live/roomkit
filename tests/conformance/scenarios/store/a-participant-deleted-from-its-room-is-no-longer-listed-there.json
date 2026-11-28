@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-participant-deleted-from-its-room-is-no-longer-listed-there",
+  "title": "list_participants lists a room's participants, and delete_participant removes the one it names from its room alone",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-048"
+  ],
+  "notes": "Python: store/memory.py delete_participant and list_participants; roomkit-rs InMemoryStore. Another room holds a participant of the same id, which the deletion leaves. The participants' order is none the RFC gives.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "ann",
+        "room_id": "room-1",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "bob",
+        "room_id": "room-1",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "ann",
+        "room_id": "room-2",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.list_participants",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "ann",
+              "room_id": "room-1"
+            },
+            {
+              "id": "bob",
+              "room_id": "room-1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.delete_participant",
+      "room_id": "room-1",
+      "participant_id": "ann",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.list_participants",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "id": "bob",
+            "room_id": "room-1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_participants",
+      "room_id": "room-2",
+      "expect": {
+        "result": [
+          {
+            "id": "ann",
+            "room_id": "room-2"
+          }
+        ]
+      }
+    }
+  ]
+}

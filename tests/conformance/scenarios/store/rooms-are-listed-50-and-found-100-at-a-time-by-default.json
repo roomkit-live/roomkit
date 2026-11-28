@@ -1,0 +1,1420 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/rooms-are-listed-50-and-found-100-at-a-time-by-default",
+  "title": "list_rooms reads 50 rooms from the first when it names no page, and find_rooms 100, each page taking the rooms after its offset",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-013",
+    "RK-14.1-014"
+  ],
+  "notes": "Python: store/memory.py list_rooms and find_rooms; roomkit-rs ListRoomsOptions and FindRoomsOptions. The store holds 101 rooms. A page of two and the page after it hold three rooms, each once. Which rooms a page holds is the store's order, which the RFC does not give; its filters are store/rooms-are-found-by-organization-status-and-metadata's.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-000"
+      },
+      {
+        "id": "room-001"
+      },
+      {
+        "id": "room-002"
+      },
+      {
+        "id": "room-003"
+      },
+      {
+        "id": "room-004"
+      },
+      {
+        "id": "room-005"
+      },
+      {
+        "id": "room-006"
+      },
+      {
+        "id": "room-007"
+      },
+      {
+        "id": "room-008"
+      },
+      {
+        "id": "room-009"
+      },
+      {
+        "id": "room-010"
+      },
+      {
+        "id": "room-011"
+      },
+      {
+        "id": "room-012"
+      },
+      {
+        "id": "room-013"
+      },
+      {
+        "id": "room-014"
+      },
+      {
+        "id": "room-015"
+      },
+      {
+        "id": "room-016"
+      },
+      {
+        "id": "room-017"
+      },
+      {
+        "id": "room-018"
+      },
+      {
+        "id": "room-019"
+      },
+      {
+        "id": "room-020"
+      },
+      {
+        "id": "room-021"
+      },
+      {
+        "id": "room-022"
+      },
+      {
+        "id": "room-023"
+      },
+      {
+        "id": "room-024"
+      },
+      {
+        "id": "room-025"
+      },
+      {
+        "id": "room-026"
+      },
+      {
+        "id": "room-027"
+      },
+      {
+        "id": "room-028"
+      },
+      {
+        "id": "room-029"
+      },
+      {
+        "id": "room-030"
+      },
+      {
+        "id": "room-031"
+      },
+      {
+        "id": "room-032"
+      },
+      {
+        "id": "room-033"
+      },
+      {
+        "id": "room-034"
+      },
+      {
+        "id": "room-035"
+      },
+      {
+        "id": "room-036"
+      },
+      {
+        "id": "room-037"
+      },
+      {
+        "id": "room-038"
+      },
+      {
+        "id": "room-039"
+      },
+      {
+        "id": "room-040"
+      },
+      {
+        "id": "room-041"
+      },
+      {
+        "id": "room-042"
+      },
+      {
+        "id": "room-043"
+      },
+      {
+        "id": "room-044"
+      },
+      {
+        "id": "room-045"
+      },
+      {
+        "id": "room-046"
+      },
+      {
+        "id": "room-047"
+      },
+      {
+        "id": "room-048"
+      },
+      {
+        "id": "room-049"
+      },
+      {
+        "id": "room-050"
+      },
+      {
+        "id": "room-051"
+      },
+      {
+        "id": "room-052"
+      },
+      {
+        "id": "room-053"
+      },
+      {
+        "id": "room-054"
+      },
+      {
+        "id": "room-055"
+      },
+      {
+        "id": "room-056"
+      },
+      {
+        "id": "room-057"
+      },
+      {
+        "id": "room-058"
+      },
+      {
+        "id": "room-059"
+      },
+      {
+        "id": "room-060"
+      },
+      {
+        "id": "room-061"
+      },
+      {
+        "id": "room-062"
+      },
+      {
+        "id": "room-063"
+      },
+      {
+        "id": "room-064"
+      },
+      {
+        "id": "room-065"
+      },
+      {
+        "id": "room-066"
+      },
+      {
+        "id": "room-067"
+      },
+      {
+        "id": "room-068"
+      },
+      {
+        "id": "room-069"
+      },
+      {
+        "id": "room-070"
+      },
+      {
+        "id": "room-071"
+      },
+      {
+        "id": "room-072"
+      },
+      {
+        "id": "room-073"
+      },
+      {
+        "id": "room-074"
+      },
+      {
+        "id": "room-075"
+      },
+      {
+        "id": "room-076"
+      },
+      {
+        "id": "room-077"
+      },
+      {
+        "id": "room-078"
+      },
+      {
+        "id": "room-079"
+      },
+      {
+        "id": "room-080"
+      },
+      {
+        "id": "room-081"
+      },
+      {
+        "id": "room-082"
+      },
+      {
+        "id": "room-083"
+      },
+      {
+        "id": "room-084"
+      },
+      {
+        "id": "room-085"
+      },
+      {
+        "id": "room-086"
+      },
+      {
+        "id": "room-087"
+      },
+      {
+        "id": "room-088"
+      },
+      {
+        "id": "room-089"
+      },
+      {
+        "id": "room-090"
+      },
+      {
+        "id": "room-091"
+      },
+      {
+        "id": "room-092"
+      },
+      {
+        "id": "room-093"
+      },
+      {
+        "id": "room-094"
+      },
+      {
+        "id": "room-095"
+      },
+      {
+        "id": "room-096"
+      },
+      {
+        "id": "room-097"
+      },
+      {
+        "id": "room-098"
+      },
+      {
+        "id": "room-099"
+      },
+      {
+        "id": "room-100"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.list_rooms",
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_rooms",
+      "offset": 50,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_rooms",
+      "offset": 100,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_rooms",
+      "limit": 2,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$as": "first"
+            }
+          },
+          {
+            "id": {
+              "$as": "second"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_rooms",
+      "offset": 2,
+      "limit": 1,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$as": "third"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "offset": 100,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "limit": 2,
+      "expect": {
+        "result": [
+          {
+            "id": {
+              "$present": true
+            }
+          },
+          {
+            "id": {
+              "$present": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

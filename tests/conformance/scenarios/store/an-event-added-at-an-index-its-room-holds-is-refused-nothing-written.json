@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-event-added-at-an-index-its-room-holds-is-refused-nothing-written",
+  "title": "A store refuses an event added at an index its room holds for another event, writing nothing, and the event at that index is kept",
+  "rules": [
+    "§8.1",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-8.1-009"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_an_event_at_a_held_index_is_refused; roomkit-rs testing::check_conversation_store (an added event at a held index is refused). The second event names another id and another text, so a store that kept both, or replaced the first, shows it in the timeline; an index another room holds is free in this one. Not observed: the last item, informative (what the index serves).",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "index": 0
+        }
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "expect": {
+        "error": "event_index_taken"
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-2",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "elsewhere"
+        }
+      },
+      "expect": {
+        "result": {
+          "index": 0
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "first"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0,
+          "content": {
+            "body": "elsewhere"
+          }
+        }
+      ]
+    }
+  }
+}

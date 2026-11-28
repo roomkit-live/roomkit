@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-observation-added-is-listed-with-its-room-s",
+  "title": "add_observation answers the observation it stored, and list_observations lists a room's observations, none of another room's",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-060"
+  ],
+  "notes": "Python: store/memory.py add_observation and list_observations; roomkit-rs InMemoryStore. The observations' order is none the RFC gives.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_observation",
+      "observation": {
+        "room_id": "room-1",
+        "channel_id": "ai",
+        "content": "asks about billing",
+        "category": "topic",
+        "confidence": 0.5
+      },
+      "expect": {
+        "result": {
+          "room_id": "room-1",
+          "channel_id": "ai",
+          "content": "asks about billing",
+          "category": "topic",
+          "confidence": 0.5
+        }
+      }
+    },
+    {
+      "call": "store.add_observation",
+      "observation": {
+        "room_id": "room-1",
+        "channel_id": "ai",
+        "content": "is upset"
+      }
+    },
+    {
+      "call": "store.add_observation",
+      "observation": {
+        "room_id": "room-2",
+        "channel_id": "ai",
+        "content": "elsewhere"
+      }
+    },
+    {
+      "call": "store.list_observations",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "room_id": "room-1",
+              "content": "asks about billing",
+              "category": "topic"
+            },
+            {
+              "room_id": "room-1",
+              "content": "is upset"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.list_observations",
+      "room_id": "room-2",
+      "expect": {
+        "result": [
+          {
+            "room_id": "room-2",
+            "content": "elsewhere"
+          }
+        ]
+      }
+    }
+  ]
+}

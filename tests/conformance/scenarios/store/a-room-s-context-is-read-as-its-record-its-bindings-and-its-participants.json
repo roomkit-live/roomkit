@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-s-context-is-read-as-its-record-its-bindings-and-its-participants",
+  "title": "load_room_context reads a room's record, its bindings in the order they were first added and its participants together, and a room the store does not hold as null with none",
+  "rules": [
+    "§14.1",
+    "§10.1 step 3"
+  ],
+  "requirements": [
+    "RK-14.1-018"
+  ],
+  "notes": "Python: store/base.py load_room_context; roomkit-rs ConversationStore::load_room_context. The bindings are added sms then email, against the order of their channel ids and types, so the order read is theirs (§14.1 Binding order); the participants' order is none the RFC gives. Another room's binding and participant are not read with this one.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "topic": "billing"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "email",
+        "channel_type": "email"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "ws",
+        "channel_type": "websocket"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "ann",
+        "room_id": "room-1",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "bob",
+        "room_id": "room-1",
+        "channel_id": "email"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "cleo",
+        "room_id": "room-2",
+        "channel_id": "ws"
+      }
+    },
+    {
+      "call": "store.load_room_context",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "id": "room-1",
+            "metadata": {
+              "topic": "billing"
+            }
+          },
+          [
+            {
+              "room_id": "room-1",
+              "channel_id": "sms"
+            },
+            {
+              "room_id": "room-1",
+              "channel_id": "email"
+            }
+          ],
+          {
+            "$unordered": [
+              {
+                "id": "ann",
+                "room_id": "room-1"
+              },
+              {
+                "id": "bob",
+                "room_id": "room-1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.load_room_context",
+      "room_id": "room-9",
+      "expect": {
+        "result": [
+          null,
+          [],
+          []
+        ]
+      }
+    }
+  ]
+}

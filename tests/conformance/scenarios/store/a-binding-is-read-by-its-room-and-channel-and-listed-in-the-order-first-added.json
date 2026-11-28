@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-binding-is-read-by-its-room-and-channel-and-listed-in-the-order-first-added",
+  "title": "add_binding answers the binding it stored, get_binding reads it by its room and channel or null, and list_bindings lists a room's bindings in the order they were first added",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-041",
+    "RK-14.1-045"
+  ],
+  "notes": "Python: store/memory.py add_binding, get_binding and list_bindings; roomkit-rs InMemoryStore. The bindings are added sms then email, against the order of their channel ids and types, so the list's order is theirs. A channel another room binds is not this room's.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      },
+      "expect": {
+        "result": {
+          "room_id": "room-1",
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "email",
+        "channel_type": "email",
+        "metadata": {
+          "email_address": "ann@example.com"
+        }
+      },
+      "expect": {
+        "result": {
+          "room_id": "room-1",
+          "channel_id": "email",
+          "channel_type": "email",
+          "metadata": {
+            "email_address": "ann@example.com"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "ws",
+        "channel_type": "websocket"
+      }
+    },
+    {
+      "call": "store.get_binding",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "expect": {
+        "result": {
+          "room_id": "room-1",
+          "channel_id": "email",
+          "channel_type": "email",
+          "metadata": {
+            "email_address": "ann@example.com"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_binding",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.list_bindings",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "room_id": "room-1",
+            "channel_id": "sms"
+          },
+          {
+            "room_id": "room-1",
+            "channel_id": "email"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_bindings",
+      "room_id": "room-2",
+      "expect": {
+        "result": [
+          {
+            "room_id": "room-2",
+            "channel_id": "ws"
+          }
+        ]
+      }
+    }
+  ]
+}

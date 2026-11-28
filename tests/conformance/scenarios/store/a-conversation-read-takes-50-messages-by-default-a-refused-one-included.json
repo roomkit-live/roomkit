@@ -1,0 +1,1114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-conversation-read-takes-50-messages-by-default-a-refused-one-included",
+  "title": "get_conversation reads 50 messages when it names no limit, and from a cursor the first messages after it in index order, a refused message included, as a context holds the conversation",
+  "rules": [
+    "§14.1",
+    "§7.5 rule 8"
+  ],
+  "requirements": [
+    "RK-14.1-019"
+  ],
+  "notes": "Python: store/base.py get_conversation; roomkit-rs ConversationStore::get_conversation. The room holds 52 messages, the one at index 1 refused: a read with no limit holds 50 of them, and a read after a cursor holds the refused one, which the conversation a context holds keeps (§14.1, A timeline read serves what the room received). Not observed: which 50 messages a read without a cursor holds, which RK-14.1-019 does not name, and the read of a context itself (§10.1 step 3), which its hooks' scenarios observe.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "0"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "1"
+        },
+        "status": "blocked",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "2"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "3"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "4"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "5"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "6"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "7"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "8"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "9"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "10"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "11"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "12"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "13"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "14"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "15"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "16"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "17"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "18"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "19"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "20"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "21"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "22"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "23"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "24"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "25"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "26"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "27"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "28"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "29"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "30"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "31"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "32"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "33"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "34"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "35"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "36"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "37"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "38"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "39"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "40"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "41"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "42"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "43"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "44"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "45"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "46"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "47"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "48"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "49"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "50"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "51"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.get_conversation",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          },
+          {
+            "type": "message"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_conversation",
+      "room_id": "room-1",
+      "limit": 3,
+      "after_index": 0,
+      "expect": {
+        "result": [
+          {
+            "index": 1,
+            "status": "blocked",
+            "content": {
+              "body": "1"
+            }
+          },
+          {
+            "index": 2,
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "index": 3,
+            "content": {
+              "body": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_conversation",
+      "room_id": "room-1",
+      "after_index": 49,
+      "expect": {
+        "result": [
+          {
+            "index": 50,
+            "content": {
+              "body": "50"
+            }
+          },
+          {
+            "index": 51,
+            "content": {
+              "body": "51"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

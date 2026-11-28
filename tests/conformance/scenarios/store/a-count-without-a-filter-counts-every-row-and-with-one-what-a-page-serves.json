@@ -1,0 +1,245 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-count-without-a-filter-counts-every-row-and-with-one-what-a-page-serves",
+  "title": "get_event_count without a filter counts every row of the timeline, a refused one included, the twin of the room's event_count until a hard delete; with a filter, exactly the rows a page under it serves",
+  "rules": [
+    "§14.1",
+    "§14.3",
+    "§8.3"
+  ],
+  "requirements": [
+    "RK-14.1-034",
+    "RK-14.1-070",
+    "RK-14.1-071"
+  ],
+  "notes": "Python: store/memory.py get_event_count; roomkit-rs InMemoryStore::get_event_count. The room holds two received messages of sms, one of ai and a refused one of sms. A filter counts as a page under it serves, the received rows by default, the refused one with include_blocked: the counts of an empty filter, of include_blocked and of sms are each the length of the timeline read under the same filter. A hard delete lowers the count, not the room's event_count.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "one"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      },
+      "as": "one"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "two"
+        },
+        "source": {
+          "channel_id": "ai",
+          "channel_type": "ai",
+          "direction": "outbound"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused"
+        },
+        "status": "blocked",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "three"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "direction": "inbound",
+          "participant_id": "ann"
+        }
+      }
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "expect": {
+        "result": 4
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event_count": 4
+        }
+      }
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "event_filter": {},
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {},
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "body": "two"
+            }
+          },
+          {
+            "content": {
+              "body": "three"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "event_filter": {
+        "include_blocked": true
+      },
+      "expect": {
+        "result": 4
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "include_blocked": true
+      },
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "body": "two"
+            }
+          },
+          {
+            "content": {
+              "body": "refused"
+            }
+          },
+          {
+            "content": {
+              "body": "three"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "event_filter": {
+        "source_channel_id": "sms"
+      },
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "source_channel_id": "sms"
+      },
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "body": "three"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "event_filter": {
+        "source_channel_id": "sms",
+        "include_blocked": true
+      },
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "call": "store.delete_event",
+      "room_id": "room-1",
+      "event_id": "$one"
+    },
+    {
+      "call": "store.get_event_count",
+      "room_id": "room-1",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event_count": 4
+        }
+      }
+    }
+  ]
+}

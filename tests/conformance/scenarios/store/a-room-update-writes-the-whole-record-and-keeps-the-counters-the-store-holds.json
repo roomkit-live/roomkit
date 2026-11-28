@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-update-writes-the-whole-record-and-keeps-the-counters-the-store-holds",
+  "title": "update_room writes the room's whole record, its metadata replaced, and keeps the counters and the delivered index the store holds; a room the store does not hold is refused",
+  "rules": [
+    "§14.1",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-14.1-010",
+    "RK-14.3-013"
+  ],
+  "notes": "Python: store/memory.py update_room, the store-managed fields kept; roomkit-rs InMemoryStore::update_room. The copy written carries counters of a room that had no event and a delivered index of -1, so a store that wrote them shows it; its metadata leaves out a key the room held, so a store that merged shows it. Not observed: for RK-14.1-010, that the write is made under the room lock, the caller's (store/a-kit-s-whole-room-write-reads-the-room-under-the-lock-it-writes-under); for RK-14.3-013, the rest, which store/a-write-naming-an-event-or-a-room-the-store-lacks-is-refused-nothing-written observes.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "topic": "billing",
+          "tier": "gold"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      }
+    },
+    {
+      "call": "store.advance_delivered_index",
+      "room_id": "room-1",
+      "index": 0,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.update_room",
+      "room": {
+        "id": "room-1",
+        "agent_response_policy": "addressed_only",
+        "metadata": {
+          "topic": "support"
+        },
+        "event_count": 0,
+        "latest_index": null,
+        "delivered_index": -1
+      },
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "agent_response_policy": "addressed_only",
+          "metadata": {
+            "topic": "support",
+            "tier": {
+              "$absent": true
+            }
+          },
+          "event_count": 2,
+          "latest_index": 1,
+          "delivered_index": 0
+        }
+      }
+    },
+    {
+      "call": "store.update_room",
+      "room": {
+        "id": "room-2"
+      },
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-2",
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "agent_response_policy": "addressed_only",
+        "metadata": {
+          "topic": "support",
+          "tier": {
+            "$absent": true
+          }
+        },
+        "event_count": 2,
+        "latest_index": 1,
+        "delivered_index": 0
+      }
+    }
+  }
+}

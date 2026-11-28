@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-participant-record-finds-the-newest-room-reaching-the-sender-through-the-channel",
+  "title": "find_room_id_by_participant finds the newest room holding a participant who is the sender, by id or identity, reached through the channel, among the rooms its filter reads",
+  "rules": [
+    "§14.1",
+    "§10.4 step 1",
+    "§5.5"
+  ],
+  "requirements": [
+    "RK-14.1-027",
+    "RK-14.1-028"
+  ],
+  "notes": "Python: store/memory.py find_room_id_by_participant; roomkit-rs ConversationStore::find_room_id_by_participant. The rooms are created in order of their created_at: room-1 and room-2 hold the address reached through sms, room-3 of another organization too, room-4 holds the identity id-ann reached through sms (an identity no record holds leaves the address's room found), room-5 the address reached through email only. A binding naming the address finds nothing here. Not observed: for RK-14.1-028, as store/a-binding-finds-the-newest-room-naming-the-sender-on-its-channel says.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-3",
+        "organization_id": "org-b",
+        "created_at": "2026-01-01T00:00:03Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-4",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:04Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-5",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:05Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-6",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:06Z"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "+15550001",
+        "room_id": "room-1",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "+15550001",
+        "room_id": "room-2",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "+15550001",
+        "room_id": "room-3",
+        "channel_id": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "p-ann",
+        "room_id": "room-4",
+        "channel_id": "sms",
+        "identity_id": "id-ann"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "+15550001",
+        "room_id": "room-5",
+        "channel_id": "email"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-6",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550001"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-2"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "expect": {
+        "result": "room-3"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "identity_id": "id-ann",
+      "room_filter": {
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-4"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "identity_id": "id-zed",
+      "room_filter": {
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-2"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "email",
+      "participant_id": "+15550001",
+      "expect": {
+        "result": "room-5"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_participant",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "statuses": [
+          "closed"
+        ]
+      },
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

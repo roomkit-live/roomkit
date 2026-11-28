@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-is-created-once-under-its-id-and-the-room-it-holds-is-kept",
+  "title": "A store creates a room once under its id, answering the room as it was given, and refuses a second creation under that id, keeping the room it holds",
+  "rules": [
+    "§14.1",
+    "§14.3"
+  ],
+  "requirements": [
+    "RK-14.1-007",
+    "RK-14.3-015"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py, a room created once; roomkit-rs testing::check_conversation_store (rooms). The second creation names another organization and other metadata, so a store that replaced or merged the room shows it. Not observed: for RK-14.1-007, the id the framework gives the room it builds (§10.1 step 2's or a fresh one), which is the kit's, not the store's.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "organization_id": "org-a",
+        "metadata": {
+          "topic": "billing"
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "organization_id": "org-a",
+          "metadata": {
+            "topic": "billing"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "organization_id": "org-b",
+        "metadata": {
+          "other": true
+        }
+      },
+      "expect": {
+        "error": "room_exists"
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "organization_id": "org-a",
+          "metadata": {
+            "topic": "billing",
+            "other": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

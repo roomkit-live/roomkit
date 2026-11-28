@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-kit-s-whole-room-write-reads-the-room-under-the-lock-it-writes-under",
+  "title": "A whole-record write of a room the kit makes reads the room under the room lock it writes under, so a metadata change waiting for that lock is not undone",
+  "rules": [
+    "§14.3",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.3-018",
+    "RK-14.1-010"
+  ],
+  "notes": "Python: core/mixins/room_lifecycle.py set_agent_response_policy, the room read and written under the lock; roomkit-rs SetAgentResponsePolicy, a locked change. The policy's write holds once its read of the room answered; a metadata update of the kit, which takes the room lock, is made meanwhile and waits for it; the policy's write then lands, and the update after it: the room holds both. A write computed from a room read before its lock would let the update in first and undo it. Not observed: for RK-14.3-018, every other whole-record write the kit makes; for RK-14.1-010, the rest, which store/a-room-update-writes-the-whole-record-and-keeps-the-counters-the-store-holds observes.",
+  "setup": {
+    "kit": {
+      "store_faults": true
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "store_fault": [
+        "get_room",
+        "load_room_context"
+      ],
+      "room_id": "room-1",
+      "gate": "read"
+    },
+    {
+      "call": "set_agent_response_policy",
+      "room_id": "room-1",
+      "policy": "addressed_only",
+      "as": "policy",
+      "background": true
+    },
+    {
+      "wait_for": "read"
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "topic": "billing"
+      },
+      "as": "patch",
+      "background": true
+    },
+    {
+      "open": "read"
+    },
+    {
+      "await": "policy",
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "agent_response_policy": "addressed_only"
+        }
+      }
+    },
+    {
+      "await": "patch",
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "metadata": {
+            "topic": "billing"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "agent_response_policy": "addressed_only",
+        "metadata": {
+          "topic": "billing"
+        }
+      }
+    }
+  }
+}

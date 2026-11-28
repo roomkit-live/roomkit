@@ -1,0 +1,299 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-result-to-post-is-kept-with-the-room-s-private-state-until-it-is-committed",
+  "title": "A task's result a discussion takes to post is kept with the room's private state, apart from its metadata, until its post is committed",
+  "rules": [
+    "§19.7.5 rule 19",
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-19.7.5-144"
+  ],
+  "notes": "Python: orchestration/strategies/discussion/_posts.py ResultPosts.keep and post, the results listed under _speak_queue_results. comms's result is queued behind sre's turn, which holds at its gate: the room's private state holds the key, its metadata does not; once sre's turn ends the result is posted as comms's message and the key is gone. Not observed: what the record holds (its id, agent, chain depth and message), whose layout is the implementation's, and which discussion/an-uninstall-in-another-process-posts-the-result-another-holds-before-the-agents-leave observes through the post it makes from it; and the queue entry naming its holder.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "comms",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "go through the tickets"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "sre-speaking",
+              "text": "Looking."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "working",
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "comms",
+            "sre"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async",
+        "reactions": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "gate": "post-queued"
+          }
+        ]
+      },
+      {
+        "name": "said",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "On it."
+            },
+            "gate": "said"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "comms",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@comms please go through the tickets"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "said"
+    },
+    {
+      "open": "said"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre quick one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "sre-speaking"
+    },
+    {
+      "open": "working"
+    },
+    {
+      "wait_for": "post-queued"
+    },
+    {
+      "open": "post-queued"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "sre",
+          "queue": [
+            "comms"
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "r1",
+      "key": "_speak_queue_results",
+      "expect": {
+        "result": {
+          "$present": true
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_speak_queue_results": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "sre-speaking"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.get_private_state",
+      "room_id": "r1",
+      "key": "_speak_queue_results",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@comms please go through the tickets"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "comms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": "On it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@sre quick one"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "Looking."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "comms"
+          },
+          "content": {
+            "body": {
+              "$contains": [
+                "Result of the task",
+                "go through the tickets",
+                "Findings."
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

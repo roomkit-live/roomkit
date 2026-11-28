@@ -1,0 +1,259 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-binding-finds-the-newest-room-naming-the-sender-on-its-channel",
+  "title": "find_room_id_by_binding finds the newest room whose binding of the channel names the sender, by the address or the identity the caller resolved, or names their address as its recipient, among the rooms its filter reads",
+  "rules": [
+    "§14.1",
+    "§10.4 step 1",
+    "§5.7"
+  ],
+  "requirements": [
+    "RK-14.1-026",
+    "RK-14.1-028"
+  ],
+  "notes": "Python: store/memory.py find_room_id_by_binding; roomkit-rs ConversationStore::find_room_id_by_binding. The rooms are created in order of their created_at: room-1, then room-2 of the same organization, room-3 of another, room-4 closed, room-5 whose binding names the identity id-ann, an identity no binding names leaving the address's room found, room-6 whose binding names the address as its recipient, room-7 whose group binding holds it. Another channel's binding naming the address finds nothing on sms. Not observed: for RK-14.1-028, that the caller resolved identity_id in the call's organization, the router's (§10.4), and the tie of two rooms created at one instant, which store/the-latest-room-is-the-newest-the-greatest-id-breaking-a-tie observes for find_latest_room.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-3",
+        "organization_id": "org-b",
+        "created_at": "2026-01-01T00:00:03Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-4",
+        "organization_id": "org-a",
+        "status": "closed",
+        "created_at": "2026-01-01T00:00:04Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-5",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:05Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-6",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:06Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-7",
+        "organization_id": "org-a",
+        "created_at": "2026-01-01T00:00:07Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550001"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550001"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-3",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550001"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-4",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550001"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-5",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "id-ann"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "email",
+        "channel_type": "email",
+        "participant_id": "+15550009"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ],
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-2"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ]
+      },
+      "expect": {
+        "result": "room-3"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "expect": {
+        "result": "room-4"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "identity_id": "id-ann",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ],
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-5"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "identity_id": "id-zed",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ],
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-2"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550009",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-6",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550001"
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-7",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "group": true,
+        "metadata": {
+          "phone_number": "+15550001"
+        }
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ],
+        "organization_id": "org-a"
+      },
+      "recipient_key": "phone_number",
+      "expect": {
+        "result": "room-6"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_binding",
+      "channel_id": "sms",
+      "participant_id": "+15550001",
+      "room_filter": {
+        "statuses": [
+          "active",
+          "paused"
+        ],
+        "organization_id": "org-a"
+      },
+      "expect": {
+        "result": "room-2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/rooms-are-found-by-organization-status-and-metadata",
+  "title": "find_rooms finds the rooms of the organization it names, in the status it names, whose metadata holds each key and value it names, and every room when it names none",
+  "rules": [
+    "§14.1"
+  ],
+  "requirements": [
+    "RK-14.1-014"
+  ],
+  "notes": "Python: store/memory.py find_rooms; roomkit-rs InMemoryStore::find_rooms. Each room differs from room-a1 by one of the three: its organization, its status, or its metadata's value; the filters given together each narrow the rooms found. Not observed: what a metadata_filter of several keys, or of a nested value, matches, which the RFC does not say (§14.1 gives the parameter, not its rule). The rooms' order is none the RFC gives.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-a1",
+        "organization_id": "org-a",
+        "metadata": {
+          "tier": "gold",
+          "region": "eu"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-a2",
+        "organization_id": "org-a",
+        "metadata": {
+          "tier": "silver"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-a3",
+        "organization_id": "org-a",
+        "status": "closed",
+        "metadata": {
+          "tier": "gold"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-b1",
+        "organization_id": "org-b",
+        "metadata": {
+          "tier": "gold"
+        }
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "room-a1"
+            },
+            {
+              "id": "room-a2"
+            },
+            {
+              "id": "room-a3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "status": "closed",
+      "expect": {
+        "result": [
+          {
+            "id": "room-a3"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "metadata_filter": {
+        "tier": "gold"
+      },
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "room-a1"
+            },
+            {
+              "id": "room-a3"
+            },
+            {
+              "id": "room-b1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "organization_id": "org-a",
+      "status": "active",
+      "metadata_filter": {
+        "tier": "gold"
+      },
+      "expect": {
+        "result": [
+          {
+            "id": "room-a1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.find_rooms",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "room-a1"
+            },
+            {
+              "id": "room-a2"
+            },
+            {
+              "id": "room-a3"
+            },
+            {
+              "id": "room-b1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
