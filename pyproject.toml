@@ -32,7 +32,7 @@ dependencies = ["pydantic>=2.9", "pyyaml>=6"]
 httpx = ["httpx>=0.27"]
 # Capped below 2.0: the 0.x -> 1.x move (httpx2, no sampling kwargs on
 # `messages.stream()`) broke the provider without a test noticing (RMK-236).
-anthropic = ["anthropic>=1.8,<2"]
+anthropic = ["anthropic>=1.8,<3"]
 # 3.x only: that major runs on httpx2 and installs no `httpx`, and every client
 # RoomKit builds on the SDK takes httpx2's types (the `transport=` a host
 # passes, the SDK's own `Timeout`). Capped below 4.0 as anthropic is below 2.0:
@@ -86,7 +86,7 @@ sherpa-onnx = [
 ]
 # Capped below the next minor: providers/elevenlabs/sdk_patch.py relies on the
 # SDK's ClientTools dispatch, and its canaries say when the cap can move.
-elevenlabs = ["elevenlabs>=2.40,<2.72", "websockets>=14.2"]
+elevenlabs = ["elevenlabs>=2.40,<2.81", "websockets>=14.2"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
@@ -140,7 +140,7 @@ pynacl = ["pynacl>=1.5"]
 realtime-openai = ["openai>=3,<4", "websockets>=14.2", "tiktoken>=0.7"]
 # As `gemini` above.
 realtime-gemini = ["google-genai[httpx]>=3.2,<4"]
-realtime-elevenlabs = ["elevenlabs>=2.40,<2.72"]
+realtime-elevenlabs = ["elevenlabs>=2.40,<2.81"]
 realtime-deepgram = ["websockets>=14.2"]
 websocket = ["websockets>=14.2"]
 sse = ["httpx>=0.27", "httpx-sse>=0.4"]
@@ -183,7 +183,7 @@ redis = ["redis>=5.0.2"]
 # max_sse_event_size, which the 4 MiB bound sets; the connection still speaks
 # the 2025-11-25 handshake.
 mcp = ["mcp>=2.3,<3"]
-acp = ["agent-client-protocol>=0.11.0,<0.13"]
+acp = ["agent-client-protocol>=0.11.0,<1.1"]
 console = ["rich>=13.0", "prompt-toolkit>=3.0.36"]
 sources = [
     "roomkit[websocket]",
