@@ -1,0 +1,894 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/after-a-cut-the-classifier-policy-resumes-when-the-turn-leaves-the-agent-free-to-go-on",
+  "title": "After its answer was cut, the classifier policy also judges whether the turn leaves the agent free to go on: free, and neither asked for quiet nor talking over an unfinished speaker, the agent speaks with the reason resume after cut, its notes asking it to go on from where it was cut; otherwise the turn decides as without the cut",
+  "rules": [
+    "§6.4",
+    "§6.8",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-213",
+    "RK-6.4-214"
+  ],
+  "notes": "In each room the agent answers Alice, a voice channel of the room records that answer cut 1.2 s in, and Alice speaks again. The classifier then reads what the agent was saying and how long it was heard, and is asked whether the turn leaves it free to go on. In r1 it is, and the agent resumes, the note of its turn saying to go on from where it was cut without repeating what was heard (the note's wording is the implementation's; the scenario matches the clause the RFC gives it); in r2 the turn wants the floor; in r3 Alice asks for quiet; in r4 she has not finished. Python: speaking/classifier.py RESUME, resume_after_cut.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "resume": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "resume": 0.2
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "resume": 0.9,
+                  "hush": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "resume": 0.9,
+                  "unfinished": 0.9
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "So, as I was saying: rain in the evening."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r1#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok, thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r2",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r2#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Wait, and for Montreal?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r3",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r3#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok, stop."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r4",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r4#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok, and... hmm."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$absent": true
+            }
+          },
+          "questions": {
+            "resume": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "was_saying": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.",
+              "heard_seconds": 1.2
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$present": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$absent": true
+            }
+          },
+          "questions": {
+            "resume": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "was_saying": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.",
+              "heard_seconds": 1.2
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$present": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$absent": true
+            }
+          },
+          "questions": {
+            "resume": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "was_saying": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.",
+              "heard_seconds": 1.2
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$present": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$absent": true
+            }
+          },
+          "questions": {
+            "resume": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "was_saying": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.",
+              "heard_seconds": 1.2
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$present": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "room_id": "r1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "r1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "reason": "resume after cut",
+              "judgments": {
+                "resume": 0.9
+              },
+              "notes": [
+                {
+                  "$contains": [
+                    "go on from where you were cut",
+                    "Do not repeat what was heard"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "judgments": {
+                "resume": 0.2
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r3",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "r3",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "judgments": {
+                "resume": 0.9
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r4",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "r4",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "judgments": {
+                "resume": 0.9
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        },
+        {
+          "messages": [
+            {
+              "$present": true
+            },
+            {
+              "$present": true
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Ok, thanks.",
+                  "go on from where you were cut"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

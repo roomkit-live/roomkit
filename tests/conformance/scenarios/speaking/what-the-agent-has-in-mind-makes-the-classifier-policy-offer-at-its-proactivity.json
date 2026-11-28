@@ -1,0 +1,1076 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/what-the-agent-has-in-mind-makes-the-classifier-policy-offer-at-its-proactivity",
+  "title": "With a thought, the classifier policy also judges whether what the agent wants to say answers or corrects the turn: not addressed, the agent offers when that reaches the proactivity, half of it for an urgent thought, never on urgency alone; only wondered about and knowing the answer, it speaks",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-201",
+    "RK-6.4-202"
+  ],
+  "notes": "Each room holds one turn of Bob's to Alice: first decided without a thought, silent, it is thought about, and the thought comes back in time with something to say, so the policy is asked again with it and is asked too whether it answers or corrects the turn and whether a question waits for someone else. The proactivity is the default, 0.5. Each room's thought is its own (urgent in r3 and r4). RK-6.4-201 is cited in part: what makes a question still open, or still waiting for someone's first try, is the classifier's judgment over the state it reads. Python: speaking/classifier.py compose, THOUGHT_QUESTIONS.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "answers": 0.6
+                }
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "answers": 0.4
+                }
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "answers": 0.3
+                }
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "directness": 1,
+                  "answers": 0.9
+                }
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "corrects": 0.6
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer in r1."
+            },
+            {
+              "text": "Answer in r3."
+            },
+            {
+              "text": "Answer in r5."
+            },
+            {
+              "text": "Answer in r6."
+            }
+          ],
+          "streaming": false
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": false
+              }
+            },
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": false
+              }
+            },
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": true
+              }
+            },
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": true
+              }
+            },
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": false
+              }
+            },
+            {
+              "thought": {
+                "text": "Bob asks about the budget.",
+                "want_to_say": [
+                  "The budget is 1,200 a year."
+                ],
+                "urgent": false
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 3000
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "r6",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Alice, what's the budget again?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": true
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": true
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_thought": {
+              "thinking": "Bob asks about the budget.",
+              "want_to_say": [
+                "The budget is 1,200 a year."
+              ],
+              "urgent": false
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "answers": {
+              "$present": true
+            },
+            "corrects": {
+              "$present": true
+            },
+            "waiting": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "room_id": "r1",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r1",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "offer"
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r3",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r3",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "offer"
+            }
+          }
+        },
+        {
+          "room_id": "r4",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r4",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r5",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r5",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "r6",
+          "speak_decision": {
+            "asked_again": false,
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "r6",
+          "speak_decision": {
+            "asked_again": true,
+            "decision": {
+              "mode": "offer"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

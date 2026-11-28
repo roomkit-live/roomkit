@@ -1,0 +1,390 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/while-the-room-listens-one-person-s-request-without-the-address-is-not-the-agent-s",
+  "title": "A conversation with one person does not make every request the agent's while the room listens: a request without the agent's address is a final silence, though the same answers make it speak in the open room",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-169"
+  ],
+  "notes": "Alice alone talks with the agent. Open, a request that only wonders about the agent is its: the agent speaks. Once she asked it to only listen, a request put to it but addressing it only tentatively is a final silence; addressed indirectly or directly, it is answered. Python: speaking/listening.py DIRECT_ADDRESS, speaking/classifier.py _asked_while_listening.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "request": 0.9,
+                  "directness": 1
+                }
+              },
+              {
+                "answers": {
+                  "listen_request": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "request": 0.9,
+                  "directness": 1,
+                  "asked_me": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "request": 0.9,
+                  "directness": 2,
+                  "asked_me": 0.9
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Booked."
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Could the room be booked?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, only listen from now on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Could the lights be dimmed?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Could you dim the lights?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

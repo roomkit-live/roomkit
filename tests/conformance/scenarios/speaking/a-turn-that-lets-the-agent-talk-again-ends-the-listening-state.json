@@ -1,0 +1,328 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-turn-that-lets-the-agent-talk-again-ends-the-listening-state",
+  "title": "While the room listens, a turn that lets the agent talk again ends the state and is decided as without it; the next turn is asked as in an open room",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-166"
+  ],
+  "notes": "After Alice's request to only listen, Bob lets the agent talk again while asking it something directly: the room opens and the turn is decided as in an open room (`addressed`, no `listening` judgment). The turn after it is asked whether it puts the room back in the listening state. Python: speaking/classifier.py _while_listening.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "listen_request": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "lift": 0.9,
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {}
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "It is ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, only listen from now on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Nova, you can talk again: what time is it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Fine."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "judgments": {
+                "lift": 0.9,
+                "listening": {
+                  "$absent": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": false
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-classifier-dispatch-asks-one-question-per-candidate-by-its-handle-in-one-call",
+  "title": "The classifier dispatch policy asks, in one call, one yes/no question per candidate, each presented by its handle and what its identity says it does, an agent with no identity by its handle alone, over the message, its speaker and the conversation, the agent that waits for the speaker's answer marked",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-19.7.5-171",
+    "RK-19.7.5-173",
+    "RK-19.7.5-174"
+  ],
+  "notes": "The discussion's dispatch policy is the implementation's classifier dispatch over its mock classifier. The investigator asks the person a question; the person's next message, addressed to no one, is decided by one classifier call: a question per candidate, each naming the candidate by its handle (the investigator's handle `@ivy`, as the conversation names it), the sre, which has no identity, by its handle alone; the team the classifier reads marks the investigator as waiting for the speaker's answer, and the message and the conversation are read under their speakers, the person by the label of the channel it speaks through, the investigator by its handle. The questions' names (one per candidate, in their order) are the implementation's, which a script names to answer them, and their wording is the implementation's too: the scenario reads one per candidate, each holding the handle and identity it presents. Each probability is reported under the candidate's channel id. Python: orchestration/strategies/discussion/dispatch/classifier.py.",
+  "requires_features": [
+    "classifier_dispatch"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which region?"
+            },
+            {
+              "text": "on it"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Ivy",
+          "role": "investigator",
+          "description": "finds why something fails"
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Dana",
+          "role": "developer"
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "people": [
+            "ops"
+          ],
+          "handles": {
+            "investigator": "ivy"
+          },
+          "dispatch": {
+            "classifier": {
+              "calls": [
+                {
+                  "answers": {
+                    "agent_0": 0.9,
+                    "agent_1": 0.2,
+                    "agent_2": 0.1
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "dispatched",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@ivy checkout fails"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "eu-west. What does the error rate look like?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "d/dispatch": [
+        {
+          "state": {
+            "team": [
+              {
+                "agent": "@ivy",
+                "name": "Ivy",
+                "role": "investigator",
+                "can": "finds why something fails",
+                "waits_for_an_answer_from_the_speaker": true
+              },
+              {
+                "agent": "@dev",
+                "name": "Dana",
+                "role": "developer",
+                "can": {
+                  "$absent": true
+                },
+                "waits_for_an_answer_from_the_speaker": {
+                  "$absent": true
+                }
+              },
+              {
+                "agent": "@sre",
+                "name": {
+                  "$absent": true
+                },
+                "role": {
+                  "$absent": true
+                },
+                "can": {
+                  "$absent": true
+                },
+                "waits_for_an_answer_from_the_speaker": {
+                  "$absent": true
+                }
+              }
+            ],
+            "conversation": [
+              {
+                "speaker": "@ops",
+                "text": "@ivy checkout fails"
+              },
+              {
+                "speaker": "@ivy",
+                "text": "@ops which region?"
+              }
+            ],
+            "message": {
+              "speaker": "@ops",
+              "text": "eu-west. What does the error rate look like?"
+            }
+          },
+          "questions": {
+            "agent_0": {
+              "instructions": {
+                "$contains": [
+                  "@ivy",
+                  "Ivy",
+                  "finds why something fails"
+                ]
+              },
+              "yes": {
+                "$present": true
+              },
+              "no": {
+                "$present": true
+              }
+            },
+            "agent_1": {
+              "instructions": {
+                "$contains": [
+                  "@dev",
+                  "Dana"
+                ]
+              }
+            },
+            "agent_2": {
+              "instructions": {
+                "$contains": "@sre"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "dispatched": [
+        {
+          "dispatch_decision": {
+            "candidates": [
+              "investigator",
+              "dev",
+              "sre"
+            ],
+            "decision": {
+              "agents": [
+                "investigator"
+              ],
+              "judgments": {
+                "investigator": 0.9,
+                "dev": 0.2,
+                "sre": 0.1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

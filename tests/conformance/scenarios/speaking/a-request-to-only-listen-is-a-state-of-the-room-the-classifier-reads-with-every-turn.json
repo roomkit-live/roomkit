@@ -1,0 +1,486 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-request-to-only-listen-is-a-state-of-the-room-the-classifier-reads-with-every-turn",
+  "title": "A turn asking the agent to only listen from now on is a final silence that puts its room in a listening state: the classifier reads the request, bounded, with who made it, on every later turn of that room, even once it left the recent turns, and is asked instead whether the turn is put to the agent and whether it lets it talk again; each decision reports it",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-161",
+    "RK-6.4-162",
+    "RK-6.4-163",
+    "RK-6.4-171"
+  ],
+  "notes": "The policy reads one recent turn (`history: 1`). Alice's long request to only listen is a final silence that starts the state of room-1; the two turns after it read the request with Alice as its speaker (its opening on the first, its end left out on the second: bounded as text from outside, the bound being the implementation's), the second once the request left the recent turns it reads; each decision is a final silence reporting `listening`. Room-2 stays open meanwhile. RK-6.4-161 is cited for the state kept per room in memory; that the channel has the policy forget a room it leaves or joins is speaking/a-room-the-agent-leaves-and-joins-again-starts-open. Python: speaking/listening.py ListeningRooms, speaking/classifier.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "listen_request": 0.9
+                }
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {}
+              },
+              {
+                "answers": {
+                  "directness": 3
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova",
+          "history": 1
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "It is ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, from now on please only listen to us and do not jump in while we go through the quarterly budget, the travel plans for the spring, the hiring freeze in the support team, and the open question of the new office lease downtown, until we ask you."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "The budget is tight this year."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We could cut travel."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what time is it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "$absent": true
+              }
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "speaker": "Alice",
+                "text": {
+                  "$starts_with": "Nova, from now on please only listen to us"
+                }
+              }
+            },
+            "recent_turns": [
+              {
+                "speaker": "Alice",
+                "text": "Nova, from now on please only listen to us and do not jump in while we go through the quarterly budget, the travel plans for the spring, the hiring freeze in the support team, and the open question of the new office lease downtown, until we ask you."
+              }
+            ]
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "speaker": "Alice",
+                "text": {
+                  "$lacks": "the new office lease downtown, until we ask you."
+                }
+              }
+            },
+            "recent_turns": [
+              {
+                "speaker": "Bob",
+                "text": "The budget is tight this year."
+              }
+            ]
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "$absent": true
+              }
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listen_request": 0.9
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-2",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "judgments": {
+                "listening": {
+                  "$absent": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,526 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-classifier-policy-composes-its-judgments-in-the-rfc-s-order",
+  "title": "The classifier policy composes its judgments in order: silent on a speaker not done, postponing or asking for quiet; speaking on an answer to its question, when addressed or asked tentatively, or asked anything by the one person it talks with; offering when only wondered about; silent otherwise",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-153"
+  ],
+  "notes": "Each turn's judgments are scripted on the implementation's mock classifier, and the mode ON_SPEAK_DECISION reports is the one its rule gives (the reasons are the implementation's). The first turns address the agent directly, or answer its question, and rule 1 still keeps it silent. A request that addresses no one is not the agent's in room-1, where Alice and Bob take part, and is in room-2, where Alice alone talks with it. RK-6.4-153 is cited for its list here; the questions asked in one call are speaking/the-classifier-policy-asks-its-questions-in-one-call-over-the-turn-named-by-speaker. Python: speaking/classifier.py compose, addressed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "directness": 3,
+                  "unfinished": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "answered": 0.9,
+                  "unfinished": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "deferred": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "hush": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "answered": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "directness": 2
+                }
+              },
+              {
+                "answers": {
+                  "directness": 0.9,
+                  "request": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "request": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "request": 0.9
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1."
+            },
+            {
+              "text": "Answer 2."
+            },
+            {
+              "text": "Answer 3."
+            },
+            {
+              "text": "Answer 4."
+            },
+            {
+              "text": "Answer 5."
+            },
+            {
+              "text": "Answer 6."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what time... wait."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Yes, the blue... no, wait."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, let's ask you after the meeting."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, don't answer this one."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Yes, the blue one."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what time is it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We could ask Nova."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Maybe Nova could book the room?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "I wonder if Nova knows."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Book the room, please."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Book the room, please."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "decisions": [
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "offer"
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "speak_decision": {
+            "decision": {
+              "mode": "silent"
+            }
+          }
+        },
+        {
+          "room_id": "room-2",
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

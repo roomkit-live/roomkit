@@ -1,0 +1,238 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-speak-policy-reads-the-agent-s-cut-answer-until-it-answers-again",
+  "title": "A speak policy reads the agent's answer a barge-in cut, as a CutReply of the text handed to speech, how much of it played and when it was cut, on a turn after the cut while the agent has not answered since",
+  "rules": [
+    "§6.4",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-206",
+    "RK-6.4-212"
+  ],
+  "notes": "A voice channel of the room holds the record of the agent's first answer cut 1.2 s in, written as the voice channel writes it. The scripted policy reads it on Alice's next turn; the agent answers that turn, and her turn after it reads no cut. Its instant is the record's. Python: channels/_ai_cuts.py, speaking/base.py SpeakTurn.cut.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "from policy"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            },
+            {
+              "text": "Rain in the evening, then sun."
+            },
+            {
+              "text": "You're welcome."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r1#0"
+        }
+      },
+      "expect": {
+        "result": {
+          "created_at": {
+            "$as": "cut"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Sorry, go on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "What's the weather tomorrow?"
+            }
+          },
+          "cut": null
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Sorry, go on."
+            }
+          },
+          "cut": {
+            "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening.",
+            "played_ms": 1200,
+            "at": {
+              "$as": "cut"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "Thanks."
+            }
+          },
+          "cut": null
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        },
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

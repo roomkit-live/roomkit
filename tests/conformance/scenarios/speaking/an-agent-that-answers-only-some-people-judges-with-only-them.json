@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/an-agent-that-answers-only-some-people-judges-with-only-them",
+  "title": "The answer-only policy passes on, as the people taking part, only those it answers, the speaker among them though the participant record names them otherwise: a voice only listened to makes no group conversation",
+  "rules": [
+    "§6.4"
+  ],
+  "requirements": [
+    "RK-6.4-173"
+  ],
+  "notes": "Alice and Bob take part, and so does the room's microphone, whose participant record is `Living room` while its transport stamps the voice Sylvain (metadata.sender_name). The policy answers only Sylvain and Alice: on his turn, the policy it wraps reads the two of them as the people, Bob left out and Sylvain among them. Python: speaking/answer_only.py AnswerOnly._judged_with.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "answer_only": {
+            "people": [
+              "Sylvain",
+              "Alice"
+            ]
+          },
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "from policy"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "It is ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "mic",
+            "channel_id": "ws",
+            "display_name": "Living room",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "mic",
+        "content": {
+          "type": "text",
+          "body": "What time is it?"
+        },
+        "metadata": {
+          "sender_name": "Sylvain"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "What time is it?"
+            }
+          },
+          "people": [
+            "Alice",
+            "Sylvain"
+          ]
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-classifier-policy-s-questions-are-replaced-by-name-and-its-composition-is-its-host-s",
+  "title": "The classifier policy asks a question its host replaced by name in place of its own, and one its host added, and its host's composition decides from the answers",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-158"
+  ],
+  "notes": "The policy is made with a `hush` question and a `listen_request` question (the listening state's) of the host's, in place of its own, and a `bored` question its own composition does not read; the host's composition, in place of the policy's, decides an offer. The classifier is still asked every other question of the policy's. Python: speaking/classifier.py ClassifierSpeakPolicy(questions=...), decision; roomkit-rs: ClassifierSpeakPolicyOptions.questions, overrides.decision.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "bored": 0.9,
+                  "hush": 0.1
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova",
+          "questions": {
+            "hush": {
+              "instructions": "Does `last_turn` ask the assistant for silence?"
+            },
+            "listen_request": {
+              "instructions": "Does `last_turn` say 'just listen'?"
+            },
+            "bored": {
+              "instructions": "Does `last_turn` sound bored?",
+              "yes": "a sigh, a yawn",
+              "no": "anything else"
+            }
+          },
+          "composition": {
+            "decision": {
+              "mode": "offer",
+              "reason": "the host's composition",
+              "judgments": {
+                "bored": 0.9
+              }
+            }
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Shall I suggest something?"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Sigh. Another meeting."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "hush": {
+              "instructions": "Does `last_turn` ask the assistant for silence?",
+              "yes": null,
+              "no": null
+            },
+            "bored": {
+              "instructions": "Does `last_turn` sound bored?",
+              "yes": "a sigh, a yawn",
+              "no": "anything else"
+            },
+            "directness": {
+              "instructions": {
+                "$present": true
+              },
+              "levels": {
+                "$present": true
+              }
+            },
+            "listen_request": {
+              "instructions": "Does `last_turn` say 'just listen'?",
+              "yes": null,
+              "no": null
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "offer",
+              "reason": "the host's composition",
+              "judgments": {
+                "bored": 0.9
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

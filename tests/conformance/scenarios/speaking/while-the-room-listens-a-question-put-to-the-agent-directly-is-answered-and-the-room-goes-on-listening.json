@@ -1,0 +1,524 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/while-the-room-listens-a-question-put-to-the-agent-directly-is-answered-and-the-room-goes-on-listening",
+  "title": "While the room listens, a question put to the agent and addressing it directly is answered and the room goes on listening, unless the speaker has not finished, postpones it or asks for quiet",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-165"
+  ],
+  "notes": "After Alice's request to only listen, a question put to the agent by name is answered (`asked while listening`); the turns after it are still asked as the room listens, so answering did not lift the request. The same question held back by its speaker (not finished, postponed, asked for quiet) is a final silence. Python: speaking/classifier.py _while_listening, _asked_while_listening.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "listen_request": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "asked_me": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "asked_me": 0.9,
+                  "unfinished": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "asked_me": 0.9,
+                  "deferred": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "asked_me": 0.9,
+                  "hush": 0.9
+                }
+              },
+              {
+                "answers": {}
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "It is ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, only listen from now on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what time is it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what was... hold on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, we'll ask you that later."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, don't answer that."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "So, the budget."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "final": false,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "judgments": {
+                "listening": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,334 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-classifier-policy-asks-its-questions-in-one-call-over-the-turn-named-by-speaker",
+  "title": "The classifier policy asks its questions in one call per turn, over the turn's text, the recent turns named by speaker (the agent's under the name it was made with) and the people, and reports each judgment with its decision",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-144",
+    "RK-6.4-153",
+    "RK-6.4-157"
+  ],
+  "notes": "The implementation's classifier policy, made with the agent's name Nova, over the implementation's mock classifier scripted per call. Alice and Bob take part. Each turn is one classifier call: its state names the agent, the people, the recent turns and the last one, each turn under its speaker, the agent's own answer under the name Nova. RK-6.4-153 is cited for its first sentence here (the questions asked in one call over what the turn reads); the order the answers compose in is speaking/the-classifier-policy-composes-its-judgments-in-the-rfc-s-order. The questions' wording is the implementation's: the scenario reads their names. Python: speaking/classifier.py ClassifierSpeakPolicy.state, questions.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {}
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "At ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, when is the meeting?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Thanks, Nova."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "$absent": true
+              }
+            },
+            "people": [
+              "Alice",
+              "Bob"
+            ],
+            "recent_turns": [],
+            "last_turn": {
+              "speaker": "Alice",
+              "text": "Nova, when is the meeting?"
+            },
+            "assistant_thought": {
+              "$absent": true
+            },
+            "assistant_cut_off": {
+              "$absent": true
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "agent": {
+              "name": "Nova",
+              "listening_only": {
+                "$absent": true
+              }
+            },
+            "people": [
+              "Alice",
+              "Bob"
+            ],
+            "recent_turns": [
+              {
+                "speaker": "Alice",
+                "text": "Nova, when is the meeting?"
+              },
+              {
+                "speaker": "Nova",
+                "text": "At ten."
+              }
+            ],
+            "last_turn": {
+              "speaker": "Bob",
+              "text": "Thanks, Nova."
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "listen_request": {
+              "$present": true
+            },
+            "asked_me": {
+              "$absent": true
+            },
+            "lift": {
+              "$absent": true
+            },
+            "answers": {
+              "$absent": true
+            },
+            "corrects": {
+              "$absent": true
+            },
+            "waiting": {
+              "$absent": true
+            },
+            "resume": {
+              "$absent": true
+            },
+            "language": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "final": false,
+              "notes": [],
+              "judgments": {
+                "directness": 3,
+                "deferred": 0,
+                "unfinished": 0,
+                "hush": 0,
+                "request": 0,
+                "answered": 0,
+                "listen_request": 0
+              }
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": false,
+              "judgments": {
+                "directness": 0,
+                "deferred": 0,
+                "unfinished": 0,
+                "hush": 0,
+                "request": 0,
+                "answered": 0,
+                "listen_request": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Nova, when is the meeting?"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

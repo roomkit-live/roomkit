@@ -1,0 +1,297 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-listening-room-resumes-no-cut-answer",
+  "title": "A cut answer is not resumed while the room listens: a turn that would leave the agent free to go on is a final silence, its decision carrying no note",
+  "rules": [
+    "§6.4",
+    "§6.8",
+    "§12.3.13"
+  ],
+  "requirements": [
+    "RK-6.4-170"
+  ],
+  "notes": "The agent answers Alice, a voice channel of the room records that answer cut, and Alice asks the agent to only listen. Her next turn, though the classifier judges it leaves the agent free to go on, is a final silence with no note. Python: speaking/classifier.py _while_listening.",
+  "requires_features": [
+    "voice"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "directness": 3
+                }
+              },
+              {
+                "answers": {
+                  "listen_request": 0.9,
+                  "resume": 0.9
+                }
+              },
+              {
+                "answers": {
+                  "resume": 0.9
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, what's the weather tomorrow?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "phone",
+          "channel_type": "voice",
+          "direction": "outbound"
+        },
+        "visibility": "internal",
+        "content": {
+          "type": "text",
+          "body": "Tomorrow in Quebec City, 8 degrees and cloudy, with rain in the evening."
+        },
+        "metadata": {
+          "interrupted": true,
+          "played_ms": 1200,
+          "answer_channel_id": "agent",
+          "answer_responds_to": "r1#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, only listen from now on."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Okay."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "resume": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$present": true
+            }
+          },
+          "questions": {
+            "resume": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "state": {
+            "assistant_cut_off": {
+              "$present": true
+            },
+            "agent": {
+              "listening_only": {
+                "$present": true
+              }
+            }
+          },
+          "questions": {
+            "directness": {
+              "$present": true
+            },
+            "deferred": {
+              "$present": true
+            },
+            "unfinished": {
+              "$present": true
+            },
+            "hush": {
+              "$present": true
+            },
+            "request": {
+              "$present": true
+            },
+            "answered": {
+              "$present": true
+            },
+            "asked_me": {
+              "$present": true
+            },
+            "lift": {
+              "$present": true
+            },
+            "listen_request": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak"
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "final": true,
+              "notes": []
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "$present": true
+        }
+      ]
+    }
+  }
+}

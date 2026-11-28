@@ -1,0 +1,242 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/told-its-languages-the-classifier-policy-judges-the-speaker-s-and-its-notes-name-it",
+  "title": "Told the languages its agent answers in, the classifier policy also asks which one the speaker speaks, over their recent turns, and its decision's notes carry that language's line",
+  "rules": [
+    "§6.4",
+    "§6.8"
+  ],
+  "requirements": [
+    "RK-6.4-159"
+  ],
+  "notes": "The policy is told English and French, each with the line its notes carry. The classifier is asked a `language` choice among them and another language, over the same state as every question, the speaker's recent turns among them; French puts its line in the decision's notes, which the turn's notes carry to the model, and English its own on the next turn. RK-6.4-159 is cited in part: that one misheard word does not switch the language is the classifier's judgment over the state it reads. Python: speaking/classifier.py ClassifierSpeakPolicy(languages=...).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "classifier": {
+            "calls": [
+              {
+                "answers": {
+                  "directness": 3,
+                  "language": "French"
+                }
+              },
+              {
+                "answers": {
+                  "directness": 3,
+                  "language": "English"
+                }
+              }
+            ]
+          },
+          "agent_name": "Nova",
+          "languages": {
+            "English": "Answer in English only.",
+            "French": "Réponds en français seulement."
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Il est dix heures."
+            },
+            {
+              "text": "It is ten past ten."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, quelle heure est-il ?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, et maintenant ?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "classifier_calls": {
+      "agent": [
+        {
+          "questions": {
+            "language": {
+              "instructions": {
+                "$present": true
+              },
+              "options": {
+                "English": {
+                  "$present": true
+                },
+                "French": {
+                  "$present": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "state": {
+            "recent_turns": [
+              {
+                "speaker": "Alice",
+                "text": "Nova, quelle heure est-il ?"
+              },
+              {
+                "speaker": "Nova",
+                "text": "Il est dix heures."
+              }
+            ]
+          },
+          "questions": {
+            "language": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "notes": [
+                "Réponds en français seulement."
+              ]
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "notes": [
+                "Answer in English only."
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": [
+                  "Nova, quelle heure est-il ?",
+                  "Réponds en français seulement."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "$present": true
+            },
+            {
+              "$present": true
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Answer in English only."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

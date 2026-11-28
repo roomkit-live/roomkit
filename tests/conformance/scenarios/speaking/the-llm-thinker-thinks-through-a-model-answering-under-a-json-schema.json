@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/the-llm-thinker-thinks-through-a-model-answering-under-a-json-schema",
+  "title": "The LLM thinker asks its model, under a JSON schema and with the instructions the application gave it, what the agent thinks, and the thought is what the model answered",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "requirements": [
+    "RK-6.4-204"
+  ],
+  "notes": "The implementation's LLM thinker over a scripted model that takes a response schema, with instructions of the application's. The scripted policy leaves Alice's turn silent: the thinker's request carries a response schema and opens with the application's instructions, and the thought ON_THOUGHT reports is the model's JSON answer. RK-6.4-204 is cited in part: the mock thinker the implementation provides is its own tests'. Python: speaking/thinker.py LLMThinker.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening"
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "unused"
+            }
+          ],
+          "streaming": false
+        },
+        "thinker": {
+          "llm": {
+            "model": {
+              "rounds": [
+                {
+                  "text": "{\"text\": \"Alice wants the price.\", \"want_to_say\": [\"It costs 1,200 a year.\"], \"urgent\": false}"
+                }
+              ],
+              "response_schema": true
+            },
+            "instructions": "Think about what the customer needs."
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice",
+            "connected_via": [
+              "ws"
+            ]
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob",
+            "connected_via": [
+              "ws"
+            ]
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "How much is it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [],
+      "agent/thinker": [
+        {
+          "system_prompt": {
+            "$starts_with": "Think about what the customer needs."
+          },
+          "response_schema": {
+            "$present": true
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "How much is it?"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "thoughts": [
+        {
+          "thought": {
+            "thought": {
+              "text": "Alice wants the price.",
+              "want_to_say": [
+                "It costs 1,200 a year."
+              ],
+              "urgent": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}
