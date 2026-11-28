@@ -25,7 +25,7 @@ from roomkit.orchestration import (
     SpeakQueue,
     SpeakQueueEvent,
 )
-from tests.conformance._classifier import ScriptedClassifier
+from tests.conformance._classifier import ScriptedClassifier, classifier_problems
 
 if TYPE_CHECKING:
     from tests.conformance._calls import Call
@@ -91,9 +91,10 @@ def _classifier_dispatch(
     ``expect.classifier_calls`` reads under ``<strategy>/dispatch``."""
     if strategy_id is None:
         raise ValueError("dispatch.classifier: only a setup strategy's dispatch takes one")
-    calls = harness.observed.classifier_calls.setdefault(f"{strategy_id}/dispatch", [])
+    records = harness.observed.classifiers
+    calls = records.calls.setdefault(f"{strategy_id}/dispatch", [])
     return ClassifierDispatchPolicy(
-        ScriptedClassifier(spec["classifier"], harness.gates, calls),
+        ScriptedClassifier(spec["classifier"], harness.gates, calls, records.problems),
         **{key: spec[key] for key in CLASSIFIER_DISPATCH_MEMBERS - {"classifier"} if key in spec},
     )
 
@@ -248,6 +249,20 @@ DISPATCH_MEMBERS = {"decisions", "delay_ms", "error", "gate"}
 
 CLASSIFIER_DISPATCH_MEMBERS = frozenset({"classifier", "threshold", "max_agents", "recent"})
 """The members a classifier dispatch policy may give."""
+
+
+def classifier_dispatch_problems(spec: Mapping[str, Any]) -> list[str]:
+    """What is wrong with a classifier dispatch's arguments, read before the
+    discussion can take a failure for its fallback."""
+    found = classifier_problems(spec["classifier"])
+    threshold = spec.get("threshold", 0.5)
+    if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+        found.append("threshold must be a number")
+    for key in ("max_agents", "recent"):
+        if key in spec and (not isinstance(spec[key], int) or isinstance(spec[key], bool)):
+            found.append(f"{key} must be an integer")
+    return found
+
 
 DISCUSSION_ARGUMENTS: dict[str, set[str]] = {
     "speak_queue": {"room_id", "organization_id"},

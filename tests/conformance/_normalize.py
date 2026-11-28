@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from tests.conformance._classifier import ClassifierRecords
+
 _INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 _ID_KEYS = frozenset({"id", "event_id", "responds_to", "parent_event_id", "target_event_id"})
 # A recording event's ``id`` is the recording's, which its recorder names
@@ -81,7 +83,7 @@ class Observed:
     continuations: dict[str, list[str]] = field(default_factory=dict)
     speak_turns: dict[str, list[Any]] = field(default_factory=dict)
     thinker_calls: dict[str, list[Any]] = field(default_factory=dict)
-    classifier_calls: dict[str, list[Any]] = field(default_factory=dict)
+    classifiers: ClassifierRecords = field(default_factory=ClassifierRecords)
     ai_routes: dict[str, list[Any]] = field(default_factory=dict)
     acp_wire: dict[str, list[Any]] = field(default_factory=dict)
     acp_handlers: dict[str, list[Any]] = field(default_factory=dict)

@@ -29,7 +29,6 @@ from tests.conformance._av import AV_ARGUMENTS
 from tests.conformance._below_kit import BELOW_KIT_ARGUMENTS
 from tests.conformance._capture import CAPTURE_ARGUMENTS, CAPTURE_SOURCE
 from tests.conformance._capture import CHANNEL_MEMBERS as CAPTURE_MEMBERS
-from tests.conformance._classifier import classifier_problems
 from tests.conformance._clock import CLOCK_ARGUMENTS
 from tests.conformance._conference import CONFERENCE_ARGUMENTS
 from tests.conformance._continuation import channel_problems as continuation_problems
@@ -39,6 +38,7 @@ from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
     DISCUSSION_MEMBERS,
     DISPATCH_MEMBERS,
+    classifier_dispatch_problems,
 )
 from tests.conformance._executors import EXECUTOR_ARGUMENTS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
@@ -823,9 +823,7 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
         if "classifier" in dispatch:
             at = f"{path}.discussion.dispatch"
             _members(dispatch, CLASSIFIER_DISPATCH_MEMBERS, at, found)
-            found.extend(
-                f"{at}: {problem}" for problem in classifier_problems(dispatch["classifier"])
-            )
+            found.extend(f"{at}: {problem}" for problem in classifier_dispatch_problems(dispatch))
         else:
             _members(dispatch, DISPATCH_MEMBERS, f"{path}.discussion.dispatch", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):

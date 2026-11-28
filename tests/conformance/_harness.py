@@ -725,6 +725,8 @@ class Harness:
             self._problems.extend(self.store_faults.untaken())
             self._problems.extend(self.executors.faults.untaken())
             self._problems.extend(untaken_faults(self.conferences.values()))
+            # A scripted answer the questions asked cannot take (README, Scripted agents).
+            self._problems.extend(self.observed.classifiers.problems)
             # The runner's own reads read what a store the kit closed holds.
             self.store_faults.closed = False
             await self._thinking_read()

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.classifiers import (
@@ -77,11 +78,19 @@ def question_problems(value: Any, path: str) -> list[str]:
     if len(kinds) > 1 or (kinds and ("yes" in value or "no" in value)):
         found.append(f"{path}: a yes/no question, a choice or a score, not several")
     options = value.get("options", {"a": "", "b": ""})
-    if not isinstance(options, Mapping) or any(not isinstance(v, str) for v in options.values()):
-        found.append(f"{path}.options must map names to strings")
-    levels = value.get("levels", [])
-    if not isinstance(levels, list) or any(not isinstance(v, str) for v in levels):
-        found.append(f"{path}.levels must be an array of strings")
+    if (
+        not isinstance(options, Mapping)
+        or len(options) < 2
+        or any(not isinstance(v, str) for v in options.values())
+    ):
+        found.append(f"{path}.options must map two names at least to strings")
+    levels = value.get("levels", ["", ""])
+    if (
+        not isinstance(levels, list)
+        or len(levels) < 2
+        or any(not isinstance(v, str) for v in levels)
+    ):
+        found.append(f"{path}.levels must be an array of two strings at least")
     for key in ("yes", "no"):
         if value.get(key) is not None and not isinstance(value[key], str):
             found.append(f"{path}.{key} must be a string or null")
@@ -107,14 +116,43 @@ def question_record(asked: Question) -> dict[str, Any]:
     return record
 
 
+@dataclass
+class ClassifierRecords:
+    """Where scripted classifiers record their calls, by the name
+    ``expect.classifier_calls`` reads them under, and their scripts' problems."""
+
+    calls: dict[str, list[Any]] = field(default_factory=dict)
+    problems: list[str] = field(default_factory=list)
+
+
+def answer_problems(script: Mapping[str, Any], questions: Mapping[str, Question]) -> list[str]:
+    """What in a call's *script* does not fit the *questions* it answers: a
+    question not asked, a choice that is no option of it, a number for a
+    choice or a name for a yes/no question or a score. The mock would fail
+    the call, and the policy's fallback would hide the scenario's mistake."""
+    found = []
+    for name, value in script.items():
+        asked = questions.get(name)
+        if asked is None:
+            found.append(f"answers.{name}: no question of that name was asked")
+        elif isinstance(asked, ChoiceQuestion):
+            if not isinstance(value, str) or value not in asked.options:
+                found.append(f"answers.{name}: not an option of the choice asked")
+        elif not _number(value):
+            found.append(f"answers.{name}: the question asked takes a number")
+    return found
+
+
 class ScriptedClassifier(Classifier):
     """Answers each call as the public mock answers that call's script."""
 
-    def __init__(self, spec: Mapping[str, Any], gates: Gates, calls: list[Any]) -> None:
-        if problems := classifier_problems(spec):
-            raise ValueError("; ".join(problems))
+    def __init__(
+        self, spec: Mapping[str, Any], gates: Gates, calls: list[Any], problems: list[str]
+    ) -> None:
+        if problems_found := classifier_problems(spec):
+            raise ValueError("; ".join(problems_found))
         self._entries = spec["calls"]
-        self._gates, self._calls = gates, calls
+        self._gates, self._calls, self._problems = gates, calls, problems
 
     async def classify(self, state: State, questions: Mapping[str, Question]) -> Answers:
         self._calls.append(
@@ -128,4 +166,8 @@ class ScriptedClassifier(Classifier):
             await self._gates.hold(entry["gate"])
         if "fail" in entry:
             raise ClassifierError(entry["fail"])
+        if found := answer_problems(entry["answers"], questions):
+            at = f"classifier call {len(self._calls)}"
+            self._problems.extend(f"{at}: {problem}" for problem in found)
+            raise ClassifierError("the scripted answers do not fit the questions asked")
         return await MockClassifier(dict(entry["answers"])).classify(state, questions)

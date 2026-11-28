@@ -46,9 +46,11 @@ def llm_problems(value: Any) -> list[str]:
         if key in value and not isinstance(value[key], kind):
             found.append(f"thinker.llm.{key} must be a string")
     if "max_tokens" in value and (
-        not isinstance(value["max_tokens"], int) or isinstance(value["max_tokens"], bool)
+        not isinstance(value["max_tokens"], int)
+        or isinstance(value["max_tokens"], bool)
+        or value["max_tokens"] < 0
     ):
-        found.append("thinker.llm.max_tokens must be an integer")
+        found.append("thinker.llm.max_tokens must be a non-negative integer")
     timeout = value.get("timeout_ms", 0)
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
         found.append("thinker.llm.timeout_ms must be a number")

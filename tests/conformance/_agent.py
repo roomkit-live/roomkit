@@ -75,6 +75,7 @@ from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._acp_handler import ScriptedExternalHandler
+from tests.conformance._classifier import ClassifierRecords
 from tests.conformance._continuation import continuation_options
 from tests.conformance._host_verbs import call_from_tool
 from tests.conformance._mcp import Connected, declared_tools, tool_handlers
@@ -755,7 +756,7 @@ def scripted_agent(
     speak_turns: dict[str, list[Any]] | None = None,
     thinker_calls: dict[str, list[Any]] | None = None,
     host_handler: bool = True,
-    classifier_calls: dict[str, list[Any]] | None = None,
+    classifiers: ClassifierRecords | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -775,7 +776,7 @@ def scripted_agent(
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
-    kwargs.update(speaking_options(spec, gates, speak_turns, classifier_calls))
+    kwargs.update(speaking_options(spec, gates, speak_turns, classifiers))
     thinker_model = _thinker_model(spec, gates, labelled, shared)
     if thinker_model is not None:
         models[f"{spec['id']}/thinker"] = thinker_model

@@ -18,6 +18,7 @@ from roomkit.speaking import (
     SpeakTurn,
 )
 from tests.conformance._classifier import (
+    ClassifierRecords,
     ScriptedClassifier,
     classifier_problems,
     question,
@@ -247,13 +248,18 @@ def classifier_policy(spec: Mapping[str, Any], classifier: Classifier) -> Classi
 
 
 def _policy(
-    spec: Mapping[str, Any], gates: Gates, calls: list[Any], classified: list[Any]
+    spec: Mapping[str, Any],
+    gates: Gates,
+    calls: list[Any],
+    classifiers: ClassifierRecords,
+    channel_id: str,
 ) -> SpeakPolicy:
-    """The policy *spec* describes, answer-only around it when it says so."""
+    """The policy *spec* describes, answer-only around it when it says so; a
+    classifier policy's calls recorded under *channel_id*."""
     if "classifier" in spec:
-        policy: SpeakPolicy = classifier_policy(
-            spec, ScriptedClassifier(spec["classifier"], gates, classified)
-        )
+        classified = classifiers.calls.setdefault(channel_id, [])
+        scripted = ScriptedClassifier(spec["classifier"], gates, classified, classifiers.problems)
+        policy: SpeakPolicy = classifier_policy(spec, scripted)
     else:
         policy = ScriptedSpeakPolicy(spec, gates, calls)
     if "answer_only" in spec:
@@ -265,17 +271,17 @@ def speaking_options(
     channel: Mapping[str, Any],
     gates: Gates,
     observations: dict[str, list[Any]] | None,
-    classifier_calls: dict[str, list[Any]] | None = None,
+    classifiers: ClassifierRecords | None = None,
 ) -> dict[str, Any]:
     if problems := channel_problems(channel, "channel"):
         raise ValueError("; ".join(problems))
     options: dict[str, Any] = {}
     calls = observations.setdefault(channel["id"], []) if observations is not None else None
     if "speak_policy" in channel:
-        if calls is None or classifier_calls is None:
+        if calls is None or classifiers is None:
             raise AssertionError("speak_policy: no observation sink")
-        classified = classifier_calls.setdefault(channel["id"], [])
-        options["speak_policy"] = _policy(channel["speak_policy"], gates, calls, classified)
+        spec = channel["speak_policy"]
+        options["speak_policy"] = _policy(spec, gates, calls, classifiers, channel["id"])
     if "speak_timeout_ms" in channel:
         options["speak_timeout"] = channel["speak_timeout_ms"] / 1000
     return options

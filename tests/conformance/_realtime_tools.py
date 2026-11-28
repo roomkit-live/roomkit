@@ -149,7 +149,7 @@ def reasoning_backend(
             continuation_calls=harness.observed.continuations,
             speak_turns=harness.observed.speak_turns,
             thinker_calls=harness.observed.thinker_calls,
-            classifier_calls=harness.observed.classifier_calls,
+            classifiers=harness.observed.classifiers,
             external_handlers=harness.external_handlers,
             sandbox_executors=harness.observed.sandbox_executors,
             # Its own tools only when its spec gives some, which a backend refuses.

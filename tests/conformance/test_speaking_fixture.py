@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from roomkit.classifiers import ClassifierError, ScoreQuestion, YesNoQuestion
+from roomkit.classifiers import ChoiceQuestion, ClassifierError, ScoreQuestion, YesNoQuestion
 from roomkit.speaking import SpeakDecision, SpeakDecisionEvent, SpeakTurn
 from tests.conformance._classifier import ScriptedClassifier
 from tests.conformance._script import Gates
@@ -123,8 +123,12 @@ async def test_a_scripted_classifier_records_each_call_before_its_gate_or_failur
     entry (the last repeating), and answers as the public mock does."""
     calls: list[Any] = []
     gates = Gates()
+    problems: list[str] = []
     classifier = ScriptedClassifier(
-        {"calls": [{"answers": {"hush": 0.9}, "gate": "held"}, {"fail": "down"}]}, gates, calls
+        {"calls": [{"answers": {"hush": 0.9}, "gate": "held"}, {"fail": "down"}]},
+        gates,
+        calls,
+        problems,
     )
     questions = {"hush": YesNoQuestion("Quiet?"), "level": ScoreQuestion("How?", ("a", "b"))}
     held = asyncio.ensure_future(classifier.classify({"said": "hi"}, questions))
@@ -145,3 +149,25 @@ async def test_a_scripted_classifier_records_each_call_before_its_gate_or_failur
         with pytest.raises(ClassifierError, match="down"):
             await classifier.classify("again", questions)
     assert len(calls) == 3
+    assert problems == []
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [{"hush": "yes"}, {"level": "high"}, {"pick": "c"}, {"pick": 1}, {"husk": 0.9}],
+)
+async def test_a_scripted_answer_the_question_cannot_take_is_a_problem_not_a_fallback(
+    answers: dict[str, Any],
+) -> None:
+    """The mock would fail such a call, and the policy would fall back to
+    speaking: the scenario's mistake would read as the product's behaviour."""
+    problems: list[str] = []
+    classifier = ScriptedClassifier({"calls": [{"answers": answers}]}, Gates(), [], problems)
+    questions = {
+        "hush": YesNoQuestion("Quiet?"),
+        "level": ScoreQuestion("How?", ("a", "b")),
+        "pick": ChoiceQuestion("Which?", {"a": "", "b": ""}),
+    }
+    with pytest.raises(ClassifierError):
+        await classifier.classify("state", questions)
+    assert len(problems) == 1
