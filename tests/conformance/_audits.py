@@ -67,8 +67,8 @@ class Auditors:
         if self._directory is None:
             self._directory = Path(tempfile.mkdtemp(prefix="roomkit-conformance-audit-"))
         if self._files.get("nested"):
-            # Directories the auditor makes itself (§15.8.3).
-            return self._directory / "missing" / "one" / name
+            # Directories of its own the auditor makes itself (§15.8.3).
+            return self._directory / "missing" / Path(name).stem / name
         return self._directory / name
 
     @property
